@@ -104,6 +104,7 @@ export function useChatSession(workspacePath: string) {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const offStart = window.filework.onStreamStart(({ id }) => {
+      console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
     });
 
@@ -208,6 +209,7 @@ export function useChatSession(workspacePath: string) {
 
     const offDone = window.filework.onStreamDone(({ id }) => {
       if (id !== streamTaskIdRef.current) return;
+      console.log("[Stream Done] Cleaning up taskId:", id);
       streamTaskIdRef.current = null;
       streamAssistantIdRef.current = null;
       setIsLoading(false);
@@ -222,6 +224,7 @@ export function useChatSession(workspacePath: string) {
 
     const offError = window.filework.onStreamError(({ id, error }) => {
       if (id !== streamTaskIdRef.current) return;
+      console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
       streamTaskIdRef.current = null;
       setIsLoading(false);
       setActiveSkill(null);
@@ -586,9 +589,35 @@ export function useChatSession(workspacePath: string) {
   // ---------------------------------------------------------------------------
   const handleStopGeneration = useCallback(() => {
     const taskId = streamTaskIdRef.current;
-    if (!taskId) return;
-    window.filework.stopGeneration(taskId);
-  }, []);
+    console.log("[Stop Generation] Current taskId:", taskId, "isLoading:", isLoading);
+
+    if (!taskId) {
+      console.warn("[Stop Generation] No active taskId found, cannot stop generation");
+      // Try to stop anyway by setting loading to false as fallback
+      if (isLoading) {
+        console.log("[Stop Generation] Fallback: forcing loading state to false");
+        setIsLoading(false);
+        setActiveSkill(null);
+        streamTaskIdRef.current = null;
+        streamAssistantIdRef.current = null;
+      }
+      return;
+    }
+
+    console.log("[Stop Generation] Attempting to stop taskId:", taskId);
+    window.filework.stopGeneration(taskId)
+      .then(() => {
+        console.log("[Stop Generation] Stop request sent successfully for taskId:", taskId);
+      })
+      .catch((error) => {
+        console.error("[Stop Generation] Failed to stop generation:", error);
+        // Fallback: force UI state reset
+        setIsLoading(false);
+        setActiveSkill(null);
+        streamTaskIdRef.current = null;
+        streamAssistantIdRef.current = null;
+      });
+  }, [isLoading]);
 
   const handleSkillApproval = (approved: boolean) => {
     if (!pendingSkillApproval) return;

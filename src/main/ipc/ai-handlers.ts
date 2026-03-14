@@ -330,10 +330,19 @@ export const registerAIHandlers = () => {
   ipcMain.handle(
     "ai:stopGeneration",
     async (_event, payload: { taskId: string }) => {
+      console.log("[Main] Stop generation request for taskId:", payload.taskId);
+      console.log("[Main] Available controllers:", Array.from(abortControllers.keys()));
+
       const controller = abortControllers.get(payload.taskId);
       if (controller) {
+        console.log("[Main] Found controller, calling abort()");
+        console.log("[Main] Controller aborted signal before abort():", controller.signal.aborted);
         controller.abort();
+        console.log("[Main] Controller aborted signal after abort():", controller.signal.aborted);
         abortControllers.delete(payload.taskId);
+        console.log("[Main] Successfully aborted and removed controller");
+      } else {
+        console.warn("[Main] No controller found for taskId:", payload.taskId);
       }
       return { ok: true };
     },
@@ -535,6 +544,7 @@ export const registerAIHandlers = () => {
 
       // Create AbortController for this plan execution
       const controller = new AbortController();
+      console.log("[Main] Created AbortController for plan taskId:", id);
       abortControllers.set(id, controller);
 
       try {
@@ -569,8 +579,11 @@ export const registerAIHandlers = () => {
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
           // User-initiated abort — treat as normal completion
+          console.log("[Main] Plan AbortError caught, cleaning up for taskId:", id);
           updateTask(id, { status: "completed", result: plan.goal, completedAt: new Date().toISOString() });
           if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+          // Clean up AbortController immediately
+          abortControllers.delete(id);
           return { id, status: "completed" };
         }
         const errorMsg = isAuthError(error)
@@ -630,6 +643,11 @@ export const registerAIHandlers = () => {
         createdAt: now,
         completedAt: null,
       });
+
+      // Create AbortController early to ensure it's available for stop requests
+      const controller = new AbortController();
+      console.log("[Main] Created AbortController for executeTask taskId:", id);
+      abortControllers.set(id, controller);
 
       try {
         // Notify renderer of the task id before streaming starts
@@ -754,9 +772,7 @@ Rules:
           ? [...convertedHistory!, { role: "user" as const, content: payload.prompt }]
           : [];
 
-        // Create AbortController and register it before streaming
-        const controller = new AbortController();
-        abortControllers.set(id, controller);
+        // AbortController already created and registered above
 
         const result = useMessagesMode
           ? streamText({
@@ -780,6 +796,12 @@ Rules:
         let fullText = "";
         try {
           for await (const part of result.fullStream) {
+            // Check if abort signal was triggered
+            if (controller.signal.aborted) {
+              console.log("[Main] Abort signal detected in stream loop for taskId:", id);
+              break;
+            }
+
             if (sender.isDestroyed()) break;
 
             switch (part.type) {
@@ -808,12 +830,16 @@ Rules:
         } catch (error: unknown) {
           if (error instanceof Error && error.name === "AbortError") {
             // User-initiated abort — treat as normal completion
+            console.log("[Main] AbortError caught, cleaning up for taskId:", id);
             updateTask(id, { status: "completed", result: fullText, completedAt: new Date().toISOString() });
             if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+            // Clean up AbortController immediately
+            abortControllers.delete(id);
             return { id, status: "completed" };
           }
           throw error;
         } finally {
+          console.log("[Main] Cleaning up AbortController for taskId:", id);
           abortControllers.delete(id);
         }
 
@@ -841,6 +867,10 @@ Rules:
         if (!sender.isDestroyed()) {
           sender.send("ai:stream-error", { id, error: errorMsg });
         }
+
+        // Cleanup AbortController on error
+        console.log("[Main] Cleaning up AbortController on error for taskId:", id);
+        abortControllers.delete(id);
 
         return { id, status: "failed", message: errorMsg };
       }

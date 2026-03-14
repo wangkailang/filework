@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: FileWork desktop application\n\nFileWork is a local directory AI assistant that helps users organize, generate reports, manage projects, research, and process data through natural language commands.\n\nKey Features:\n- Multi-LLM support (OpenAI, Anthropic, DeepSeek, Ollama)\n- File organization and analysis\n- Document processing (PDF, DOCX, XLSX)\n- Project scaffolding and management\n- AI-powered chat interface with tool usage\n- Skill-based extensibility system\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(gh repo create filework --public --description \"Local directory AI assistant — tell it what to do and it works on your files. Organize, generate reports, manage projects, research, process data.\" --source=. --push)",
+      "Bash(git add -A)",
+      "Bash(git checkout -b fix-llm-stop-functionality)"
     ],
     "deny": [],
     "ask": []
