@@ -28,6 +28,9 @@ import { truncateToFit } from "../ai/token-budget";
 /** 按任务 ID 存储活跃的 AbortController，用于中止流式生成 */
 export const abortControllers = new Map<string, AbortController>();
 
+/** 按任务 ID 存储手动停止标志，用于强制中止流式生成 */
+export const manualStopFlags = new Map<string, boolean>();
+
 const getAIModelByConfigId = (configId?: string) => {
   const config = configId ? getLlmConfig(configId) : getDefaultLlmConfig();
   if (!config) {
@@ -95,6 +98,9 @@ const dangerousToolDescriptions: Record<string, (args: Record<string, unknown>) 
  */
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
 
+/** Track which task each tool call belongs to for cleanup purposes */
+const toolCallToTaskMap = new Map<string, string>();
+
 /** Request approval from the renderer and wait for the response */
 const requestApproval = (
   sender: Electron.WebContents,
@@ -105,6 +111,7 @@ const requestApproval = (
 ): Promise<boolean> => {
   return new Promise<boolean>((resolve) => {
     pendingApprovals.set(toolCallId, resolve);
+    toolCallToTaskMap.set(toolCallId, taskId);
     if (!sender.isDestroyed()) {
       const describeFn = dangerousToolDescriptions[toolName];
       const description = describeFn
@@ -321,6 +328,7 @@ export const registerAIHandlers = () => {
       if (resolve) {
         resolve(payload.approved);
         pendingApprovals.delete(payload.toolCallId);
+        toolCallToTaskMap.delete(payload.toolCallId);
       }
       return { ok: true };
     },
@@ -333,16 +341,52 @@ export const registerAIHandlers = () => {
       console.log("[Main] Stop generation request for taskId:", payload.taskId);
       console.log("[Main] Available controllers:", Array.from(abortControllers.keys()));
 
+      // Set manual stop flag first
+      manualStopFlags.set(payload.taskId, true);
+
       const controller = abortControllers.get(payload.taskId);
       if (controller) {
         console.log("[Main] Found controller, calling abort()");
         console.log("[Main] Controller aborted signal before abort():", controller.signal.aborted);
         controller.abort();
         console.log("[Main] Controller aborted signal after abort():", controller.signal.aborted);
+        console.log("[Main] Set manual stop flag for taskId:", payload.taskId);
         abortControllers.delete(payload.taskId);
         console.log("[Main] Successfully aborted and removed controller");
+
+        // Add fallback timeout to force stream completion
+        setTimeout(() => {
+          if (manualStopFlags.has(payload.taskId)) {
+            console.log("[Main] Timeout fallback: forcing stream completion for taskId:", payload.taskId);
+
+            // Clean up pending tool approvals for this specific task
+            const toolCallsToReject: string[] = [];
+            toolCallToTaskMap.forEach((taskId, toolCallId) => {
+              if (taskId === payload.taskId) {
+                console.log("[Main] Rejecting pending tool approval for stopped task:", toolCallId);
+                const resolve = pendingApprovals.get(toolCallId);
+                if (resolve) {
+                  resolve(false); // Reject pending approvals
+                  toolCallsToReject.push(toolCallId);
+                }
+              }
+            });
+            toolCallsToReject.forEach(id => {
+              pendingApprovals.delete(id);
+              toolCallToTaskMap.delete(id);
+            });
+
+            // Try to send stream-done event as fallback
+            const windows = require("electron").BrowserWindow.getAllWindows();
+            if (windows.length > 0) {
+              windows[0].webContents.send("ai:stream-done", { id: payload.taskId });
+            }
+            manualStopFlags.delete(payload.taskId);
+          }
+        }, 1000); // 1 second timeout
       } else {
         console.warn("[Main] No controller found for taskId:", payload.taskId);
+        console.log("[Main] Set manual stop flag anyway for taskId:", payload.taskId);
       }
       return { ok: true };
     },
@@ -794,8 +838,20 @@ Rules:
 
         // Stream full events (text deltas + tool calls) to renderer
         let fullText = "";
+        let partCount = 0;
+        console.log("[Main] Starting stream loop for taskId:", id);
+
         try {
           for await (const part of result.fullStream) {
+            partCount++;
+            console.log(`[Main] Processing part ${partCount} for taskId:`, id, "type:", part.type);
+
+            // Check if manual stop flag was set
+            if (manualStopFlags.get(id)) {
+              console.log("[Main] Manual stop flag detected in stream loop for taskId:", id);
+              break;
+            }
+
             // Check if abort signal was triggered
             if (controller.signal.aborted) {
               console.log("[Main] Abort signal detected in stream loop for taskId:", id);
@@ -827,20 +883,48 @@ Rules:
                 break;
             }
           }
+          console.log("[Main] Stream loop ended for taskId:", id, "total parts processed:", partCount);
         } catch (error: unknown) {
           if (error instanceof Error && error.name === "AbortError") {
             // User-initiated abort — treat as normal completion
             console.log("[Main] AbortError caught, cleaning up for taskId:", id);
             updateTask(id, { status: "completed", result: fullText, completedAt: new Date().toISOString() });
             if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
-            // Clean up AbortController immediately
+            // Clean up AbortController and stop flag immediately
             abortControllers.delete(id);
+            manualStopFlags.delete(id);
+
+            // Clean up any pending tool calls for this task
+            const toolCallsToClean: string[] = [];
+            toolCallToTaskMap.forEach((taskId, toolCallId) => {
+              if (taskId === id) {
+                toolCallsToClean.push(toolCallId);
+              }
+            });
+            toolCallsToClean.forEach(toolCallId => {
+              pendingApprovals.delete(toolCallId);
+              toolCallToTaskMap.delete(toolCallId);
+            });
+
             return { id, status: "completed" };
           }
           throw error;
         } finally {
           console.log("[Main] Cleaning up AbortController for taskId:", id);
           abortControllers.delete(id);
+          manualStopFlags.delete(id);
+
+          // Clean up any pending tool calls for this task
+          const toolCallsToClean: string[] = [];
+          toolCallToTaskMap.forEach((taskId, toolCallId) => {
+            if (taskId === id) {
+              toolCallsToClean.push(toolCallId);
+            }
+          });
+          toolCallsToClean.forEach(toolCallId => {
+            pendingApprovals.delete(toolCallId);
+            toolCallToTaskMap.delete(toolCallId);
+          });
         }
 
         updateTask(id, {
@@ -868,9 +952,22 @@ Rules:
           sender.send("ai:stream-error", { id, error: errorMsg });
         }
 
-        // Cleanup AbortController on error
+        // Cleanup AbortController and stop flag on error
         console.log("[Main] Cleaning up AbortController on error for taskId:", id);
         abortControllers.delete(id);
+        manualStopFlags.delete(id);
+
+        // Clean up any pending tool calls for this task
+        const toolCallsToClean: string[] = [];
+        toolCallToTaskMap.forEach((taskId, toolCallId) => {
+          if (taskId === id) {
+            toolCallsToClean.push(toolCallId);
+          }
+        });
+        toolCallsToClean.forEach(toolCallId => {
+          pendingApprovals.delete(toolCallId);
+          toolCallToTaskMap.delete(toolCallId);
+        });
 
         return { id, status: "failed", message: errorMsg };
       }

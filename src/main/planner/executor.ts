@@ -12,6 +12,7 @@ import type { WebContents } from "electron";
 import { getSkill } from "../skills";
 import type { Plan, PlanStep } from "./types";
 import { readPlanFile, writePlanFile } from "./plan-file";
+import { abortControllers, manualStopFlags } from "../ipc/ai-handlers";
 
 interface ExecutorOptions {
   plan: Plan;
@@ -126,6 +127,12 @@ Rules:
       // Stream step output to renderer
       for await (const part of result.fullStream) {
         if (sender.isDestroyed()) break;
+
+        // Check manual stop flag
+        if (manualStopFlags.get(taskId)) {
+          console.log("[Plan] Manual stop flag detected for taskId:", taskId);
+          break;
+        }
 
         // Check cancellation mid-stream
         if (cancelledPlans.has(plan.id)) {
