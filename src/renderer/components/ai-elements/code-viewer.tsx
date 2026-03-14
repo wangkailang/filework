@@ -1,0 +1,120 @@
+import { useEffect, useState } from "react";
+import { codeToHtml } from "shiki";
+import { cn } from "../../lib/utils";
+
+/** Supported file extensions for code preview */
+const EXTENSION_LANG_MAP: Record<string, string> = {
+  ".ts": "typescript",
+  ".tsx": "tsx",
+  ".js": "javascript",
+  ".jsx": "jsx",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".html": "html",
+  ".css": "css",
+  ".scss": "scss",
+  ".less": "less",
+  ".json": "json",
+  ".yaml": "yaml",
+  ".yml": "yaml",
+  ".toml": "toml",
+  ".xml": "xml",
+  ".csv": "csv",
+  ".md": "markdown",
+  ".txt": "plaintext",
+  ".log": "log",
+  ".py": "python",
+  ".sh": "bash",
+  ".bash": "bash",
+  ".zsh": "bash",
+  ".env": "dotenv",
+  ".gitignore": "gitignore",
+  ".editorconfig": "ini",
+  ".sql": "sql",
+  ".graphql": "graphql",
+  ".prisma": "prisma",
+};
+
+export const SUPPORTED_EXTENSIONS = new Set(Object.keys(EXTENSION_LANG_MAP));
+
+/** Get the file extension including dot, handling dotfiles like .env */
+export const getFileExtension = (filename: string): string => {
+  const base = filename.split("/").pop() || filename;
+  // Dotfiles like .env, .gitignore
+  if (base.startsWith(".") && !base.includes(".", 1)) {
+    return base;
+  }
+  const dotIndex = base.lastIndexOf(".");
+  return dotIndex > 0 ? base.slice(dotIndex) : "";
+};
+
+export const isSupportedFile = (filename: string): boolean => {
+  return SUPPORTED_EXTENSIONS.has(getFileExtension(filename));
+};
+
+const getLang = (filename: string): string => {
+  return EXTENSION_LANG_MAP[getFileExtension(filename)] || "plaintext";
+};
+
+interface CodeViewerProps {
+  code: string;
+  filename: string;
+  className?: string;
+}
+
+const isDarkMode = (): boolean => {
+  return document.documentElement.classList.contains("dark");
+};
+
+export const CodeViewer = ({ code, filename, className }: CodeViewerProps) => {
+  const [html, setHtml] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [dark, setDark] = useState(isDarkMode);
+
+  // Watch for theme changes on <html> class
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setDark(isDarkMode());
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+
+    codeToHtml(code, {
+      lang: getLang(filename),
+      theme: dark ? "github-dark-default" : "github-light-default",
+    }).then((result) => {
+      if (!cancelled) {
+        setHtml(result);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, filename, dark]);
+
+  if (isLoading) {
+    return (
+      <div className={cn("flex items-center justify-center p-8 text-muted-foreground text-sm", className)}>
+        加载中...
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "overflow-auto text-sm [&_pre]:!bg-transparent [&_pre]:p-4 [&_code]:font-mono [&_.line]:leading-6",
+        "code-viewer-lines",
+        className,
+      )}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
