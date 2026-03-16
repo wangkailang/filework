@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: FileWork desktop application\n\nFileWork is a local directory AI assistant that helps users organize, generate reports, manage projects, research, and process data through natural language commands.\n\nKey Features:\n- Multi-LLM support (OpenAI, Anthropic, DeepSeek, Ollama)\n- File organization and analysis\n- Document processing (PDF, DOCX, XLSX)\n- Project scaffolding and management\n- AI-powered chat interface with tool usage\n- Skill-based extensibility system\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(gh repo create filework --public --description \"Local directory AI assistant — tell it what to do and it works on your files. Organize, generate reports, manage projects, research, process data.\" --source=. --push)",
+      "Bash(git add -A)",
+      "Bash(git checkout -b fix-llm-stop-functionality)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Resolve LLM generation stop functionality issues\n\nKey improvements:\n1. Enhanced debug logging throughout stop generation flow\n2. Fixed AbortController cleanup timing issues\n3. Created AbortController earlier to prevent race conditions  \n4. Added immediate cleanup in AbortError handlers\n5. Added abort signal monitoring in stream loops\n6. Implemented fallback UI state reset mechanisms\n\nRoot cause identified: AbortController was being deleted in early \nreturns before finally blocks, causing subsequent stop requests \nto fail. Fixed by cleaning up controllers immediately in catch \nblocks before returning.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push -u origin fix-llm-stop-functionality)"
     ],
     "deny": [],
     "ask": []

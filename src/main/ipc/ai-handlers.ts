@@ -28,6 +28,9 @@ import { truncateToFit } from "../ai/token-budget";
 /** 按任务 ID 存储活跃的 AbortController，用于中止流式生成 */
 export const abortControllers = new Map<string, AbortController>();
 
+/** 按任务 ID 存储手动停止标志，用于强制中止流式生成 */
+export const manualStopFlags = new Map<string, boolean>();
+
 const getAIModelByConfigId = (configId?: string) => {
   const config = configId ? getLlmConfig(configId) : getDefaultLlmConfig();
   if (!config) {
@@ -95,6 +98,12 @@ const dangerousToolDescriptions: Record<string, (args: Record<string, unknown>) 
  */
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
 
+/** Track which task each tool call belongs to for cleanup purposes */
+const toolCallToTaskMap = new Map<string, string>();
+
+/** Track active tool executions by task ID for cancellation */
+const activeToolExecutions = new Map<string, Set<AbortController>>();
+
 /** Request approval from the renderer and wait for the response */
 const requestApproval = (
   sender: Electron.WebContents,
@@ -102,9 +111,29 @@ const requestApproval = (
   toolCallId: string,
   toolName: string,
   args: unknown,
+  abortSignal?: AbortSignal,
 ): Promise<boolean> => {
   return new Promise<boolean>((resolve) => {
     pendingApprovals.set(toolCallId, resolve);
+    toolCallToTaskMap.set(toolCallId, taskId);
+
+    // Handle abort signal
+    if (abortSignal) {
+      const onAbort = () => {
+        console.log("[Tool] Aborting tool approval request:", toolCallId);
+        pendingApprovals.delete(toolCallId);
+        toolCallToTaskMap.delete(toolCallId);
+        resolve(false); // Deny approval on abort
+      };
+
+      if (abortSignal.aborted) {
+        onAbort();
+        return;
+      } else {
+        abortSignal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
+
     if (!sender.isDestroyed()) {
       const describeFn = dangerousToolDescriptions[toolName];
       const description = describeFn
@@ -203,26 +232,119 @@ const safeTools: Record<string, Tool> = {
         .optional()
         .describe("Working directory (absolute path, defaults to workspace root)"),
     }),
-    execute: async ({ command, cwd: cwdArg }: { command: string; cwd?: string }) => {
-      const { exec: execCb } = await import("node:child_process");
+    execute: async ({ command, cwd: cwdArg }: { command: string; cwd?: string }, { abortSignal }) => {
+      const { spawn } = await import("node:child_process");
       const runCwd = cwdArg || process.cwd();
-      const TIMEOUT_MS = 60_000;
-      return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
-        execCb(command, { cwd: runCwd, timeout: TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
-          if (error) {
-            resolve({
-              stdout: stdout?.toString() ?? "",
-              stderr: stderr?.toString() || error.message,
-              exitCode: error.code != null ? (typeof error.code === "number" ? error.code : 1) : 1,
-            });
-            return;
-          }
+
+      return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+        // Use spawn with shell for better process control
+        const childProcess = spawn(command, [], {
+          cwd: runCwd,
+          shell: true,
+          detached: false, // Keep in same process group for easier killing
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stdout = "";
+        let stderr = "";
+        let isAborted = false;
+
+        // Collect output
+        if (childProcess.stdout) {
+          childProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+          });
+        }
+
+        if (childProcess.stderr) {
+          childProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+        }
+
+        // Handle process completion
+        childProcess.on('close', (code, signal) => {
+          if (isAborted) return; // Already resolved by abort handler
+
           resolve({
-            stdout: stdout?.toString() ?? "",
-            stderr: stderr?.toString() ?? "",
-            exitCode: 0,
+            stdout,
+            stderr,
+            exitCode: code ?? (signal ? 128 + (signal === 'SIGTERM' ? 15 : 9) : 1),
           });
         });
+
+        childProcess.on('error', (error) => {
+          if (isAborted) return;
+
+          resolve({
+            stdout,
+            stderr: stderr || error.message,
+            exitCode: 1,
+          });
+        });
+
+        // Handle abort signal
+        if (abortSignal) {
+          const onAbort = async () => {
+            console.log("[Tool] Aborting runCommand:", command);
+            isAborted = true;
+
+            if (childProcess.pid) {
+              try {
+                console.log("[Tool] Attempting to kill process tree for PID:", childProcess.pid);
+
+                // Method 1: Try to kill the process tree using system commands
+                const { exec } = await import("node:child_process");
+
+                // Kill all child processes first
+                exec(`pkill -TERM -P ${childProcess.pid}`, (error) => {
+                  if (error) {
+                    console.warn("[Tool] pkill TERM failed:", error.message);
+                  } else {
+                    console.log("[Tool] Sent TERM to child processes");
+                  }
+                });
+
+                // Kill the main process
+                try {
+                  childProcess.kill('SIGTERM');
+                  console.log("[Tool] Sent SIGTERM to main process");
+                } catch (err) {
+                  console.warn("[Tool] SIGTERM failed, trying SIGKILL");
+                  childProcess.kill('SIGKILL');
+                }
+
+                // Force kill any remaining processes after 2 seconds
+                setTimeout(() => {
+                  exec(`pkill -KILL -P ${childProcess.pid}`, () => {
+                    console.log("[Tool] Force killed remaining child processes");
+                  });
+
+                  try {
+                    childProcess.kill('SIGKILL');
+                  } catch (err) {
+                    // Process may already be dead
+                  }
+                }, 2000);
+
+              } catch (err) {
+                console.error("[Tool] Process termination failed:", err);
+              }
+            }
+
+            resolve({
+              stdout,
+              stderr: stderr + "\nCommand was cancelled",
+              exitCode: 130, // Standard exit code for SIGTERM
+            });
+          };
+
+          if (abortSignal.aborted) {
+            onAbort();
+          } else {
+            abortSignal.addEventListener('abort', onAbort, { once: true });
+          }
+        }
       });
     },
   },
@@ -268,44 +390,121 @@ const buildTools = (
   sender: Electron.WebContents,
   taskId: string,
 ): Record<string, Tool> => {
-  const guardedWriteFile: Tool = {
+  // Initialize tool execution tracking for this task
+  if (!activeToolExecutions.has(taskId)) {
+    activeToolExecutions.set(taskId, new Set());
+  }
+  // Helper function to wrap tools with task-level abortion
+  const wrapToolWithAbort = (originalTool: Tool): Tool => ({
+    ...originalTool,
+    execute: async (args: any, context: any) => {
+      // Create a combined AbortController that responds to both:
+      // 1. The original abortSignal from AI SDK
+      // 2. Our manual task cancellation
+      const taskAbortController = new AbortController();
+
+      // Register the controller IMMEDIATELY when tool execution starts
+      const taskControllers = activeToolExecutions.get(taskId);
+      if (taskControllers) {
+        taskControllers.add(taskAbortController);
+        console.log(`[Tool] Registered abort controller for task ${taskId}, total active:`, taskControllers.size);
+      } else {
+        console.warn(`[Tool] No active execution tracking found for task ${taskId}`);
+      }
+
+      // Create combined abort signal (fallback for older Node.js versions)
+      let combinedSignal: AbortSignal;
+      if (typeof AbortSignal.any === 'function') {
+        combinedSignal = AbortSignal.any([context.abortSignal, taskAbortController.signal]);
+      } else {
+        // Fallback: create a new controller that responds to either signal
+        const combinedController = new AbortController();
+
+        const abortHandler = () => {
+          if (!combinedController.signal.aborted) {
+            combinedController.abort();
+          }
+        };
+
+        if (context.abortSignal?.aborted || taskAbortController.signal.aborted) {
+          combinedController.abort();
+        } else {
+          context.abortSignal?.addEventListener('abort', abortHandler, { once: true });
+          taskAbortController.signal.addEventListener('abort', abortHandler, { once: true });
+        }
+
+        combinedSignal = combinedController.signal;
+      }
+
+      try {
+        console.log(`[Tool] Starting execution for task ${taskId}, tool: ${originalTool.description?.substring(0, 50) || 'unknown'}`);
+        console.log(`[Tool] Current active tools for task ${taskId}:`, taskControllers?.size || 0);
+        console.log(`[Tool] Tool args:`, JSON.stringify(args).substring(0, 100));
+
+        const result = await originalTool.execute(args, { ...context, abortSignal: combinedSignal });
+
+        console.log(`[Tool] Completed execution for task ${taskId}, result:`, JSON.stringify(result).substring(0, 100));
+        return result;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          console.log(`[Tool] Tool execution aborted for task ${taskId}`);
+          return { success: false, cancelled: true, reason: "工具执行被取消" };
+        }
+        throw error;
+      } finally {
+        // Clean up the task controller
+        if (taskControllers) {
+          taskControllers.delete(taskAbortController);
+          console.log(`[Tool] Unregistered abort controller for task ${taskId}, remaining active:`, taskControllers.size);
+        }
+      }
+    }
+  });
+
+  const guardedWriteFile: Tool = wrapToolWithAbort({
     description: "Write content to a file (creates or overwrites). Requires user approval.",
     inputSchema: z.object({
       path: z.string().describe("Absolute path to the file"),
       content: z.string().describe("Content to write"),
     }),
-    execute: async (args: { path: string; content: string }, { toolCallId }) => {
-      const approved = await requestApproval(sender, taskId, toolCallId, "writeFile", { path: args.path });
+    execute: async (args: { path: string; content: string }, { toolCallId, abortSignal }) => {
+      const approved = await requestApproval(sender, taskId, toolCallId, "writeFile", { path: args.path }, abortSignal);
       if (!approved) return { success: false, denied: true, reason: "用户拒绝了此操作" };
       return rawExecutors.writeFile(args);
     },
-  };
+  });
 
-  const guardedMoveFile: Tool = {
+  const guardedMoveFile: Tool = wrapToolWithAbort({
     description: "Move or rename a file/directory. Requires user approval.",
     inputSchema: z.object({
       source: z.string().describe("Source absolute path"),
       destination: z.string().describe("Destination absolute path"),
     }),
-    execute: async (args: { source: string; destination: string }, { toolCallId }) => {
-      const approved = await requestApproval(sender, taskId, toolCallId, "moveFile", args);
+    execute: async (args: { source: string; destination: string }, { toolCallId, abortSignal }) => {
+      const approved = await requestApproval(sender, taskId, toolCallId, "moveFile", args, abortSignal);
       if (!approved) return { success: false, denied: true, reason: "用户拒绝了此操作" };
       return rawExecutors.moveFile(args);
     },
-  };
+  });
 
-  const guardedDeleteFile: Tool = {
+  const guardedDeleteFile: Tool = wrapToolWithAbort({
     description: "Delete a file or directory. Requires user approval.",
     inputSchema: pathSchema,
-    execute: async (args: { path: string }, { toolCallId }) => {
-      const approved = await requestApproval(sender, taskId, toolCallId, "deleteFile", args);
+    execute: async (args: { path: string }, { toolCallId, abortSignal }) => {
+      const approved = await requestApproval(sender, taskId, toolCallId, "deleteFile", args, abortSignal);
       if (!approved) return { success: false, denied: true, reason: "用户拒绝了此操作" };
       return rawExecutors.deleteFile(args);
     },
-  };
+  });
+
+  // Wrap all safe tools with abort tracking as well
+  const wrappedSafeTools: Record<string, Tool> = {};
+  for (const [name, tool] of Object.entries(safeTools)) {
+    wrappedSafeTools[name] = wrapToolWithAbort(tool);
+  }
 
   return {
-    ...safeTools,
+    ...wrappedSafeTools,
     writeFile: guardedWriteFile,
     moveFile: guardedMoveFile,
     deleteFile: guardedDeleteFile,
@@ -321,6 +520,7 @@ export const registerAIHandlers = () => {
       if (resolve) {
         resolve(payload.approved);
         pendingApprovals.delete(payload.toolCallId);
+        toolCallToTaskMap.delete(payload.toolCallId);
       }
       return { ok: true };
     },
@@ -330,12 +530,89 @@ export const registerAIHandlers = () => {
   ipcMain.handle(
     "ai:stopGeneration",
     async (_event, payload: { taskId: string }) => {
+      console.log("[Main] Stop generation request for taskId:", payload.taskId);
+      console.log("[Main] Available controllers:", Array.from(abortControllers.keys()));
+
+      // Set manual stop flag first
+      manualStopFlags.set(payload.taskId, true);
+
+      // Abort all active tool executions for this task
+      const toolControllers = activeToolExecutions.get(payload.taskId);
+      if (toolControllers) {
+        console.log(`[Main] Aborting ${toolControllers.size} active tool executions for task:`, payload.taskId);
+        toolControllers.forEach(controller => {
+          try {
+            controller.abort();
+            console.log("[Main] Aborted tool execution");
+          } catch (err) {
+            console.warn("[Main] Failed to abort tool execution:", err);
+          }
+        });
+        toolControllers.clear();
+      }
+
       const controller = abortControllers.get(payload.taskId);
       if (controller) {
+        console.log("[Main] Found controller, calling abort()");
+        console.log("[Main] Controller aborted signal before abort():", controller.signal.aborted);
         controller.abort();
+        console.log("[Main] Controller aborted signal after abort():", controller.signal.aborted);
+        console.log("[Main] Set manual stop flag for taskId:", payload.taskId);
         abortControllers.delete(payload.taskId);
+        console.log("[Main] Successfully aborted and removed controller");
+
+        // Add fallback timeout to force stream completion
+        setTimeout(() => {
+          if (manualStopFlags.has(payload.taskId)) {
+            console.log("[Main] Timeout fallback: forcing stream completion for taskId:", payload.taskId);
+
+            // Clean up pending tool approvals for this specific task
+            const toolCallsToReject: string[] = [];
+            toolCallToTaskMap.forEach((taskId, toolCallId) => {
+              if (taskId === payload.taskId) {
+                console.log("[Main] Rejecting pending tool approval for stopped task:", toolCallId);
+                const resolve = pendingApprovals.get(toolCallId);
+                if (resolve) {
+                  resolve(false); // Reject pending approvals
+                  toolCallsToReject.push(toolCallId);
+                }
+              }
+            });
+            toolCallsToReject.forEach(id => {
+              pendingApprovals.delete(id);
+              toolCallToTaskMap.delete(id);
+            });
+
+            // Try to send stream-done event as fallback
+            const windows = require("electron").BrowserWindow.getAllWindows();
+            if (windows.length > 0) {
+              windows[0].webContents.send("ai:stream-done", { id: payload.taskId });
+            }
+            manualStopFlags.delete(payload.taskId);
+          }
+        }, 1000); // 1 second timeout
+      } else {
+        console.warn("[Main] No controller found for taskId:", payload.taskId);
+        console.log("[Main] Task may have already completed or never started");
+
+        // Still try to abort any remaining tool executions
+        const toolControllers = activeToolExecutions.get(payload.taskId);
+        if (toolControllers && toolControllers.size > 0) {
+          console.log(`[Main] Force aborting ${toolControllers.size} remaining tool executions`);
+          toolControllers.forEach(controller => {
+            try {
+              controller.abort();
+            } catch (err) {
+              console.warn("[Main] Failed to abort remaining tool execution:", err);
+            }
+          });
+          toolControllers.clear();
+        }
+
+        console.log("[Main] Set manual stop flag anyway for taskId:", payload.taskId);
       }
-      return { ok: true };
+      const stopped = !!controller;
+      return { ok: true, stopped };
     },
   );
 
@@ -535,6 +812,7 @@ export const registerAIHandlers = () => {
 
       // Create AbortController for this plan execution
       const controller = new AbortController();
+      console.log("[Main] Created AbortController for plan taskId:", id);
       abortControllers.set(id, controller);
 
       try {
@@ -569,8 +847,11 @@ export const registerAIHandlers = () => {
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
           // User-initiated abort — treat as normal completion
+          console.log("[Main] Plan AbortError caught, cleaning up for taskId:", id);
           updateTask(id, { status: "completed", result: plan.goal, completedAt: new Date().toISOString() });
           if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+          // Clean up AbortController immediately
+          abortControllers.delete(id);
           return { id, status: "completed" };
         }
         const errorMsg = isAuthError(error)
@@ -630,6 +911,13 @@ export const registerAIHandlers = () => {
         createdAt: now,
         completedAt: null,
       });
+
+      // Create AbortController early so its signal can be passed into streaming APIs
+      const controller = new AbortController();
+      console.log("[Main] Created AbortController for executeTask taskId:", id);
+
+      // Register the controller immediately
+      abortControllers.set(id, controller);
 
       try {
         // Notify renderer of the task id before streaming starts
@@ -734,8 +1022,66 @@ export const registerAIHandlers = () => {
         }
 
         // Build tools with approval guards for dangerous operations
-        const tools = buildTools(sender, id);
+        const originalTools = buildTools(sender, id);
         const skillTools = skill?.tools ?? {};
+
+        // Add global tool execution tracking by intercepting the tools object
+        const tools: Record<string, Tool> = {};
+        for (const [toolName, tool] of Object.entries(originalTools)) {
+          tools[toolName] = {
+            ...tool,
+            execute: async (args: any, context: any) => {
+              const toolAbortController = new AbortController();
+              console.log(`[Global Tool] Starting ${toolName} for task ${id}`);
+
+              // Track this tool execution
+              const taskControllers = activeToolExecutions.get(id);
+              if (taskControllers) {
+                taskControllers.add(toolAbortController);
+                console.log(`[Global Tool] Registered ${toolName}, active tools:`, taskControllers.size);
+              }
+
+              try {
+                // Combine abort signals
+                let combinedSignal = context.abortSignal;
+                if (toolAbortController.signal) {
+                  if (typeof AbortSignal.any === 'function') {
+                    combinedSignal = AbortSignal.any([context.abortSignal, toolAbortController.signal]);
+                  } else {
+                    const combinedController = new AbortController();
+                    const abortHandler = () => {
+                      if (!combinedController.signal.aborted) {
+                        combinedController.abort();
+                      }
+                    };
+                    if (context.abortSignal?.aborted || toolAbortController.signal.aborted) {
+                      combinedController.abort();
+                    } else {
+                      context.abortSignal?.addEventListener('abort', abortHandler, { once: true });
+                      toolAbortController.signal.addEventListener('abort', abortHandler, { once: true });
+                    }
+                    combinedSignal = combinedController.signal;
+                  }
+                }
+
+                const result = await tool.execute(args, { ...context, abortSignal: combinedSignal });
+                console.log(`[Global Tool] Completed ${toolName} for task ${id}`);
+                return result;
+              } catch (error) {
+                console.log(`[Global Tool] Error in ${toolName} for task ${id}:`, error?.message);
+                if (error instanceof Error && error.name === "AbortError") {
+                  return { success: false, cancelled: true, reason: `${toolName} 被取消` };
+                }
+                throw error;
+              } finally {
+                if (taskControllers) {
+                  taskControllers.delete(toolAbortController);
+                  console.log(`[Global Tool] Unregistered ${toolName}, remaining:`, taskControllers.size);
+                }
+              }
+            }
+          };
+        }
 
         const system = `You are FileWork, a local file management AI assistant. You help users organize, analyze, and manage files in their directories.
 
@@ -754,9 +1100,7 @@ Rules:
           ? [...convertedHistory!, { role: "user" as const, content: payload.prompt }]
           : [];
 
-        // Create AbortController and register it before streaming
-        const controller = new AbortController();
-        abortControllers.set(id, controller);
+        // AbortController already created and registered above
 
         const result = useMessagesMode
           ? streamText({
@@ -778,8 +1122,32 @@ Rules:
 
         // Stream full events (text deltas + tool calls) to renderer
         let fullText = "";
+        let partCount = 0;
+        console.log("[Main] Starting stream loop for taskId:", id);
+
         try {
           for await (const part of result.fullStream) {
+            partCount++;
+            console.log(`[Main] Processing part ${partCount} for taskId:`, id, "type:", part.type);
+
+            // Log current state when processing each part
+            if (part.type === "tool-call" || part.type === "tool-result") {
+              const toolControllers = activeToolExecutions.get(id);
+              console.log(`[Main] Active tool executions for task ${id}:`, toolControllers?.size || 0);
+            }
+
+            // Check if manual stop flag was set
+            if (manualStopFlags.get(id)) {
+              console.log("[Main] Manual stop flag detected in stream loop for taskId:", id);
+              break;
+            }
+
+            // Check if abort signal was triggered
+            if (controller.signal.aborted) {
+              console.log("[Main] Abort signal detected in stream loop for taskId:", id);
+              break;
+            }
+
             if (sender.isDestroyed()) break;
 
             switch (part.type) {
@@ -788,6 +1156,7 @@ Rules:
                 sender.send("ai:stream-delta", { id, delta: part.text });
                 break;
               case "tool-call":
+                console.log(`[Stream] Tool call queued for task ${id}:`, part.toolName);
                 sender.send("ai:stream-tool-call", {
                   id,
                   toolCallId: part.toolCallId,
@@ -805,16 +1174,54 @@ Rules:
                 break;
             }
           }
+          console.log("[Main] Stream loop ended for taskId:", id, "total parts processed:", partCount);
         } catch (error: unknown) {
           if (error instanceof Error && error.name === "AbortError") {
             // User-initiated abort — treat as normal completion
+            console.log("[Main] AbortError caught, cleaning up for taskId:", id);
             updateTask(id, { status: "completed", result: fullText, completedAt: new Date().toISOString() });
             if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+            // Clean up AbortController and stop flag immediately
+            abortControllers.delete(id);
+            manualStopFlags.delete(id);
+
+            // Clean up any pending tool calls for this task
+            const toolCallsToClean: string[] = [];
+            toolCallToTaskMap.forEach((taskId, toolCallId) => {
+              if (taskId === id) {
+                toolCallsToClean.push(toolCallId);
+              }
+            });
+            toolCallsToClean.forEach(toolCallId => {
+              pendingApprovals.delete(toolCallId);
+              toolCallToTaskMap.delete(toolCallId);
+            });
+
+            // Clean up active tool executions
+            activeToolExecutions.delete(id);
+
             return { id, status: "completed" };
           }
           throw error;
         } finally {
+          console.log("[Main] Cleaning up AbortController for taskId:", id);
           abortControllers.delete(id);
+          manualStopFlags.delete(id);
+
+          // Clean up any pending tool calls for this task
+          const toolCallsToClean: string[] = [];
+          toolCallToTaskMap.forEach((taskId, toolCallId) => {
+            if (taskId === id) {
+              toolCallsToClean.push(toolCallId);
+            }
+          });
+          toolCallsToClean.forEach(toolCallId => {
+            pendingApprovals.delete(toolCallId);
+            toolCallToTaskMap.delete(toolCallId);
+          });
+
+          // Clean up active tool executions
+          activeToolExecutions.delete(id);
         }
 
         updateTask(id, {
@@ -841,6 +1248,26 @@ Rules:
         if (!sender.isDestroyed()) {
           sender.send("ai:stream-error", { id, error: errorMsg });
         }
+
+        // Cleanup AbortController and stop flag on error
+        console.log("[Main] Cleaning up AbortController on error for taskId:", id);
+        abortControllers.delete(id);
+        manualStopFlags.delete(id);
+
+        // Clean up any pending tool calls for this task
+        const toolCallsToClean: string[] = [];
+        toolCallToTaskMap.forEach((taskId, toolCallId) => {
+          if (taskId === id) {
+            toolCallsToClean.push(toolCallId);
+          }
+        });
+        toolCallsToClean.forEach(toolCallId => {
+          pendingApprovals.delete(toolCallId);
+          toolCallToTaskMap.delete(toolCallId);
+        });
+
+        // Clean up active tool executions
+        activeToolExecutions.delete(id);
 
         return { id, status: "failed", message: errorMsg };
       }
