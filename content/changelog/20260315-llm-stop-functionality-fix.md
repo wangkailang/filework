@@ -93,8 +93,79 @@ None - All changes are internal implementation improvements.
 - Improved: Faster stop response due to multiple fallback mechanisms
 - Enhanced: Better resource cleanup prevents memory leaks
 
+## Follow-up Improvements (Additional Commits)
+
+### Tool Execution Cancellation System
+
+**Issue**: Even after fixing stream stop functionality, tool executions (especially `npx agent-browser` and other long-running commands) would continue running in background after clicking stop.
+
+**Root Cause**: Tool executions were not properly tracked or cancelled when the main stream was aborted.
+
+**Solution Implemented**:
+
+1. **Global Tool Execution Tracking**:
+   - Added `activeToolExecutions` Map to track all running tools by task ID
+   - Each tool execution gets its own AbortController
+   - Comprehensive logging for tool lifecycle debugging
+
+2. **Multi-Layer Tool Cancellation**:
+   ```typescript
+   // Layer 1: Tool wrapper functions
+   const wrappedTool = wrapToolWithAbort(originalTool);
+
+   // Layer 2: Global tool execution interception
+   const tools = interceptAllToolCalls(originalTools, taskId);
+   ```
+
+3. **Enhanced Process Termination for runCommand**:
+   - Upgraded from `exec` to `spawn` for better process control
+   - Multi-method process killing: `SIGTERM` → `SIGKILL` → system commands
+   - Process tree termination using `pkill -P` for complex commands like `npx`
+
+4. **Comprehensive Cleanup System**:
+   - Tool execution tracking cleanup in all exit paths
+   - Pending approval cleanup for interrupted tool calls
+   - Manual stop flag management across all scenarios
+
+5. **AbortSignal Compatibility**:
+   - Fallback implementation for `AbortSignal.any()` for older Node.js versions
+   - Combined abort signals from multiple sources (AI SDK + manual cancellation)
+
+**Technical Details**:
+
+```typescript
+// Tool execution tracking
+const activeToolExecutions = new Map<string, Set<AbortController>>();
+
+// Stop handler enhancement
+const toolControllers = activeToolExecutions.get(payload.taskId);
+if (toolControllers) {
+  console.log(`Aborting ${toolControllers.size} active tool executions`);
+  toolControllers.forEach(controller => controller.abort());
+}
+```
+
+**Testing Results**:
+
+Before:
+```
+[Main] Stop generation request for taskId: xxx
+[Main] Available controllers: []
+[Tool executions continue running in background]
+```
+
+After:
+```
+[Main] Stop generation request for taskId: xxx
+[Main] Aborting 2 active tool executions for task: xxx
+[Global Tool] Starting runCommand for task xxx
+[Tool] Aborting runCommand: npx agent-browser...
+[Tool] Tool execution aborted for task xxx
+```
+
 ## Future Considerations
 
 - Monitor AI SDK updates for improved native AbortSignal support
 - Consider reducing timeout fallback delay if user feedback suggests it's too long
 - Potential optimization of tool call cleanup for better performance at scale
+- Consider implementing tool execution rate limiting for resource management
