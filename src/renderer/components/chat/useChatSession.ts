@@ -592,15 +592,8 @@ export function useChatSession(workspacePath: string) {
     console.log("[Stop Generation] Current taskId:", taskId, "isLoading:", isLoading);
 
     if (!taskId) {
-      console.warn("[Stop Generation] No active taskId found, cannot stop generation");
-      // Try to stop anyway by setting loading to false as fallback
-      if (isLoading) {
-        console.log("[Stop Generation] Fallback: forcing loading state to false");
-        setIsLoading(false);
-        setActiveSkill(null);
-        streamTaskIdRef.current = null;
-        streamAssistantIdRef.current = null;
-      }
+      console.warn("[Stop Generation] No active taskId found, cannot stop generation because no task id is associated with the current stream");
+      // Do not force-reset UI or clear stream refs here; wait for a proper done/error event
       return;
     }
 
