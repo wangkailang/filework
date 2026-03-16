@@ -388,7 +388,8 @@ export const registerAIHandlers = () => {
         console.warn("[Main] No controller found for taskId:", payload.taskId);
         console.log("[Main] Set manual stop flag anyway for taskId:", payload.taskId);
       }
-      return { ok: true };
+      const stopped = !!controller;
+      return { ok: true, stopped };
     },
   );
 
