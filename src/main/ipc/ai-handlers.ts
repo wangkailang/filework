@@ -688,10 +688,9 @@ export const registerAIHandlers = () => {
         completedAt: null,
       });
 
-      // Create AbortController early to ensure it's available for stop requests
+      // Create AbortController early so its signal can be passed into streaming APIs
       const controller = new AbortController();
       console.log("[Main] Created AbortController for executeTask taskId:", id);
-      abortControllers.set(id, controller);
 
       try {
         // Notify renderer of the task id before streaming starts
