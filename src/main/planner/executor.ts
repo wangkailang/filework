@@ -12,7 +12,7 @@ import type { WebContents } from "electron";
 import { getSkill } from "../skills";
 import type { Plan, PlanStep } from "./types";
 import { readPlanFile, writePlanFile } from "./plan-file";
-import { abortControllers, manualStopFlags } from "../ipc/ai-handlers";
+import { abortControllers, manualStopFlags } from "../ipc/ai-task-control";
 
 interface ExecutorOptions {
   plan: Plan;

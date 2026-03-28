@@ -7,7 +7,10 @@
       "Bash(git add -A)",
       "Bash(git checkout -b fix-llm-stop-functionality)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: Resolve LLM generation stop functionality issues\n\nKey improvements:\n1. Enhanced debug logging throughout stop generation flow\n2. Fixed AbortController cleanup timing issues\n3. Created AbortController earlier to prevent race conditions  \n4. Added immediate cleanup in AbortError handlers\n5. Added abort signal monitoring in stream loops\n6. Implemented fallback UI state reset mechanisms\n\nRoot cause identified: AbortController was being deleted in early \nreturns before finally blocks, causing subsequent stop requests \nto fail. Fixed by cleaning up controllers immediately in catch \nblocks before returning.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git push -u origin fix-llm-stop-functionality)"
+      "Bash(git push -u origin fix-llm-stop-functionality)",
+      "Bash(npm run build)",
+      "Bash(npm run typecheck)",
+      "Bash(find /Users/kailang/develop/2026/filework/src/main/ipc/ -name \"ai-*.ts\" -exec wc -l {} +)"
     ],
     "deny": [],
     "ask": []

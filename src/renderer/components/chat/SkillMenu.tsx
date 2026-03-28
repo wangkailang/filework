@@ -27,7 +27,8 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
   const [fetched, setFetched] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isActive = input.startsWith("/");
+  // Only show skill menu when typing the skill name, not after selecting one
+  const isActive = input.startsWith("/") && !input.includes(" ");
   const query = isActive ? input.slice(1).toLowerCase() : "";
 
   // Fetch skills when the menu first opens
@@ -43,6 +44,7 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
       .listSkills()
       .then((list: SkillMenuItem[]) => {
         if (!cancelled) {
+          console.log("[SkillMenu] Loaded skills:", list?.map(s => s.id) || []);
           setSkills(list ?? []);
           setFetched(true);
         }
@@ -127,7 +129,12 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
     >
       {filtered.length === 0 ? (
         <div className="px-3 py-2 text-sm text-muted-foreground">
-          未找到匹配的技能
+          {skills.length === 0
+            ? "正在加载技能..."
+            : query
+              ? `未找到匹配 "${query}" 的技能`
+              : "输入技能名称进行搜索"
+          }
         </div>
       ) : (
         filtered.map((skill, i) => (

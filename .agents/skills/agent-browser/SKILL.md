@@ -8,7 +8,6 @@ description: >
 context: fork
 allowed-tools:
   - readFile
-  - listDirectory
   - writeFile
   - createDirectory
   - runCommand
