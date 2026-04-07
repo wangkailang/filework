@@ -66,8 +66,8 @@ export const safeTools: Record<string, Tool> = {
       forceRescan?: boolean;
       includeStats?: boolean;
     }) => {
-      if (!incremental || forceRescan) {
-        // Use original implementation for non-incremental scans
+      if (!incremental) {
+        // Use original implementation only when incremental scanning is explicitly disabled
         const entries = await readdir(dirPath, { withFileTypes: true });
         const results: FileEntry[] = [];
         for (const entry of entries) {
