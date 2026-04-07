@@ -7,6 +7,7 @@
 
 import { ipcMain } from "electron";
 import crypto from "node:crypto";
+import type { Tool } from "ai";
 import { addTask, updateTask } from "../db";
 import { needsPlanning, planTask } from "../planner";
 import { executePlan, cancelPlan } from "../planner/executor";
@@ -14,9 +15,24 @@ import type { Plan } from "../planner/types";
 import { getAIModelByConfigId, isAuthError } from "./ai-models";
 import { buildTools } from "./ai-tool-permissions";
 import { abortControllers, cleanupTask } from "./ai-task-control";
+import { safeTools } from "./ai-tools";
 
 /** Pending plans waiting for user approval */
 const pendingPlans = new Map<string, Plan>();
+
+/**
+ * Build a read-only tool set for plan generation.
+ * Only includes safe tools that don't modify files or require approval.
+ */
+const buildReadOnlyTools = (): Record<string, Tool> => {
+  // Only use safe tools for planning - no dangerous operations allowed
+  return {
+    listDirectory: safeTools.listDirectory,
+    readFile: safeTools.readFile,
+    directoryStats: safeTools.directoryStats,
+    // Note: runCommand is excluded as it could have side effects
+  };
+};
 
 /**
  * Register all plan-related IPC handlers
@@ -36,7 +52,8 @@ export const registerPlanHandlers = () => {
     async (event, payload: { prompt: string; workspacePath: string; llmConfigId?: string }) => {
       try {
         const model = getAIModelByConfigId(payload.llmConfigId);
-        const tools = buildTools(event.sender, "temp-plan-id");
+        // Use read-only tools for plan generation to avoid side effects
+        const tools = buildReadOnlyTools();
         const plan = await planTask(payload.prompt, payload.workspacePath, model, tools);
 
         // Store plan for later approval
