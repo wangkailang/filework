@@ -335,28 +335,8 @@ export class IncrementalScanner {
 
     const cachedSnapshot = forceRescan ? null : this.cacheManager.getSnapshot(dirPath);
 
-    // Quick check: if directory mtime hasn't changed, return cached results
-    if (cachedSnapshot && !forceRescan) {
-      try {
-        const dirStats = await stat(dirPath);
-        if (dirStats.mtime <= cachedSnapshot.lastScan) {
-          const unchanged = Array.from(cachedSnapshot.files.values()).map(file =>
-            this.toFileEntry(file)
-          );
-
-          return {
-            added: [],
-            modified: [],
-            deleted: [],
-            unchanged,
-            totalFiles: unchanged.length,
-            scanTime: Date.now() - startTime,
-          };
-        }
-      } catch {
-        // Directory doesn't exist or is inaccessible
-      }
-    }
+    // Note: Removed unsafe directory mtime optimization that could miss file changes
+    // Modifying existing files doesn't update parent directory mtime, leading to stale results
 
     // Perform actual directory scan
     const currentFiles = await this.scanDirectory(dirPath);

@@ -10,7 +10,11 @@
       "Bash(git pull origin feature/incremental-directory-scanning)",
       "Bash(git commit -m \"$(cat <<''EOF''\nconfig: Update Claude settings with latest permissions\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git push)",
-      "Bash(git commit -m \"final config update\")"
+      "Bash(git commit -m \"final config update\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\ndocs: Add IPC modules README and clean up backup files\n\n- Added comprehensive README.md for src/main/ipc directory\n- Documented all 11 IPC modules with their roles, dependencies, and relationships\n- Included architecture diagrams and data flow explanations\n- Removed ai-handlers-backup.ts (56KB obsolete backup file)\n- Updated documentation to reflect current active modules only\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npm run typecheck)",
+      "Bash(npm run build)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Remove unsafe directory mtime optimization in incremental scanner\n\nThe quick-return optimization based on directory mtime was unsafe:\n- Modifying existing files doesn''t update parent directory mtime\n- This caused the scanner to return stale cached results\n- Changes inside directories could be missed completely\n\nRemoved the problematic optimization (lines 338-359) to ensure\naccurate file change detection. The scanner now always performs\nproper file-level comparisons instead of relying on directory mtime.\n\nThis fix ensures AI tools receive up-to-date file information and\nprevents data inconsistency issues.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
