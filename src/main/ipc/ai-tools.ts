@@ -147,8 +147,8 @@ export const safeTools: Record<string, Tool> = {
     }),
     execute: async ({ command, cwd }: { command: string; cwd?: string }, { abortSignal }) => {
       return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-        const [cmd, ...args] = command.trim().split(/\\s+/);
-        const child = spawn(cmd, args, {
+        // Use shell: true to properly handle quoted arguments, pipes, and shell syntax
+        const child = spawn(command, [], {
           cwd: cwd || process.cwd(),
           shell: true,
           stdio: ["pipe", "pipe", "pipe"],
