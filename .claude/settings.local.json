@@ -6,7 +6,9 @@
       "Bash(git commit -m \"$(cat <<''EOF''\ndocs: Add AGENTS.md documentation and docs directory\n\nAdded comprehensive documentation for AI agent system including:\n- AGENTS.md with agent types, tools, and usage patterns\n- docs/ directory with additional documentation\n\nAlso updated Claude settings and build artifacts.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git add .claude/settings.local.json)",
       "Bash(git commit -m \"$(cat <<''EOF''\nconfig: Update Claude Code settings permissions\n\nUpdated allowed permissions to reflect current workflow requirements.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git commit --amend --no-edit)"
+      "Bash(git commit --amend --no-edit)",
+      "Bash(git pull origin feature/incremental-directory-scanning)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nconfig: Update Claude settings with latest permissions\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
