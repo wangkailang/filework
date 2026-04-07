@@ -16,6 +16,7 @@ import {
   activeToolExecutions,
   initTaskExecution,
 } from "./ai-task-control";
+import { getIncrementalScanner, type FileEntry } from "../utils/incremental-scanner";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
@@ -47,36 +48,76 @@ export const rawExecutors = {
 /** Safe (read-only) tools — shared across all requests */
 export const safeTools: Record<string, Tool> = {
   listDirectory: {
-    description: "List files and directories at the given path",
-    inputSchema: pathSchema,
-    execute: async ({ path: dirPath }: { path: string }) => {
-      const entries = await readdir(dirPath, { withFileTypes: true });
-      const results: Array<{
-        name: string;
-        path: string;
-        isDirectory: boolean;
-        size: number;
-        extension: string;
-        modifiedAt: string;
-      }> = [];
-      for (const entry of entries) {
-        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-        const fullPath = join(dirPath, entry.name);
-        try {
-          const stats = await stat(fullPath);
-          results.push({
-            name: entry.name,
-            path: fullPath,
-            isDirectory: entry.isDirectory(),
-            size: stats.size,
-            extension: entry.isDirectory() ? "" : extname(entry.name),
-            modifiedAt: stats.mtime.toISOString(),
-          });
-        } catch {
-          // skip inaccessible
+    description: "List files and directories at the given path with incremental scanning support",
+    inputSchema: z.object({
+      path: z.string().describe("Absolute path to directory"),
+      incremental: z.boolean().optional().default(true).describe("Use incremental scanning (default: true)"),
+      forceRescan: z.boolean().optional().default(false).describe("Force full rescan ignoring cache"),
+      includeStats: z.boolean().optional().default(false).describe("Include scan statistics in response"),
+    }),
+    execute: async ({
+      path: dirPath,
+      incremental = true,
+      forceRescan = false,
+      includeStats = false,
+    }: {
+      path: string;
+      incremental?: boolean;
+      forceRescan?: boolean;
+      includeStats?: boolean;
+    }) => {
+      if (!incremental || forceRescan) {
+        // Use original implementation for non-incremental scans
+        const entries = await readdir(dirPath, { withFileTypes: true });
+        const results: FileEntry[] = [];
+        for (const entry of entries) {
+          if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+          const fullPath = join(dirPath, entry.name);
+          try {
+            const stats = await stat(fullPath);
+            results.push({
+              name: entry.name,
+              path: fullPath,
+              isDirectory: entry.isDirectory(),
+              size: stats.size,
+              extension: entry.isDirectory() ? "" : extname(entry.name),
+              modifiedAt: stats.mtime.toISOString(),
+            });
+          } catch {
+            // skip inaccessible
+          }
         }
+        return includeStats ? { files: results, stats: { incremental: false, totalFiles: results.length } } : results;
       }
-      return results;
+
+      // Use incremental scanning
+      const scanner = getIncrementalScanner();
+      const scanResult = await scanner.scanIncremental(dirPath, forceRescan);
+
+      // Combine all files (added + modified + unchanged)
+      const allFiles = [
+        ...scanResult.added,
+        ...scanResult.modified,
+        ...scanResult.unchanged,
+      ];
+
+      if (includeStats) {
+        return {
+          files: allFiles,
+          stats: {
+            incremental: true,
+            totalFiles: scanResult.totalFiles,
+            added: scanResult.added.length,
+            modified: scanResult.modified.length,
+            deleted: scanResult.deleted.length,
+            unchanged: scanResult.unchanged.length,
+            scanTime: scanResult.scanTime,
+            cache: scanner.getCacheStats(),
+          },
+        };
+      }
+
+      return allFiles;
     },
   },
 
@@ -210,6 +251,37 @@ export const safeTools: Record<string, Tool> = {
         }
       }
       return { totalFiles, totalDirs, totalSize, extensions };
+    },
+  },
+
+  clearDirectoryCache: {
+    description: "Clear incremental scanning cache for a directory or all directories",
+    inputSchema: z.object({
+      path: z.string().optional().describe("Directory path to clear cache for (optional, clears all if not provided)"),
+    }),
+    execute: async ({ path: dirPath }: { path?: string }) => {
+      const scanner = getIncrementalScanner();
+      await scanner.clearCache(dirPath);
+      return {
+        success: true,
+        message: dirPath ? `Cache cleared for ${dirPath}` : "All cache cleared",
+        path: dirPath,
+      };
+    },
+  },
+
+  getCacheStats: {
+    description: "Get statistics about the incremental scanning cache",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const scanner = getIncrementalScanner();
+      const stats = scanner.getCacheStats();
+      return {
+        directories: stats.directories,
+        totalFiles: stats.totalFiles,
+        memoryUsage: `${Math.round(stats.memoryUsage / 1024)} KB`,
+        memoryUsageBytes: stats.memoryUsage,
+      };
     },
   },
 };
