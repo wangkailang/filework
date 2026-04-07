@@ -12,7 +12,7 @@ import { needsPlanning, planTask } from "../planner";
 import { executePlan, cancelPlan } from "../planner/executor";
 import type { Plan } from "../planner/types";
 import { getAIModelByConfigId, isAuthError } from "./ai-models";
-import { buildTools, buildSkillSpecificTools } from "./ai-tool-permissions";
+import { buildTools } from "./ai-tool-permissions";
 import { abortControllers, cleanupTask } from "./ai-task-control";
 
 /** Pending plans waiting for user approval */
