@@ -29,7 +29,6 @@ import {
   manualStopFlags,
   pendingApprovals,
   toolCallToTaskMap,
-  activeToolExecutions,
   cleanupTask,
   stopTaskExecution
 } from "./ai-task-control";
@@ -259,64 +258,6 @@ const handleTaskExecution = async (
     }
     const skillTools = skill?.tools ?? {};
 
-    // Add global tool execution tracking by intercepting the tools object
-    const tools: Record<string, import("ai").Tool> = {};
-    for (const [toolName, tool] of Object.entries(originalTools)) {
-      tools[toolName] = {
-        ...tool,
-        execute: async (args: any, context: any) => {
-          const toolAbortController = new AbortController();
-
-          // Register tool-level abort controller
-          const taskControllers = activeToolExecutions.get(id);
-          if (taskControllers) {
-            taskControllers.add(toolAbortController);
-            console.log(`[Global Tool] Starting ${toolName} for task ${id}, total active:`, taskControllers.size);
-          }
-
-          try {
-            // Create combined signal
-            let combinedSignal: AbortSignal = context.abortSignal;
-            if (toolAbortController.signal) {
-              if (typeof AbortSignal.any === 'function') {
-                combinedSignal = AbortSignal.any([context.abortSignal, toolAbortController.signal]);
-              } else {
-                // Fallback for older Node.js versions
-                const combinedController = new AbortController();
-                const abortHandler = () => {
-                  if (!combinedController.signal.aborted) {
-                    combinedController.abort();
-                  }
-                };
-                if (context.abortSignal?.aborted || toolAbortController.signal.aborted) {
-                  combinedController.abort();
-                } else {
-                  context.abortSignal?.addEventListener('abort', abortHandler, { once: true });
-                  toolAbortController.signal.addEventListener('abort', abortHandler, { once: true });
-                }
-                combinedSignal = combinedController.signal;
-              }
-            }
-
-            const result = await tool.execute?.(args, { ...context, abortSignal: combinedSignal });
-            console.log(`[Global Tool] Completed ${toolName} for task ${id}`);
-            return result;
-          } catch (error) {
-            console.log(`[Global Tool] Error in ${toolName} for task ${id}:`, (error as Error)?.message);
-            if (error instanceof Error && error.name === "AbortError") {
-              return { success: false, cancelled: true, reason: `${toolName} 被取消` };
-            }
-            throw error;
-          } finally {
-            if (taskControllers) {
-              taskControllers.delete(toolAbortController);
-              console.log(`[Global Tool] Unregistered ${toolName}, remaining:`, taskControllers.size);
-            }
-          }
-        }
-      };
-    }
-
     // Build enhanced system prompt based on skill usage
     const systemPrompt = buildSystemPrompt(
       payload.workspacePath,
@@ -336,7 +277,7 @@ const handleTaskExecution = async (
     const result = useMessagesMode
       ? streamText({
           model,
-          tools: { ...tools, ...skillTools },
+          tools: { ...originalTools, ...skillTools },
           stopWhen: stepCountIs(20),
           system: systemPrompt,
           messages: builtMessages,
@@ -344,7 +285,7 @@ const handleTaskExecution = async (
         })
       : streamText({
           model,
-          tools: { ...tools, ...skillTools },
+          tools: { ...originalTools, ...skillTools },
           stopWhen: stepCountIs(20),
           system: systemPrompt,
           prompt: payload.prompt,
