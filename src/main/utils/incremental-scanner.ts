@@ -46,6 +46,17 @@ interface ScanCache {
   version: number;
 }
 
+const CACHE_VERSION = 1;
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_DIRECTORIES = 200;
+const DEFAULT_MAX_TOTAL_FILES = 200_000;
+
+export interface CachePolicy {
+  ttlMs: number;
+  maxDirectories: number;
+  maxTotalFiles: number;
+}
+
 export interface IncrementalScanResult {
   added: FileEntry[];
   modified: FileEntry[];
@@ -73,12 +84,26 @@ class CacheManager {
     try {
       const data = await readFile(this.cachePath, 'utf-8');
       const cache: ScanCache = JSON.parse(data);
+      if (
+        cache.version !== CACHE_VERSION ||
+        Number.isNaN(Date.parse(cache.lastUpdate)) ||
+        !cache.directories ||
+        typeof cache.directories !== "object"
+      ) {
+        throw new Error("Invalid cache metadata");
+      }
 
       // Convert serialized cache back to in-memory format
       for (const [dirPath, snapshot] of Object.entries(cache.directories)) {
+        if (Number.isNaN(Date.parse(snapshot.lastScan))) {
+          continue;
+        }
         const files = new Map<string, FileMetadata>();
 
         for (const [fileName, fileData] of Object.entries(snapshot.files)) {
+          if (Number.isNaN(Date.parse(fileData.mtime))) {
+            continue;
+          }
           files.set(fileName, {
             ...fileData,
             mtime: new Date(fileData.mtime),
@@ -129,7 +154,7 @@ class CacheManager {
       const cache: ScanCache = {
         directories: serializableDirectories,
         lastUpdate: new Date().toISOString(),
-        version: 1,
+        version: CACHE_VERSION,
       };
 
       await writeFile(this.cachePath, JSON.stringify(cache, null, 2));
@@ -150,6 +175,31 @@ class CacheManager {
    */
   updateSnapshot(dirPath: string, snapshot: DirectorySnapshot): void {
     this.memoryCache.set(dirPath, snapshot);
+  }
+
+  prune(policy: CachePolicy, now = Date.now()): void {
+    // Remove expired snapshots first
+    for (const [dirPath, snapshot] of this.memoryCache.entries()) {
+      if (now - snapshot.lastScan.getTime() > policy.ttlMs) {
+        this.memoryCache.delete(dirPath);
+      }
+    }
+
+    // Then enforce size limits by evicting oldest snapshots
+    const ordered = Array.from(this.memoryCache.entries())
+      .sort(([, a], [, b]) => a.lastScan.getTime() - b.lastScan.getTime());
+
+    while (ordered.length > policy.maxDirectories) {
+      const [oldestPath] = ordered.shift()!;
+      this.memoryCache.delete(oldestPath);
+    }
+
+    let totalFiles = ordered.reduce((sum, [, snapshot]) => sum + snapshot.files.size, 0);
+    while (totalFiles > policy.maxTotalFiles && ordered.length > 0) {
+      const [oldestPath, oldestSnapshot] = ordered.shift()!;
+      this.memoryCache.delete(oldestPath);
+      totalFiles -= oldestSnapshot.files.size;
+    }
   }
 
   /**
@@ -189,6 +239,8 @@ class CacheManager {
 export class IncrementalScanner {
   private cacheManager: CacheManager;
   private initialized = false;
+  private saveQueue: Promise<void> = Promise.resolve();
+  private policy: CachePolicy;
 
   // Files and directories to ignore
   private readonly IGNORE_PATTERNS = [
@@ -204,8 +256,13 @@ export class IncrementalScanner {
     /^coverage$/,
   ];
 
-  constructor() {
+  constructor(policy: Partial<CachePolicy> = {}) {
     this.cacheManager = new CacheManager();
+    this.policy = {
+      ttlMs: policy.ttlMs ?? DEFAULT_TTL_MS,
+      maxDirectories: policy.maxDirectories ?? DEFAULT_MAX_DIRECTORIES,
+      maxTotalFiles: policy.maxTotalFiles ?? DEFAULT_MAX_TOTAL_FILES,
+    };
   }
 
   /**
@@ -215,7 +272,20 @@ export class IncrementalScanner {
     if (this.initialized) return;
 
     await this.cacheManager.loadCache();
+    this.cacheManager.prune(this.policy);
     this.initialized = true;
+  }
+
+  /**
+   * Queue cache persistence to avoid concurrent write races.
+   */
+  private queueCacheSave(): Promise<void> {
+    this.saveQueue = this.saveQueue
+      .catch(() => undefined)
+      .then(async () => {
+        await this.cacheManager.saveCache();
+      });
+    return this.saveQueue;
   }
 
   /**
@@ -333,7 +403,14 @@ export class IncrementalScanner {
 
     await this.initialize();
 
-    const cachedSnapshot = forceRescan ? null : this.cacheManager.getSnapshot(dirPath);
+    let cachedSnapshot = forceRescan ? null : this.cacheManager.getSnapshot(dirPath);
+    if (
+      cachedSnapshot &&
+      Date.now() - cachedSnapshot.lastScan.getTime() > this.policy.ttlMs
+    ) {
+      this.cacheManager.removeSnapshot(dirPath);
+      cachedSnapshot = null;
+    }
 
     // Note: Removed unsafe directory mtime optimization that could miss file changes
     // Modifying existing files doesn't update parent directory mtime, leading to stale results
@@ -355,9 +432,10 @@ export class IncrementalScanner {
     };
 
     this.cacheManager.updateSnapshot(dirPath, newSnapshot);
+    this.cacheManager.prune(this.policy);
 
-    // Save cache to disk (asynchronously)
-    this.cacheManager.saveCache().catch(error => {
+    // Save cache to disk (asynchronously, serialized)
+    this.queueCacheSave().catch(error => {
       console.error('[IncrementalScanner] Failed to save cache:', error);
     });
 
@@ -392,7 +470,14 @@ export class IncrementalScanner {
     } else {
       this.cacheManager.clearCache();
     }
-    await this.cacheManager.saveCache();
+    await this.queueCacheSave();
+  }
+
+  /**
+   * Flush pending cache writes. Primarily used by tests.
+   */
+  async flushPendingWrites(): Promise<void> {
+    await this.saveQueue;
   }
 }
 

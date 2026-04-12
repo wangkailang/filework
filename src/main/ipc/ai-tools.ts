@@ -20,11 +20,18 @@ import { getIncrementalScanner, type FileEntry } from "../utils/incremental-scan
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
+const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
+  [...entries].sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
 /** Human-readable descriptions for dangerous operations */
 export const dangerousToolDescriptions: Record<string, (args: Record<string, unknown>) => string> = {
   deleteFile: (args) => `删除 ${args.path}`,
   writeFile: (args) => `写入文件 ${args.path}`,
   moveFile: (args) => `移动 ${args.source} → ${args.destination}`,
+  clearDirectoryCache: (args) => args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
 };
 
 /** Raw execute functions for dangerous tools (without approval guard) */
@@ -87,7 +94,10 @@ export const safeTools: Record<string, Tool> = {
             // skip inaccessible
           }
         }
-        return includeStats ? { files: results, stats: { incremental: false, totalFiles: results.length } } : results;
+        const sortedResults = sortFileEntries(results);
+        return includeStats
+          ? { files: sortedResults, stats: { incremental: false, totalFiles: sortedResults.length } }
+          : sortedResults;
       }
 
       // Use incremental scanning
@@ -100,10 +110,11 @@ export const safeTools: Record<string, Tool> = {
         ...scanResult.modified,
         ...scanResult.unchanged,
       ];
+      const sortedFiles = sortFileEntries(allFiles);
 
       if (includeStats) {
         return {
-          files: allFiles,
+          files: sortedFiles,
           stats: {
             incremental: true,
             totalFiles: scanResult.totalFiles,
@@ -117,7 +128,7 @@ export const safeTools: Record<string, Tool> = {
         };
       }
 
-      return allFiles;
+      return sortedFiles;
     },
   },
 
@@ -254,22 +265,6 @@ export const safeTools: Record<string, Tool> = {
     },
   },
 
-  clearDirectoryCache: {
-    description: "Clear incremental scanning cache for a directory or all directories",
-    inputSchema: z.object({
-      path: z.string().optional().describe("Directory path to clear cache for (optional, clears all if not provided)"),
-    }),
-    execute: async ({ path: dirPath }: { path?: string }) => {
-      const scanner = getIncrementalScanner();
-      await scanner.clearCache(dirPath);
-      return {
-        success: true,
-        message: dirPath ? `Cache cleared for ${dirPath}` : "All cache cleared",
-        path: dirPath,
-      };
-    },
-  },
-
   getCacheStats: {
     description: "Get statistics about the incremental scanning cache",
     inputSchema: z.object({}),
@@ -281,6 +276,28 @@ export const safeTools: Record<string, Tool> = {
         totalFiles: stats.totalFiles,
         memoryUsage: `${Math.round(stats.memoryUsage / 1024)} KB`,
         memoryUsageBytes: stats.memoryUsage,
+      };
+    },
+  },
+};
+
+/**
+ * Stateful tools that should not be exposed by default.
+ * These tools mutate in-memory/runtime state and require explicit opt-in.
+ */
+export const statefulTools: Record<string, Tool> = {
+  clearDirectoryCache: {
+    description: "Clear incremental scanning cache for a directory or all directories (stateful operation)",
+    inputSchema: z.object({
+      path: z.string().optional().describe("Directory path to clear cache for (optional, clears all if not provided)"),
+    }),
+    execute: async ({ path: dirPath }: { path?: string }) => {
+      const scanner = getIncrementalScanner();
+      await scanner.clearCache(dirPath);
+      return {
+        success: true,
+        message: dirPath ? `Cache cleared for ${dirPath}` : "All cache cleared",
+        path: dirPath,
       };
     },
   },

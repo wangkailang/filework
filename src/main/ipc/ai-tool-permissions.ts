@@ -9,6 +9,7 @@ import type { Tool } from "ai";
 import { z } from "zod/v4";
 import {
   safeTools,
+  statefulTools,
   rawExecutors,
   requestApproval,
   wrapToolWithAbort
@@ -71,6 +72,15 @@ export const buildSkillSpecificTools = (
       }, taskId);
     } else if (safeTools[toolName]) {
       skillTools[toolName] = wrapToolWithAbort(safeTools[toolName], taskId);
+    } else if (toolName === "clearDirectoryCache" && statefulTools.clearDirectoryCache) {
+      skillTools.clearDirectoryCache = wrapToolWithAbort({
+        ...statefulTools.clearDirectoryCache,
+        execute: async (args: { path?: string }, { toolCallId, abortSignal }) => {
+          const approved = await requestApproval(sender, taskId, toolCallId, "clearDirectoryCache", args, abortSignal);
+          if (!approved) return { success: false, denied: true, reason: "用户拒绝了此操作" };
+          return statefulTools.clearDirectoryCache.execute?.(args, { toolCallId, abortSignal } as any);
+        },
+      }, taskId);
     }
   }
 
