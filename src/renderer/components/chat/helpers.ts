@@ -20,5 +20,5 @@ export const contentFromParts = (parts: MessagePart[]): string =>
     .map((p) => p.text)
     .join("");
 
-export const truncateTitle = (text: string, max = 20): string =>
+export const truncateTitle = (text: string, max = 50): string =>
   text.length > max ? `${text.slice(0, max)}…` : text;

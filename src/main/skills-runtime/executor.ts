@@ -391,11 +391,12 @@ function buildSubagentTools(
 
     // Check raw executors for dangerous tools (no approval in fork mode)
     if (toolName in deps.rawExecutors) {
-      const guardedTool = deps.allTools[toolName];
-      if (guardedTool) {
+      // Use the original tool structure but with raw executor (avoid double wrapping)
+      const originalTool = deps.safeTools[toolName] || deps.allTools[toolName];
+      if (originalTool) {
         tools[toolName] = wrapToolWithErrorHandler(
           {
-            ...guardedTool,
+            ...originalTool,
             execute: deps.rawExecutors[toolName],
           },
           toolName,
