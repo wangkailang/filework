@@ -5,18 +5,28 @@
  * approval mechanisms, and execution logic.
  */
 
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
 import { spawn } from "node:child_process";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
 import {
+  type FileEntry,
+  getIncrementalScanner,
+} from "../utils/incremental-scanner";
+import {
+  activeToolExecutions,
   pendingApprovals,
   toolCallToTaskMap,
-  activeToolExecutions,
-  initTaskExecution,
 } from "./ai-task-control";
-import { getIncrementalScanner, type FileEntry } from "../utils/incremental-scanner";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
@@ -27,21 +37,37 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
   });
 
 /** Human-readable descriptions for dangerous operations */
-export const dangerousToolDescriptions: Record<string, (args: Record<string, unknown>) => string> = {
+export const dangerousToolDescriptions: Record<
+  string,
+  (args: Record<string, unknown>) => string
+> = {
   deleteFile: (args) => `删除 ${args.path}`,
   writeFile: (args) => `写入文件 ${args.path}`,
   moveFile: (args) => `移动 ${args.source} → ${args.destination}`,
-  clearDirectoryCache: (args) => args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
+  clearDirectoryCache: (args) =>
+    args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
 };
 
 /** Raw execute functions for dangerous tools (without approval guard) */
 export const rawExecutors = {
-  writeFile: async ({ path: filePath, content }: { path: string; content: string }) => {
+  writeFile: async ({
+    path: filePath,
+    content,
+  }: {
+    path: string;
+    content: string;
+  }) => {
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, content, "utf-8");
     return { success: true, path: filePath };
   },
-  moveFile: async ({ source, destination }: { source: string; destination: string }) => {
+  moveFile: async ({
+    source,
+    destination,
+  }: {
+    source: string;
+    destination: string;
+  }) => {
     await mkdir(dirname(destination), { recursive: true });
     await rename(source, destination);
     return { success: true, source, destination };
@@ -55,12 +81,25 @@ export const rawExecutors = {
 /** Safe (read-only) tools — shared across all requests */
 export const safeTools: Record<string, Tool> = {
   listDirectory: {
-    description: "List files and directories at the given path with incremental scanning support",
+    description:
+      "List files and directories at the given path with incremental scanning support",
     inputSchema: z.object({
       path: z.string().describe("Absolute path to directory"),
-      incremental: z.boolean().optional().default(true).describe("Use incremental scanning (default: true)"),
-      forceRescan: z.boolean().optional().default(false).describe("Force full rescan ignoring cache"),
-      includeStats: z.boolean().optional().default(false).describe("Include scan statistics in response"),
+      incremental: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Use incremental scanning (default: true)"),
+      forceRescan: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Force full rescan ignoring cache"),
+      includeStats: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Include scan statistics in response"),
     }),
     execute: async ({
       path: dirPath,
@@ -78,7 +117,8 @@ export const safeTools: Record<string, Tool> = {
         const entries = await readdir(dirPath, { withFileTypes: true });
         const results: FileEntry[] = [];
         for (const entry of entries) {
-          if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+          if (entry.name.startsWith(".") || entry.name === "node_modules")
+            continue;
           const fullPath = join(dirPath, entry.name);
           try {
             const stats = await stat(fullPath);
@@ -96,7 +136,10 @@ export const safeTools: Record<string, Tool> = {
         }
         const sortedResults = sortFileEntries(results);
         return includeStats
-          ? { files: sortedResults, stats: { incremental: false, totalFiles: sortedResults.length } }
+          ? {
+              files: sortedResults,
+              stats: { incremental: false, totalFiles: sortedResults.length },
+            }
           : sortedResults;
       }
 
@@ -137,7 +180,9 @@ export const safeTools: Record<string, Tool> = {
     inputSchema: pathSchema,
     execute: async ({ path: filePath }: { path: string }) => {
       const content = await readFile(filePath, "utf-8");
-      return content.length > 50000 ? `${content.slice(0, 50000)}\\n...(truncated)` : content;
+      return content.length > 50000
+        ? `${content.slice(0, 50000)}\\n...(truncated)`
+        : content;
     },
   },
 
@@ -154,91 +199,131 @@ export const safeTools: Record<string, Tool> = {
     description: "Execute a shell command (use with caution)",
     inputSchema: z.object({
       command: z.string().describe("The command to execute"),
-      cwd: z.string().optional().describe("Working directory (defaults to workspace path)"),
+      cwd: z
+        .string()
+        .optional()
+        .describe("Working directory (defaults to workspace path)"),
     }),
-    execute: async ({ command, cwd }: { command: string; cwd?: string }, { abortSignal }) => {
-      return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-        // Use shell: true to properly handle quoted arguments, pipes, and shell syntax
-        const child = spawn(command, [], {
-          cwd: cwd || process.cwd(),
-          shell: true,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
+    execute: async (
+      { command, cwd }: { command: string; cwd?: string },
+      { abortSignal },
+    ) => {
+      return new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+        (resolve, reject) => {
+          let settled = false;
+          let killTimer: ReturnType<typeof setTimeout> | null = null;
 
-        let stdout = "";
-        let stderr = "";
-
-        child.stdout?.on("data", (data) => {
-          stdout += data.toString();
-        });
-
-        child.stderr?.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        child.on("close", (code) => {
-          resolve({ stdout, stderr, exitCode: code || 0 });
-        });
-
-        child.on("error", (error) => {
-          reject(error);
-        });
-
-        // Handle abort signal
-        if (abortSignal) {
-          const onAbort = () => {
-            console.log("[Tool] Aborting runCommand:", command);
-
-            try {
-              // Enhanced process termination
-              if (child.pid) {
-                // Try SIGTERM first
-                process.kill(child.pid, "SIGTERM");
-
-                // Force kill after 2 seconds
-                setTimeout(() => {
-                  try {
-                    if (child.pid) {
-                      process.kill(child.pid, "SIGKILL");
-                      // Also try to kill process tree for complex commands like npx
-                      try {
-                        spawn("pkill", ["-P", child.pid.toString()]);
-                      } catch (err) {
-                        // Process may already be dead
-                      }
-                    }
-                  } catch (err) {
-                    // Process may already be dead
-                  }
-                }, 2000);
-              }
-
-            } catch (err) {
-              console.error("[Tool] Process termination failed:", err);
+          const settle = (
+            value: { stdout: string; stderr: string; exitCode: number } | Error,
+            asError = false,
+          ) => {
+            if (settled) return;
+            settled = true;
+            if (asError) {
+              reject(value as Error);
+            } else {
+              resolve(
+                value as { stdout: string; stderr: string; exitCode: number },
+              );
             }
-
-            resolve({
-              stdout,
-              stderr: stderr + "\\nCommand was cancelled",
-              exitCode: 130, // Standard exit code for SIGTERM
-            });
           };
 
-          if (abortSignal.aborted) {
-            onAbort();
-          } else {
-            abortSignal.addEventListener('abort', onAbort, { once: true });
+          const terminateProcessTree = (signal: NodeJS.Signals) => {
+            if (!child.pid) return;
+            try {
+              // Detached child gets its own process group. Kill the whole group.
+              if (process.platform !== "win32") {
+                process.kill(-child.pid, signal);
+              } else {
+                // /T kills child tree, /F force-kills.
+                spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+                  stdio: "ignore",
+                  windowsHide: true,
+                });
+              }
+            } catch {
+              // Fallback to direct pid kill when process-group kill isn't available.
+              try {
+                process.kill(child.pid, signal);
+              } catch {
+                // Process may already be gone.
+              }
+            }
+          };
+
+          // Use shell: true to properly handle quoted arguments, pipes, and shell syntax
+          const child = spawn(command, [], {
+            cwd: cwd || process.cwd(),
+            shell: true,
+            detached: process.platform !== "win32",
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+
+          let stdout = "";
+          let stderr = "";
+
+          child.stdout?.on("data", (data) => {
+            stdout += data.toString();
+          });
+
+          child.stderr?.on("data", (data) => {
+            stderr += data.toString();
+          });
+
+          child.on("close", (code) => {
+            if (killTimer) {
+              clearTimeout(killTimer);
+              killTimer = null;
+            }
+            settle({ stdout, stderr, exitCode: code || 0 });
+          });
+
+          child.on("error", (error) => {
+            settle(error, true);
+          });
+
+          // Handle abort signal
+          if (abortSignal) {
+            const onAbort = () => {
+              console.log("[Tool] Aborting runCommand:", command);
+
+              try {
+                terminateProcessTree("SIGTERM");
+                // Force kill after grace period in case process ignores SIGTERM.
+                killTimer = setTimeout(() => {
+                  terminateProcessTree("SIGKILL");
+                }, 2000);
+              } catch (err) {
+                console.error("[Tool] Process termination failed:", err);
+              }
+
+              settle({
+                stdout,
+                stderr: `${stderr}\\nCommand was cancelled`,
+                exitCode: 130, // Standard exit code for SIGTERM
+              });
+            };
+
+            if (abortSignal.aborted) {
+              onAbort();
+            } else {
+              abortSignal.addEventListener("abort", onAbort, { once: true });
+            }
           }
-        }
-      });
+        },
+      );
     },
   },
 
   directoryStats: {
-    description: "Get statistics about a directory (file count, size, extensions)",
+    description:
+      "Get statistics about a directory (file count, size, extensions)",
     inputSchema: pathSchema,
     execute: async ({ path: dirPath }: { path: string }) => {
-      const entries = await readdir(dirPath, { withFileTypes: true, recursive: true });
+      const entries = await readdir(dirPath, {
+        withFileTypes: true,
+        recursive: true,
+      });
       let totalFiles = 0;
       let totalDirs = 0;
       let totalSize = 0;
@@ -246,7 +331,11 @@ export const safeTools: Record<string, Tool> = {
       for (const entry of entries) {
         if (entry.name.startsWith(".")) continue;
         const fullPath = join(entry.parentPath || dirPath, entry.name);
-        if (fullPath.includes("/.filework/") || fullPath.includes("/node_modules/")) continue;
+        if (
+          fullPath.includes("/.filework/") ||
+          fullPath.includes("/node_modules/")
+        )
+          continue;
         try {
           if (entry.isDirectory()) {
             totalDirs++;
@@ -287,9 +376,15 @@ export const safeTools: Record<string, Tool> = {
  */
 export const statefulTools: Record<string, Tool> = {
   clearDirectoryCache: {
-    description: "Clear incremental scanning cache for a directory or all directories (stateful operation)",
+    description:
+      "Clear incremental scanning cache for a directory or all directories (stateful operation)",
     inputSchema: z.object({
-      path: z.string().optional().describe("Directory path to clear cache for (optional, clears all if not provided)"),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          "Directory path to clear cache for (optional, clears all if not provided)",
+        ),
     }),
     execute: async ({ path: dirPath }: { path?: string }) => {
       const scanner = getIncrementalScanner();
@@ -331,7 +426,7 @@ export const requestApproval = (
         onAbort();
         return;
       } else {
-        abortSignal.addEventListener('abort', onAbort, { once: true });
+        abortSignal.addEventListener("abort", onAbort, { once: true });
       }
     }
 
@@ -354,7 +449,10 @@ export const requestApproval = (
 /**
  * Wrap a tool with task-level abort control
  */
-export const wrapToolWithAbort = (originalTool: Tool, taskId: string): Tool => ({
+export const wrapToolWithAbort = (
+  originalTool: Tool,
+  taskId: string,
+): Tool => ({
   ...originalTool,
   execute: async (args: any, context: any) => {
     // Create a combined AbortController that responds to both:
@@ -366,15 +464,23 @@ export const wrapToolWithAbort = (originalTool: Tool, taskId: string): Tool => (
     const taskControllers = activeToolExecutions.get(taskId);
     if (taskControllers) {
       taskControllers.add(taskAbortController);
-      console.log(`[Tool] Registered abort controller for task ${taskId}, total active:`, taskControllers.size);
+      console.log(
+        `[Tool] Registered abort controller for task ${taskId}, total active:`,
+        taskControllers.size,
+      );
     } else {
-      console.warn(`[Tool] No active execution tracking found for task ${taskId}`);
+      console.warn(
+        `[Tool] No active execution tracking found for task ${taskId}`,
+      );
     }
 
     // Create combined abort signal (fallback for older Node.js versions)
     let combinedSignal: AbortSignal;
-    if (typeof AbortSignal.any === 'function') {
-      combinedSignal = AbortSignal.any([context.abortSignal, taskAbortController.signal]);
+    if (typeof AbortSignal.any === "function") {
+      combinedSignal = AbortSignal.any([
+        context.abortSignal,
+        taskAbortController.signal,
+      ]);
     } else {
       // Fallback: create a new controller that responds to either signal
       const combinedController = new AbortController();
@@ -388,21 +494,36 @@ export const wrapToolWithAbort = (originalTool: Tool, taskId: string): Tool => (
       if (context.abortSignal?.aborted || taskAbortController.signal.aborted) {
         combinedController.abort();
       } else {
-        context.abortSignal?.addEventListener('abort', abortHandler, { once: true });
-        taskAbortController.signal.addEventListener('abort', abortHandler, { once: true });
+        context.abortSignal?.addEventListener("abort", abortHandler, {
+          once: true,
+        });
+        taskAbortController.signal.addEventListener("abort", abortHandler, {
+          once: true,
+        });
       }
 
       combinedSignal = combinedController.signal;
     }
 
     try {
-      console.log(`[Tool] Starting execution for task ${taskId}, tool: ${originalTool.description?.substring(0, 50) || 'unknown'}`);
-      console.log(`[Tool] Current active tools for task ${taskId}:`, taskControllers?.size || 0);
+      console.log(
+        `[Tool] Starting execution for task ${taskId}, tool: ${originalTool.description?.substring(0, 50) || "unknown"}`,
+      );
+      console.log(
+        `[Tool] Current active tools for task ${taskId}:`,
+        taskControllers?.size || 0,
+      );
       console.log(`[Tool] Tool args:`, JSON.stringify(args).substring(0, 100));
 
-      const result = await originalTool.execute?.(args, { ...context, abortSignal: combinedSignal });
+      const result = await originalTool.execute?.(args, {
+        ...context,
+        abortSignal: combinedSignal,
+      });
 
-      console.log(`[Tool] Completed execution for task ${taskId}, result:`, JSON.stringify(result).substring(0, 100));
+      console.log(
+        `[Tool] Completed execution for task ${taskId}, result:`,
+        JSON.stringify(result).substring(0, 100),
+      );
       return result;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -414,8 +535,11 @@ export const wrapToolWithAbort = (originalTool: Tool, taskId: string): Tool => (
       // Clean up the task controller
       if (taskControllers) {
         taskControllers.delete(taskAbortController);
-        console.log(`[Tool] Unregistered abort controller for task ${taskId}, remaining active:`, taskControllers.size);
+        console.log(
+          `[Tool] Unregistered abort controller for task ${taskId}, remaining active:`,
+          taskControllers.size,
+        );
       }
     }
-  }
+  },
 });

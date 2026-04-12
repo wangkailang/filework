@@ -51,7 +51,9 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
         </div>
 
         <div>
-          <h1 className="text-2xl font-semibold text-foreground mb-2">FileWork</h1>
+          <h1 className="text-2xl font-semibold text-foreground mb-2">
+            FileWork
+          </h1>
           <p className="text-muted-foreground">
             你的本地文件 AI 助手。选择一个工作目录，告诉我你想做什么。
           </p>
@@ -84,7 +86,9 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
                   <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="truncate text-foreground">{ws.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">{ws.path}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {ws.path}
+                    </div>
                   </div>
                   <button
                     type="button"

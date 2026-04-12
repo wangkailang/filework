@@ -64,7 +64,14 @@ const SENSITIVE_ENV_EXPLICIT = new Set([
 ]);
 
 /** Basic env vars that are always kept in the safe environment. */
-const SAFE_ENV_VARS = new Set(["PATH", "HOME", "LANG", "SHELL", "USER", "TERM"]);
+const SAFE_ENV_VARS = new Set([
+  "PATH",
+  "HOME",
+  "LANG",
+  "SHELL",
+  "USER",
+  "TERM",
+]);
 
 // ─── Trust Store (in-memory) ─────────────────────────────────────────
 
@@ -313,6 +320,9 @@ export function _clearTrustStore(): void {
  * Set a trust record directly. Exposed for testing purposes only.
  * @internal
  */
-export function _setTrustRecord(skillId: string, record: SkillTrustRecord): void {
+export function _setTrustRecord(
+  skillId: string,
+  record: SkillTrustRecord,
+): void {
   trustStore.set(skillId, record);
 }

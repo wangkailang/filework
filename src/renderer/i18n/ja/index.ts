@@ -52,9 +52,11 @@ const ja: Translation = {
   llmConfig_default: "デフォルト",
   llmConfig_setDefault: "デフォルトに設定",
   llmConfig_deleteConfirm: "この設定を削除してもよろしいですか？",
-  llmConfig_deleteLastError: "デフォルト設定を少なくとも1つ保持する必要があります",
+  llmConfig_deleteLastError:
+    "デフォルト設定を少なくとも1つ保持する必要があります",
   llmConfig_validationRequired: "この項目は必須です",
-  llmConfig_authError: "APIキーが無効または期限切れです。設定でチャネル構成を確認してください",
+  llmConfig_authError:
+    "APIキーが無効または期限切れです。設定でチャネル構成を確認してください",
   llmConfig_notFound: "選択されたLLM設定が存在しません",
   llmConfig_save: "保存",
   llmConfig_cancel: "キャンセル",

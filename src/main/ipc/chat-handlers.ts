@@ -2,18 +2,22 @@ import { ipcMain } from "electron";
 import type { ChatMessage, ChatSession } from "../db";
 import {
   createChatSession,
-  getChatSessions,
-  updateChatSession,
   deleteChatSession,
   getChatHistory,
+  getChatSessions,
   saveChatHistory,
+  updateChatSession,
 } from "../db";
 
 export const registerChatHandlers = () => {
   // Sessions
   ipcMain.handle(
     "chat:createSession",
-    async (_event, workspacePath: string, title?: string): Promise<ChatSession> => {
+    async (
+      _event,
+      workspacePath: string,
+      title?: string,
+    ): Promise<ChatSession> => {
       return createChatSession(workspacePath, title);
     },
   );
@@ -49,7 +53,12 @@ export const registerChatHandlers = () => {
 
   ipcMain.handle(
     "chat:saveHistory",
-    async (_event, sessionId: string, workspacePath: string, messages: ChatMessage[]) => {
+    async (
+      _event,
+      sessionId: string,
+      workspacePath: string,
+      messages: ChatMessage[],
+    ) => {
       saveChatHistory(sessionId, workspacePath, messages);
       return true;
     },

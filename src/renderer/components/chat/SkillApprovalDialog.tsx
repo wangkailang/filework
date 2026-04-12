@@ -12,7 +12,10 @@ interface SkillApprovalDialogProps {
   onRespond: (approved: boolean) => void;
 }
 
-export const SkillApprovalDialog = ({ data, onRespond }: SkillApprovalDialogProps) => {
+export const SkillApprovalDialog = ({
+  data,
+  onRespond,
+}: SkillApprovalDialogProps) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-lg">
@@ -30,15 +33,20 @@ export const SkillApprovalDialog = ({ data, onRespond }: SkillApprovalDialogProp
           </div>
           <div>
             <span className="text-muted-foreground">来源路径：</span>
-            <span className="font-mono text-xs break-all">{data.sourcePath}</span>
+            <span className="font-mono text-xs break-all">
+              {data.sourcePath}
+            </span>
           </div>
 
           {data.commands.length > 0 && (
             <div>
               <span className="text-muted-foreground">将执行的命令：</span>
               <ul className="mt-1 space-y-1">
-                {data.commands.map((cmd, i) => (
-                  <li key={i} className="font-mono text-xs bg-muted rounded px-2 py-1 break-all">
+                {data.commands.map((cmd) => (
+                  <li
+                    key={cmd}
+                    className="font-mono text-xs bg-muted rounded px-2 py-1 break-all"
+                  >
                     {cmd}
                   </li>
                 ))}
@@ -50,8 +58,11 @@ export const SkillApprovalDialog = ({ data, onRespond }: SkillApprovalDialogProp
             <div>
               <span className="text-muted-foreground">Hooks 脚本：</span>
               <ul className="mt-1 space-y-1">
-                {data.hooks.map((hook, i) => (
-                  <li key={i} className="font-mono text-xs bg-muted rounded px-2 py-1 break-all">
+                {data.hooks.map((hook) => (
+                  <li
+                    key={hook}
+                    className="font-mono text-xs bg-muted rounded px-2 py-1 break-all"
+                  >
                     {hook}
                   </li>
                 ))}

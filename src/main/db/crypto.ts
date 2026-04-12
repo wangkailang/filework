@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  pbkdf2Sync,
+  randomBytes,
+} from "node:crypto";
 import { app } from "electron";
 
 const ALGORITHM = "aes-256-gcm";
@@ -13,7 +18,13 @@ let derivedKey: Buffer | null = null;
 function getKey(): Buffer {
   if (!derivedKey) {
     const seed = app.getPath("userData");
-    derivedKey = pbkdf2Sync(seed, FIXED_SALT, PBKDF2_ITERATIONS, KEY_LENGTH, "sha256");
+    derivedKey = pbkdf2Sync(
+      seed,
+      FIXED_SALT,
+      PBKDF2_ITERATIONS,
+      KEY_LENGTH,
+      "sha256",
+    );
   }
   return derivedKey;
 }
@@ -25,7 +36,9 @@ function getKey(): Buffer {
 export function encrypt(plaintext: string): string {
   const key = getKey();
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+  const cipher = createCipheriv(ALGORITHM, key, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
 
   let ciphertext = cipher.update(plaintext, "utf8", "hex");
   ciphertext += cipher.final("hex");
@@ -45,7 +58,9 @@ export function decrypt(encrypted: string): string {
 
   const iv = Buffer.from(ivHex, "hex");
   const authTag = Buffer.from(authTagHex, "hex");
-  const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+  const decipher = createDecipheriv(ALGORITHM, key, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
   decipher.setAuthTag(authTag);
 
   let plaintext = decipher.update(ciphertext, "hex", "utf8");

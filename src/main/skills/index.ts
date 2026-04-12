@@ -1,14 +1,14 @@
-import type { Skill } from "./types";
-import { fileOrganizer } from "./file-organizer";
-import { reportGenerator } from "./report-generator";
-import { dataProcessor } from "./data-processor";
-import { contentSearch } from "./content-search";
-import { duplicateFinder } from "./duplicate-finder";
-import { projectScaffolder } from "./project-scaffolder";
-import { pdfProcessor } from "./pdf-processor";
-import { xlsxProcessor } from "./xlsx-processor";
-import { docxProcessor } from "./docx-processor";
 import { SkillRegistry } from "../skills-runtime";
+import { contentSearch } from "./content-search";
+import { dataProcessor } from "./data-processor";
+import { docxProcessor } from "./docx-processor";
+import { duplicateFinder } from "./duplicate-finder";
+import { fileOrganizer } from "./file-organizer";
+import { pdfProcessor } from "./pdf-processor";
+import { projectScaffolder } from "./project-scaffolder";
+import { reportGenerator } from "./report-generator";
+import type { Skill } from "./types";
+import { xlsxProcessor } from "./xlsx-processor";
 
 export type { Skill } from "./types";
 

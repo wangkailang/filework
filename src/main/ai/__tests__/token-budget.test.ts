@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
 import type { ModelMessage } from "ai";
+import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_TOKEN_BUDGET,
   estimateTokens,
   truncateToFit,
-  DEFAULT_TOKEN_BUDGET,
 } from "../token-budget";
 
 // ---------------------------------------------------------------------------
@@ -43,9 +43,7 @@ function assistantWithToolCall(
 ): ModelMessage {
   return {
     role: "assistant",
-    content: [
-      { type: "tool-call", toolCallId, toolName, input },
-    ],
+    content: [{ type: "tool-call", toolCallId, toolName, input }],
   };
 }
 
@@ -162,9 +160,9 @@ describe("truncateToFit", () => {
 
   it("removes early messages when over budget", () => {
     const msgs: ModelMessage[] = [
-      userMsg("a".repeat(400)),   // 100 tokens
+      userMsg("a".repeat(400)), // 100 tokens
       assistantMsg("b".repeat(400)), // 100 tokens
-      userMsg("c".repeat(400)),   // 100 tokens
+      userMsg("c".repeat(400)), // 100 tokens
     ];
     // Budget of 150 tokens — should remove early messages, keep recent
     const result = truncateToFit(msgs, 150);

@@ -44,7 +44,10 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
       .listSkills()
       .then((list: SkillMenuItem[]) => {
         if (!cancelled) {
-          console.log("[SkillMenu] Loaded skills:", list?.map(s => s.id) || []);
+          console.log(
+            "[SkillMenu] Loaded skills:",
+            list?.map((s) => s.id) || [],
+          );
           setSkills(list ?? []);
           setFetched(true);
         }
@@ -74,7 +77,7 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
   // Reset selection when the filtered list changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   // Handle keyboard navigation (attached to document so it works while textarea has focus)
   const handleKeyDown = useCallback(
@@ -112,7 +115,9 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
   // Scroll selected item into view
   useEffect(() => {
     if (!menuRef.current) return;
-    const item = menuRef.current.children[selectedIndex] as HTMLElement | undefined;
+    const item = menuRef.current.children[selectedIndex] as
+      | HTMLElement
+      | undefined;
     item?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
 
@@ -133,8 +138,7 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
             ? "正在加载技能..."
             : query
               ? `未找到匹配 "${query}" 的技能`
-              : "输入技能名称进行搜索"
-          }
+              : "输入技能名称进行搜索"}
         </div>
       ) : (
         filtered.map((skill, i) => (
@@ -153,7 +157,9 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
             onClick={() => onSelect(`/${skill.id} `)}
           >
             <span className="font-medium">/{skill.id}</span>
-            <span className="truncate text-muted-foreground">{skill.description}</span>
+            <span className="truncate text-muted-foreground">
+              {skill.description}
+            </span>
             <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {skill.source}
             </span>

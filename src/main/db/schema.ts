@@ -12,7 +12,9 @@ export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull(),
   prompt: text("prompt").notNull(),
-  status: text("status", { enum: ["pending", "running", "completed", "failed"] }).notNull(),
+  status: text("status", {
+    enum: ["pending", "running", "completed", "failed"],
+  }).notNull(),
   result: text("result"),
   filesAffected: text("files_affected"),
   createdAt: text("created_at").notNull(),
@@ -68,8 +70,9 @@ export const llmConfigs = sqliteTable("llm_configs", {
   apiKey: text("api_key"),
   baseUrl: text("base_url"),
   model: text("model").notNull(),
-  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+  isDefault: integer("is_default", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
-

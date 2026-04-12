@@ -81,7 +81,13 @@ export const App = () => {
                 />
               </div>
             )}
-            <div className={selectedFilePath ? "w-3/10 overflow-hidden" : "flex-1 overflow-hidden"}>
+            <div
+              className={
+                selectedFilePath
+                  ? "w-3/10 overflow-hidden"
+                  : "flex-1 overflow-hidden"
+              }
+            >
               <ChatPanel workspacePath={workspacePath} />
             </div>
           </main>

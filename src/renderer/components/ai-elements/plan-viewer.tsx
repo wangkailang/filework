@@ -1,10 +1,10 @@
 import {
   CheckCircle2,
   Circle,
-  Loader2,
-  XCircle,
-  SkipForward,
   ListChecks,
+  Loader2,
+  SkipForward,
+  XCircle,
 } from "lucide-react";
 import type { HTMLAttributes } from "react";
 import { cn } from "../../lib/utils";
@@ -26,7 +26,13 @@ export interface PlanView {
   id: string;
   goal: string;
   steps: PlanStepView[];
-  status: "draft" | "approved" | "executing" | "completed" | "failed" | "cancelled";
+  status:
+    | "draft"
+    | "approved"
+    | "executing"
+    | "completed"
+    | "failed"
+    | "cancelled";
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +75,9 @@ export const PlanViewer = ({
 }: PlanViewerProps) => {
   const isDraft = plan.status === "draft";
   const isExecuting = plan.status === "executing" || plan.status === "approved";
-  const completedSteps = plan.steps.filter((s) => s.status === "completed").length;
+  const completedSteps = plan.steps.filter(
+    (s) => s.status === "completed",
+  ).length;
 
   return (
     <div
@@ -84,7 +92,9 @@ export const PlanViewer = ({
         <ListChecks className="size-4 text-primary mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="font-medium text-foreground text-xs">执行计划</div>
-          <div className="text-xs text-muted-foreground mt-0.5">{plan.goal}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            {plan.goal}
+          </div>
         </div>
         {isExecuting && (
           <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -102,7 +112,8 @@ export const PlanViewer = ({
               <span
                 className={cn(
                   "text-xs",
-                  step.status === "completed" && "text-muted-foreground line-through",
+                  step.status === "completed" &&
+                    "text-muted-foreground line-through",
                   step.status === "running" && "text-foreground font-medium",
                   step.status === "failed" && "text-red-400",
                   step.status === "skipped" && "text-muted-foreground",
@@ -112,7 +123,9 @@ export const PlanViewer = ({
                 {step.action} — {step.description}
               </span>
               {step.error && (
-                <div className="text-xs text-red-400 mt-0.5">错误: {step.error}</div>
+                <div className="text-xs text-red-400 mt-0.5">
+                  错误: {step.error}
+                </div>
               )}
             </div>
           </div>
@@ -156,7 +169,9 @@ export const PlanViewer = ({
       )}
 
       {/* Completed / Failed / Cancelled status */}
-      {(plan.status === "completed" || plan.status === "failed" || plan.status === "cancelled") && (
+      {(plan.status === "completed" ||
+        plan.status === "failed" ||
+        plan.status === "cancelled") && (
         <div
           className={cn(
             "flex items-center gap-2 px-3 py-2 border-t border-border text-xs",

@@ -1,16 +1,20 @@
-import { z } from "zod/v4";
-import mammoth from "mammoth";
 import { readFile } from "node:fs/promises";
 import type { Tool } from "ai";
-import type { Skill } from "./types";
+import mammoth from "mammoth";
+import { z } from "zod/v4";
 import { validateFile } from "./file-skill-utils";
+import type { Skill } from "./types";
 
 const DOCX_EXTENSIONS = [".docx"];
 
 /**
  * Extract text from all children of a mammoth document node recursively.
  */
-const extractText = (node: { type: string; children?: any[]; value?: string }): string => {
+const extractText = (node: {
+  type: string;
+  children?: any[];
+  value?: string;
+}): string => {
   if (node.type === "text") return node.value ?? "";
   if (!node.children) return "";
   return node.children.map(extractText).join("");
@@ -38,7 +42,12 @@ const parseDocxMetadata = async (
   createdAt: string | null;
   modifiedAt: string | null;
 }> => {
-  const defaults = { title: null, author: null, createdAt: null, modifiedAt: null };
+  const defaults = {
+    title: null,
+    author: null,
+    createdAt: null,
+    modifiedAt: null,
+  };
   try {
     const JSZip = loadJSZip();
     const zip = await JSZip.loadAsync(buffer);
@@ -77,7 +86,9 @@ const readDocxTextTool: Tool = {
       const result = await mammoth.extractRawText({ path });
       return { text: result.value };
     } catch (err) {
-      return { error: `DOCX 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `DOCX 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
@@ -95,32 +106,38 @@ const readDocxStructureTool: Tool = {
 
       const paragraphs: Array<{ text: string; style: string }> = [];
 
-      await mammoth.convertToHtml({
-        path,
-      }, {
-        transformDocument: (document: { type: string; children?: any[] }) => {
-          if (document.children) {
-            for (const child of document.children) {
-              if (child.type === "paragraph") {
-                const text = extractText(child);
-                const style = child.styleName || "Normal";
-                paragraphs.push({ text, style });
+      await mammoth.convertToHtml(
+        {
+          path,
+        },
+        {
+          transformDocument: (document: { type: string; children?: any[] }) => {
+            if (document.children) {
+              for (const child of document.children) {
+                if (child.type === "paragraph") {
+                  const text = extractText(child);
+                  const style = child.styleName || "Normal";
+                  paragraphs.push({ text, style });
+                }
               }
             }
-          }
-          return document;
+            return document;
+          },
         },
-      });
+      );
 
       return { paragraphs };
     } catch (err) {
-      return { error: `DOCX 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `DOCX 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
 
 const getDocxMetadataTool: Tool = {
-  description: "读取 Word 文档的元数据信息（标题、作者、创建日期、修改日期、段落数、字数）",
+  description:
+    "读取 Word 文档的元数据信息（标题、作者、创建日期、修改日期、段落数、字数）",
   inputSchema: z.object({
     path: z.string().describe("DOCX 文件的绝对路径"),
   }),
@@ -133,7 +150,9 @@ const getDocxMetadataTool: Tool = {
       const textResult = await mammoth.extractRawText({ path: filePath });
       const text = textResult.value;
       const lines = text.split(/\n/);
-      const paragraphCount = lines.filter((line) => line.trim().length > 0).length;
+      const paragraphCount = lines.filter(
+        (line) => line.trim().length > 0,
+      ).length;
       const wordCount = text
         .trim()
         .split(/\s+/)
@@ -176,10 +195,7 @@ export const docxProcessor: Skill = {
     "word content",
     "paragraph",
   ],
-  suggestions: [
-    "提取这个Word文档的全部文本",
-    "分析Word文档的结构和标题层级",
-  ],
+  suggestions: ["提取这个Word文档的全部文本", "分析Word文档的结构和标题层级"],
   tools: {
     readDocxText: readDocxTextTool,
     readDocxStructure: readDocxStructureTool,

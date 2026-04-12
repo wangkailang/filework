@@ -29,7 +29,9 @@ export const VideoViewer = ({ filePath, fileName }: VideoViewerProps) => {
         className="max-w-full max-h-full rounded"
         onError={() => setError(true)}
         aria-label={`视频预览: ${fileName}`}
-      />
+      >
+        <track kind="captions" srcLang="zh" label="中文字幕" />
+      </video>
     </div>
   );
 };

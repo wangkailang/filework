@@ -1,7 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "dotenv";
-import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  protocol,
+  session,
+  shell,
+} from "electron";
 
 // Load .env from app root (must run before any env access)
 // In dev: app.getAppPath() = project root; in prod: app.getAppPath() = resources/app.asar
@@ -16,8 +24,8 @@ import { registerFileHandlers } from "./ipc/file-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
-import { initSkillDiscovery } from "./skills-runtime";
 import { skillRegistry } from "./skills";
+import { initSkillDiscovery } from "./skills-runtime";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -115,13 +123,16 @@ app.whenReady().then(async () => {
   });
 
   // Directory picker
-  ipcMain.handle("dialog:openDirectory", async (_event, defaultPath?: string) => {
-    const result = await dialog.showOpenDialog({
-      properties: ["openDirectory"],
-      defaultPath: defaultPath || undefined,
-    });
-    return result.canceled ? null : result.filePaths[0];
-  });
+  ipcMain.handle(
+    "dialog:openDirectory",
+    async (_event, defaultPath?: string) => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory"],
+        defaultPath: defaultPath || undefined,
+      });
+      return result.canceled ? null : result.filePaths[0];
+    },
+  );
 
   // Reveal in Finder / file manager
   ipcMain.handle("shell:showInFinder", async (_event, path: string) => {

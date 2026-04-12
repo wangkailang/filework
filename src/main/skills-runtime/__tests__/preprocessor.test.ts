@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { preprocessSkill } from "../preprocessor";
 
@@ -26,11 +26,7 @@ describe("preprocessSkill — $ARGUMENTS replacement", () => {
   });
 
   it("replaces $ARGUMENTS with empty string when no args provided", async () => {
-    const result = await preprocessSkill(
-      "Args: $ARGUMENTS",
-      "",
-      "/workspace",
-    );
+    const result = await preprocessSkill("Args: $ARGUMENTS", "", "/workspace");
     expect(result.systemPrompt).toBe("Args: ");
   });
 });
@@ -77,11 +73,7 @@ describe("preprocessSkill — indexed argument replacement", () => {
   });
 
   it("replaces out-of-bounds $N with empty string and warns", async () => {
-    const result = await preprocessSkill(
-      "Missing: $3",
-      "a b",
-      "/workspace",
-    );
+    const result = await preprocessSkill("Missing: $3", "a b", "/workspace");
     expect(result.systemPrompt).toBe("Missing: ");
     expect(result.warnings.some((w) => w.includes("out of bounds"))).toBe(true);
   });
@@ -120,12 +112,9 @@ describe("preprocessSkill — !command execution", () => {
   });
 
   it("replaces timed-out command with timeout error", async () => {
-    const result = await preprocessSkill(
-      "!sleep 30",
-      "",
-      "/tmp",
-      { timeoutMs: 500 },
-    );
+    const result = await preprocessSkill("!sleep 30", "", "/tmp", {
+      timeoutMs: 500,
+    });
     expect(result.systemPrompt).toContain("[Error: command timed out after");
     expect(result.warnings.length).toBeGreaterThan(0);
   }, 10_000);
@@ -141,21 +130,14 @@ describe("preprocessSkill — !command execution", () => {
   });
 
   it("blocks all commands for low trust level", async () => {
-    const result = await preprocessSkill(
-      "!echo hello",
-      "",
-      "/tmp",
-      { trustLevel: "low" },
-    );
+    const result = await preprocessSkill("!echo hello", "", "/tmp", {
+      trustLevel: "low",
+    });
     expect(result.systemPrompt).toBe("[Blocked: command not allowed]");
   });
 
   it("does not treat lines without leading ! as commands", async () => {
-    const result = await preprocessSkill(
-      "This is not !a command",
-      "",
-      "/tmp",
-    );
+    const result = await preprocessSkill("This is not !a command", "", "/tmp");
     expect(result.systemPrompt).toBe("This is not !a command");
   });
 });
@@ -177,7 +159,9 @@ describe("preprocessSkill — truncation", () => {
       sourcePath: "/path/to/SKILL.md",
     });
     expect(result.truncated).toBe(true);
-    expect(result.systemPrompt).toContain("[...truncated, read full content from: /path/to/SKILL.md]");
+    expect(result.systemPrompt).toContain(
+      "[...truncated, read full content from: /path/to/SKILL.md]",
+    );
     // The content before the marker should be exactly maxChars
     const markerIndex = result.systemPrompt.indexOf("\n[...truncated");
     expect(markerIndex).toBe(100);
@@ -211,18 +195,14 @@ describe("preprocessSkill — truncation", () => {
 
 describe("preprocessSkill — processing order", () => {
   it("processes $ARGUMENTS before !command so commands can use args", async () => {
-    const result = await preprocessSkill(
-      "!echo $ARGUMENTS",
-      "hello",
-      "/tmp",
-    );
+    const result = await preprocessSkill("!echo $ARGUMENTS", "hello", "/tmp");
     // $ARGUMENTS is replaced first, then !echo hello is executed
     expect(result.systemPrompt).toBe("hello");
   });
 
   it("applies truncation after all other processing", async () => {
     const result = await preprocessSkill(
-      "!echo " + "a".repeat(200),
+      `!echo ${"a".repeat(200)}`,
       "",
       "/tmp",
       { maxChars: 50, sourcePath: "/skill.md" },

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   convertToCoreMessages,
   type HistoryMessage,
@@ -10,9 +10,7 @@ describe("convertToCoreMessages", () => {
   });
 
   it("converts user message to { role: 'user', content }", () => {
-    const history: HistoryMessage[] = [
-      { role: "user", content: "Hello" },
-    ];
+    const history: HistoryMessage[] = [{ role: "user", content: "Hello" }];
     const result = convertToCoreMessages(history);
     expect(result).toEqual([{ role: "user", content: "Hello" }]);
   });
@@ -170,13 +168,20 @@ describe("convertToCoreMessages", () => {
   it("preserves chronological order of messages", () => {
     const history: HistoryMessage[] = [
       { role: "user", content: "First" },
-      { role: "assistant", content: "Second", parts: [{ type: "text", text: "Second" }] },
+      {
+        role: "assistant",
+        content: "Second",
+        parts: [{ type: "text", text: "Second" }],
+      },
       { role: "user", content: "Third" },
     ];
     const result = convertToCoreMessages(history);
     expect(result).toHaveLength(3);
     expect(result[0]).toEqual({ role: "user", content: "First" });
-    expect(result[1]).toEqual({ role: "assistant", content: [{ type: "text", text: "Second" }] });
+    expect(result[1]).toEqual({
+      role: "assistant",
+      content: [{ type: "text", text: "Second" }],
+    });
     expect(result[2]).toEqual({ role: "user", content: "Third" });
   });
 
@@ -185,13 +190,13 @@ describe("convertToCoreMessages", () => {
       { role: "assistant", content: "Plain text response" },
     ];
     const result = convertToCoreMessages(history);
-    expect(result).toEqual([{ role: "assistant", content: "Plain text response" }]);
+    expect(result).toEqual([
+      { role: "assistant", content: "Plain text response" },
+    ]);
   });
 
   it("skips assistant message with empty content and no parts", () => {
-    const history: HistoryMessage[] = [
-      { role: "assistant", content: "" },
-    ];
+    const history: HistoryMessage[] = [{ role: "assistant", content: "" }];
     const result = convertToCoreMessages(history);
     expect(result).toEqual([]);
   });

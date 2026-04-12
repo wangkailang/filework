@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { SkillRegistry } from "../registry";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { initSkillDiscovery } from "../index";
+import { SkillRegistry } from "../registry";
 
 describe("initSkillDiscovery", () => {
   let tempDir: string;
@@ -36,8 +36,8 @@ You are a test skill.`,
     expect(count).toBeGreaterThanOrEqual(1);
     const skill = registry.getById("my-skill");
     expect(skill).toBeDefined();
-    expect(skill!.name).toBe("my-skill");
-    expect(skill!.description).toBe("A test skill");
+    expect(skill?.name).toBe("my-skill");
+    expect(skill?.description).toBe("A test skill");
   });
 
   it("returns count of eligible skills (may include personal)", async () => {

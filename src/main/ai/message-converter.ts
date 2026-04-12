@@ -48,7 +48,9 @@ const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
  * - ToolPart missing result → placeholder text used
  * - Message chronological order is preserved
  */
-export function convertToCoreMessages(history: HistoryMessage[]): ModelMessage[] {
+export function convertToCoreMessages(
+  history: HistoryMessage[],
+): ModelMessage[] {
   const result: ModelMessage[] = [];
 
   for (const msg of history) {
@@ -112,7 +114,12 @@ export function convertToCoreMessages(history: HistoryMessage[]): ModelMessage[]
     // Build assistant message content array
     const assistantContent: Array<
       | { type: "text"; text: string }
-      | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+      | {
+          type: "tool-call";
+          toolCallId: string;
+          toolName: string;
+          input: unknown;
+        }
     > = [...textParts, ...toolCallParts];
 
     if (assistantContent.length > 0) {

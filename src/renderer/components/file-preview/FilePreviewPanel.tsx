@@ -1,6 +1,10 @@
 import { FileWarning, Loader2, X, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
-import { CodeViewer, getFileExtension, isSupportedFile } from "../ai-elements/code-viewer";
+import { useCallback, useEffect, useState } from "react";
+import {
+  CodeViewer,
+  getFileExtension,
+  isSupportedFile,
+} from "../ai-elements/code-viewer";
 import { PdfViewer } from "./PdfViewer";
 import { VideoViewer } from "./VideoViewer";
 
@@ -9,16 +13,24 @@ const isPdfFile = (filename: string): boolean => {
 };
 
 const IMAGE_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico", ".avif", ".tiff", ".tif",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".bmp",
+  ".webp",
+  ".svg",
+  ".ico",
+  ".avif",
+  ".tiff",
+  ".tif",
 ]);
 
 const isImageFile = (filename: string): boolean => {
   return IMAGE_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
 };
 
-const VIDEO_EXTENSIONS = new Set([
-  ".mp4", ".webm", ".ogg", ".mov", ".m4v",
-]);
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".ogg", ".mov", ".m4v"]);
 
 const isVideoFile = (filename: string): boolean => {
   return VIDEO_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
@@ -47,7 +59,10 @@ interface FilePreviewPanelProps {
   onClose: () => void;
 }
 
-export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) => {
+export const FilePreviewPanel = ({
+  filePath,
+  onClose,
+}: FilePreviewPanelProps) => {
   const [content, setContent] = useState<string | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +70,7 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
   const [zoom, setZoom] = useState(1);
 
   const fileName = filePath.split("/").pop() || filePath;
+  const absolutePath = filePath;
   const ext = getFileExtension(fileName);
   const isPdf = isPdfFile(fileName);
   const isImage = isImageFile(fileName);
@@ -62,15 +78,15 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
   const supported = isSupportedFile(fileName) || isPdf || isImage || isVideo;
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.25, 5)), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.25, 0.25)), []);
+  const zoomOut = useCallback(
+    () => setZoom((z) => Math.max(z - 0.25, 0.25)),
+    [],
+  );
   const resetZoom = useCallback(() => setZoom(1), []);
 
   useEffect(() => {
-    setZoom(1);
-  }, [filePath]);
-
-  useEffect(() => {
     let cancelled = false;
+    setZoom(1);
     setIsLoading(true);
     setError(null);
     setContent(null);
@@ -83,7 +99,7 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
 
     if (isImage) {
       window.filework
-        .readFileBase64(filePath)
+        .readFileBase64(absolutePath)
         .then((base64) => {
           if (!cancelled) {
             const mime = getMimeType(fileName);
@@ -99,7 +115,7 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
         });
     } else {
       window.filework
-        .readFile(filePath)
+        .readFile(absolutePath)
         .then((text) => {
           if (!cancelled) {
             setContent(text);
@@ -117,14 +133,16 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
     return () => {
       cancelled = true;
     };
-  }, [filePath, supported, isImage]);
+  }, [absolutePath, fileName, supported, isImage, isPdf, isVideo]);
 
   return (
     <div className="flex h-full flex-col bg-background border-r border-border">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="truncate text-sm font-medium text-foreground">{fileName}</span>
+          <span className="truncate text-sm font-medium text-foreground">
+            {fileName}
+          </span>
           {ext && (
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {ext}
@@ -154,7 +172,11 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6">
             <FileWarning className="w-10 h-10" />
             <p className="text-sm text-center">
-              暂不支持预览 <span className="font-mono text-foreground">{ext || "此类型"}</span> 文件
+              暂不支持预览{" "}
+              <span className="font-mono text-foreground">
+                {ext || "此类型"}
+              </span>{" "}
+              文件
             </p>
           </div>
         )}
@@ -208,9 +230,7 @@ export const FilePreviewPanel = ({ filePath, onClose }: FilePreviewPanelProps) =
           </div>
         )}
 
-        {!isLoading && isPdf && (
-          <PdfViewer filePath={filePath} />
-        )}
+        {!isLoading && isPdf && <PdfViewer filePath={filePath} />}
 
         {!isLoading && isVideo && (
           <VideoViewer filePath={filePath} fileName={fileName} />

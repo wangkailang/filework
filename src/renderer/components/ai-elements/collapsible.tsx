@@ -1,4 +1,10 @@
-import { createContext, type HTMLAttributes, useContext, useState } from "react";
+import {
+  type ButtonHTMLAttributes,
+  createContext,
+  type HTMLAttributes,
+  useContext,
+  useState,
+} from "react";
 
 interface CollapsibleContextType {
   open: boolean;
@@ -27,7 +33,9 @@ export const Collapsible = ({
   const handleChange = onOpenChange ?? setInternalOpen;
 
   return (
-    <CollapsibleContext.Provider value={{ open: isOpen, onOpenChange: handleChange }}>
+    <CollapsibleContext.Provider
+      value={{ open: isOpen, onOpenChange: handleChange }}
+    >
       <div className={className} {...props}>
         {children}
       </div>
@@ -35,18 +43,22 @@ export const Collapsible = ({
   );
 };
 
-interface CollapsibleTriggerProps extends HTMLAttributes<HTMLDivElement> {
+interface CollapsibleTriggerProps
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
   asChild?: boolean;
 }
 
-export const CollapsibleTrigger = ({ children, asChild, ...props }: CollapsibleTriggerProps) => {
+export const CollapsibleTrigger = ({
+  children,
+  asChild,
+  ...props
+}: CollapsibleTriggerProps) => {
   const { open, onOpenChange } = useContext(CollapsibleContext);
 
   if (asChild) {
     return (
-      <span
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         onClick={() => onOpenChange(!open)}
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpenChange(!open);
@@ -54,7 +66,7 @@ export const CollapsibleTrigger = ({ children, asChild, ...props }: CollapsibleT
         {...props}
       >
         {children}
-      </span>
+      </button>
     );
   }
 
@@ -69,7 +81,11 @@ interface CollapsibleContentProps extends HTMLAttributes<HTMLDivElement> {}
 
 export const useCollapsible = () => useContext(CollapsibleContext);
 
-export const CollapsibleContent = ({ children, className, ...props }: CollapsibleContentProps) => {
+export const CollapsibleContent = ({
+  children,
+  className,
+  ...props
+}: CollapsibleContentProps) => {
   const { open } = useContext(CollapsibleContext);
   if (!open) return null;
   return (

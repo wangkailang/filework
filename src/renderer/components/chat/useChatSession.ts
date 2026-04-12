@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApprovalState } from "../ai-elements/confirmation";
-import type { PlanView, PlanStepView } from "../ai-elements/plan-viewer";
+import type { PlanStepView, PlanView } from "../ai-elements/plan-viewer";
+import { contentFromParts, migrateToParts, truncateTitle } from "./helpers";
+import type { SkillApprovalData } from "./SkillApprovalDialog";
 import type {
   ActiveSkillInfo,
   ChatMessage,
@@ -10,8 +12,6 @@ import type {
   ToolApproval,
   ToolPart,
 } from "./types";
-import type { SkillApprovalData } from "./SkillApprovalDialog";
-import { contentFromParts, migrateToParts, truncateTitle } from "./helpers";
 
 export function useChatSession(workspacePath: string) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -22,12 +22,17 @@ export function useChatSession(workspacePath: string) {
   const [isPlanGenerating, setIsPlanGenerating] = useState(false);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<ActiveSkillInfo | null>(null);
-  const [pendingSkillApproval, setPendingSkillApproval] = useState<SkillApprovalData | null>(null);
-  const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(null);
+  const [pendingSkillApproval, setPendingSkillApproval] =
+    useState<SkillApprovalData | null>(null);
+  const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(
+    null,
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
+  const pendingStopRef = useRef(false);
+  const stopRequestedRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -50,7 +55,8 @@ export function useChatSession(workspacePath: string) {
   useEffect(() => {
     const load = async () => {
       try {
-        const list: ChatSession[] = await window.filework.getChatSessions(workspacePath);
+        const list: ChatSession[] =
+          await window.filework.getChatSessions(workspacePath);
         setSessions(list);
         if (list.length > 0) {
           setActiveSessionId(list[0].id);
@@ -94,7 +100,11 @@ export function useChatSession(workspacePath: string) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (messages.length > 0 && activeSessionId) {
-        window.filework.saveChatHistory(activeSessionId, workspacePath, messages);
+        window.filework.saveChatHistory(
+          activeSessionId,
+          workspacePath,
+          messages,
+        );
       }
     };
   }, [workspacePath, messages, activeSessionId]);
@@ -106,6 +116,15 @@ export function useChatSession(workspacePath: string) {
     const offStart = window.filework.onStreamStart(({ id }) => {
       console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
+      if (pendingStopRef.current) {
+        pendingStopRef.current = false;
+        window.filework.stopGeneration(id).catch((error) => {
+          console.error(
+            "[Stop Generation] Failed to stop deferred task:",
+            error,
+          );
+        });
+      }
     });
 
     const offSkillActivated = window.filework.onSkillActivated(
@@ -117,7 +136,9 @@ export function useChatSession(workspacePath: string) {
 
     const updateParts = (updater: (parts: MessagePart[]) => MessagePart[]) => {
       setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === streamAssistantIdRef.current);
+        const idx = prev.findIndex(
+          (m) => m.id === streamAssistantIdRef.current,
+        );
         if (idx === -1) return prev;
         const updated = [...prev];
         const msg = updated[idx];
@@ -144,45 +165,57 @@ export function useChatSession(workspacePath: string) {
       });
     });
 
-    const offToolCall = window.filework.onStreamToolCall(({ id, toolCallId, toolName, args }) => {
-      if (id !== streamTaskIdRef.current) return;
-      updateParts((parts) => {
-        const existingIdx = parts.findIndex(
-          (p) => p.type === "tool" && p.toolCallId === toolCallId,
-        );
-        if (existingIdx !== -1) {
-          parts[existingIdx] = { ...(parts[existingIdx] as ToolPart), args };
-        } else {
-          parts.push({ type: "tool", toolCallId, toolName, args, state: "input-available" });
-        }
-        return parts;
-      });
-    });
-
-    const offToolResult = window.filework.onStreamToolResult(({ id, toolCallId, result }) => {
-      if (id !== streamTaskIdRef.current) return;
-      updateParts((parts) => {
-        const isDenied =
-          result != null &&
-          typeof result === "object" &&
-          "denied" in result &&
-          (result as Record<string, unknown>).denied === true;
-        return parts.map((p) => {
-          if (p.type !== "tool" || p.toolCallId !== toolCallId) return p;
-          return {
-            ...p,
-            result,
-            state: "output-available" as const,
-            approval: p.approval
-              ? {
-                  ...p.approval,
-                  state: (isDenied ? "approval-rejected" : "approval-accepted") as ApprovalState,
-                }
-              : undefined,
-          };
+    const offToolCall = window.filework.onStreamToolCall(
+      ({ id, toolCallId, toolName, args }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          const existingIdx = parts.findIndex(
+            (p) => p.type === "tool" && p.toolCallId === toolCallId,
+          );
+          if (existingIdx !== -1) {
+            parts[existingIdx] = { ...(parts[existingIdx] as ToolPart), args };
+          } else {
+            parts.push({
+              type: "tool",
+              toolCallId,
+              toolName,
+              args,
+              state: "input-available",
+            });
+          }
+          return parts;
         });
-      });
-    });
+      },
+    );
+
+    const offToolResult = window.filework.onStreamToolResult(
+      ({ id, toolCallId, result }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          const isDenied =
+            result != null &&
+            typeof result === "object" &&
+            "denied" in result &&
+            (result as Record<string, unknown>).denied === true;
+          return parts.map((p) => {
+            if (p.type !== "tool" || p.toolCallId !== toolCallId) return p;
+            return {
+              ...p,
+              result,
+              state: "output-available" as const,
+              approval: p.approval
+                ? {
+                    ...p.approval,
+                    state: (isDenied
+                      ? "approval-rejected"
+                      : "approval-accepted") as ApprovalState,
+                  }
+                : undefined,
+            };
+          });
+        });
+      },
+    );
 
     const offToolApproval = window.filework.onStreamToolApproval(
       ({ id, toolCallId, toolName, args, description }) => {
@@ -198,9 +231,19 @@ export function useChatSession(workspacePath: string) {
             state: "approval-requested",
           };
           if (existingIdx !== -1) {
-            parts[existingIdx] = { ...(parts[existingIdx] as ToolPart), approval };
+            parts[existingIdx] = {
+              ...(parts[existingIdx] as ToolPart),
+              approval,
+            };
           } else {
-            parts.push({ type: "tool", toolCallId, toolName, args, state: "input-available", approval });
+            parts.push({
+              type: "tool",
+              toolCallId,
+              toolName,
+              args,
+              state: "input-available",
+              approval,
+            });
           }
           return parts;
         });
@@ -210,26 +253,65 @@ export function useChatSession(workspacePath: string) {
     const offDone = window.filework.onStreamDone(({ id }) => {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Done] Cleaning up taskId:", id);
+      const assistantId = streamAssistantIdRef.current;
+      const stoppedByUser = stopRequestedRef.current;
       streamTaskIdRef.current = null;
-      streamAssistantIdRef.current = null;
+      pendingStopRef.current = false;
+      stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
-        if (activeSessionIdRef.current) {
-          debouncedSave(prev, activeSessionIdRef.current);
+        let next = prev;
+        if (stoppedByUser && assistantId) {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx !== -1) {
+            const updated = [...prev];
+            const msg = updated[idx];
+            const normalizedParts = (msg.parts ?? []).map((part) => {
+              if (part.type !== "tool") return part;
+              if (
+                part.state === "output-available" ||
+                part.state === "output-error"
+              )
+                return part;
+              return {
+                ...part,
+                state: "output-available" as const,
+                result: part.result ?? {
+                  success: false,
+                  cancelled: true,
+                  reason: "用户已停止执行",
+                },
+              };
+            });
+            updated[idx] = {
+              ...msg,
+              parts: normalizedParts,
+              content: contentFromParts(normalizedParts),
+            };
+            next = updated;
+          }
         }
-        return prev;
+
+        streamAssistantIdRef.current = null;
+        if (activeSessionIdRef.current) {
+          debouncedSave(next, activeSessionIdRef.current);
+        }
+        return next;
       });
     });
 
     const offError = window.filework.onStreamError(({ id, error }) => {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
+      const assistantId = streamAssistantIdRef.current;
       streamTaskIdRef.current = null;
+      pendingStopRef.current = false;
+      stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === streamAssistantIdRef.current);
+        const idx = prev.findIndex((m) => m.id === assistantId);
         if (idx === -1) return prev;
         const updated = [...prev];
         const msg = updated[idx];
@@ -237,19 +319,24 @@ export function useChatSession(workspacePath: string) {
         updated[idx] = {
           ...msg,
           content: fallbackText,
-          parts: msg.parts && msg.parts.length > 0 ? msg.parts : [{ type: "text", text: fallbackText }],
+          parts:
+            msg.parts && msg.parts.length > 0
+              ? msg.parts
+              : [{ type: "text", text: fallbackText }],
         };
-        streamAssistantIdRef.current = null;
         if (activeSessionIdRef.current) {
           debouncedSave(updated, activeSessionIdRef.current);
         }
         return updated;
       });
+      streamAssistantIdRef.current = null;
     });
 
-    const offSkillApprovalRequest = window.filework.onSkillApprovalRequest((data) => {
-      setPendingSkillApproval(data);
-    });
+    const offSkillApprovalRequest = window.filework.onSkillApprovalRequest(
+      (data) => {
+        setPendingSkillApproval(data);
+      },
+    );
 
     return () => {
       offStart();
@@ -267,52 +354,55 @@ export function useChatSession(workspacePath: string) {
   // ---------------------------------------------------------------------------
   // Plan step updater
   // ---------------------------------------------------------------------------
-  const updatePlanStep = (
-    planId: string,
-    stepId: number,
-    updates: Partial<PlanStepView>,
-  ) => {
-    setMessages((prev) => {
-      const updated = [...prev];
-      for (let i = updated.length - 1; i >= 0; i--) {
-        const msg = updated[i];
-        if (!msg.parts) continue;
-        const planPartIdx = msg.parts.findIndex(
-          (p) => p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
-        );
-        if (planPartIdx === -1) continue;
+  const updatePlanStep = useCallback(
+    (planId: string, stepId: number, updates: Partial<PlanStepView>) => {
+      setMessages((prev) => {
+        const updated = [...prev];
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i];
+          if (!msg.parts) continue;
+          const planPartIdx = msg.parts.findIndex(
+            (p) =>
+              p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
+          );
+          if (planPartIdx === -1) continue;
 
-        const planPart = msg.parts[planPartIdx] as PlanMessagePart;
-        const newSteps = planPart.plan.steps.map((s) =>
-          s.id === stepId ? { ...s, ...updates } : s,
-        );
-        const allDone = newSteps.every(
-          (s) => s.status === "completed" || s.status === "skipped",
-        );
-        const anyFailed = newSteps.some((s) => s.status === "failed");
-        let planStatus = planPart.plan.status;
-        if (allDone) planStatus = "completed";
-        else if (anyFailed) planStatus = "failed";
-        else if (newSteps.some((s) => s.status === "running")) planStatus = "executing";
+          const planPart = msg.parts[planPartIdx] as PlanMessagePart;
+          const newSteps = planPart.plan.steps.map((s) =>
+            s.id === stepId ? { ...s, ...updates } : s,
+          );
+          const allDone = newSteps.every(
+            (s) => s.status === "completed" || s.status === "skipped",
+          );
+          const anyFailed = newSteps.some((s) => s.status === "failed");
+          let planStatus = planPart.plan.status;
+          if (allDone) planStatus = "completed";
+          else if (anyFailed) planStatus = "failed";
+          else if (newSteps.some((s) => s.status === "running"))
+            planStatus = "executing";
 
-        const newParts = [...msg.parts];
-        newParts[planPartIdx] = {
-          type: "plan",
-          plan: { ...planPart.plan, steps: newSteps, status: planStatus },
-        };
-        updated[i] = { ...msg, parts: newParts };
-        break;
-      }
-      return updated;
-    });
-  };
+          const newParts = [...msg.parts];
+          newParts[planPartIdx] = {
+            type: "plan",
+            plan: { ...planPart.plan, steps: newSteps, status: planStatus },
+          };
+          updated[i] = { ...msg, parts: newParts };
+          break;
+        }
+        return updated;
+      });
+    },
+    [],
+  );
 
   // ---------------------------------------------------------------------------
   // Planner event listeners
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const offPlanReady = window.filework.onPlanReady(({ plan }) => {
+    const offPlanReady = window.filework.onPlanReady(({ id, plan }) => {
+      if (id && id !== streamTaskIdRef.current) return;
       setIsPlanGenerating(false);
+      setIsLoading(false);
       const planView = plan as PlanView;
       setActivePlanId(planView.id);
 
@@ -326,12 +416,17 @@ export function useChatSession(workspacePath: string) {
           ...(msg.parts ?? []),
           { type: "plan", plan: planView },
         ];
-        updated[idx] = { ...msg, parts: newParts, content: `执行计划: ${planView.goal}` };
+        updated[idx] = {
+          ...msg,
+          parts: newParts,
+          content: `执行计划: ${planView.goal}`,
+        };
         return updated;
       });
     });
 
-    const offPlanError = window.filework.onPlanError(({ error }) => {
+    const offPlanError = window.filework.onPlanError(({ id, error }) => {
+      if (id && id !== streamTaskIdRef.current) return;
       setIsPlanGenerating(false);
       setIsLoading(false);
       setMessages((prev) => {
@@ -341,23 +436,33 @@ export function useChatSession(workspacePath: string) {
         const updated = [...prev];
         const msg = updated[idx];
         const errText = `计划生成失败: ${error}`;
-        updated[idx] = { ...msg, content: errText, parts: [{ type: "text", text: errText }] };
-        streamAssistantIdRef.current = null;
+        updated[idx] = {
+          ...msg,
+          content: errText,
+          parts: [{ type: "text", text: errText }],
+        };
+        if (activeSessionIdRef.current) {
+          debouncedSave(updated, activeSessionIdRef.current);
+        }
         return updated;
       });
     });
 
-    const offStepStart = window.filework.onPlanStepStart(({ planId, stepId }) => {
-      updatePlanStep(planId, stepId, { status: "running" });
-    });
+    const offStepStart = window.filework.onPlanStepStart(
+      ({ planId, stepId }) => {
+        updatePlanStep(planId, stepId, { status: "running" });
+      },
+    );
 
     const offStepDone = window.filework.onPlanStepDone(({ planId, stepId }) => {
       updatePlanStep(planId, stepId, { status: "completed" });
     });
 
-    const offStepError = window.filework.onPlanStepError(({ planId, stepId, error }) => {
-      updatePlanStep(planId, stepId, { status: "failed", error });
-    });
+    const offStepError = window.filework.onPlanStepError(
+      ({ planId, stepId, error }) => {
+        updatePlanStep(planId, stepId, { status: "failed", error });
+      },
+    );
 
     return () => {
       offPlanReady();
@@ -366,13 +471,15 @@ export function useChatSession(workspacePath: string) {
       offStepDone();
       offStepError();
     };
-  }, []);
+  }, [debouncedSave, updatePlanStep]);
 
   // ---------------------------------------------------------------------------
   // Plan approval / rejection
   // ---------------------------------------------------------------------------
   const handleApprovePlan = async (planId: string) => {
     setActivePlanId(null);
+    setIsLoading(true);
+    pendingStopRef.current = false;
     setMessages((prev) => {
       const updated = [...prev];
       for (let i = updated.length - 1; i >= 0; i--) {
@@ -431,7 +538,8 @@ export function useChatSession(workspacePath: string) {
   // Session management
   // ---------------------------------------------------------------------------
   const createNewSession = async (): Promise<string> => {
-    const session: ChatSession = await window.filework.createChatSession(workspacePath);
+    const session: ChatSession =
+      await window.filework.createChatSession(workspacePath);
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
     setMessages([]);
@@ -501,6 +609,8 @@ export function useChatSession(workspacePath: string) {
     setMessages(withBoth);
     debouncedSave(withBoth, sessionId);
     setIsLoading(true);
+    pendingStopRef.current = false;
+    stopRequestedRef.current = false;
     streamAssistantIdRef.current = assistantId;
 
     if (isFirstMessage) {
@@ -513,11 +623,11 @@ export function useChatSession(workspacePath: string) {
 
     // Extract history from messages, excluding the placeholder assistant message
     const history = withBoth
-      .filter(m => m.id !== assistantId)  // Exclude current placeholder
+      .filter((m) => m.id !== assistantId) // Exclude current placeholder
       .map(({ role, content, parts }) => ({
         role,
         content,
-        parts: parts?.filter(p => p.type !== "plan"),  // Exclude PlanMessagePart
+        parts: parts?.filter((p) => p.type !== "plan"), // Exclude PlanMessagePart
       }));
 
     window.filework
@@ -569,12 +679,15 @@ export function useChatSession(workspacePath: string) {
       const updated = [...prev];
       const msg = updated[idx];
       const newParts = (msg.parts ?? []).map((p) => {
-        if (p.type !== "tool" || p.toolCallId !== toolCallId || !p.approval) return p;
+        if (p.type !== "tool" || p.toolCallId !== toolCallId || !p.approval)
+          return p;
         return {
           ...p,
           approval: {
             ...p.approval,
-            state: (approved ? "approval-accepted" : "approval-rejected") as ApprovalState,
+            state: (approved
+              ? "approval-accepted"
+              : "approval-rejected") as ApprovalState,
           },
         };
       });
@@ -589,18 +702,33 @@ export function useChatSession(workspacePath: string) {
   // ---------------------------------------------------------------------------
   const handleStopGeneration = useCallback(() => {
     const taskId = streamTaskIdRef.current;
-    console.log("[Stop Generation] Current taskId:", taskId, "isLoading:", isLoading);
+    console.log(
+      "[Stop Generation] Current taskId:",
+      taskId,
+      "isLoading:",
+      isLoading,
+    );
+    stopRequestedRef.current = true;
 
     if (!taskId) {
-      console.warn("[Stop Generation] No active taskId found, cannot stop generation because no task id is associated with the current stream");
+      if (isLoading) {
+        pendingStopRef.current = true;
+      }
+      console.warn(
+        "[Stop Generation] No active taskId found, cannot stop generation because no task id is associated with the current stream",
+      );
       // Do not force-reset UI or clear stream refs here; wait for a proper done/error event
       return;
     }
 
     console.log("[Stop Generation] Attempting to stop taskId:", taskId);
-    window.filework.stopGeneration(taskId)
+    window.filework
+      .stopGeneration(taskId)
       .then(() => {
-        console.log("[Stop Generation] Stop request sent successfully for taskId:", taskId);
+        console.log(
+          "[Stop Generation] Stop request sent successfully for taskId:",
+          taskId,
+        );
       })
       .catch((error) => {
         console.error("[Stop Generation] Failed to stop generation:", error);
@@ -614,7 +742,10 @@ export function useChatSession(workspacePath: string) {
 
   const handleSkillApproval = (approved: boolean) => {
     if (!pendingSkillApproval) return;
-    window.filework.approveSkill({ skillId: pendingSkillApproval.skillId, approved });
+    window.filework.approveSkill({
+      skillId: pendingSkillApproval.skillId,
+      approved,
+    });
     setPendingSkillApproval(null);
   };
 

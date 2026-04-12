@@ -5,39 +5,39 @@
  * This is the refactored, smaller main handler file.
  */
 
-import { ipcMain } from "electron";
 import crypto from "node:crypto";
-import { streamText, stepCountIs } from "ai";
-import { addTask, updateTask, getSetting } from "../db";
-import { skills, getAllSuggestions, skillRegistry } from "../skills";
+import { stepCountIs, streamText } from "ai";
+import { ipcMain } from "electron";
 import {
-  preprocessSkill,
+  convertToCoreMessages,
+  type HistoryMessage,
+} from "../ai/message-converter";
+import { truncateToFit } from "../ai/token-budget";
+import { addTask, getSetting, updateTask } from "../db";
+import { getAllSuggestions, skillRegistry, skills } from "../skills";
+import type { ExecutorDeps } from "../skills-runtime";
+import {
   executeSkill,
-  wrapWithSecurityBoundary,
   getTrustLevel,
   initSkillDiscovery,
+  preprocessSkill,
+  wrapWithSecurityBoundary,
 } from "../skills-runtime";
-import type { ExecutorDeps } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
-import { convertToCoreMessages, type HistoryMessage } from "../ai/message-converter";
-import { truncateToFit } from "../ai/token-budget";
 
 // Import our new modules
 import { getAIModelByConfigId, isAuthError } from "./ai-models";
+import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
+  cleanupTask,
   manualStopFlags,
   pendingApprovals,
+  stopTaskExecution,
   toolCallToTaskMap,
-  cleanupTask,
-  stopTaskExecution
 } from "./ai-task-control";
-import {
-  buildTools,
-  buildSkillSpecificTools
-} from "./ai-tool-permissions";
+import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
-import { registerPlanHandlers } from "./ai-plan-handlers";
 
 /**
  * Enhanced system prompt generation based on skill usage
@@ -46,7 +46,7 @@ const buildSystemPrompt = (
   workspacePath: string,
   skill?: UnifiedSkill,
   skillArgs?: string,
-  isExplicitSkillCommand?: boolean
+  isExplicitSkillCommand?: boolean,
 ): string => {
   let systemPrompt = `You are FileWork, a local file management AI assistant. You help users organize, analyze, and manage files in their directories.
 
@@ -93,8 +93,8 @@ const handleTaskExecution = async (
     prompt: string;
     workspacePath: string;
     llmConfigId?: string;
-    history?: Array<{ role: string; content: string; parts?: unknown[] }>
-  }
+    history?: Array<{ role: string; content: string; parts?: unknown[] }>;
+  },
 ) => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -131,24 +131,34 @@ const handleTaskExecution = async (
 
     if (isExplicitSkillCommand) {
       const spaceIdx = payload.prompt.indexOf(" ");
-      const command = spaceIdx > 0 ? payload.prompt.slice(0, spaceIdx) : payload.prompt;
+      const command =
+        spaceIdx > 0 ? payload.prompt.slice(0, spaceIdx) : payload.prompt;
       skillArgs = spaceIdx > 0 ? payload.prompt.slice(spaceIdx + 1) : "";
       console.log("[Skill Matching] Command:", command, "Args:", skillArgs);
 
       skill = skillRegistry.matchByCommand(command);
-      console.log("[Skill Matching] Found skill:", skill ? skill.name : "未找到");
+      console.log(
+        "[Skill Matching] Found skill:",
+        skill ? skill.name : "未找到",
+      );
 
       if (!skill) {
         // Try fuzzy matching as fallback
-        const cleanCommand = command.startsWith("/") ? command.slice(1).toLowerCase() : command.toLowerCase();
+        const cleanCommand = command.startsWith("/")
+          ? command.slice(1).toLowerCase()
+          : command.toLowerCase();
         const allSkills = skillRegistry.listUserVisible();
-        console.log("[Skill Matching] Available skills:", allSkills.map(s => s.id));
+        console.log(
+          "[Skill Matching] Available skills:",
+          allSkills.map((s) => s.id),
+        );
 
         // Try to find a skill that contains the command or vice versa
-        const fuzzyMatch = allSkills.find(s =>
-          s.id.toLowerCase().includes(cleanCommand) ||
-          cleanCommand.includes(s.id.toLowerCase()) ||
-          s.name.toLowerCase().includes(cleanCommand)
+        const fuzzyMatch = allSkills.find(
+          (s) =>
+            s.id.toLowerCase().includes(cleanCommand) ||
+            cleanCommand.includes(s.id.toLowerCase()) ||
+            s.name.toLowerCase().includes(cleanCommand),
         );
 
         if (fuzzyMatch) {
@@ -167,11 +177,16 @@ const handleTaskExecution = async (
     let convertedHistory: import("ai").ModelMessage[] | undefined;
     if (Array.isArray(payload.history) && payload.history.length > 0) {
       try {
-        const coreMessages = convertToCoreMessages(payload.history as HistoryMessage[]);
+        const coreMessages = convertToCoreMessages(
+          payload.history as HistoryMessage[],
+        );
         const { messages: truncatedMessages } = truncateToFit(coreMessages);
         convertedHistory = truncatedMessages;
       } catch (err) {
-        console.warn("[ai:executeTask] Failed to convert history, falling back to prompt mode:", err);
+        console.warn(
+          "[ai:executeTask] Failed to convert history, falling back to prompt mode:",
+          err,
+        );
       }
     }
 
@@ -206,9 +221,10 @@ const handleTaskExecution = async (
       if (skill.external?.frontmatter.context === "fork") {
         // Use skill-specific tools if allowed-tools is configured
         const allowedTools = skill.external?.frontmatter["allowed-tools"];
-        const tools = allowedTools && allowedTools.length > 0
-          ? buildSkillSpecificTools(allowedTools, sender, id)
-          : buildTools(sender, id);
+        const tools =
+          allowedTools && allowedTools.length > 0
+            ? buildSkillSpecificTools(allowedTools, sender, id)
+            : buildTools(sender, id);
         const deps: ExecutorDeps = {
           getModel: () => getAIModelByConfigId(payload.llmConfigId) as any,
           allTools: tools,
@@ -224,6 +240,7 @@ const handleTaskExecution = async (
             workspacePath: payload.workspacePath,
             sender,
             taskId: id,
+            abortSignal: controller.signal,
             injectionMode: "eager",
             history: convertedHistory,
           },
@@ -250,28 +267,40 @@ const handleTaskExecution = async (
     let originalTools: Record<string, import("ai").Tool>;
     if (skill?.external?.frontmatter["allowed-tools"]) {
       const allowedTools = skill.external.frontmatter["allowed-tools"];
-      console.log(`[Skill Tools] Using restricted tool set for ${skill.name}:`, allowedTools);
+      console.log(
+        `[Skill Tools] Using restricted tool set for ${skill.name}:`,
+        allowedTools,
+      );
       originalTools = buildSkillSpecificTools(allowedTools, sender, id);
     } else {
-      console.log(`[Skill Tools] Using full tool set (no restrictions for ${skill?.name || 'no skill'})`);
+      console.log(
+        `[Skill Tools] Using full tool set (no restrictions for ${skill?.name || "no skill"})`,
+      );
       originalTools = buildTools(sender, id);
     }
     const skillTools = skill?.tools ?? {};
 
     // Build enhanced system prompt based on skill usage
-    const systemPrompt = buildSystemPrompt(
-      payload.workspacePath,
-      skill,
-      skillArgs,
-      isExplicitSkillCommand
-    ) + skillPrompt;
+    const systemPrompt =
+      buildSystemPrompt(
+        payload.workspacePath,
+        skill,
+        skillArgs,
+        isExplicitSkillCommand,
+      ) + skillPrompt;
 
-    console.log(`[System Prompt] Generated for skill ${skill?.name || 'none'}:`, systemPrompt.substring(0, 200));
+    console.log(
+      `[System Prompt] Generated for skill ${skill?.name || "none"}:`,
+      systemPrompt.substring(0, 200),
+    );
 
     // ── Build messages from history (if available) ──
     const useMessagesMode = !!convertedHistory?.length;
     const builtMessages: import("ai").ModelMessage[] = useMessagesMode
-      ? [...convertedHistory!, { role: "user" as const, content: payload.prompt }]
+      ? [
+          ...convertedHistory!,
+          { role: "user" as const, content: payload.prompt },
+        ]
       : [];
 
     const result = useMessagesMode
@@ -300,7 +329,12 @@ const handleTaskExecution = async (
     try {
       for await (const part of result.fullStream) {
         partCount++;
-        console.log(`[Main] Processing part ${partCount} for taskId:`, id, "type:", part.type);
+        console.log(
+          `[Main] Processing part ${partCount} for taskId:`,
+          id,
+          "type:",
+          part.type,
+        );
 
         // Check manual stop flag
         if (manualStopFlags.get(id)) {
@@ -342,18 +376,23 @@ const handleTaskExecution = async (
 
       if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
       return { id, status: "completed" };
-
     } catch (error: unknown) {
       if (error instanceof Error && error.name === "AbortError") {
         console.log("[Main] AbortError caught, cleaning up for taskId:", id);
-        updateTask(id, { status: "completed", result: fullText, completedAt: new Date().toISOString() });
+        updateTask(id, {
+          status: "completed",
+          result: fullText,
+          completedAt: new Date().toISOString(),
+        });
         if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
         return { id, status: "completed" };
       }
 
       const errorMsg = isAuthError(error)
         ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-        : error instanceof Error ? error.message : "Unknown error";
+        : error instanceof Error
+          ? error.message
+          : "Unknown error";
 
       updateTask(id, {
         status: "failed",
@@ -365,16 +404,16 @@ const handleTaskExecution = async (
         sender.send("ai:stream-error", { id, error: errorMsg });
       }
       return { id, status: "failed", message: errorMsg };
-
     } finally {
       console.log("[Main] Cleanup for taskId:", id);
       cleanupTask(id);
     }
-
   } catch (error: unknown) {
     const errorMsg = isAuthError(error)
       ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-      : error instanceof Error ? error.message : "Unknown error";
+      : error instanceof Error
+        ? error.message
+        : "Unknown error";
 
     updateTask(id, {
       status: "failed",
@@ -420,7 +459,8 @@ export const registerAIHandlers = () => {
   // Configuration and skill handlers
   ipcMain.handle("ai:getConfig", async () => {
     return {
-      provider: process.env.AI_PROVIDER || getSetting("ai_provider") || "openai",
+      provider:
+        process.env.AI_PROVIDER || getSetting("ai_provider") || "openai",
       model: process.env.AI_MODEL || getSetting("ai_model") || "gpt-4o-mini",
     };
   });
@@ -462,41 +502,48 @@ export const registerAIHandlers = () => {
     }));
   });
 
-  ipcMain.handle("ai:getSkillDetail", async (_event, payload: { skillId: string }) => {
-    const skill = skillRegistry.getById(payload.skillId);
-    if (!skill) return null;
-    return {
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      source: skill.external?.source?.type ?? "built-in",
-      category: skill.category ?? "tool",
-      keywords: skill.keywords ?? [],
-      suggestions: skill.suggestions ?? [],
-      systemPrompt: skill.external ? undefined : skill.systemPrompt,
-      isExternal: !!skill.external,
-      external: skill.external
-        ? {
-            context: skill.external.frontmatter.context ?? "default",
-            allowedTools: skill.external.frontmatter["allowed-tools"] ?? [],
-            userInvocable: skill.external.frontmatter["user-invocable"] !== false,
-            disableModelInvocation:
-              skill.external.frontmatter["disable-model-invocation"] === true,
-            requires: skill.external.frontmatter.requires,
-            hasHooks: !!(
-              skill.external.frontmatter.hooks?.["pre-activate"] ||
-              skill.external.frontmatter.hooks?.["post-complete"]
-            ),
-            sourcePath: skill.external.sourcePath,
-            body: skill.external.body,
-          }
-        : undefined,
-    };
-  });
+  ipcMain.handle(
+    "ai:getSkillDetail",
+    async (_event, payload: { skillId: string }) => {
+      const skill = skillRegistry.getById(payload.skillId);
+      if (!skill) return null;
+      return {
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        source: skill.external?.source?.type ?? "built-in",
+        category: skill.category ?? "tool",
+        keywords: skill.keywords ?? [],
+        suggestions: skill.suggestions ?? [],
+        systemPrompt: skill.external ? undefined : skill.systemPrompt,
+        isExternal: !!skill.external,
+        external: skill.external
+          ? {
+              context: skill.external.frontmatter.context ?? "default",
+              allowedTools: skill.external.frontmatter["allowed-tools"] ?? [],
+              userInvocable:
+                skill.external.frontmatter["user-invocable"] !== false,
+              disableModelInvocation:
+                skill.external.frontmatter["disable-model-invocation"] === true,
+              requires: skill.external.frontmatter.requires,
+              hasHooks: !!(
+                skill.external.frontmatter.hooks?.["pre-activate"] ||
+                skill.external.frontmatter.hooks?.["post-complete"]
+              ),
+              sourcePath: skill.external.sourcePath,
+              body: skill.external.body,
+            }
+          : undefined,
+      };
+    },
+  );
 
   ipcMain.handle(
     "ai:initSkills",
-    async (_event, payload: { workspacePath: string; additionalDirs?: string[] }) => {
+    async (
+      _event,
+      payload: { workspacePath: string; additionalDirs?: string[] },
+    ) => {
       try {
         const count = await initSkillDiscovery(
           skillRegistry,

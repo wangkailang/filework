@@ -8,7 +8,12 @@ import {
 } from "lucide-react";
 import { type HTMLAttributes, type ReactNode, useState } from "react";
 import { cn } from "../../lib/utils";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger, useCollapsible } from "./collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  useCollapsible,
+} from "./collapsible";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,7 +35,13 @@ interface ToolProps extends HTMLAttributes<HTMLDivElement> {
   forceOpen?: boolean;
 }
 
-export const Tool = ({ defaultOpen = false, forceOpen, children, className, ...props }: ToolProps) => {
+export const Tool = ({
+  defaultOpen = false,
+  forceOpen,
+  children,
+  className,
+  ...props
+}: ToolProps) => {
   const [open, setOpen] = useState(defaultOpen);
   const isOpen = forceOpen || open;
   return (
@@ -57,7 +68,10 @@ interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   state: ToolState;
 }
 
-const stateConfig: Record<ToolState, { icon: ReactNode; label: string; color: string }> = {
+const stateConfig: Record<
+  ToolState,
+  { icon: ReactNode; label: string; color: string }
+> = {
   "input-streaming": {
     icon: <CircleDashed className="size-3.5 animate-pulse" />,
     label: "准备中",
@@ -93,7 +107,12 @@ const toolLabels: Record<string, string> = {
   runCommand: "执行命令",
 };
 
-export const ToolHeader = ({ toolName, state, className, ...props }: ToolHeaderProps) => {
+export const ToolHeader = ({
+  toolName,
+  state,
+  className,
+  ...props
+}: ToolHeaderProps) => {
   const config = stateConfig[state];
   const label = toolLabels[toolName] || toolName;
   const { open } = useCollapsible();
@@ -126,7 +145,11 @@ export const ToolHeader = ({ toolName, state, className, ...props }: ToolHeaderP
 // Content
 // ---------------------------------------------------------------------------
 
-export const ToolContent = ({ children, className, ...props }: HTMLAttributes<HTMLDivElement>) => (
+export const ToolContent = ({
+  children,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement>) => (
   <CollapsibleContent
     className={cn("border-t border-border", className)}
     {...props}
@@ -146,10 +169,14 @@ interface ToolInputProps extends HTMLAttributes<HTMLDivElement> {
 export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
   if (input == null) return null;
 
-  const formatted = typeof input === "string" ? input : JSON.stringify(input, null, 2);
+  const formatted =
+    typeof input === "string" ? input : JSON.stringify(input, null, 2);
 
   return (
-    <div className={cn("px-3 py-2 border-b border-border", className)} {...props}>
+    <div
+      className={cn("px-3 py-2 border-b border-border", className)}
+      {...props}
+    >
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
         参数
       </div>
@@ -169,7 +196,12 @@ interface ToolOutputProps extends HTMLAttributes<HTMLDivElement> {
   errorText?: string;
 }
 
-export const ToolOutput = ({ output, errorText, className, ...props }: ToolOutputProps) => {
+export const ToolOutput = ({
+  output,
+  errorText,
+  className,
+  ...props
+}: ToolOutputProps) => {
   if (!output && !errorText) return null;
 
   return (
@@ -184,7 +216,9 @@ export const ToolOutput = ({ output, errorText, className, ...props }: ToolOutpu
       ) : (
         <div className="text-xs text-foreground/80 max-h-60 overflow-auto">
           {typeof output === "string" ? (
-            <pre className="font-mono whitespace-pre-wrap break-all">{output}</pre>
+            <pre className="font-mono whitespace-pre-wrap break-all">
+              {output}
+            </pre>
           ) : (
             output
           )}

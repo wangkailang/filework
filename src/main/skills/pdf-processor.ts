@@ -1,9 +1,9 @@
-import { z } from "zod/v4";
+import { readFile } from "node:fs/promises";
 import type { Tool } from "ai";
 import { PDFParse } from "pdf-parse";
-import { readFile } from "node:fs/promises";
-import type { Skill } from "./types";
+import { z } from "zod/v4";
 import { validateFile } from "./file-skill-utils";
+import type { Skill } from "./types";
 
 const PDF_EXTENSIONS = [".pdf"];
 
@@ -26,7 +26,9 @@ const readPdfTextTool: Tool = {
         await pdf.destroy();
       }
     } catch (err) {
-      return { error: `PDF 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `PDF 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
@@ -35,8 +37,18 @@ const readPdfPagesTool: Tool = {
   description: "按页码范围读取 PDF 文件的文本内容",
   inputSchema: z.object({
     path: z.string().describe("PDF 文件的绝对路径"),
-    startPage: z.number().int().min(1).optional().describe("起始页码（从1开始），默认为第1页"),
-    endPage: z.number().int().min(1).optional().describe("结束页码（包含），默认为最后一页"),
+    startPage: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("起始页码（从1开始），默认为第1页"),
+    endPage: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("结束页码（包含），默认为最后一页"),
   }),
   execute: async ({
     path,
@@ -142,10 +154,7 @@ export const pdfProcessor: Skill = {
     "pdf page",
     "pdf metadata",
   ],
-  suggestions: [
-    "提取这个PDF文件的全部文本",
-    "读取PDF文件的元数据信息",
-  ],
+  suggestions: ["提取这个PDF文件的全部文本", "读取PDF文件的元数据信息"],
   tools: {
     readPdfText: readPdfTextTool,
     readPdfPages: readPdfPagesTool,

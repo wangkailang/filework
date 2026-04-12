@@ -1,8 +1,23 @@
-import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+} from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { cn } from "../../lib/utils";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./collapsible";
 
 interface FileTreeContextType {
   expandedPaths: Set<string>;
@@ -60,7 +75,11 @@ export const FileTree = ({
 
   return (
     <FileTreeContext.Provider value={contextValue}>
-      <div className={cn("font-mono text-sm", className)} role="tree" {...props}>
+      <div
+        className={cn("font-mono text-sm", className)}
+        role="tree"
+        {...props}
+      >
         {children}
       </div>
     </FileTreeContext.Provider>
@@ -79,7 +98,8 @@ export const FileTreeFolder = ({
   children,
   ...props
 }: FileTreeFolderProps) => {
-  const { expandedPaths, togglePath, selectedPath, onSelect } = useContext(FileTreeContext);
+  const { expandedPaths, togglePath, selectedPath, onSelect } =
+    useContext(FileTreeContext);
   const isExpanded = expandedPaths.has(path);
   const isSelected = selectedPath === path;
 
@@ -93,7 +113,12 @@ export const FileTreeFolder = ({
 
   return (
     <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
-      <div className={cn("", className)} role="treeitem" tabIndex={0} {...props}>
+      <div
+        className={cn("", className)}
+        role="treeitem"
+        tabIndex={0}
+        {...props}
+      >
         <CollapsibleTrigger asChild>
           <button
             className={cn(

@@ -5,16 +5,16 @@
  * approval, execution, and cancellation of planned tasks.
  */
 
-import { ipcMain } from "electron";
 import crypto from "node:crypto";
 import type { Tool } from "ai";
+import { ipcMain } from "electron";
 import { addTask, updateTask } from "../db";
 import { needsPlanning, planTask } from "../planner";
-import { executePlan, cancelPlan } from "../planner/executor";
+import { cancelPlan, executePlan } from "../planner/executor";
 import type { Plan } from "../planner/types";
 import { getAIModelByConfigId, isAuthError } from "./ai-models";
-import { buildTools } from "./ai-tool-permissions";
 import { abortControllers, cleanupTask } from "./ai-task-control";
+import { buildTools } from "./ai-tool-permissions";
 import { safeTools } from "./ai-tools";
 
 /** Pending plans waiting for user approval */
@@ -49,22 +49,60 @@ export const registerPlanHandlers = () => {
   /** Generate a plan without executing it */
   ipcMain.handle(
     "ai:generatePlan",
-    async (event, payload: { prompt: string; workspacePath: string; llmConfigId?: string }) => {
+    async (
+      event,
+      payload: { prompt: string; workspacePath: string; llmConfigId?: string },
+    ) => {
+      const id = crypto.randomUUID();
+      const sender = event.sender;
+      const controller = new AbortController();
+      abortControllers.set(id, controller);
+
       try {
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-start", { id });
+        }
+
         const model = getAIModelByConfigId(payload.llmConfigId);
         // Use read-only tools for plan generation to avoid side effects
         const tools = buildReadOnlyTools();
-        const plan = await planTask(payload.prompt, payload.workspacePath, model, tools);
+        const plan = await planTask(
+          payload.prompt,
+          payload.workspacePath,
+          model,
+          tools,
+          controller.signal,
+        );
 
         // Store plan for later approval
         pendingPlans.set(plan.id, plan);
 
-        return { plan };
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-ready", { id, plan });
+          sender.send("ai:stream-done", { id });
+        }
+
+        return { id, plan };
       } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          if (!sender.isDestroyed()) {
+            sender.send("ai:stream-done", { id });
+          }
+          return { id, cancelled: true };
+        }
+
         const errorMsg = isAuthError(error)
           ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-          : error instanceof Error ? error.message : "Unknown error";
-        return { error: errorMsg };
+          : error instanceof Error
+            ? error.message
+            : "Unknown error";
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-error", { id, error: errorMsg });
+          sender.send("ai:stream-error", { id, error: errorMsg });
+        }
+        return { id, error: errorMsg };
+      } finally {
+        cleanupTask(id);
       }
     },
   );
@@ -133,8 +171,15 @@ export const registerPlanHandlers = () => {
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
           // User-initiated abort — treat as normal completion
-          console.log("[Main] Plan AbortError caught, cleaning up for taskId:", id);
-          updateTask(id, { status: "completed", result: plan.goal, completedAt: new Date().toISOString() });
+          console.log(
+            "[Main] Plan AbortError caught, cleaning up for taskId:",
+            id,
+          );
+          updateTask(id, {
+            status: "completed",
+            result: plan.goal,
+            completedAt: new Date().toISOString(),
+          });
           if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
           // Clean up AbortController immediately
           abortControllers.delete(id);
@@ -142,7 +187,9 @@ export const registerPlanHandlers = () => {
         }
         const errorMsg = isAuthError(error)
           ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-          : error instanceof Error ? error.message : "Unknown error";
+          : error instanceof Error
+            ? error.message
+            : "Unknown error";
         updateTask(id, {
           status: "failed",
           result: errorMsg,

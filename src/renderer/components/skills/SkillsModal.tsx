@@ -1,5 +1,5 @@
 import { ArrowLeft, Blocks, ExternalLink, Search, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 
 type SourceType = "built-in" | "project" | "personal" | "additional";
@@ -73,18 +73,30 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
     window.filework.listSkills().then((list: SkillListItem[]) => {
       if (!cancelled) setSkills(list ?? []);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // Fetch detail when a skill is selected
   useEffect(() => {
-    if (!selectedSkillId) { setDetail(null); return; }
+    if (!selectedSkillId) {
+      setDetail(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
-    window.filework.getSkillDetail(selectedSkillId).then((d: SkillDetailData | null) => {
-      if (!cancelled) { setDetail(d); setLoading(false); }
-    });
-    return () => { cancelled = true; };
+    window.filework
+      .getSkillDetail(selectedSkillId)
+      .then((d: SkillDetailData | null) => {
+        if (!cancelled) {
+          setDetail(d);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedSkillId]);
 
   // Escape to close
@@ -141,7 +153,7 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
             )}
             <Blocks className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-base font-medium text-foreground">
-              {selectedSkillId ? detail?.name ?? "..." : "技能管理"}
+              {selectedSkillId ? (detail?.name ?? "...") : "技能管理"}
             </h2>
           </div>
           <button
@@ -204,7 +216,10 @@ const SkillListView = ({
         />
       </div>
       <div className="flex gap-1.5 flex-wrap">
-        <FilterTab active={filter === "all"} onClick={() => onFilterChange("all")}>
+        <FilterTab
+          active={filter === "all"}
+          onClick={() => onFilterChange("all")}
+        >
           全部 ({skills.length})
         </FilterTab>
         {availableSources.map((src) => (
@@ -228,7 +243,11 @@ const SkillListView = ({
       ) : (
         <div className="space-y-2 pt-1">
           {skills.map((skill) => (
-            <SkillCard key={skill.id} skill={skill} onClick={() => onSelect(skill.id)} />
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              onClick={() => onSelect(skill.id)}
+            />
           ))}
         </div>
       )}
@@ -389,9 +408,9 @@ const SkillDetailView = ({
       {detail.suggestions.length > 0 && (
         <Section title="建议提示词">
           <div className="space-y-1.5">
-            {detail.suggestions.map((s, i) => (
+            {detail.suggestions.map((s) => (
               <div
-                key={i}
+                key={s}
                 className="text-sm text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5"
               >
                 {s}
@@ -459,7 +478,9 @@ const SkillDetailView = ({
               <div className="space-y-1.5 text-xs">
                 {ext.requires.bins && ext.requires.bins.length > 0 && (
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground shrink-0 w-12">命令</span>
+                    <span className="text-muted-foreground shrink-0 w-12">
+                      命令
+                    </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.bins.join(", ")}
                     </span>
@@ -467,7 +488,9 @@ const SkillDetailView = ({
                 )}
                 {ext.requires.pip && ext.requires.pip.length > 0 && (
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground shrink-0 w-12">pip</span>
+                    <span className="text-muted-foreground shrink-0 w-12">
+                      pip
+                    </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.pip.join(", ")}
                     </span>
@@ -475,7 +498,9 @@ const SkillDetailView = ({
                 )}
                 {ext.requires.env && ext.requires.env.length > 0 && (
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground shrink-0 w-12">环境变量</span>
+                    <span className="text-muted-foreground shrink-0 w-12">
+                      环境变量
+                    </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.env.join(", ")}
                     </span>
@@ -483,7 +508,9 @@ const SkillDetailView = ({
                 )}
                 {ext.requires.os && ext.requires.os.length > 0 && (
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground shrink-0 w-12">系统</span>
+                    <span className="text-muted-foreground shrink-0 w-12">
+                      系统
+                    </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.os.join(", ")}
                     </span>

@@ -23,7 +23,11 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
 
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
 
-export const MessageContent = ({ children, className, ...props }: MessageContentProps) => (
+export const MessageContent = ({
+  children,
+  className,
+  ...props
+}: MessageContentProps) => (
   <div
     className={cn(
       "flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm",
@@ -39,7 +43,11 @@ export const MessageContent = ({ children, className, ...props }: MessageContent
 
 export type MessageActionsProps = ComponentProps<"div">;
 
-export const MessageActions = ({ className, children, ...props }: MessageActionsProps) => (
+export const MessageActions = ({
+  className,
+  children,
+  ...props
+}: MessageActionsProps) => (
   <div className={cn("flex items-center gap-1", className)} {...props}>
     {children}
   </div>
@@ -49,7 +57,12 @@ export type MessageActionProps = HTMLAttributes<HTMLButtonElement> & {
   label?: string;
 };
 
-export const MessageAction = ({ children, label, className, ...props }: MessageActionProps) => (
+export const MessageAction = ({
+  children,
+  label,
+  className,
+  ...props
+}: MessageActionProps) => (
   <button
     type="button"
     className={cn(
@@ -70,7 +83,10 @@ const streamdownPlugins = { cjk, code, math };
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
-      className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
+      className={cn(
+        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        className,
+      )}
       plugins={streamdownPlugins}
       {...props}
     />

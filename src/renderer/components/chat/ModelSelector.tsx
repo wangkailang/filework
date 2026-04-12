@@ -14,7 +14,10 @@ interface ModelSelectorProps {
   onSelect: (configId: string) => void;
 }
 
-export const ModelSelector = ({ selectedConfigId, onSelect }: ModelSelectorProps) => {
+export const ModelSelector = ({
+  selectedConfigId,
+  onSelect,
+}: ModelSelectorProps) => {
   const [configs, setConfigs] = useState<LlmConfig[]>([]);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -27,7 +30,8 @@ export const ModelSelector = ({ selectedConfigId, onSelect }: ModelSelectorProps
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     if (open) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -35,7 +39,10 @@ export const ModelSelector = ({ selectedConfigId, onSelect }: ModelSelectorProps
 
   if (configs.length <= 1) return null;
 
-  const selected = configs.find((c) => c.id === selectedConfigId) || configs.find((c) => c.isDefault) || configs[0];
+  const selected =
+    configs.find((c) => c.id === selectedConfigId) ||
+    configs.find((c) => c.isDefault) ||
+    configs[0];
 
   return (
     <div ref={ref} className="relative">
@@ -46,8 +53,13 @@ export const ModelSelector = ({ selectedConfigId, onSelect }: ModelSelectorProps
       >
         <span className="max-w-[120px] truncate">{selected?.name}</span>
         <span className="opacity-40">·</span>
-        <span className="max-w-[80px] truncate opacity-60">{selected?.model}</span>
-        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="max-w-[80px] truncate opacity-60">
+          {selected?.model}
+        </span>
+        <ChevronDown
+          size={12}
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
@@ -56,16 +68,25 @@ export const ModelSelector = ({ selectedConfigId, onSelect }: ModelSelectorProps
             <button
               key={c.id}
               type="button"
-              onClick={() => { onSelect(c.id); setOpen(false); }}
+              onClick={() => {
+                onSelect(c.id);
+                setOpen(false);
+              }}
               className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-accent ${
                 c.id === selected?.id ? "text-primary" : "text-foreground"
               }`}
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate">{c.name}</div>
-                <div className="truncate text-muted-foreground">{c.provider} · {c.model}</div>
+                <div className="truncate text-muted-foreground">
+                  {c.provider} · {c.model}
+                </div>
               </div>
-              {c.isDefault && <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">default</span>}
+              {c.isDefault && (
+                <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                  default
+                </span>
+              )}
             </button>
           ))}
         </div>

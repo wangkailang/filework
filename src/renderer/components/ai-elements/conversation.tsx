@@ -1,14 +1,14 @@
+import { ArrowDown, Download } from "lucide-react";
 import {
   createContext,
+  type HTMLAttributes,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
-  type HTMLAttributes,
-  type ReactNode,
 } from "react";
-import { ArrowDown, Download } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,11 @@ const useConversation = () => useContext(ConversationContext);
 
 export interface ConversationProps extends HTMLAttributes<HTMLDivElement> {}
 
-export const Conversation = ({ children, className, ...props }: ConversationProps) => {
+export const Conversation = ({
+  children,
+  className,
+  ...props
+}: ConversationProps) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
@@ -48,9 +52,14 @@ export const Conversation = ({ children, className, ...props }: ConversationProp
   }, []);
 
   return (
-    <ConversationContext.Provider value={{ scrollRef, isAtBottom, setIsAtBottom, scrollToBottom }}>
+    <ConversationContext.Provider
+      value={{ scrollRef, isAtBottom, setIsAtBottom, scrollToBottom }}
+    >
       <div
-        className={cn("relative flex flex-1 flex-col overflow-hidden", className)}
+        className={cn(
+          "relative flex flex-1 flex-col overflow-hidden",
+          className,
+        )}
         role="log"
         aria-live="polite"
         {...props}
@@ -65,7 +74,8 @@ export const Conversation = ({ children, className, ...props }: ConversationProp
 // <ConversationContent />
 // ---------------------------------------------------------------------------
 
-export interface ConversationContentProps extends HTMLAttributes<HTMLDivElement> {}
+export interface ConversationContentProps
+  extends HTMLAttributes<HTMLDivElement> {}
 
 export const ConversationContent = ({
   children,
@@ -76,7 +86,11 @@ export const ConversationContent = ({
 
   // Track child count to auto-scroll on new messages
   const prevChildCountRef = useRef(0);
-  const childCount = Array.isArray(children) ? children.length : children ? 1 : 0;
+  const childCount = Array.isArray(children)
+    ? children.length
+    : children
+      ? 1
+      : 0;
 
   useEffect(() => {
     if (childCount > prevChildCountRef.current) {
@@ -91,7 +105,8 @@ export const ConversationContent = ({
     if (!el) return;
     const handleScroll = () => {
       const threshold = 40;
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      const atBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       setIsAtBottom(atBottom);
     };
     el.addEventListener("scroll", handleScroll, { passive: true });
@@ -104,19 +119,27 @@ export const ConversationContent = ({
     if (!el) return;
     const observer = new MutationObserver(() => {
       const threshold = 40;
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      const nearBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       if (nearBottom) {
         el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       }
     });
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     return () => observer.disconnect();
   }, [scrollRef]);
 
   return (
     <div
       ref={scrollRef}
-      className={cn("flex-1 overflow-y-auto scroll-smooth px-6 py-4", className)}
+      className={cn(
+        "flex-1 overflow-y-auto scroll-smooth px-6 py-4",
+        className,
+      )}
       {...props}
     >
       <div className="space-y-4 max-w-2xl mx-auto">{children}</div>
@@ -128,7 +151,8 @@ export const ConversationContent = ({
 // <ConversationEmptyState />
 // ---------------------------------------------------------------------------
 
-export interface ConversationEmptyStateProps extends HTMLAttributes<HTMLDivElement> {
+export interface ConversationEmptyStateProps
+  extends HTMLAttributes<HTMLDivElement> {
   icon?: ReactNode;
   title?: string;
   description?: string;
@@ -151,7 +175,9 @@ export const ConversationEmptyState = ({
   >
     {icon && <div className="text-muted-foreground">{icon}</div>}
     {title && <h2 className="text-lg font-medium text-foreground">{title}</h2>}
-    {description && <p className="text-sm text-muted-foreground">{description}</p>}
+    {description && (
+      <p className="text-sm text-muted-foreground">{description}</p>
+    )}
     {children}
   </div>
 );
@@ -160,7 +186,8 @@ export const ConversationEmptyState = ({
 // <ConversationScrollButton />
 // ---------------------------------------------------------------------------
 
-export interface ConversationScrollButtonProps extends HTMLAttributes<HTMLButtonElement> {}
+export interface ConversationScrollButtonProps
+  extends HTMLAttributes<HTMLButtonElement> {}
 
 export const ConversationScrollButton = ({
   className,
@@ -212,12 +239,15 @@ export const messagesToMarkdown = (
         msg.parts
           ?.filter((p) => p.type === "text" && p.text)
           .map((p) => p.text)
-          .join("\n") ?? msg.content ?? "";
+          .join("\n") ??
+        msg.content ??
+        "";
       return `### ${role}\n\n${text}`;
     })
     .join("\n\n---\n\n");
 
-export interface ConversationDownloadProps extends HTMLAttributes<HTMLButtonElement> {
+export interface ConversationDownloadProps
+  extends HTMLAttributes<HTMLButtonElement> {
   messages: DownloadMessage[];
   filename?: string;
 }

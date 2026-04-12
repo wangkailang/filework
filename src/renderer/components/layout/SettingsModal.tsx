@@ -1,4 +1,4 @@
-import { Globe, Monitor, Moon, Sun, X, Cpu, Settings } from "lucide-react";
+import { Cpu, Globe, Monitor, Moon, Settings, Sun, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
@@ -30,7 +30,9 @@ interface SettingsModalProps {
 const applyTheme = (t: Theme) => {
   const root = document.documentElement;
   if (t === "system") {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)",
+    ).matches;
     root.classList.toggle("dark", prefersDark);
     root.classList.toggle("light", !prefersDark);
   } else {
@@ -39,7 +41,11 @@ const applyTheme = (t: Theme) => {
   }
 };
 
-export const SettingsModal = ({ open, onClose, onLocaleChange }: SettingsModalProps) => {
+export const SettingsModal = ({
+  open,
+  onClose,
+  onLocaleChange,
+}: SettingsModalProps) => {
   const { LL, locale } = useI18nContext();
   const [theme, setTheme] = useState<Theme>("dark");
   const [activeTab, setActiveTab] = useState<Tab>("general");
@@ -102,7 +108,9 @@ export const SettingsModal = ({ open, onClose, onLocaleChange }: SettingsModalPr
         {/* Left sidebar tabs */}
         <div className="flex flex-col w-44 shrink-0 border-r border-border bg-muted/50 py-3">
           <div className="flex items-center justify-between px-4 pb-3 border-b border-border mb-2">
-            <h2 className="text-sm font-medium text-foreground">{LL.settings_title()}</h2>
+            <h2 className="text-sm font-medium text-foreground">
+              {LL.settings_title()}
+            </h2>
             <button
               type="button"
               onClick={onClose}

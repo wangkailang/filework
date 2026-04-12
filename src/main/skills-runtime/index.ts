@@ -8,21 +8,12 @@
 import { buildDiscoverySources, discoverSkills } from "./discovery";
 import type { SkillRegistry } from "./registry";
 
-export { parseSkillMd, printSkillMd } from "./parser";
-export { buildDiscoverySources, checkEligibility, discoverSkills } from "./discovery";
 export {
-  BLOCKED_COMMAND_PREFIXES,
-  SAFE_COMMAND_PREFIXES,
-  buildSafeEnv,
-  computeSkillHash,
-  getTrustLevel,
-  isCommandAllowed,
-  isSkillTrusted,
-  requestSkillApproval,
-} from "./security";
-export { SkillRegistry } from "./registry";
-export { preprocessSkill } from "./preprocessor";
-export { runHook } from "./hooks";
+  buildDiscoverySources,
+  checkEligibility,
+  discoverSkills,
+} from "./discovery";
+export type { ExecutionContext, ExecutorDeps } from "./executor";
 export {
   buildSkillCatalogXml,
   determineInjectionMode,
@@ -31,7 +22,20 @@ export {
   executeSubagent,
   wrapWithSecurityBoundary,
 } from "./executor";
-export type { ExecutionContext, ExecutorDeps } from "./executor";
+export { runHook } from "./hooks";
+export { parseSkillMd, printSkillMd } from "./parser";
+export { preprocessSkill } from "./preprocessor";
+export { SkillRegistry } from "./registry";
+export {
+  BLOCKED_COMMAND_PREFIXES,
+  buildSafeEnv,
+  computeSkillHash,
+  getTrustLevel,
+  isCommandAllowed,
+  isSkillTrusted,
+  requestSkillApproval,
+  SAFE_COMMAND_PREFIXES,
+} from "./security";
 
 /**
  * Initialize skill discovery and register external skills.

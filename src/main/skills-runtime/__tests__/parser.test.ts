@@ -35,14 +35,21 @@ You are a code review expert.
     expect(result.frontmatter.description).toBe("Reviews code");
     expect(result.frontmatter.model).toBe("claude-sonnet-4-20250514");
     expect(result.frontmatter.context).toBe("fork");
-    expect(result.frontmatter["allowed-tools"]).toEqual(["readFile", "listDirectory"]);
+    expect(result.frontmatter["allowed-tools"]).toEqual([
+      "readFile",
+      "listDirectory",
+    ]);
     expect(result.frontmatter["disable-model-invocation"]).toBe(false);
     expect(result.frontmatter["user-invocable"]).toBe(true);
     expect(result.frontmatter.requires?.bins).toEqual(["eslint"]);
     expect(result.frontmatter.requires?.env).toEqual(["ANTHROPIC_API_KEY"]);
     expect(result.frontmatter.requires?.os).toEqual(["darwin", "linux"]);
-    expect(result.frontmatter.hooks?.["pre-activate"]).toBe("./scripts/setup.sh");
-    expect(result.frontmatter.hooks?.["post-complete"]).toBe("./scripts/cleanup.sh");
+    expect(result.frontmatter.hooks?.["pre-activate"]).toBe(
+      "./scripts/setup.sh",
+    );
+    expect(result.frontmatter.hooks?.["post-complete"]).toBe(
+      "./scripts/cleanup.sh",
+    );
     expect(result.body).toContain("You are a code review expert.");
     expect(result.sourcePath).toBe("/path/to/SKILL.md");
   });
@@ -57,25 +64,35 @@ You are a code review expert.
   });
 
   it("throws SkillParseError for empty content", () => {
-    expect(() => parseSkillMd("", "/path/to/SKILL.md")).toThrow(SkillParseError);
-    expect(() => parseSkillMd("   ", "/path/to/SKILL.md")).toThrow(SkillParseError);
-    expect(() => parseSkillMd("\n\n", "/path/to/SKILL.md")).toThrow(SkillParseError);
+    expect(() => parseSkillMd("", "/path/to/SKILL.md")).toThrow(
+      SkillParseError,
+    );
+    expect(() => parseSkillMd("   ", "/path/to/SKILL.md")).toThrow(
+      SkillParseError,
+    );
+    expect(() => parseSkillMd("\n\n", "/path/to/SKILL.md")).toThrow(
+      SkillParseError,
+    );
   });
 
   it("throws SkillValidationError for invalid name (not kebab-case)", () => {
     const content = `---\nname: NotKebab\n---\nBody`;
-    expect(() => parseSkillMd(content, "/path/to/SKILL.md")).toThrow(SkillValidationError);
+    expect(() => parseSkillMd(content, "/path/to/SKILL.md")).toThrow(
+      SkillValidationError,
+    );
   });
 
   it("throws SkillValidationError for name exceeding 64 characters", () => {
-    const longName = "a" + "-b".repeat(32); // 65 chars
+    const longName = `a${"-b".repeat(32)}`; // 65 chars
     const content = `---\nname: ${longName}\n---\nBody`;
-    expect(() => parseSkillMd(content, "/path/to/SKILL.md")).toThrow(SkillValidationError);
+    expect(() => parseSkillMd(content, "/path/to/SKILL.md")).toThrow(
+      SkillValidationError,
+    );
   });
 
   it("accepts a valid kebab-case name at exactly 64 characters", () => {
     // Build a 64-char kebab-case name: "a-b" repeated to fill
-    const name = "a-bb".repeat(16); // 64 chars: "a-bba-bba-bb..."
+    const _name = "a-bb".repeat(16); // 64 chars: "a-bba-bba-bb..."
     // Actually let's be precise
     const segments = [];
     let len = 0;
@@ -83,7 +100,7 @@ You are a code review expert.
       segments.push("abcd");
       len += 5; // "abcd" + "-"
     }
-    const kebabName = segments.join("-").slice(0, 64);
+    const _kebabName = segments.join("-").slice(0, 64);
     // Ensure it's valid kebab-case and exactly 64 chars
     const validName = "a".repeat(64); // simple: all lowercase, no hyphens, valid kebab
     expect(validName.length).toBe(64);
