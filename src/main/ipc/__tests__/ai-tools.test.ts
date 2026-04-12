@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
 
 describe("safeTools.listDirectory", () => {
   it("returns deterministically sorted entries in incremental mode", async () => {
@@ -68,5 +69,74 @@ describe("safeTools.listDirectory", () => {
       expect.objectContaining({ name: "a.txt", isDirectory: false }),
       expect.objectContaining({ name: "c.txt", isDirectory: false }),
     ]);
+  });
+});
+
+describe("safeTools.runCommand", () => {
+  it("returns cancelled result when abortSignal is triggered", async () => {
+    vi.resetModules();
+
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      pid: number;
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+    };
+    child.pid = 4242;
+    child.stdout = stdout;
+    child.stderr = stderr;
+
+    const spawnMock = vi.fn(() => child as any);
+    vi.doMock("node:child_process", () => ({
+      spawn: spawnMock,
+    }));
+
+    vi.doMock("../../utils/incremental-scanner", () => ({
+      getIncrementalScanner: () => ({
+        scanIncremental: vi.fn(async () => ({
+          added: [],
+          modified: [],
+          unchanged: [],
+          deleted: [],
+          totalFiles: 0,
+          scanTime: 1,
+        })),
+        getCacheStats: vi.fn(() => ({ directories: 0, totalFiles: 0, memoryUsage: 0 })),
+      }),
+      FileEntry: {},
+    }));
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation((() => true) as any);
+    const { safeTools } = await import("../ai-tools");
+
+    const controller = new AbortController();
+    const runPromise = safeTools.runCommand.execute!(
+      { command: "npx agent-browser open https://example.com" } as any,
+      { abortSignal: controller.signal } as any,
+    );
+
+    controller.abort();
+    const result = await runPromise;
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        exitCode: 130,
+      }),
+    );
+    expect(spawnMock).toHaveBeenCalledWith(
+      "npx agent-browser open https://example.com",
+      [],
+      expect.objectContaining({
+        shell: true,
+        detached: process.platform !== "win32",
+      }),
+    );
+
+    if (process.platform !== "win32") {
+      expect(killSpy).toHaveBeenCalledWith(-4242, "SIGTERM");
+    }
+
+    killSpy.mockRestore();
   });
 });

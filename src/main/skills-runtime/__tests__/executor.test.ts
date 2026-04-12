@@ -236,6 +236,24 @@ describe("executeSkill", () => {
     expect(result).toBeUndefined();
   });
 
+  it("passes abortSignal to fork-mode streamText", async () => {
+    const { streamText } = await import("ai");
+    const abortController = new AbortController();
+    const ctx = makeCtx({
+      skill: makeExternalSkill({}, { context: "fork" }),
+      abortSignal: abortController.signal,
+    });
+
+    const deps = makeDeps();
+    await executeSkill(ctx, deps);
+
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abortSignal: abortController.signal,
+      }),
+    );
+  });
+
   it("executes pre-activate hook before execution", async () => {
     const { runHook } = await import("../hooks");
     const ctx = makeCtx({

@@ -46,6 +46,8 @@ export interface ExecutionContext {
   workspacePath: string;
   sender: Electron.WebContents;
   taskId: string;
+  /** Optional task-level abort signal from main execution controller. */
+  abortSignal?: AbortSignal;
   /** Injection mode for this execution. */
   injectionMode: "eager" | "lazy";
   /** Converted conversation history for multi-turn context. */
@@ -253,7 +255,7 @@ export async function executeSubagent(
   ctx: ExecutionContext,
   deps: ExecutorDeps,
 ): Promise<void> {
-  const { skill, processedPrompt, workspacePath, sender, taskId } = ctx;
+  const { skill, processedPrompt, workspacePath, sender, taskId, abortSignal } = ctx;
   const fm = skill.external?.frontmatter;
 
   // ── Build the system prompt with security boundary ──
@@ -286,6 +288,7 @@ export async function executeSubagent(
     maxRetries: 2,
     stopWhen: stepCountIs(20),
     system: `${systemPrompt}\n\nCurrent workspace: ${workspacePath}`,
+    abortSignal,
   };
 
   const result = ctx.history?.length

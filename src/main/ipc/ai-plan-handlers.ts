@@ -50,21 +50,54 @@ export const registerPlanHandlers = () => {
   ipcMain.handle(
     "ai:generatePlan",
     async (event, payload: { prompt: string; workspacePath: string; llmConfigId?: string }) => {
+      const id = crypto.randomUUID();
+      const sender = event.sender;
+      const controller = new AbortController();
+      abortControllers.set(id, controller);
+
       try {
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-start", { id });
+        }
+
         const model = getAIModelByConfigId(payload.llmConfigId);
         // Use read-only tools for plan generation to avoid side effects
         const tools = buildReadOnlyTools();
-        const plan = await planTask(payload.prompt, payload.workspacePath, model, tools);
+        const plan = await planTask(
+          payload.prompt,
+          payload.workspacePath,
+          model,
+          tools,
+          controller.signal,
+        );
 
         // Store plan for later approval
         pendingPlans.set(plan.id, plan);
 
-        return { plan };
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-ready", { id, plan });
+          sender.send("ai:stream-done", { id });
+        }
+
+        return { id, plan };
       } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          if (!sender.isDestroyed()) {
+            sender.send("ai:stream-done", { id });
+          }
+          return { id, cancelled: true };
+        }
+
         const errorMsg = isAuthError(error)
           ? "API Key 无效或已过期，请在设置中检查该渠道配置"
           : error instanceof Error ? error.message : "Unknown error";
-        return { error: errorMsg };
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-error", { id, error: errorMsg });
+          sender.send("ai:stream-error", { id, error: errorMsg });
+        }
+        return { id, error: errorMsg };
+      } finally {
+        cleanupTask(id);
       }
     },
   );

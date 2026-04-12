@@ -28,6 +28,7 @@ export function useChatSession(workspacePath: string) {
 
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
+  const pendingStopRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -106,6 +107,12 @@ export function useChatSession(workspacePath: string) {
     const offStart = window.filework.onStreamStart(({ id }) => {
       console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
+      if (pendingStopRef.current) {
+        pendingStopRef.current = false;
+        window.filework.stopGeneration(id).catch((error) => {
+          console.error("[Stop Generation] Failed to stop deferred task:", error);
+        });
+      }
     });
 
     const offSkillActivated = window.filework.onSkillActivated(
@@ -212,6 +219,7 @@ export function useChatSession(workspacePath: string) {
       console.log("[Stream Done] Cleaning up taskId:", id);
       streamTaskIdRef.current = null;
       streamAssistantIdRef.current = null;
+      pendingStopRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
@@ -226,6 +234,7 @@ export function useChatSession(workspacePath: string) {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
       streamTaskIdRef.current = null;
+      pendingStopRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
@@ -311,8 +320,10 @@ export function useChatSession(workspacePath: string) {
   // Planner event listeners
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const offPlanReady = window.filework.onPlanReady(({ plan }) => {
+    const offPlanReady = window.filework.onPlanReady(({ id, plan }) => {
+      if (id && id !== streamTaskIdRef.current) return;
       setIsPlanGenerating(false);
+      setIsLoading(false);
       const planView = plan as PlanView;
       setActivePlanId(planView.id);
 
@@ -331,7 +342,8 @@ export function useChatSession(workspacePath: string) {
       });
     });
 
-    const offPlanError = window.filework.onPlanError(({ error }) => {
+    const offPlanError = window.filework.onPlanError(({ id, error }) => {
+      if (id && id !== streamTaskIdRef.current) return;
       setIsPlanGenerating(false);
       setIsLoading(false);
       setMessages((prev) => {
@@ -373,6 +385,8 @@ export function useChatSession(workspacePath: string) {
   // ---------------------------------------------------------------------------
   const handleApprovePlan = async (planId: string) => {
     setActivePlanId(null);
+    setIsLoading(true);
+    pendingStopRef.current = false;
     setMessages((prev) => {
       const updated = [...prev];
       for (let i = updated.length - 1; i >= 0; i--) {
@@ -501,6 +515,7 @@ export function useChatSession(workspacePath: string) {
     setMessages(withBoth);
     debouncedSave(withBoth, sessionId);
     setIsLoading(true);
+    pendingStopRef.current = false;
     streamAssistantIdRef.current = assistantId;
 
     if (isFirstMessage) {
@@ -592,6 +607,9 @@ export function useChatSession(workspacePath: string) {
     console.log("[Stop Generation] Current taskId:", taskId, "isLoading:", isLoading);
 
     if (!taskId) {
+      if (isLoading) {
+        pendingStopRef.current = true;
+      }
       console.warn("[Stop Generation] No active taskId found, cannot stop generation because no task id is associated with the current stream");
       // Do not force-reset UI or clear stream refs here; wait for a proper done/error event
       return;

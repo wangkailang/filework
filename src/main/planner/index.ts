@@ -80,6 +80,7 @@ export const planTask = async (
   workspacePath: string,
   model: Parameters<typeof generateText>[0]["model"],
   readOnlyTools: Parameters<typeof generateText>[0]["tools"],
+  abortSignal?: AbortSignal,
 ): Promise<Plan> => {
   const planId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -90,6 +91,7 @@ export const planTask = async (
     model,
     tools: readOnlyTools,
     stopWhen: stepCountIs(10),
+    abortSignal,
     system: `You are a task planner for FileWork, a local file management AI assistant.
 
 Current workspace: ${workspacePath}

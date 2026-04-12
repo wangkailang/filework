@@ -224,6 +224,7 @@ const handleTaskExecution = async (
             workspacePath: payload.workspacePath,
             sender,
             taskId: id,
+            abortSignal: controller.signal,
             injectionMode: "eager",
             history: convertedHistory,
           },

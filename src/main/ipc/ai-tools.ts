@@ -158,10 +158,54 @@ export const safeTools: Record<string, Tool> = {
     }),
     execute: async ({ command, cwd }: { command: string; cwd?: string }, { abortSignal }) => {
       return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+        let settled = false;
+        let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const settle = (
+          value: { stdout: string; stderr: string; exitCode: number } | Error,
+          asError = false,
+        ) => {
+          if (settled) return;
+          settled = true;
+          if (killTimer) {
+            clearTimeout(killTimer);
+            killTimer = null;
+          }
+          if (asError) {
+            reject(value as Error);
+          } else {
+            resolve(value as { stdout: string; stderr: string; exitCode: number });
+          }
+        };
+
+        const terminateProcessTree = (signal: NodeJS.Signals) => {
+          if (!child.pid) return;
+          try {
+            // Detached child gets its own process group. Kill the whole group.
+            if (process.platform !== "win32") {
+              process.kill(-child.pid, signal);
+            } else {
+              // /T kills child tree, /F force-kills.
+              spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+                stdio: "ignore",
+                windowsHide: true,
+              });
+            }
+          } catch {
+            // Fallback to direct pid kill when process-group kill isn't available.
+            try {
+              process.kill(child.pid, signal);
+            } catch {
+              // Process may already be gone.
+            }
+          }
+        };
+
         // Use shell: true to properly handle quoted arguments, pipes, and shell syntax
         const child = spawn(command, [], {
           cwd: cwd || process.cwd(),
           shell: true,
+          detached: process.platform !== "win32",
           stdio: ["pipe", "pipe", "pipe"],
         });
 
@@ -177,11 +221,11 @@ export const safeTools: Record<string, Tool> = {
         });
 
         child.on("close", (code) => {
-          resolve({ stdout, stderr, exitCode: code || 0 });
+          settle({ stdout, stderr, exitCode: code || 0 });
         });
 
         child.on("error", (error) => {
-          reject(error);
+          settle(error, true);
         });
 
         // Handle abort signal
@@ -190,34 +234,16 @@ export const safeTools: Record<string, Tool> = {
             console.log("[Tool] Aborting runCommand:", command);
 
             try {
-              // Enhanced process termination
-              if (child.pid) {
-                // Try SIGTERM first
-                process.kill(child.pid, "SIGTERM");
-
-                // Force kill after 2 seconds
-                setTimeout(() => {
-                  try {
-                    if (child.pid) {
-                      process.kill(child.pid, "SIGKILL");
-                      // Also try to kill process tree for complex commands like npx
-                      try {
-                        spawn("pkill", ["-P", child.pid.toString()]);
-                      } catch (err) {
-                        // Process may already be dead
-                      }
-                    }
-                  } catch (err) {
-                    // Process may already be dead
-                  }
-                }, 2000);
-              }
-
+              terminateProcessTree("SIGTERM");
+              // Force kill after grace period in case process ignores SIGTERM.
+              killTimer = setTimeout(() => {
+                terminateProcessTree("SIGKILL");
+              }, 2000);
             } catch (err) {
               console.error("[Tool] Process termination failed:", err);
             }
 
-            resolve({
+            settle({
               stdout,
               stderr: stderr + "\\nCommand was cancelled",
               exitCode: 130, // Standard exit code for SIGTERM
