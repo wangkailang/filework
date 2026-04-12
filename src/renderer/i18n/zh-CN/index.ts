@@ -5,7 +5,8 @@ const zhCN: Translation = {
   tagline: "你的本地文件 AI 助手",
 
   welcome_title: "FileWork",
-  welcome_description: "你的本地文件 AI 助手。选择一个工作目录，告诉我你想做什么。",
+  welcome_description:
+    "你的本地文件 AI 助手。选择一个工作目录，告诉我你想做什么。",
   welcome_selectDirectory: "选择工作目录",
   welcome_privacy: "FileWork 只在你选择的目录中工作，数据不会离开你的电脑。",
 

@@ -1,6 +1,6 @@
 import type { ApprovalState } from "../ai-elements/confirmation";
-import type { ToolState } from "../ai-elements/tool";
 import type { PlanView } from "../ai-elements/plan-viewer";
+import type { ToolState } from "../ai-elements/tool";
 
 // ---------------------------------------------------------------------------
 // Message part types

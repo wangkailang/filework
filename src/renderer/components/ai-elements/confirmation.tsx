@@ -19,7 +19,12 @@ interface ConfirmationProps extends HTMLAttributes<HTMLDivElement> {
   state: ApprovalState;
 }
 
-export const Confirmation = ({ state, children, className, ...props }: ConfirmationProps) => (
+export const Confirmation = ({
+  state,
+  children,
+  className,
+  ...props
+}: ConfirmationProps) => (
   <div
     data-state={state}
     className={cn(

@@ -1,4 +1,4 @@
-import { stat, access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { extname } from "node:path";
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB

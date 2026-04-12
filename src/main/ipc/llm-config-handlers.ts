@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import type { LlmConfig } from "../db";
 import {
   createLlmConfig,
   deleteLlmConfig,
@@ -6,7 +7,6 @@ import {
   getLlmConfigs,
   updateLlmConfig,
 } from "../db";
-import type { LlmConfig } from "../db";
 
 type Provider = LlmConfig["provider"];
 
@@ -44,7 +44,13 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     return "provider is required";
   }
 
-  const validProviders: Provider[] = ["openai", "anthropic", "deepseek", "ollama", "custom"];
+  const validProviders: Provider[] = [
+    "openai",
+    "anthropic",
+    "deepseek",
+    "ollama",
+    "custom",
+  ];
   if (!validProviders.includes(data.provider)) {
     return `Invalid provider: ${data.provider}`;
   }
@@ -103,22 +109,28 @@ export const registerLlmConfigHandlers = () => {
     }
   });
 
-  ipcMain.handle("llm-config:update", async (_event, payload: UpdatePayload) => {
-    try {
-      const { id, ...updates } = payload;
-      updateLlmConfig(id, updates);
-      return getLlmConfig(id);
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  ipcMain.handle(
+    "llm-config:update",
+    async (_event, payload: UpdatePayload) => {
+      try {
+        const { id, ...updates } = payload;
+        updateLlmConfig(id, updates);
+        return getLlmConfig(id);
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
-  ipcMain.handle("llm-config:delete", async (_event, payload: { id: string }) => {
-    try {
-      deleteLlmConfig(payload.id);
-      return { success: true };
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  ipcMain.handle(
+    "llm-config:delete",
+    async (_event, payload: { id: string }) => {
+      try {
+        deleteLlmConfig(payload.id);
+        return { success: true };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 };

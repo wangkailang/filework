@@ -136,7 +136,8 @@ export function checkEligibility(skill: ParsedSkill): {
     } catch {
       return {
         eligible: false,
-        reason: "Required binary not found in PATH: python3 (needed for pip dependencies)",
+        reason:
+          "Required binary not found in PATH: python3 (needed for pip dependencies)",
       };
     }
 
@@ -185,7 +186,9 @@ export async function discoverSkills(
 
   for (const source of sources) {
     if (!(await isAccessible(source.basePath))) {
-      console.debug(`[skills-discovery] Skipping inaccessible source: ${source.basePath}`);
+      console.debug(
+        `[skills-discovery] Skipping inaccessible source: ${source.basePath}`,
+      );
       continue;
     }
 
@@ -199,7 +202,10 @@ export async function discoverSkills(
         followSymbolicLinks: false,
       });
     } catch (err) {
-      console.warn(`[skills-discovery] Error scanning ${source.basePath}:`, err);
+      console.warn(
+        `[skills-discovery] Error scanning ${source.basePath}:`,
+        err,
+      );
       continue;
     }
 

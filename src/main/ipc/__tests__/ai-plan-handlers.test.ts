@@ -86,7 +86,7 @@ describe("registerPlanHandlers / ai:generatePlan", () => {
       send: vi.fn(),
     };
 
-    const result = await handler!(
+    const result = await handler?.(
       { sender } as unknown as Electron.IpcMainInvokeEvent,
       {
         prompt: "make a plan",
@@ -100,9 +100,15 @@ describe("registerPlanHandlers / ai:generatePlan", () => {
     const passedAbortSignal = planTaskMock.mock.calls[0][4];
     expect(passedAbortSignal).toBeInstanceOf(AbortSignal);
 
-    const streamStartCall = sender.send.mock.calls.find((c) => c[0] === "ai:stream-start");
-    const planReadyCall = sender.send.mock.calls.find((c) => c[0] === "ai:plan-ready");
-    const streamDoneCall = sender.send.mock.calls.find((c) => c[0] === "ai:stream-done");
+    const streamStartCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:stream-start",
+    );
+    const planReadyCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:plan-ready",
+    );
+    const streamDoneCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:stream-done",
+    );
 
     expect(streamStartCall).toBeTruthy();
     expect(planReadyCall).toBeTruthy();
@@ -131,7 +137,7 @@ describe("registerPlanHandlers / ai:generatePlan", () => {
       send: vi.fn(),
     };
 
-    const result = await handler!(
+    const result = await handler?.(
       { sender } as unknown as Electron.IpcMainInvokeEvent,
       {
         prompt: "make a plan",
@@ -139,9 +145,15 @@ describe("registerPlanHandlers / ai:generatePlan", () => {
       },
     );
 
-    const streamStartCall = sender.send.mock.calls.find((c) => c[0] === "ai:stream-start");
-    const streamDoneCall = sender.send.mock.calls.find((c) => c[0] === "ai:stream-done");
-    const planErrorCall = sender.send.mock.calls.find((c) => c[0] === "ai:plan-error");
+    const streamStartCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:stream-start",
+    );
+    const streamDoneCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:stream-done",
+    );
+    const planErrorCall = sender.send.mock.calls.find(
+      (c) => c[0] === "ai:plan-error",
+    );
 
     expect(streamStartCall).toBeTruthy();
     expect(streamDoneCall).toBeTruthy();

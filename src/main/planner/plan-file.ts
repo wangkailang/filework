@@ -4,7 +4,7 @@
  * the AI's working memory and the user's audit log.
  */
 
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plan } from "./types";
 
@@ -13,11 +13,16 @@ const PLAN_FILE = "task_plan.md";
 
 const statusEmoji = (s: string): string => {
   switch (s) {
-    case "completed": return "✅";
-    case "running":   return "🔄";
-    case "failed":    return "❌";
-    case "skipped":   return "⏭️";
-    default:          return "⬜";
+    case "completed":
+      return "✅";
+    case "running":
+      return "🔄";
+    case "failed":
+      return "❌";
+    case "skipped":
+      return "⏭️";
+    default:
+      return "⬜";
   }
 };
 
@@ -39,7 +44,9 @@ const renderPlanMarkdown = (plan: Plan): string => {
   for (const step of plan.steps) {
     const emoji = statusEmoji(step.status);
     const skill = step.skillId ? ` _(skill: ${step.skillId})_` : "";
-    lines.push(`${emoji} **Step ${step.id}: ${step.action}** — ${step.description}${skill}`);
+    lines.push(
+      `${emoji} **Step ${step.id}: ${step.action}** — ${step.description}${skill}`,
+    );
     if (step.resultSummary) {
       lines.push(`   > Result: ${step.resultSummary}`);
     }

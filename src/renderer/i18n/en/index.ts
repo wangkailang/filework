@@ -59,7 +59,8 @@ const en: BaseTranslation = {
   llmConfig_model: "Model",
   llmConfig_default: "Default",
   llmConfig_setDefault: "Set as Default",
-  llmConfig_deleteConfirm: "Are you sure you want to delete this configuration?",
+  llmConfig_deleteConfirm:
+    "Are you sure you want to delete this configuration?",
   llmConfig_deleteLastError: "At least one default configuration must be kept",
   llmConfig_validationRequired: "This field is required",
   llmConfig_authError:

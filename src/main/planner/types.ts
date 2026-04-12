@@ -27,7 +27,13 @@ export interface Plan {
   /** Ordered list of steps */
   steps: PlanStep[];
   /** Overall plan status */
-  status: "draft" | "approved" | "executing" | "completed" | "failed" | "cancelled";
+  status:
+    | "draft"
+    | "approved"
+    | "executing"
+    | "completed"
+    | "failed"
+    | "cancelled";
   /** Workspace path */
   workspacePath: string;
   /** ISO timestamp */

@@ -1,10 +1,21 @@
-import { Blocks, ChevronRight, FolderOpen, RefreshCw, Settings, X } from "lucide-react";
+import {
+  Blocks,
+  ChevronRight,
+  FolderOpen,
+  RefreshCw,
+  Settings,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
-import { FileTree, FileTreeFile, FileTreeFolder } from "../ai-elements/file-tree";
-import { SettingsModal } from "./SettingsModal";
+import {
+  FileTree,
+  FileTreeFile,
+  FileTreeFolder,
+} from "../ai-elements/file-tree";
 import { SkillsModal } from "../skills/SkillsModal";
+import { SettingsModal } from "./SettingsModal";
 
 interface FileInfo {
   name: string;
@@ -23,13 +34,21 @@ interface SidebarProps {
   onSelectFile: (path: string) => void;
 }
 
-export const Sidebar = ({ workspacePath, onChangeDirectory, onCloseDirectory, onLocaleChange, onSelectFile }: SidebarProps) => {
+export const Sidebar = ({
+  workspacePath,
+  onChangeDirectory,
+  onCloseDirectory,
+  onLocaleChange,
+  onSelectFile,
+}: SidebarProps) => {
   const { LL } = useI18nContext();
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [childrenMap, setChildrenMap] = useState<Record<string, FileInfo[]>>({});
+  const [childrenMap, setChildrenMap] = useState<Record<string, FileInfo[]>>(
+    {},
+  );
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
 
@@ -72,8 +91,8 @@ export const Sidebar = ({ workspacePath, onChangeDirectory, onCloseDirectory, on
   );
 
   const openDirectory = () => {
-      window.filework.showInFinder(workspacePath);
-    };
+    window.filework.showInFinder(workspacePath);
+  };
 
   const handleRefresh = useCallback(async () => {
     const entries = await window.filework.listDirectory(workspacePath);
@@ -93,7 +112,9 @@ export const Sidebar = ({ workspacePath, onChangeDirectory, onCloseDirectory, on
     entries.map((file) =>
       file.isDirectory ? (
         <FileTreeFolder key={file.path} path={file.path} name={file.name}>
-          {childrenMap[file.path] ? renderEntries(childrenMap[file.path]) : null}
+          {childrenMap[file.path]
+            ? renderEntries(childrenMap[file.path])
+            : null}
         </FileTreeFolder>
       ) : (
         <FileTreeFile key={file.path} path={file.path} name={file.name} />
@@ -151,7 +172,12 @@ export const Sidebar = ({ workspacePath, onChangeDirectory, onCloseDirectory, on
 
         {/* File tree */}
         <div className="flex-1 overflow-y-auto px-1 py-2">
-          <FileTree expanded={expandedPaths} onExpandedChange={handleExpandedChange} selectedPath={selectedPath} onSelect={handleSelect}>
+          <FileTree
+            expanded={expandedPaths}
+            onExpandedChange={handleExpandedChange}
+            selectedPath={selectedPath}
+            onSelect={handleSelect}
+          >
             {renderEntries(files)}
           </FileTree>
         </div>
@@ -183,10 +209,7 @@ export const Sidebar = ({ workspacePath, onChangeDirectory, onCloseDirectory, on
         onLocaleChange={onLocaleChange}
       />
 
-      <SkillsModal
-        open={skillsOpen}
-        onClose={() => setSkillsOpen(false)}
-      />
+      <SkillsModal open={skillsOpen} onClose={() => setSkillsOpen(false)} />
     </>
   );
 };

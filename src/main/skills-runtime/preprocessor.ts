@@ -6,9 +6,8 @@
  */
 
 import { exec } from "node:child_process";
-
-import { buildSafeEnv, isCommandAllowed } from "./security";
 import type { TrustLevel } from "./security";
+import { buildSafeEnv, isCommandAllowed } from "./security";
 import type { PreprocessResult } from "./types";
 
 /** Default timeout for !command execution (ms). */
@@ -92,7 +91,9 @@ export async function preprocessSkill(
   result = result.replace(/\$ARGUMENTS\[(\d+)\]/g, (_match, index) => {
     const i = parseInt(index, 10);
     if (i >= argParts.length) {
-      warnings.push(`Argument index ${i} out of bounds (${argParts.length} args provided)`);
+      warnings.push(
+        `Argument index ${i} out of bounds (${argParts.length} args provided)`,
+      );
       return "";
     }
     return argParts[i];
@@ -102,7 +103,9 @@ export async function preprocessSkill(
   result = result.replace(/\$(\d+)/g, (_match, index) => {
     const i = parseInt(index, 10);
     if (i >= argParts.length) {
-      warnings.push(`Argument index ${i} out of bounds (${argParts.length} args provided)`);
+      warnings.push(
+        `Argument index ${i} out of bounds (${argParts.length} args provided)`,
+      );
       return "";
     }
     return argParts[i];
@@ -132,11 +135,15 @@ export async function preprocessSkill(
 
     // Execute the command
     try {
-      const output = await execCommand(command, workspacePath, timeoutMs, safeEnv);
+      const output = await execCommand(
+        command,
+        workspacePath,
+        timeoutMs,
+        safeEnv,
+      );
       processedLines.push(output.trimEnd());
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       processedLines.push(`[Error: ${message}]`);
       warnings.push(`Command error: ${message}`);
     }

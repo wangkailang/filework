@@ -42,7 +42,7 @@ export const cleanupTask = (taskId: string): void => {
   // Clean up active tool executions
   const toolControllers = activeToolExecutions.get(taskId);
   if (toolControllers) {
-    toolControllers.forEach(controller => {
+    toolControllers.forEach((controller) => {
       try {
         controller.abort();
       } catch (err) {
@@ -75,7 +75,12 @@ export const stopTaskExecution = (taskId: string): boolean => {
   let stopped = false;
   if (controller) {
     console.log("[Task Control] Found controller, calling abort()");
-    console.log("[Task Control] Controller aborted signal:", controller.signal.aborted, "→", true);
+    console.log(
+      "[Task Control] Controller aborted signal:",
+      controller.signal.aborted,
+      "→",
+      true,
+    );
     controller.abort();
     console.log("[Task Control] Successfully aborted and removed controller");
     stopped = true;
@@ -84,8 +89,11 @@ export const stopTaskExecution = (taskId: string): boolean => {
   // Abort all active tool executions
   const toolControllers = activeToolExecutions.get(taskId);
   if (toolControllers) {
-    console.log(`[Task Control] Aborting ${toolControllers.size} active tool executions for task:`, taskId);
-    toolControllers.forEach(toolController => {
+    console.log(
+      `[Task Control] Aborting ${toolControllers.size} active tool executions for task:`,
+      taskId,
+    );
+    toolControllers.forEach((toolController) => {
       try {
         toolController.abort();
         console.log("[Task Control] Aborted tool execution");
@@ -101,7 +109,9 @@ export const stopTaskExecution = (taskId: string): boolean => {
     if (taskIdForCall === taskId) {
       const resolve = pendingApprovals.get(toolCallId);
       if (resolve) {
-        console.log("[Task Control] Rejecting pending tool approval for stopped task");
+        console.log(
+          "[Task Control] Rejecting pending tool approval for stopped task",
+        );
         resolve(false);
         pendingApprovals.delete(toolCallId);
         toolCallToTaskMap.delete(toolCallId);

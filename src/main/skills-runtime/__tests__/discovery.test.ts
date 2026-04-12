@@ -1,9 +1,8 @@
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildDiscoverySources,
@@ -46,7 +45,9 @@ describe("buildDiscoverySources", () => {
 // ─── checkEligibility ────────────────────────────────────────────────
 
 describe("checkEligibility", () => {
-  const makeSkill = (requires?: ParsedSkill["frontmatter"]["requires"]): ParsedSkill => ({
+  const makeSkill = (
+    requires?: ParsedSkill["frontmatter"]["requires"],
+  ): ParsedSkill => ({
     frontmatter: { name: "test-skill", ...(requires ? { requires } : {}) },
     body: "body",
     sourcePath: "/path/to/SKILL.md",
@@ -150,7 +151,11 @@ describe("discoverSkills", () => {
 
   it("discovers skills from nested directories", async () => {
     const sourceDir = join(tmpDir, "nested");
-    await createSkill(sourceDir, "a/b/deep-skill", "---\nname: deep-skill\n---\nDeep");
+    await createSkill(
+      sourceDir,
+      "a/b/deep-skill",
+      "---\nname: deep-skill\n---\nDeep",
+    );
 
     const results = await discoverSkills([
       { type: "project", basePath: sourceDir },
@@ -172,8 +177,16 @@ describe("discoverSkills", () => {
     const personalDir = join(tmpDir, "personal");
     const projectDir = join(tmpDir, "project");
 
-    await createSkill(personalDir, "shared", "---\nname: shared\n---\nPersonal version");
-    await createSkill(projectDir, "shared", "---\nname: shared\n---\nProject version");
+    await createSkill(
+      personalDir,
+      "shared",
+      "---\nname: shared\n---\nPersonal version",
+    );
+    await createSkill(
+      projectDir,
+      "shared",
+      "---\nname: shared\n---\nProject version",
+    );
 
     const results = await discoverSkills([
       { type: "personal", basePath: personalDir },

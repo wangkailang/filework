@@ -12,10 +12,10 @@
  * - XML catalog generation for lazy loading
  */
 
-import { dirname } from "node:path";
 import { execSync } from "node:child_process";
+import { dirname } from "node:path";
 import type { Tool } from "ai";
-import { streamText, stepCountIs } from "ai";
+import { stepCountIs, streamText } from "ai";
 
 import { runHook } from "./hooks";
 import type { UnifiedSkill } from "./types";
@@ -117,13 +117,14 @@ export function buildSkillCatalogXml(skills: UnifiedSkill[]): string {
       // Only include external skills that have a source path
       if (!s.external?.sourcePath) return false;
       // Exclude skills that opt out of model invocation
-      if (s.external.frontmatter["disable-model-invocation"] === true) return false;
+      if (s.external.frontmatter["disable-model-invocation"] === true)
+        return false;
       return true;
     })
     .map((s) => {
       const name = escapeXml(s.name);
       const description = escapeXml(s.description);
-      const location = escapeXml(s.external!.sourcePath);
+      const location = escapeXml(s.external?.sourcePath ?? "");
       return [
         "  <skill>",
         `    <name>${name}</name>`,
@@ -158,7 +159,9 @@ export async function ensurePipDeps(pipDeps: string[]): Promise<void> {
         timeout: 10_000,
         stdio: "pipe",
       });
-      console.debug(`[skills-executor] pip dep "${moduleName}" already installed`);
+      console.debug(
+        `[skills-executor] pip dep "${moduleName}" already installed`,
+      );
     } catch {
       console.log(`[skills-executor] Installing missing pip dep: ${pkg}`);
       try {
@@ -168,7 +171,8 @@ export async function ensurePipDeps(pipDeps: string[]): Promise<void> {
         });
         console.log(`[skills-executor] Successfully installed: ${pkg}`);
       } catch (installErr) {
-        const msg = installErr instanceof Error ? installErr.message : String(installErr);
+        const msg =
+          installErr instanceof Error ? installErr.message : String(installErr);
         console.warn(`[skills-executor] Failed to install "${pkg}": ${msg}`);
       }
     }
@@ -195,7 +199,7 @@ export async function ensurePipDeps(pipDeps: string[]): Promise<void> {
 export async function executeSkill(
   ctx: ExecutionContext,
   deps: ExecutorDeps,
-): Promise<string | void> {
+): Promise<string | undefined> {
   const { skill, workspacePath } = ctx;
   const fm = skill.external?.frontmatter;
   const skillDir = skill.external?.sourcePath
@@ -255,7 +259,8 @@ export async function executeSubagent(
   ctx: ExecutionContext,
   deps: ExecutorDeps,
 ): Promise<void> {
-  const { skill, processedPrompt, workspacePath, sender, taskId, abortSignal } = ctx;
+  const { skill, processedPrompt, workspacePath, sender, taskId, abortSignal } =
+    ctx;
   const fm = skill.external?.frontmatter;
 
   // ── Build the system prompt with security boundary ──
@@ -294,7 +299,10 @@ export async function executeSubagent(
   const result = ctx.history?.length
     ? streamText({
         ...streamConfig,
-        messages: [...ctx.history, { role: "user" as const, content: ctx.systemPrompt }],
+        messages: [
+          ...ctx.history,
+          { role: "user" as const, content: ctx.systemPrompt },
+        ],
       })
     : streamText({
         ...streamConfig,
@@ -327,11 +335,17 @@ export async function executeSubagent(
           });
           break;
         case "error":
-          console.error(`[skills-executor] Stream error in subagent:`, part.error);
+          console.error(
+            `[skills-executor] Stream error in subagent:`,
+            part.error,
+          );
           if (!sender.isDestroyed()) {
             sender.send("ai:stream-error", {
               id: taskId,
-              error: part.error instanceof Error ? part.error.message : String(part.error),
+              error:
+                part.error instanceof Error
+                  ? part.error.message
+                  : String(part.error),
             });
           }
           break;
@@ -345,7 +359,6 @@ export async function executeSubagent(
     }
   }
 }
-
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -388,7 +401,10 @@ function buildSubagentTools(
   for (const toolName of allowedTools) {
     // Check safe tools first
     if (toolName in deps.safeTools) {
-      tools[toolName] = wrapToolWithErrorHandler(deps.safeTools[toolName], toolName);
+      tools[toolName] = wrapToolWithErrorHandler(
+        deps.safeTools[toolName],
+        toolName,
+      );
       continue;
     }
 
@@ -405,7 +421,6 @@ function buildSubagentTools(
           toolName,
         );
       }
-      continue;
     }
 
     // Unknown tool name — silently ignored per error handling spec
@@ -413,7 +428,6 @@ function buildSubagentTools(
 
   return tools;
 }
-
 
 /**
  * Wrap a tool's execute function with error handling to ensure it never throws.
@@ -434,7 +448,9 @@ function wrapToolWithErrorHandler(tool: Tool, toolName: string): Tool {
         return await originalExecute(args, options);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[skills-executor] Tool "${toolName}" execution failed: ${message}`);
+        console.warn(
+          `[skills-executor] Tool "${toolName}" execution failed: ${message}`,
+        );
         return { success: false, error: message };
       }
     },
@@ -451,7 +467,7 @@ function wrapToolWithErrorHandler(tool: Tool, toolName: string): Tool {
  * This is a simplified heuristic — in production, a more robust
  * model resolution strategy would be used.
  */
-function createModelOverride(modelId: string, deps: ExecutorDeps): any {
+function createModelOverride(_modelId: string, deps: ExecutorDeps): any {
   // For now, delegate to the default model getter.
   // The integration task (11.x) will wire this up to the full
   // provider resolution logic from getAIModel.

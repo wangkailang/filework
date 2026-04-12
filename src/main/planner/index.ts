@@ -7,17 +7,15 @@
 
 import { generateText, stepCountIs } from "ai";
 import { skills } from "../skills";
-import type { Plan, PlanStep, PlannerLLMOutput } from "./types";
 import { writePlanFile } from "./plan-file";
+import type { Plan, PlannerLLMOutput, PlanStep } from "./types";
 
 // Re-export types for convenience
 export type { Plan, PlanStep } from "./types";
 
 /** Build the skill catalog string for the planner system prompt */
 const buildSkillCatalog = (): string =>
-  skills
-    .map((s) => `- **${s.id}**: ${s.name} — ${s.description}`)
-    .join("\n");
+  skills.map((s) => `- **${s.id}**: ${s.name} — ${s.description}`).join("\n");
 
 /**
  * Heuristic: should this prompt go through the planner?
@@ -137,10 +135,16 @@ JSON schema:
       return buildPlan(planId, prompt, workspacePath, parsed, now);
     } catch {
       // Last resort: single-step plan
-      return buildPlan(planId, prompt, workspacePath, {
-        goal: prompt,
-        steps: [{ action: "execute", description: prompt }],
-      }, now);
+      return buildPlan(
+        planId,
+        prompt,
+        workspacePath,
+        {
+          goal: prompt,
+          steps: [{ action: "execute", description: prompt }],
+        },
+        now,
+      );
     }
   }
 

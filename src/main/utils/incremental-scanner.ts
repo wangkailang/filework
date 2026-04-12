@@ -5,9 +5,9 @@
  * and only scanning changed files on subsequent requests.
  */
 
-import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, dirname, extname } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { dirname, extname, join } from "node:path";
 
 export interface FileEntry {
   name: string;
@@ -36,12 +36,15 @@ interface DirectorySnapshot {
 }
 
 interface ScanCache {
-  directories: Record<string, {
-    path: string;
-    lastScan: string;
-    files: Record<string, Omit<FileMetadata, 'mtime'> & { mtime: string }>;
-    subdirectories: string[];
-  }>;
+  directories: Record<
+    string,
+    {
+      path: string;
+      lastScan: string;
+      files: Record<string, Omit<FileMetadata, "mtime"> & { mtime: string }>;
+      subdirectories: string[];
+    }
+  >;
   lastUpdate: string;
   version: number;
 }
@@ -74,7 +77,7 @@ class CacheManager {
   private memoryCache = new Map<string, DirectorySnapshot>();
 
   constructor() {
-    this.cachePath = join(homedir(), '.filework', 'scan-cache.json');
+    this.cachePath = join(homedir(), ".filework", "scan-cache.json");
   }
 
   /**
@@ -82,7 +85,7 @@ class CacheManager {
    */
   async loadCache(): Promise<void> {
     try {
-      const data = await readFile(this.cachePath, 'utf-8');
+      const data = await readFile(this.cachePath, "utf-8");
       const cache: ScanCache = JSON.parse(data);
       if (
         cache.version !== CACHE_VERSION ||
@@ -117,9 +120,11 @@ class CacheManager {
           subdirectories: new Set(snapshot.subdirectories),
         });
       }
-    } catch (error) {
+    } catch (_error) {
       // Cache file doesn't exist or is corrupted, start fresh
-      console.debug('[IncrementalScanner] Cache not found or corrupted, starting fresh');
+      console.debug(
+        "[IncrementalScanner] Cache not found or corrupted, starting fresh",
+      );
     }
   }
 
@@ -131,10 +136,13 @@ class CacheManager {
       await mkdir(dirname(this.cachePath), { recursive: true });
 
       // Convert in-memory cache to serializable format
-      const serializableDirectories: ScanCache['directories'] = {};
+      const serializableDirectories: ScanCache["directories"] = {};
 
       for (const [dirPath, snapshot] of this.memoryCache.entries()) {
-        const files: Record<string, Omit<FileMetadata, 'mtime'> & { mtime: string }> = {};
+        const files: Record<
+          string,
+          Omit<FileMetadata, "mtime"> & { mtime: string }
+        > = {};
 
         for (const [fileName, fileData] of snapshot.files.entries()) {
           files[fileName] = {
@@ -159,7 +167,7 @@ class CacheManager {
 
       await writeFile(this.cachePath, JSON.stringify(cache, null, 2));
     } catch (error) {
-      console.error('[IncrementalScanner] Failed to save cache:', error);
+      console.error("[IncrementalScanner] Failed to save cache:", error);
     }
   }
 
@@ -186,15 +194,19 @@ class CacheManager {
     }
 
     // Then enforce size limits by evicting oldest snapshots
-    const ordered = Array.from(this.memoryCache.entries())
-      .sort(([, a], [, b]) => a.lastScan.getTime() - b.lastScan.getTime());
+    const ordered = Array.from(this.memoryCache.entries()).sort(
+      ([, a], [, b]) => a.lastScan.getTime() - b.lastScan.getTime(),
+    );
 
     while (ordered.length > policy.maxDirectories) {
       const [oldestPath] = ordered.shift()!;
       this.memoryCache.delete(oldestPath);
     }
 
-    let totalFiles = ordered.reduce((sum, [, snapshot]) => sum + snapshot.files.size, 0);
+    let totalFiles = ordered.reduce(
+      (sum, [, snapshot]) => sum + snapshot.files.size,
+      0,
+    );
     while (totalFiles > policy.maxTotalFiles && ordered.length > 0) {
       const [oldestPath, oldestSnapshot] = ordered.shift()!;
       this.memoryCache.delete(oldestPath);
@@ -219,7 +231,11 @@ class CacheManager {
   /**
    * Get cache statistics
    */
-  getCacheStats(): { directories: number; totalFiles: number; memoryUsage: number } {
+  getCacheStats(): {
+    directories: number;
+    totalFiles: number;
+    memoryUsage: number;
+  } {
     let totalFiles = 0;
     for (const snapshot of this.memoryCache.values()) {
       totalFiles += snapshot.files.size;
@@ -228,7 +244,8 @@ class CacheManager {
     return {
       directories: this.memoryCache.size,
       totalFiles,
-      memoryUsage: JSON.stringify(Array.from(this.memoryCache.entries())).length,
+      memoryUsage: JSON.stringify(Array.from(this.memoryCache.entries()))
+        .length,
     };
   }
 }
@@ -292,13 +309,15 @@ export class IncrementalScanner {
    * Check if file should be ignored
    */
   private shouldIgnore(name: string): boolean {
-    return this.IGNORE_PATTERNS.some(pattern => pattern.test(name));
+    return this.IGNORE_PATTERNS.some((pattern) => pattern.test(name));
   }
 
   /**
    * Scan directory and return all files
    */
-  private async scanDirectory(dirPath: string): Promise<Map<string, FileMetadata>> {
+  private async scanDirectory(
+    dirPath: string,
+  ): Promise<Map<string, FileMetadata>> {
     const files = new Map<string, FileMetadata>();
 
     try {
@@ -327,7 +346,10 @@ export class IncrementalScanner {
         }
       }
     } catch (error) {
-      console.error(`[IncrementalScanner] Failed to scan directory ${dirPath}:`, error);
+      console.error(
+        `[IncrementalScanner] Failed to scan directory ${dirPath}:`,
+        error,
+      );
     }
 
     return files;
@@ -352,8 +374,13 @@ export class IncrementalScanner {
    */
   private compareWithCache(
     currentFiles: Map<string, FileMetadata>,
-    cachedSnapshot: DirectorySnapshot | null
-  ): { added: FileEntry[]; modified: FileEntry[]; deleted: string[]; unchanged: FileEntry[] } {
+    cachedSnapshot: DirectorySnapshot | null,
+  ): {
+    added: FileEntry[];
+    modified: FileEntry[];
+    deleted: string[];
+    unchanged: FileEntry[];
+  } {
     const added: FileEntry[] = [];
     const modified: FileEntry[] = [];
     const unchanged: FileEntry[] = [];
@@ -398,12 +425,17 @@ export class IncrementalScanner {
   /**
    * Perform incremental scan of directory
    */
-  async scanIncremental(dirPath: string, forceRescan = false): Promise<IncrementalScanResult> {
+  async scanIncremental(
+    dirPath: string,
+    forceRescan = false,
+  ): Promise<IncrementalScanResult> {
     const startTime = Date.now();
 
     await this.initialize();
 
-    let cachedSnapshot = forceRescan ? null : this.cacheManager.getSnapshot(dirPath);
+    let cachedSnapshot = forceRescan
+      ? null
+      : this.cacheManager.getSnapshot(dirPath);
     if (
       cachedSnapshot &&
       Date.now() - cachedSnapshot.lastScan.getTime() > this.policy.ttlMs
@@ -426,8 +458,8 @@ export class IncrementalScanner {
       files: currentFiles,
       subdirectories: new Set(
         Array.from(currentFiles.values())
-          .filter(file => file.isDirectory)
-          .map(file => file.name)
+          .filter((file) => file.isDirectory)
+          .map((file) => file.name),
       ),
     };
 
@@ -435,8 +467,8 @@ export class IncrementalScanner {
     this.cacheManager.prune(this.policy);
 
     // Save cache to disk (asynchronously, serialized)
-    this.queueCacheSave().catch(error => {
-      console.error('[IncrementalScanner] Failed to save cache:', error);
+    this.queueCacheSave().catch((error) => {
+      console.error("[IncrementalScanner] Failed to save cache:", error);
     });
 
     return {

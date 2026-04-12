@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { z } from "zod/v4";
 import type { Tool } from "ai";
+import { z } from "zod/v4";
 import type { Skill } from "./types";
 
 /** Compute MD5 hash of a file for duplicate detection */
@@ -19,7 +19,9 @@ const findDuplicatesTool: Tool = {
     extensions: z
       .array(z.string())
       .optional()
-      .describe("Optional list of extensions to filter (e.g. ['.jpg', '.png'])"),
+      .describe(
+        "Optional list of extensions to filter (e.g. ['.jpg', '.png'])",
+      ),
   }),
   execute: async ({
     path: dirPath,
@@ -28,7 +30,10 @@ const findDuplicatesTool: Tool = {
     path: string;
     extensions?: string[];
   }) => {
-    const entries = await readdir(dirPath, { withFileTypes: true, recursive: true });
+    const entries = await readdir(dirPath, {
+      withFileTypes: true,
+      recursive: true,
+    });
     const hashMap: Record<string, { path: string; size: number }[]> = {};
     let scanned = 0;
     let skipped = 0;
@@ -36,10 +41,15 @@ const findDuplicatesTool: Tool = {
     for (const entry of entries) {
       if (!entry.isFile() || entry.name.startsWith(".")) continue;
       const fullPath = join(entry.parentPath || dirPath, entry.name);
-      if (fullPath.includes("/.filework/") || fullPath.includes("/node_modules/")) continue;
+      if (
+        fullPath.includes("/.filework/") ||
+        fullPath.includes("/node_modules/")
+      )
+        continue;
       const ext = extname(entry.name).toLowerCase();
 
-      if (extensions && extensions.length > 0 && !extensions.includes(ext)) continue;
+      if (extensions && extensions.length > 0 && !extensions.includes(ext))
+        continue;
 
       try {
         const s = await stat(fullPath);
@@ -83,9 +93,20 @@ export const duplicateFinder: Skill = {
   name: "重复文件检测",
   description: "基于文件哈希检测重复文件，建议清理方案",
   keywords: [
-    "重复", "duplicate", "去重", "dedup", "相同",
-    "一样", "same", "冗余", "redundant", "副本", "copy",
-    "找出重复", "重复文件", "重复的文件",
+    "重复",
+    "duplicate",
+    "去重",
+    "dedup",
+    "相同",
+    "一样",
+    "same",
+    "冗余",
+    "redundant",
+    "副本",
+    "copy",
+    "找出重复",
+    "重复文件",
+    "重复的文件",
   ],
   suggestions: [
     "找出所有重复的文件",

@@ -23,17 +23,17 @@ const MAX_NAME_LENGTH = 64;
 function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
   const fm: SkillFrontmatter = {};
 
-  if (typeof raw["name"] === "string") {
-    fm.name = raw["name"];
+  if (typeof raw.name === "string") {
+    fm.name = raw.name;
   }
-  if (typeof raw["description"] === "string") {
-    fm.description = raw["description"];
+  if (typeof raw.description === "string") {
+    fm.description = raw.description;
   }
-  if (typeof raw["model"] === "string") {
-    fm.model = raw["model"];
+  if (typeof raw.model === "string") {
+    fm.model = raw.model;
   }
-  if (raw["context"] === "default" || raw["context"] === "fork") {
-    fm.context = raw["context"];
+  if (raw.context === "default" || raw.context === "fork") {
+    fm.context = raw.context;
   }
   if (Array.isArray(raw["allowed-tools"])) {
     fm["allowed-tools"] = raw["allowed-tools"].filter(
@@ -46,27 +46,29 @@ function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
   if (typeof raw["user-invocable"] === "boolean") {
     fm["user-invocable"] = raw["user-invocable"];
   }
-  if (raw["requires"] != null && typeof raw["requires"] === "object") {
-    const req = raw["requires"] as Record<string, unknown>;
+  if (raw.requires != null && typeof raw.requires === "object") {
+    const req = raw.requires as Record<string, unknown>;
     const requires: SkillFrontmatter["requires"] = {};
-    if (Array.isArray(req["bins"])) {
-      requires.bins = req["bins"].filter((b): b is string => typeof b === "string");
+    if (Array.isArray(req.bins)) {
+      requires.bins = req.bins.filter(
+        (b): b is string => typeof b === "string",
+      );
     }
-    if (Array.isArray(req["env"])) {
-      requires.env = req["env"].filter((e): e is string => typeof e === "string");
+    if (Array.isArray(req.env)) {
+      requires.env = req.env.filter((e): e is string => typeof e === "string");
     }
-    if (Array.isArray(req["os"])) {
-      requires.os = req["os"].filter((o): o is string => typeof o === "string");
+    if (Array.isArray(req.os)) {
+      requires.os = req.os.filter((o): o is string => typeof o === "string");
     }
-    if (Array.isArray(req["pip"])) {
-      requires.pip = req["pip"].filter((p): p is string => typeof p === "string");
+    if (Array.isArray(req.pip)) {
+      requires.pip = req.pip.filter((p): p is string => typeof p === "string");
     }
     if (Object.keys(requires).length > 0) {
       fm.requires = requires;
     }
   }
-  if (raw["hooks"] != null && typeof raw["hooks"] === "object") {
-    const h = raw["hooks"] as Record<string, unknown>;
+  if (raw.hooks != null && typeof raw.hooks === "object") {
+    const h = raw.hooks as Record<string, unknown>;
     const hooks: NonNullable<SkillFrontmatter["hooks"]> = {};
     if (typeof h["pre-activate"] === "string") {
       hooks["pre-activate"] = h["pre-activate"];

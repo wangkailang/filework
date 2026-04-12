@@ -20,7 +20,14 @@ export const getAIModelByConfigId = (configId?: string) => {
   }
 
   const { provider, apiKey, baseUrl, model: modelId } = config;
-  console.log("[AI] provider:", provider, "model:", modelId, "configId:", config.id);
+  console.log(
+    "[AI] provider:",
+    provider,
+    "model:",
+    modelId,
+    "configId:",
+    config.id,
+  );
 
   if (provider === "anthropic") {
     const anthropic = createAnthropic({
@@ -41,7 +48,8 @@ export const getAIModelByConfigId = (configId?: string) => {
   // Default to OpenAI (also handles custom endpoints and Ollama)
   // Custom endpoint detection: if provider is "custom" or baseUrl doesn't contain openai
   const isCustomEndpoint =
-    provider === "custom" || (baseUrl != null && !baseUrl.includes("api.openai.com"));
+    provider === "custom" ||
+    (baseUrl != null && !baseUrl.includes("api.openai.com"));
   const openai = createOpenAI({
     apiKey: apiKey || "",
     baseURL: baseUrl || undefined,
@@ -55,7 +63,12 @@ export const getAIModelByConfigId = (configId?: string) => {
 export const isAuthError = (error: unknown): boolean => {
   if (error instanceof Error) {
     const msg = error.message;
-    return msg.includes("401") || msg.includes("403") || msg.includes("Unauthorized") || msg.includes("Forbidden");
+    return (
+      msg.includes("401") ||
+      msg.includes("403") ||
+      msg.includes("Unauthorized") ||
+      msg.includes("Forbidden")
+    );
   }
   return false;
 };

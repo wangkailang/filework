@@ -1,6 +1,6 @@
+import { readdir, readFile, stat } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { ipcMain } from "electron";
-import { readdir, stat, readFile } from "node:fs/promises";
-import { join, extname, basename } from "node:path";
 
 export interface FileInfo {
   name: string;
@@ -15,13 +15,14 @@ export const registerFileHandlers = () => {
   // List directory contents
   ipcMain.handle(
     "fs:listDirectory",
-    async (_event, dirPath: string, depth = 1): Promise<FileInfo[]> => {
+    async (_event, dirPath: string, _depth = 1): Promise<FileInfo[]> => {
       const entries = await readdir(dirPath, { withFileTypes: true });
       const files: FileInfo[] = [];
 
       for (const entry of entries) {
         // Skip hidden files and common ignore patterns
-        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+        if (entry.name.startsWith(".") || entry.name === "node_modules")
+          continue;
 
         const fullPath = join(dirPath, entry.name);
         try {
@@ -61,7 +62,10 @@ export const registerFileHandlers = () => {
 
   // Get directory stats
   ipcMain.handle("fs:directoryStats", async (_event, dirPath: string) => {
-    const entries = await readdir(dirPath, { withFileTypes: true, recursive: true });
+    const entries = await readdir(dirPath, {
+      withFileTypes: true,
+      recursive: true,
+    });
     let totalFiles = 0;
     let totalDirs = 0;
     let totalSize = 0;
@@ -70,7 +74,11 @@ export const registerFileHandlers = () => {
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue;
       const fullPath = join(entry.parentPath || dirPath, entry.name);
-      if (fullPath.includes("/.filework/") || fullPath.includes("/node_modules/")) continue;
+      if (
+        fullPath.includes("/.filework/") ||
+        fullPath.includes("/node_modules/")
+      )
+        continue;
       try {
         if (entry.isDirectory()) {
           totalDirs++;

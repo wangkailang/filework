@@ -5,7 +5,13 @@ import type {
   KeyboardEventHandler,
   TextareaHTMLAttributes,
 } from "react";
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { cn } from "../../lib/utils";
 
 // ============================================================================
@@ -27,11 +33,19 @@ export interface PromptInputMessage {
   text: string;
 }
 
-export type PromptInputProps = Omit<HTMLAttributes<HTMLFormElement>, "onSubmit"> & {
+export type PromptInputProps = Omit<
+  HTMLAttributes<HTMLFormElement>,
+  "onSubmit"
+> & {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
 };
 
-export const PromptInput = ({ className, onSubmit, children, ...props }: PromptInputProps) => {
+export const PromptInput = ({
+  className,
+  onSubmit,
+  children,
+  ...props
+}: PromptInputProps) => {
   const [value, setValue] = useState("");
 
   const handleSubmit = useCallback(
@@ -49,7 +63,11 @@ export const PromptInput = ({ className, onSubmit, children, ...props }: PromptI
 
   return (
     <PromptInputContext.Provider value={{ value, setValue }}>
-      <form className={cn("w-full", className)} onSubmit={handleSubmit} {...props}>
+      <form
+        className={cn("w-full", className)}
+        onSubmit={handleSubmit}
+        {...props}
+      >
         <div className="relative flex flex-col rounded-lg border border-border bg-muted">
           {children}
         </div>
@@ -64,7 +82,10 @@ export const PromptInput = ({ className, onSubmit, children, ...props }: PromptI
 
 export type PromptInputBodyProps = HTMLAttributes<HTMLDivElement>;
 
-export const PromptInputBody = ({ className, ...props }: PromptInputBodyProps) => (
+export const PromptInputBody = ({
+  className,
+  ...props
+}: PromptInputBodyProps) => (
   <div className={cn("contents", className)} {...props} />
 );
 
@@ -118,7 +139,9 @@ export const PromptInputTextarea = ({
         if (e.shiftKey) return;
         e.preventDefault();
         const { form } = e.currentTarget;
-        const submitBtn = form?.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+        const submitBtn = form?.querySelector(
+          'button[type="submit"]',
+        ) as HTMLButtonElement | null;
         if (submitBtn?.disabled) return;
         form?.requestSubmit();
       }
@@ -149,7 +172,10 @@ export const PromptInputTextarea = ({
 
 export type PromptInputHeaderProps = HTMLAttributes<HTMLDivElement>;
 
-export const PromptInputHeader = ({ className, ...props }: PromptInputHeaderProps) => (
+export const PromptInputHeader = ({
+  className,
+  ...props
+}: PromptInputHeaderProps) => (
   <div className={cn("flex flex-wrap gap-1 px-3 pt-2", className)} {...props} />
 );
 
@@ -159,8 +185,17 @@ export const PromptInputHeader = ({ className, ...props }: PromptInputHeaderProp
 
 export type PromptInputFooterProps = HTMLAttributes<HTMLDivElement>;
 
-export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProps) => (
-  <div className={cn("flex items-center justify-between gap-1 px-3 py-2", className)} {...props} />
+export const PromptInputFooter = ({
+  className,
+  ...props
+}: PromptInputFooterProps) => (
+  <div
+    className={cn(
+      "flex items-center justify-between gap-1 px-3 py-2",
+      className,
+    )}
+    {...props}
+  />
 );
 
 // ============================================================================
@@ -169,8 +204,14 @@ export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProp
 
 export type PromptInputToolsProps = HTMLAttributes<HTMLDivElement>;
 
-export const PromptInputTools = ({ className, ...props }: PromptInputToolsProps) => (
-  <div className={cn("flex min-w-0 items-center gap-1", className)} {...props} />
+export const PromptInputTools = ({
+  className,
+  ...props
+}: PromptInputToolsProps) => (
+  <div
+    className={cn("flex min-w-0 items-center gap-1", className)}
+    {...props}
+  />
 );
 
 // ============================================================================
@@ -206,7 +247,14 @@ export const PromptInputSubmit = ({
         className,
       )}
       aria-label={isActive ? "停止生成" : "Send"}
-      onClick={isActive ? (e) => { e.preventDefault(); onStop?.(); } : undefined}
+      onClick={
+        isActive
+          ? (e) => {
+              e.preventDefault();
+              onStop?.();
+            }
+          : undefined
+      }
     >
       {isActive ? (
         <SquareIcon className="size-4 fill-current" />

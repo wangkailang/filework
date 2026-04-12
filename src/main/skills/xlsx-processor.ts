@@ -1,8 +1,8 @@
-import { z } from "zod/v4";
-import * as XLSX from "xlsx";
 import type { Tool } from "ai";
-import type { Skill } from "./types";
+import * as XLSX from "xlsx";
+import { z } from "zod/v4";
 import { validateFile } from "./file-skill-utils";
+import type { Skill } from "./types";
 
 const XLSX_EXTENSIONS = [".xlsx", ".xls"];
 const MAX_ROWS = 1000;
@@ -34,7 +34,9 @@ const listSheetsTool: Tool = {
       const workbook = XLSX.readFile(path);
       return { sheets: workbook.SheetNames };
     } catch (err) {
-      return { error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
@@ -46,7 +48,13 @@ const readSheetTool: Tool = {
     path: z.string().describe("Excel 文件的绝对路径"),
     sheet: z.string().optional().describe("工作表名称，默认读取第一个工作表"),
   }),
-  execute: async ({ path, sheet: sheetName }: { path: string; sheet?: string }) => {
+  execute: async ({
+    path,
+    sheet: sheetName,
+  }: {
+    path: string;
+    sheet?: string;
+  }) => {
     try {
       const validation = await validateFile(path, XLSX_EXTENSIONS);
       if (!validation.valid) return { error: validation.error };
@@ -55,7 +63,9 @@ const readSheetTool: Tool = {
       const resolved = resolveSheet(workbook, sheetName);
       if ("error" in resolved) return { error: resolved.error };
 
-      const allData: Record<string, unknown>[] = XLSX.utils.sheet_to_json(resolved.sheet);
+      const allData: Record<string, unknown>[] = XLSX.utils.sheet_to_json(
+        resolved.sheet,
+      );
       const totalRows = allData.length;
       const truncated = totalRows > MAX_ROWS;
       const data = truncated ? allData.slice(0, MAX_ROWS) : allData;
@@ -73,7 +83,9 @@ const readSheetTool: Tool = {
 
       return result;
     } catch (err) {
-      return { error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
@@ -84,7 +96,13 @@ const getSheetStatsTool: Tool = {
     path: z.string().describe("Excel 文件的绝对路径"),
     sheet: z.string().optional().describe("工作表名称，默认读取第一个工作表"),
   }),
-  execute: async ({ path, sheet: sheetName }: { path: string; sheet?: string }) => {
+  execute: async ({
+    path,
+    sheet: sheetName,
+  }: {
+    path: string;
+    sheet?: string;
+  }) => {
     try {
       const validation = await validateFile(path, XLSX_EXTENSIONS);
       if (!validation.valid) return { error: validation.error };
@@ -93,9 +111,10 @@ const getSheetStatsTool: Tool = {
       const resolved = resolveSheet(workbook, sheetName);
       if ("error" in resolved) return { error: resolved.error };
 
-      const data: Record<string, unknown>[] = XLSX.utils.sheet_to_json(resolved.sheet);
-      const columnNames: string[] =
-        data.length > 0 ? Object.keys(data[0]) : [];
+      const data: Record<string, unknown>[] = XLSX.utils.sheet_to_json(
+        resolved.sheet,
+      );
+      const columnNames: string[] = data.length > 0 ? Object.keys(data[0]) : [];
 
       return {
         rows: data.length,
@@ -103,7 +122,9 @@ const getSheetStatsTool: Tool = {
         columnNames,
       };
     } catch (err) {
-      return { error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        error: `Excel 解析失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   },
 };
@@ -126,10 +147,7 @@ export const xlsxProcessor: Skill = {
     "read excel",
     "excel sheet",
   ],
-  suggestions: [
-    "读取这个Excel文件的数据",
-    "列出Excel文件中的所有工作表",
-  ],
+  suggestions: ["读取这个Excel文件的数据", "列出Excel文件中的所有工作表"],
   tools: {
     listSheets: listSheetsTool,
     readSheet: readSheetTool,

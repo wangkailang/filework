@@ -29,7 +29,9 @@ export const SessionList = ({
     </div>
     <div className="flex-1 overflow-y-auto">
       {sessions.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无历史对话</div>
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+          暂无历史对话
+        </div>
       ) : (
         sessions.map((s) => (
           <div

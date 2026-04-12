@@ -1,5 +1,19 @@
-import { CopyIcon, Loader2, MessageSquarePlus, History, Sparkles } from "lucide-react";
+import {
+  CopyIcon,
+  History,
+  Loader2,
+  MessageSquarePlus,
+  Sparkles,
+} from "lucide-react";
 import { useState } from "react";
+import {
+  Confirmation,
+  ConfirmationAccepted,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRejected,
+  ConfirmationRequest,
+} from "../ai-elements/confirmation";
 import {
   Conversation,
   ConversationContent,
@@ -8,23 +22,13 @@ import {
   ConversationScrollButton,
 } from "../ai-elements/conversation";
 import {
-  Confirmation,
-  ConfirmationRequest,
-  ConfirmationAccepted,
-  ConfirmationRejected,
-  ConfirmationActions,
-  ConfirmationAction,
-} from "../ai-elements/confirmation";
-import {
   Message,
   MessageAction,
   MessageActions,
   MessageContent,
   MessageResponse,
 } from "../ai-elements/message";
-import {
-  PlanViewer,
-} from "../ai-elements/plan-viewer";
+import { PlanViewer } from "../ai-elements/plan-viewer";
 import {
   PromptInput,
   PromptInputBody,
@@ -40,12 +44,12 @@ import {
   ToolOutput,
 } from "../ai-elements/tool";
 import { migrateToParts } from "./helpers";
+import { ModelSelector } from "./ModelSelector";
 import { SessionList } from "./SessionList";
+import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
 import type { MessagePart, PlanMessagePart, ToolPart } from "./types";
 import { useChatSession } from "./useChatSession";
-import { SkillApprovalDialog } from "./SkillApprovalDialog";
-import { ModelSelector } from "./ModelSelector";
 
 const suggestions = [
   "帮我整理这个目录的文件，按类型分类",
@@ -75,7 +79,9 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             <Confirmation state={inv.approval.state}>
               {inv.approval.state === "approval-requested" && (
                 <>
-                  <ConfirmationRequest>{inv.approval.description}</ConfirmationRequest>
+                  <ConfirmationRequest>
+                    {inv.approval.description}
+                  </ConfirmationRequest>
                   <ConfirmationActions>
                     <ConfirmationAction
                       variant="outline"
@@ -116,10 +122,18 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
     </Tool>
   );
 
-  const renderAssistantParts = (parts: MessagePart[]) =>
-    parts.map((part, i) => {
+  const renderAssistantParts = (parts: MessagePart[]) => {
+    const textKeyCounts = new Map<string, number>();
+    return parts.map((part) => {
       if (part.type === "text" && part.text) {
-        return <MessageResponse key={`text-${i}`}>{part.text}</MessageResponse>;
+        const baseKey = `text-${part.text}`;
+        const keyCount = (textKeyCounts.get(baseKey) ?? 0) + 1;
+        textKeyCounts.set(baseKey, keyCount);
+        return (
+          <MessageResponse key={`${baseKey}-${keyCount}`}>
+            {part.text}
+          </MessageResponse>
+        );
       }
       if (part.type === "tool") {
         return renderToolPart(part);
@@ -141,7 +155,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 : undefined
             }
             onCancel={
-              planPart.plan.status === "executing" || planPart.plan.status === "approved"
+              planPart.plan.status === "executing" ||
+              planPart.plan.status === "approved"
                 ? () => chat.handleCancelPlan(planPart.plan.id)
                 : undefined
             }
@@ -150,6 +165,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
       }
       return null;
     });
+  };
 
   const hasMessages = chat.messages.length > 0;
   const hasSessions = chat.sessions.length > 0;
@@ -177,7 +193,9 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <History className="size-3.5" />
-            <span>历史对话{hasSessions ? ` (${chat.sessions.length})` : ""}</span>
+            <span>
+              历史对话{hasSessions ? ` (${chat.sessions.length})` : ""}
+            </span>
           </button>
           <button
             type="button"
@@ -222,31 +240,38 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         : msg.content}
                     </MessageContent>
                   </Message>
-                  {msg.role === "assistant" && index === chat.messages.length - 1 && (
-                    <MessageActions>
-                      <MessageAction
-                        onClick={() => navigator.clipboard.writeText(msg.content)}
-                        label="Copy"
-                      >
-                        <CopyIcon className="size-3" />
-                      </MessageAction>
-                    </MessageActions>
-                  )}
+                  {msg.role === "assistant" &&
+                    index === chat.messages.length - 1 && (
+                      <MessageActions>
+                        <MessageAction
+                          onClick={() =>
+                            navigator.clipboard.writeText(msg.content)
+                          }
+                          label="Copy"
+                        >
+                          <CopyIcon className="size-3" />
+                        </MessageAction>
+                      </MessageActions>
+                    )}
                 </div>
               ))}
               {chat.isLoading &&
                 chat.messages[chat.messages.length - 1]?.content === "" &&
-                !(chat.messages[chat.messages.length - 1]?.parts?.length) && (
+                !chat.messages[chat.messages.length - 1]?.parts?.length && (
                   <div className="flex items-center gap-2 px-4 py-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span className="text-sm">
-                      {chat.isPlanGenerating ? "正在分析任务，生成执行计划..." : "思考中..."}
+                      {chat.isPlanGenerating
+                        ? "正在分析任务，生成执行计划..."
+                        : "思考中..."}
                     </span>
                     {chat.activeSkill && (
                       <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
                         <Sparkles className="w-3 h-3" />
                         {chat.activeSkill.skillName}
-                        <span className="text-muted-foreground">({chat.activeSkill.source})</span>
+                        <span className="text-muted-foreground">
+                          ({chat.activeSkill.source})
+                        </span>
                       </span>
                     )}
                   </div>
@@ -254,12 +279,15 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
               {chat.activeSkill &&
                 chat.isLoading &&
                 (chat.messages[chat.messages.length - 1]?.content !== "" ||
-                  (chat.messages[chat.messages.length - 1]?.parts?.length ?? 0) > 0) && (
+                  (chat.messages[chat.messages.length - 1]?.parts?.length ??
+                    0) > 0) && (
                   <div className="flex items-center gap-1.5 px-4 py-1">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
                       <Sparkles className="w-3 h-3" />
                       {chat.activeSkill.skillName}
-                      <span className="text-muted-foreground">({chat.activeSkill.source})</span>
+                      <span className="text-muted-foreground">
+                        ({chat.activeSkill.source})
+                      </span>
                     </span>
                   </div>
                 )}
@@ -275,7 +303,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           <PromptInput onSubmit={chat.handleSubmit}>
             <PromptInputBody>
               <div className="relative">
-                <SkillMenu input={chat.input} onSelect={(cmd) => chat.setInput(cmd)} />
+                <SkillMenu
+                  input={chat.input}
+                  onSelect={(cmd) => chat.setInput(cmd)}
+                />
                 <PromptInputTextarea
                   value={chat.input}
                   onChange={(e) => chat.setInput(e.target.value)}

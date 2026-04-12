@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { app } from "electron";
-import { encrypt, decrypt } from "./crypto";
+import { decrypt, encrypt } from "./crypto";
 import * as schema from "./schema";
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -90,17 +90,23 @@ export const initDatabase = async () => {
   `);
 
   // Migrate: add parts column if missing (for existing databases)
-  const columns = sqlite.pragma("table_info(chat_messages)") as { name: string }[];
+  const columns = sqlite.pragma("table_info(chat_messages)") as {
+    name: string;
+  }[];
   if (!columns.some((c) => c.name === "parts")) {
     sqlite.exec("ALTER TABLE chat_messages ADD COLUMN parts TEXT");
   }
   // Migrate: add session_id column if missing
   if (!columns.some((c) => c.name === "session_id")) {
-    sqlite.exec("ALTER TABLE chat_messages ADD COLUMN session_id TEXT DEFAULT ''");
+    sqlite.exec(
+      "ALTER TABLE chat_messages ADD COLUMN session_id TEXT DEFAULT ''",
+    );
   }
 
   // Create session_id index after ensuring column exists
-  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id, timestamp)");
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id, timestamp)",
+  );
 
   // Migrate orphan messages (no session_id) into auto-created sessions
   const orphans = sqlite
@@ -126,7 +132,6 @@ export const initDatabase = async () => {
   // Migrate .env LLM config to database on first run
   migrateLlmConfigFromEnv();
 };
-
 
 // ============================================================================
 // Types (preserved for IPC handler compatibility)
@@ -207,8 +212,12 @@ export const updateWorkspace = (id: string, updates: Partial<Workspace>) => {
   if (updates.name !== undefined) mapped.name = updates.name;
   if (updates.path !== undefined) mapped.path = updates.path;
   if (updates.createdAt !== undefined) mapped.createdAt = updates.createdAt;
-  if (updates.lastOpenedAt !== undefined) mapped.lastOpenedAt = updates.lastOpenedAt;
-  db.update(schema.workspaces).set(mapped).where(eq(schema.workspaces.id, id)).run();
+  if (updates.lastOpenedAt !== undefined)
+    mapped.lastOpenedAt = updates.lastOpenedAt;
+  db.update(schema.workspaces)
+    .set(mapped)
+    .where(eq(schema.workspaces.id, id))
+    .run();
 };
 
 // ============================================================================
@@ -245,8 +254,10 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
   const mapped: Record<string, unknown> = {};
   if (updates.status !== undefined) mapped.status = updates.status;
   if (updates.result !== undefined) mapped.result = updates.result;
-  if (updates.filesAffected !== undefined) mapped.filesAffected = updates.filesAffected;
-  if (updates.completedAt !== undefined) mapped.completedAt = updates.completedAt;
+  if (updates.filesAffected !== undefined)
+    mapped.filesAffected = updates.filesAffected;
+  if (updates.completedAt !== undefined)
+    mapped.completedAt = updates.completedAt;
   db.update(schema.tasks).set(mapped).where(eq(schema.tasks.id, id)).run();
 };
 
@@ -255,7 +266,11 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
 // ============================================================================
 
 export const getSetting = (key: string): string | null => {
-  const row = db.select().from(schema.settings).where(eq(schema.settings.key, key)).get();
+  const row = db
+    .select()
+    .from(schema.settings)
+    .where(eq(schema.settings.key, key))
+    .get();
   return row?.value ?? null;
 };
 
@@ -319,7 +334,10 @@ export const removeRecentWorkspace = (path: string) => {
 // Chat Sessions
 // ============================================================================
 
-export const createChatSession = (workspacePath: string, title = "新对话"): ChatSession => {
+export const createChatSession = (
+  workspacePath: string,
+  title = "新对话",
+): ChatSession => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   db.insert(schema.chatSessions)
@@ -383,7 +401,11 @@ export const getChatHistory = (sessionId: string): ChatMessage[] =>
       parts: row.parts ? JSON.parse(row.parts) : undefined,
     }));
 
-export const saveChatHistory = (sessionId: string, workspacePath: string, messages: ChatMessage[]) => {
+export const saveChatHistory = (
+  sessionId: string,
+  workspacePath: string,
+  messages: ChatMessage[],
+) => {
   db.transaction((tx) => {
     tx.delete(schema.chatMessages)
       .where(eq(schema.chatMessages.sessionId, sessionId))
@@ -426,7 +448,9 @@ export interface LlmConfig {
 // LLM Configs
 // ============================================================================
 
-function mapRowToLlmConfig(row: typeof schema.llmConfigs.$inferSelect): LlmConfig {
+function mapRowToLlmConfig(
+  row: typeof schema.llmConfigs.$inferSelect,
+): LlmConfig {
   return {
     id: row.id,
     name: row.name,
@@ -475,11 +499,7 @@ export const createLlmConfig = (
 };
 
 export const getLlmConfigs = (): LlmConfig[] =>
-  db
-    .select()
-    .from(schema.llmConfigs)
-    .all()
-    .map(mapRowToLlmConfig);
+  db.select().from(schema.llmConfigs).all().map(mapRowToLlmConfig);
 
 export const getLlmConfig = (id: string): LlmConfig | null => {
   const row = db
@@ -497,7 +517,8 @@ export const updateLlmConfig = (
   const mapped: Record<string, unknown> = {};
   if (updates.name !== undefined) mapped.name = updates.name;
   if (updates.provider !== undefined) mapped.provider = updates.provider;
-  if (updates.apiKey !== undefined) mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
+  if (updates.apiKey !== undefined)
+    mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
   if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
   if (updates.model !== undefined) mapped.model = updates.model;
   if (updates.isDefault !== undefined) mapped.isDefault = updates.isDefault;
@@ -523,9 +544,7 @@ export const deleteLlmConfig = (id: string): void => {
     }
   }
 
-  db.delete(schema.llmConfigs)
-    .where(eq(schema.llmConfigs.id, id))
-    .run();
+  db.delete(schema.llmConfigs).where(eq(schema.llmConfigs.id, id)).run();
 };
 
 export const getDefaultLlmConfig = (): LlmConfig | null => {
@@ -539,9 +558,7 @@ export const getDefaultLlmConfig = (): LlmConfig | null => {
 
 export const setDefaultLlmConfig = (id: string): void => {
   db.transaction((tx) => {
-    tx.update(schema.llmConfigs)
-      .set({ isDefault: false })
-      .run();
+    tx.update(schema.llmConfigs).set({ isDefault: false }).run();
     tx.update(schema.llmConfigs)
       .set({ isDefault: true })
       .where(eq(schema.llmConfigs.id, id))
@@ -575,12 +592,14 @@ export const migrateLlmConfigFromEnv = (): void => {
   } else if (provider === "custom") {
     resolvedProvider = "custom";
     apiKey = process.env.OPENAI_API_KEY || null;
-    baseUrl = process.env.CUSTOM_BASE_URL || process.env.OPENAI_BASE_URL || null;
+    baseUrl =
+      process.env.CUSTOM_BASE_URL || process.env.OPENAI_BASE_URL || null;
   } else {
     // Default to openai (includes provider === "openai" or empty/unknown)
     resolvedProvider = "openai";
     apiKey = process.env.OPENAI_API_KEY || null;
-    baseUrl = process.env.OPENAI_BASE_URL || process.env.CUSTOM_BASE_URL || null;
+    baseUrl =
+      process.env.OPENAI_BASE_URL || process.env.CUSTOM_BASE_URL || null;
   }
 
   const resolvedModel = model || "gpt-4o-mini";
@@ -598,5 +617,11 @@ export const migrateLlmConfigFromEnv = (): void => {
   });
 };
 
-
-export type { Workspace, Task, FileOperation, RecentWorkspace, ChatMessage, ChatSession };
+export type {
+  ChatMessage,
+  ChatSession,
+  FileOperation,
+  RecentWorkspace,
+  Task,
+  Workspace,
+};

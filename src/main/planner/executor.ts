@@ -7,12 +7,12 @@
  * - Context passing: injects previous step summaries into each step's prompt
  */
 
-import { streamText, stepCountIs } from "ai";
+import { stepCountIs, streamText } from "ai";
 import type { WebContents } from "electron";
+import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
-import type { Plan, PlanStep } from "./types";
 import { readPlanFile, writePlanFile } from "./plan-file";
-import { abortControllers, manualStopFlags } from "../ipc/ai-task-control";
+import type { Plan } from "./types";
 
 interface ExecutorOptions {
   plan: Plan;
@@ -166,17 +166,18 @@ Rules:
       // Mark step completed
       step.status = "completed";
       // Generate a brief summary (first 200 chars of output)
-      step.resultSummary = stepText.length > 200
-        ? stepText.slice(0, 200) + "..."
-        : stepText || "(completed with tool calls only)";
-
+      step.resultSummary =
+        stepText.length > 200
+          ? `${stepText.slice(0, 200)}...`
+          : stepText || "(completed with tool calls only)";
     } catch (error: unknown) {
       // Handle user-initiated abort — current step completed, remaining skipped
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
-        step.resultSummary = stepText.length > 200
-          ? stepText.slice(0, 200) + "..."
-          : stepText || "(aborted by user)";
+        step.resultSummary =
+          stepText.length > 200
+            ? `${stepText.slice(0, 200)}...`
+            : stepText || "(aborted by user)";
 
         // Mark remaining steps as skipped
         for (const remaining of plan.steps) {
