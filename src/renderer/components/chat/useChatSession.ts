@@ -29,6 +29,7 @@ export function useChatSession(workspacePath: string) {
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
   const pendingStopRef = useRef(false);
+  const stopRequestedRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -217,16 +218,47 @@ export function useChatSession(workspacePath: string) {
     const offDone = window.filework.onStreamDone(({ id }) => {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Done] Cleaning up taskId:", id);
+      const assistantId = streamAssistantIdRef.current;
+      const stoppedByUser = stopRequestedRef.current;
       streamTaskIdRef.current = null;
-      streamAssistantIdRef.current = null;
       pendingStopRef.current = false;
+      stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
-        if (activeSessionIdRef.current) {
-          debouncedSave(prev, activeSessionIdRef.current);
+        let next = prev;
+        if (stoppedByUser && assistantId) {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx !== -1) {
+            const updated = [...prev];
+            const msg = updated[idx];
+            const normalizedParts = (msg.parts ?? []).map((part) => {
+              if (part.type !== "tool") return part;
+              if (part.state === "output-available" || part.state === "output-error") return part;
+              return {
+                ...part,
+                state: "output-available" as const,
+                result: part.result ?? {
+                  success: false,
+                  cancelled: true,
+                  reason: "用户已停止执行",
+                },
+              };
+            });
+            updated[idx] = {
+              ...msg,
+              parts: normalizedParts,
+              content: contentFromParts(normalizedParts),
+            };
+            next = updated;
+          }
         }
-        return prev;
+
+        streamAssistantIdRef.current = null;
+        if (activeSessionIdRef.current) {
+          debouncedSave(next, activeSessionIdRef.current);
+        }
+        return next;
       });
     });
 
@@ -235,6 +267,7 @@ export function useChatSession(workspacePath: string) {
       console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
       streamTaskIdRef.current = null;
       pendingStopRef.current = false;
+      stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
       setMessages((prev) => {
@@ -516,6 +549,7 @@ export function useChatSession(workspacePath: string) {
     debouncedSave(withBoth, sessionId);
     setIsLoading(true);
     pendingStopRef.current = false;
+    stopRequestedRef.current = false;
     streamAssistantIdRef.current = assistantId;
 
     if (isFirstMessage) {
@@ -605,6 +639,7 @@ export function useChatSession(workspacePath: string) {
   const handleStopGeneration = useCallback(() => {
     const taskId = streamTaskIdRef.current;
     console.log("[Stop Generation] Current taskId:", taskId, "isLoading:", isLoading);
+    stopRequestedRef.current = true;
 
     if (!taskId) {
       if (isLoading) {
