@@ -8,6 +8,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createOpenAI } from "@ai-sdk/openai";
+import { classifyError } from "../ai/error-classifier";
 import { getDefaultLlmConfig, getLlmConfig } from "../db";
 
 /**
@@ -59,16 +60,8 @@ export const getAIModelByConfigId = (configId?: string) => {
 
 /**
  * Check if an error is an authentication failure (401/403)
+ * @deprecated Use `classifyError` from `../ai/error-classifier` instead.
  */
 export const isAuthError = (error: unknown): boolean => {
-  if (error instanceof Error) {
-    const msg = error.message;
-    return (
-      msg.includes("401") ||
-      msg.includes("403") ||
-      msg.includes("Unauthorized") ||
-      msg.includes("Forbidden")
-    );
-  }
-  return false;
+  return classifyError(error).type === "auth";
 };

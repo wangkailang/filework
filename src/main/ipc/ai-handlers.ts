@@ -8,12 +8,21 @@
 import crypto from "node:crypto";
 import { stepCountIs, streamText } from "ai";
 import { ipcMain } from "electron";
+import { compressContext } from "../ai/context-compressor";
+import { classifyError, withRetry } from "../ai/error-classifier";
 import {
   convertToCoreMessages,
   type HistoryMessage,
 } from "../ai/message-converter";
-import { truncateToFit } from "../ai/token-budget";
-import { addTask, getSetting, updateTask } from "../db";
+import { buildProviderOptions } from "../ai/prompt-caching";
+import { truncateToFitAsync } from "../ai/token-budget";
+import {
+  addTask,
+  getDefaultLlmConfig,
+  getLlmConfig,
+  getSetting,
+  updateTask,
+} from "../db";
 import { getAllSuggestions, skillRegistry, skills } from "../skills";
 import type { ExecutorDeps } from "../skills-runtime";
 import {
@@ -26,7 +35,7 @@ import {
 import type { UnifiedSkill } from "../skills-runtime/types";
 
 // Import our new modules
-import { getAIModelByConfigId, isAuthError } from "./ai-models";
+import { getAIModelByConfigId } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
@@ -38,6 +47,7 @@ import {
 } from "./ai-task-control";
 import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
+import { registerUsageHandlers } from "./usage-handlers";
 
 /**
  * Enhanced system prompt generation based on skill usage
@@ -60,23 +70,19 @@ Rules:
   // Add skill-specific instructions
   if (skill) {
     if (isExplicitSkillCommand) {
-      // For explicit skill commands, be more directive
       systemPrompt += `\n\n重要：用户已明确调用 ${skill.name} 技能执行任务: "${skillArgs}"
 请直接执行指定任务，不要进行不必要的环境探索或目录列举。`;
 
-      // Special handling for agent-browser
       if (skill.id === "agent-browser") {
         systemPrompt += `\n当前任务是网页相关操作，请直接使用 npx agent-browser 命令执行任务，避免使用其他文件操作工具。`;
       }
     }
 
-    // Add tool restriction notice if applicable
     if (skill.external?.frontmatter["allowed-tools"]) {
       const allowedTools = skill.external.frontmatter["allowed-tools"];
       systemPrompt += `\n\n工具限制：当前技能仅允许使用以下工具: ${allowedTools.join(", ")}`;
     }
   } else {
-    // For non-skill tasks, keep the original behavior
     systemPrompt += `\n- Before making changes, list the directory to understand the current structure.
 - Explain what you did after completing the task.`;
   }
@@ -111,17 +117,18 @@ const handleTaskExecution = async (
     completedAt: null,
   });
 
-  // Create AbortController early so its signal can be passed into streaming APIs
   const controller = new AbortController();
   console.log("[Main] Created AbortController for executeTask taskId:", id);
   abortControllers.set(id, controller);
 
   try {
-    // Notify renderer of the task id before streaming starts
     if (!sender.isDestroyed()) {
       sender.send("ai:stream-start", { id });
     }
 
+    const llmConfig = payload.llmConfigId
+      ? getLlmConfig(payload.llmConfigId)
+      : getDefaultLlmConfig();
     const model = getAIModelByConfigId(payload.llmConfigId);
 
     // ── Skill matching: /command format first, then prompt-based ──
@@ -143,7 +150,6 @@ const handleTaskExecution = async (
       );
 
       if (!skill) {
-        // Try fuzzy matching as fallback
         const cleanCommand = command.startsWith("/")
           ? command.slice(1).toLowerCase()
           : command.toLowerCase();
@@ -153,7 +159,6 @@ const handleTaskExecution = async (
           allSkills.map((s) => s.id),
         );
 
-        // Try to find a skill that contains the command or vice versa
         const fuzzyMatch = allSkills.find(
           (s) =>
             s.id.toLowerCase().includes(cleanCommand) ||
@@ -168,7 +173,6 @@ const handleTaskExecution = async (
       }
     }
 
-    // Fall back to prompt-based matching
     if (!skill) {
       skill = skillRegistry.matchByPrompt(payload.prompt);
     }
@@ -180,7 +184,20 @@ const handleTaskExecution = async (
         const coreMessages = convertToCoreMessages(
           payload.history as HistoryMessage[],
         );
-        const { messages: truncatedMessages } = truncateToFit(coreMessages);
+        const compressor = (
+          msgs: import("ai").ModelMessage[],
+          budget: number,
+        ) =>
+          compressContext(msgs, {
+            model,
+            budget,
+            signal: controller.signal,
+          });
+        const { messages: truncatedMessages } = await truncateToFitAsync(
+          coreMessages,
+          undefined,
+          compressor,
+        );
         convertedHistory = truncatedMessages;
       } catch (err) {
         console.warn(
@@ -193,7 +210,6 @@ const handleTaskExecution = async (
     // ── Skill preprocessing & execution mode ──
     let skillPrompt = "";
     if (skill) {
-      // Notify renderer of skill activation
       if (!sender.isDestroyed()) {
         sender.send("ai:skill-activated", {
           id,
@@ -217,9 +233,7 @@ const handleTaskExecution = async (
         },
       );
 
-      // Check if this is a fork-mode skill
       if (skill.external?.frontmatter.context === "fork") {
-        // Use skill-specific tools if allowed-tools is configured
         const allowedTools = skill.external?.frontmatter["allowed-tools"];
         const tools =
           allowedTools && allowedTools.length > 0
@@ -247,7 +261,6 @@ const handleTaskExecution = async (
           deps,
         );
 
-        // Fork mode handles its own streaming, so we're done
         updateTask(id, {
           status: "completed",
           result: "",
@@ -257,13 +270,10 @@ const handleTaskExecution = async (
         return { id, status: "completed" };
       }
 
-      // Default mode: wrap with security boundary for injection
       const source = skill.external?.sourcePath ?? skill.name;
       skillPrompt = `\n\n${wrapWithSecurityBoundary(preprocessed.systemPrompt, source)}`;
     }
 
-    // Build tools with approval guards for dangerous operations
-    // Use skill-specific tools if skill has allowed-tools configuration
     let originalTools: Record<string, import("ai").Tool>;
     if (skill?.external?.frontmatter["allowed-tools"]) {
       const allowedTools = skill.external.frontmatter["allowed-tools"];
@@ -280,7 +290,6 @@ const handleTaskExecution = async (
     }
     const skillTools = skill?.tools ?? {};
 
-    // Build enhanced system prompt based on skill usage
     const systemPrompt =
       buildSystemPrompt(
         payload.workspacePath,
@@ -303,30 +312,26 @@ const handleTaskExecution = async (
         ]
       : [];
 
-    const result = useMessagesMode
-      ? streamText({
-          model,
-          tools: { ...originalTools, ...skillTools },
-          stopWhen: stepCountIs(20),
-          system: systemPrompt,
-          messages: builtMessages,
-          abortSignal: controller.signal,
-        })
-      : streamText({
-          model,
-          tools: { ...originalTools, ...skillTools },
-          stopWhen: stepCountIs(20),
-          system: systemPrompt,
-          prompt: payload.prompt,
-          abortSignal: controller.signal,
-        });
+    // ── Streaming with automatic retry ──
+    const providerOptions = buildProviderOptions(llmConfig?.provider ?? "");
 
-    // Stream full events (text deltas + tool calls) to renderer
-    let fullText = "";
-    let partCount = 0;
-    console.log("[Main] Starting stream loop for taskId:", id);
+    const streamAndConsume = async () => {
+      const commonOptions = {
+        model,
+        tools: { ...originalTools, ...skillTools },
+        stopWhen: stepCountIs(20),
+        system: systemPrompt,
+        abortSignal: controller.signal,
+        providerOptions,
+      };
 
-    try {
+      const streamOptions = useMessagesMode
+        ? { ...commonOptions, messages: builtMessages }
+        : { ...commonOptions, prompt: payload.prompt };
+
+      const result = streamText(streamOptions);
+
+      let partCount = 0;
       for await (const part of result.fullStream) {
         partCount++;
         console.log(
@@ -336,7 +341,6 @@ const handleTaskExecution = async (
           part.type,
         );
 
-        // Check manual stop flag
         if (manualStopFlags.get(id)) {
           console.log("[Main] Manual stop flag detected for taskId:", id);
           break;
@@ -368,10 +372,54 @@ const handleTaskExecution = async (
         }
       }
 
+      return result;
+    };
+
+    let fullText = "";
+    console.log("[Main] Starting stream loop for taskId:", id);
+
+    try {
+      const streamResult = await withRetry(streamAndConsume, {
+        signal: controller.signal,
+        onRetry: (attempt, classified) => {
+          console.log(
+            `[Main] Retry attempt ${attempt} for taskId: ${id}, error type: ${classified.type}`,
+          );
+          fullText = "";
+          if (!sender.isDestroyed()) {
+            sender.send("ai:stream-retry", {
+              id,
+              attempt,
+              type: classified.type,
+              maxRetries: classified.maxRetries,
+            });
+          }
+        },
+      });
+
+      // Track token usage
+      let inputTokens: number | null = null;
+      let outputTokens: number | null = null;
+      let totalTokens: number | null = null;
+      try {
+        const usage = await streamResult.usage;
+        if (usage) {
+          inputTokens = usage.promptTokens ?? null;
+          outputTokens = usage.completionTokens ?? null;
+          totalTokens = usage.totalTokens ?? null;
+        }
+      } catch {
+        // Usage read failure is non-critical
+      }
       updateTask(id, {
         status: "completed",
         result: fullText,
         completedAt: new Date().toISOString(),
+        modelId: llmConfig?.model ?? null,
+        provider: llmConfig?.provider ?? null,
+        inputTokens,
+        outputTokens,
+        totalTokens,
       });
 
       if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
@@ -388,11 +436,10 @@ const handleTaskExecution = async (
         return { id, status: "completed" };
       }
 
-      const errorMsg = isAuthError(error)
-        ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-        : error instanceof Error
-          ? error.message
-          : "Unknown error";
+      const classified = classifyError(error);
+      const errorMsg =
+        classified.userMessage ||
+        (error instanceof Error ? error.message : "Unknown error");
 
       updateTask(id, {
         status: "failed",
@@ -409,11 +456,10 @@ const handleTaskExecution = async (
       cleanupTask(id);
     }
   } catch (error: unknown) {
-    const errorMsg = isAuthError(error)
-      ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-      : error instanceof Error
-        ? error.message
-        : "Unknown error";
+    const classified = classifyError(error);
+    const errorMsg =
+      classified.userMessage ||
+      (error instanceof Error ? error.message : "Unknown error");
 
     updateTask(id, {
       status: "failed",
@@ -432,7 +478,6 @@ const handleTaskExecution = async (
  * Register all AI-related IPC handlers
  */
 export const registerAIHandlers = () => {
-  // Handle approval responses from the renderer
   ipcMain.handle(
     "ai:approveToolCall",
     async (_event, payload: { toolCallId: string; approved: boolean }) => {
@@ -446,7 +491,6 @@ export const registerAIHandlers = () => {
     },
   );
 
-  // Handle stop-generation requests from the renderer
   ipcMain.handle(
     "ai:stopGeneration",
     async (_event, payload: { taskId: string }) => {
@@ -456,7 +500,6 @@ export const registerAIHandlers = () => {
     },
   );
 
-  // Configuration and skill handlers
   ipcMain.handle("ai:getConfig", async () => {
     return {
       provider:
@@ -577,9 +620,9 @@ export const registerAIHandlers = () => {
     return getAllSuggestions();
   });
 
-  // Task execution handler
   ipcMain.handle("ai:executeTask", handleTaskExecution);
 
-  // Register plan-related handlers
   registerPlanHandlers();
+
+  registerUsageHandlers();
 };
