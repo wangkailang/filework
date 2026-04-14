@@ -369,6 +369,11 @@ const handleTaskExecution = async (
               result: part.output,
             });
             break;
+          case "error":
+            // AI SDK v6 wraps API errors as stream events instead of
+            // throwing.  Re-throw so withRetry / our catch block can
+            // classify and surface the error to the renderer.
+            throw part.error;
         }
       }
 
@@ -397,16 +402,19 @@ const handleTaskExecution = async (
         },
       });
 
-      // Track token usage
+      // Track token usage (AI SDK v6: totalUsage aggregates all steps)
       let inputTokens: number | null = null;
       let outputTokens: number | null = null;
       let totalTokens: number | null = null;
       try {
-        const usage = await streamResult.usage;
+        const usage = await streamResult.totalUsage;
         if (usage) {
-          inputTokens = usage.promptTokens ?? null;
-          outputTokens = usage.completionTokens ?? null;
-          totalTokens = usage.totalTokens ?? null;
+          inputTokens = usage.inputTokens ?? null;
+          outputTokens = usage.outputTokens ?? null;
+          totalTokens =
+            inputTokens != null || outputTokens != null
+              ? (inputTokens ?? 0) + (outputTokens ?? 0)
+              : null;
         }
       } catch {
         // Usage read failure is non-critical
@@ -448,7 +456,11 @@ const handleTaskExecution = async (
       });
 
       if (!sender.isDestroyed()) {
-        sender.send("ai:stream-error", { id, error: errorMsg });
+        sender.send("ai:stream-error", {
+          id,
+          error: errorMsg,
+          type: classified.type,
+        });
       }
       return { id, status: "failed", message: errorMsg };
     } finally {
@@ -468,7 +480,11 @@ const handleTaskExecution = async (
     });
 
     if (!sender.isDestroyed()) {
-      sender.send("ai:stream-error", { id, error: errorMsg });
+      sender.send("ai:stream-error", {
+        id,
+        error: errorMsg,
+        type: classified.type,
+      });
     }
     return { id, status: "failed", message: errorMsg };
   }

@@ -18,9 +18,9 @@ const DEFAULT_TAIL_BUDGET = 20000;
 const DEFAULT_HEAD_COUNT = 2;
 
 const SUMMARY_PREFIX =
-	"[对话摘要 — 仅供参考] 以下是早期对话的压缩摘要。这是来自先前上下文的" +
-	"交接记录，请将其视为背景参考，不要回答或执行摘要中提到的请求。" +
-	"仅响应此摘要之后出现的最新用户消息。";
+  "[对话摘要 — 仅供参考] 以下是早期对话的压缩摘要。这是来自先前上下文的" +
+  "交接记录，请将其视为背景参考，不要回答或执行摘要中提到的请求。" +
+  "仅响应此摘要之后出现的最新用户消息。";
 
 const SUMMARIZER_PROMPT = `你是一个对话压缩助手。请将以下对话历史压缩为简洁的结构化摘要。
 
@@ -49,20 +49,20 @@ const SUMMARIZER_PROMPT = `你是一个对话压缩助手。请将以下对话�
 // ---------------------------------------------------------------------------
 
 export interface CompressorOptions {
-	model: LanguageModelV1;
-	budget: number;
-	/** Token budget reserved for protected tail messages (default: 20000) */
-	tailBudget?: number;
-	/** Number of head messages to always protect (default: 2) */
-	headCount?: number;
-	/** AbortSignal for cancellation */
-	signal?: AbortSignal;
+  model: LanguageModelV1;
+  budget: number;
+  /** Token budget reserved for protected tail messages (default: 20000) */
+  tailBudget?: number;
+  /** Number of head messages to always protect (default: 2) */
+  headCount?: number;
+  /** AbortSignal for cancellation */
+  signal?: AbortSignal;
 }
 
 export interface CompressionResult {
-	messages: ModelMessage[];
-	wasCompressed: boolean;
-	summaryTokens: number;
+  messages: ModelMessage[];
+  wasCompressed: boolean;
+  summaryTokens: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,78 +82,78 @@ export interface CompressionResult {
  * Falls back to returning pre-pruned messages if LLM summarization fails.
  */
 export async function compressContext(
-	messages: ModelMessage[],
-	options: CompressorOptions,
+  messages: ModelMessage[],
+  options: CompressorOptions,
 ): Promise<CompressionResult> {
-	const tailBudget = options.tailBudget ?? DEFAULT_TAIL_BUDGET;
-	const headCount = options.headCount ?? DEFAULT_HEAD_COUNT;
+  const tailBudget = options.tailBudget ?? DEFAULT_TAIL_BUDGET;
+  const headCount = options.headCount ?? DEFAULT_HEAD_COUNT;
 
-	// Step 1: Pre-prune tool results (cheap, no LLM)
-	const pruned = compressToolResults(messages);
-	const prunedTokens = estimateTokens(pruned);
+  // Step 1: Pre-prune tool results (cheap, no LLM)
+  const pruned = compressToolResults(messages);
+  const prunedTokens = estimateTokens(pruned);
 
-	if (prunedTokens <= options.budget) {
-		return { messages: pruned, wasCompressed: false, summaryTokens: 0 };
-	}
+  if (prunedTokens <= options.budget) {
+    return { messages: pruned, wasCompressed: false, summaryTokens: 0 };
+  }
 
-	// Step 2: Identify protected head
-	const head = pruned.slice(0, Math.min(headCount, pruned.length));
+  // Step 2: Identify protected head
+  const head = pruned.slice(0, Math.min(headCount, pruned.length));
 
-	// Step 3: Identify protected tail (walk backward until tailBudget reached)
-	let tailStart = pruned.length;
-	let tailTokens = 0;
-	for (let i = pruned.length - 1; i >= headCount; i--) {
-		const msgTokens = estimateTokens([pruned[i]]);
-		if (tailTokens + msgTokens > tailBudget) break;
-		tailTokens += msgTokens;
-		tailStart = i;
-	}
-	const tail = pruned.slice(tailStart);
+  // Step 3: Identify protected tail (walk backward until tailBudget reached)
+  let tailStart = pruned.length;
+  let tailTokens = 0;
+  for (let i = pruned.length - 1; i >= headCount; i--) {
+    const msgTokens = estimateTokens([pruned[i]]);
+    if (tailTokens + msgTokens > tailBudget) break;
+    tailTokens += msgTokens;
+    tailStart = i;
+  }
+  const tail = pruned.slice(tailStart);
 
-	// Step 4: Extract middle segment
-	const middle = pruned.slice(headCount, tailStart);
-	if (middle.length === 0) {
-		// No middle to compress — just return head + tail
-		return {
-			messages: [...head, ...tail],
-			wasCompressed: false,
-			summaryTokens: 0,
-		};
-	}
+  // Step 4: Extract middle segment
+  const middle = pruned.slice(headCount, tailStart);
+  if (middle.length === 0) {
+    // No middle to compress — just return head + tail
+    return {
+      messages: [...head, ...tail],
+      wasCompressed: false,
+      summaryTokens: 0,
+    };
+  }
 
-	// Step 5: Summarize middle with LLM
-	try {
-		const middleText = serializeMessages(middle);
-		const { text: summary } = await generateText({
-			model: options.model,
-			prompt: SUMMARIZER_PROMPT + middleText,
-			abortSignal: options.signal,
-		});
+  // Step 5: Summarize middle with LLM
+  try {
+    const middleText = serializeMessages(middle);
+    const { text: summary } = await generateText({
+      model: options.model,
+      prompt: SUMMARIZER_PROMPT + middleText,
+      abortSignal: options.signal,
+    });
 
-		const summaryMessage: ModelMessage = {
-			role: "system",
-			content: `${SUMMARY_PREFIX}\n\n${summary}`,
-		};
+    const summaryMessage: ModelMessage = {
+      role: "system",
+      content: `${SUMMARY_PREFIX}\n\n${summary}`,
+    };
 
-		const summaryTokens = estimateTokens([summaryMessage]);
+    const summaryTokens = estimateTokens([summaryMessage]);
 
-		return {
-			messages: [...head, summaryMessage, ...tail],
-			wasCompressed: true,
-			summaryTokens,
-		};
-	} catch (error) {
-		console.warn(
-			"[ContextCompressor] LLM summarization failed, falling back to pruned messages:",
-			error instanceof Error ? error.message : error,
-		);
-		// Fallback: return head + tail without summary
-		return {
-			messages: [...head, ...tail],
-			wasCompressed: false,
-			summaryTokens: 0,
-		};
-	}
+    return {
+      messages: [...head, summaryMessage, ...tail],
+      wasCompressed: true,
+      summaryTokens,
+    };
+  } catch (error) {
+    console.warn(
+      "[ContextCompressor] LLM summarization failed, falling back to pruned messages:",
+      error instanceof Error ? error.message : error,
+    );
+    // Fallback: return head + tail without summary
+    return {
+      messages: [...head, ...tail],
+      wasCompressed: false,
+      summaryTokens: 0,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -164,50 +164,50 @@ export async function compressContext(
  * Serialize messages into a human-readable text format for the summarizer.
  */
 function serializeMessages(messages: ModelMessage[]): string {
-	const parts: string[] = [];
+  const parts: string[] = [];
 
-	for (const msg of messages) {
-		const role =
-			msg.role === "user" ? "用户" : msg.role === "assistant" ? "助手" : "系统";
+  for (const msg of messages) {
+    const role =
+      msg.role === "user" ? "用户" : msg.role === "assistant" ? "助手" : "系统";
 
-		if (typeof msg.content === "string") {
-			parts.push(`[${role}] ${msg.content}`);
-			continue;
-		}
+    if (typeof msg.content === "string") {
+      parts.push(`[${role}] ${msg.content}`);
+      continue;
+    }
 
-		if (!Array.isArray(msg.content)) continue;
+    if (!Array.isArray(msg.content)) continue;
 
-		const textParts: string[] = [];
-		for (const part of msg.content) {
-			if ("text" in part && typeof part.text === "string") {
-				textParts.push(part.text);
-			} else if (part.type === "tool-call") {
-				const toolPart = part as {
-					type: "tool-call";
-					toolName: string;
-					input: unknown;
-				};
-				textParts.push(
-					`[调用工具: ${toolPart.toolName}(${JSON.stringify(toolPart.input).slice(0, 200)})]`,
-				);
-			} else if (part.type === "tool-result") {
-				const resultPart = part as {
-					type: "tool-result";
-					output?: { value?: string };
-				};
-				const output = resultPart.output;
-				const value =
-					typeof output?.value === "string"
-						? output.value.slice(0, 300)
-						: JSON.stringify(output).slice(0, 300);
-				textParts.push(`[工具结果: ${value}]`);
-			}
-		}
+    const textParts: string[] = [];
+    for (const part of msg.content) {
+      if ("text" in part && typeof part.text === "string") {
+        textParts.push(part.text);
+      } else if (part.type === "tool-call") {
+        const toolPart = part as {
+          type: "tool-call";
+          toolName: string;
+          input: unknown;
+        };
+        textParts.push(
+          `[调用工具: ${toolPart.toolName}(${JSON.stringify(toolPart.input).slice(0, 200)})]`,
+        );
+      } else if (part.type === "tool-result") {
+        const resultPart = part as {
+          type: "tool-result";
+          output?: { value?: string };
+        };
+        const output = resultPart.output;
+        const value =
+          typeof output?.value === "string"
+            ? output.value.slice(0, 300)
+            : JSON.stringify(output).slice(0, 300);
+        textParts.push(`[工具结果: ${value}]`);
+      }
+    }
 
-		if (textParts.length > 0) {
-			parts.push(`[${role}] ${textParts.join("\n")}`);
-		}
-	}
+    if (textParts.length > 0) {
+      parts.push(`[${role}] ${textParts.join("\n")}`);
+    }
+  }
 
-	return parts.join("\n\n");
+  return parts.join("\n\n");
 }

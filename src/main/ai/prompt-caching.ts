@@ -16,15 +16,15 @@
  * prompt and conversation prefix, reducing input token costs on subsequent turns.
  */
 export function buildProviderOptions(
-	provider: string,
+  provider: string,
 ): Record<string, unknown> {
-	if (provider !== "anthropic") {
-		return {};
-	}
+  if (provider !== "anthropic") {
+    return {};
+  }
 
-	return {
-		anthropic: {
-			cacheControl: { type: "ephemeral" },
-		},
-	};
+  return {
+    anthropic: {
+      cacheControl: { type: "ephemeral" },
+    },
+  };
 }

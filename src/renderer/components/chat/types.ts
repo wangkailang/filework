@@ -33,7 +33,27 @@ export interface PlanMessagePart {
   plan: PlanView;
 }
 
-export type MessagePart = TextPart | ToolPart | PlanMessagePart;
+export interface ErrorPart {
+  type: "error";
+  message: string;
+  errorType?: string;
+}
+
+export interface UsagePart {
+  type: "usage";
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  modelId: string | null;
+  provider: string | null;
+}
+
+export type MessagePart =
+  | TextPart
+  | ToolPart
+  | PlanMessagePart
+  | ErrorPart
+  | UsagePart;
 
 // ---------------------------------------------------------------------------
 // Chat data types

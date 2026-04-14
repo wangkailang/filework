@@ -106,6 +106,15 @@ export const Sidebar = ({
     setChildrenMap(newChildrenMap);
   }, [workspacePath, expandedPaths]);
 
+  // Listen for programmatic settings open (e.g. from error actions)
+  useEffect(() => {
+    const handler = () => {
+      setSettingsOpen(true);
+    };
+    window.addEventListener("filework:open-settings", handler);
+    return () => window.removeEventListener("filework:open-settings", handler);
+  }, []);
+
   const dirName = workspacePath.split("/").pop() || workspacePath;
 
   const renderEntries = (entries: FileInfo[]) =>

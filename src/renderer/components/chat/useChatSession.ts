@@ -11,7 +11,27 @@ import type {
   PlanMessagePart,
   ToolApproval,
   ToolPart,
+  UsagePart,
 } from "./types";
+
+export interface RetryInfo {
+  attempt: number;
+  type: string;
+  maxRetries: number;
+}
+
+export interface UsageInfo {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  modelId: string | null;
+  provider: string | null;
+}
+
+export interface StreamErrorInfo {
+  message: string;
+  type?: string;
+}
 
 export function useChatSession(workspacePath: string) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -25,14 +45,18 @@ export function useChatSession(workspacePath: string) {
   const [pendingSkillApproval, setPendingSkillApproval] =
     useState<SkillApprovalData | null>(null);
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(
-    null,
+    () => localStorage.getItem("filework-selected-llm-config") || null,
   );
+  const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
+  const [lastUsage, setLastUsage] = useState<UsageInfo | null>(null);
+  const [lastError, setLastError] = useState<StreamErrorInfo | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
   const pendingStopRef = useRef(false);
   const stopRequestedRef = useRef(false);
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -48,6 +72,21 @@ export function useChatSession(workspacePath: string) {
     },
     [workspacePath],
   );
+
+  // ---------------------------------------------------------------------------
+  // Validate persisted LLM config ID on mount
+  // ---------------------------------------------------------------------------
+  const validatedConfigRef = useRef(false);
+  useEffect(() => {
+    if (validatedConfigRef.current || !selectedLlmConfigId) return;
+    validatedConfigRef.current = true;
+    window.filework.llmConfig.list().then((configs: { id: string }[]) => {
+      if (!configs.some((c) => c.id === selectedLlmConfigId)) {
+        setSelectedLlmConfigId(null);
+        localStorage.removeItem("filework-selected-llm-config");
+      }
+    }).catch(() => {});
+  }, [selectedLlmConfigId]);
 
   // ---------------------------------------------------------------------------
   // Load sessions when workspace changes
@@ -88,6 +127,25 @@ export function useChatSession(workspacePath: string) {
           m.role === "assistant" ? { ...m, parts: migrateToParts(m) } : m,
         );
         setMessages(migrated);
+
+        // Restore lastUsage from the last assistant message's UsagePart
+        for (let i = migrated.length - 1; i >= 0; i--) {
+          const msg = migrated[i];
+          if (msg.role !== "assistant" || !msg.parts) continue;
+          const usagePart = msg.parts.find((p: MessagePart) => p.type === "usage") as
+            | UsagePart
+            | undefined;
+          if (usagePart) {
+            setLastUsage({
+              inputTokens: usagePart.inputTokens,
+              outputTokens: usagePart.outputTokens,
+              totalTokens: usagePart.totalTokens,
+              modelId: usagePart.modelId,
+              provider: usagePart.provider,
+            });
+            break;
+          }
+        }
       } catch {
         setMessages([]);
       }
@@ -116,6 +174,11 @@ export function useChatSession(workspacePath: string) {
     const offStart = window.filework.onStreamStart(({ id }) => {
       console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
+      // Connection established – cancel the timeout guard
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
       if (pendingStopRef.current) {
         pendingStopRef.current = false;
         window.filework.stopGeneration(id).catch((error) => {
@@ -253,6 +316,10 @@ export function useChatSession(workspacePath: string) {
     const offDone = window.filework.onStreamDone(({ id }) => {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Done] Cleaning up taskId:", id);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
       const assistantId = streamAssistantIdRef.current;
       const stoppedByUser = stopRequestedRef.current;
       streamTaskIdRef.current = null;
@@ -260,69 +327,121 @@ export function useChatSession(workspacePath: string) {
       stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
-      setMessages((prev) => {
-        let next = prev;
-        if (stoppedByUser && assistantId) {
-          const idx = prev.findIndex((m) => m.id === assistantId);
-          if (idx !== -1) {
-            const updated = [...prev];
-            const msg = updated[idx];
-            const normalizedParts = (msg.parts ?? []).map((part) => {
-              if (part.type !== "tool") return part;
-              if (
-                part.state === "output-available" ||
-                part.state === "output-error"
-              )
-                return part;
-              return {
-                ...part,
-                state: "output-available" as const,
-                result: part.result ?? {
-                  success: false,
-                  cancelled: true,
-                  reason: "用户已停止执行",
-                },
-              };
-            });
-            updated[idx] = {
-              ...msg,
-              parts: normalizedParts,
-              content: contentFromParts(normalizedParts),
-            };
-            next = updated;
-          }
-        }
+      setRetryInfo(null);
+      setLastError(null);
 
-        streamAssistantIdRef.current = null;
-        if (activeSessionIdRef.current) {
-          debouncedSave(next, activeSessionIdRef.current);
-        }
-        return next;
-      });
+      // Normalize stopped-by-user tool parts first
+      if (stoppedByUser && assistantId) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          const msg = updated[idx];
+          const normalizedParts = (msg.parts ?? []).map((part) => {
+            if (part.type !== "tool") return part;
+            if (
+              part.state === "output-available" ||
+              part.state === "output-error"
+            )
+              return part;
+            return {
+              ...part,
+              state: "output-available" as const,
+              result: part.result ?? {
+                success: false,
+                cancelled: true,
+                reason: "用户已停止执行",
+              },
+            };
+          });
+          updated[idx] = {
+            ...msg,
+            parts: normalizedParts,
+            content: contentFromParts(normalizedParts),
+          };
+          return updated;
+        });
+      }
+
+      // Fetch usage for this task and persist as a UsagePart
+      window.filework.usage
+        .getTaskUsage(id)
+        .then((usage: UsageInfo | null) => {
+          if (usage && usage.totalTokens != null) {
+            setLastUsage(usage);
+            // Append usage part to the assistant message so it persists
+            setMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === assistantId);
+              if (idx === -1) return prev;
+              const updated = [...prev];
+              const msg = updated[idx];
+              const usagePart: UsagePart = { type: "usage", ...usage };
+              const newParts: MessagePart[] = [...(msg.parts ?? []), usagePart];
+              updated[idx] = { ...msg, parts: newParts };
+              if (activeSessionIdRef.current) {
+                debouncedSave(updated, activeSessionIdRef.current);
+              }
+              return updated;
+            });
+          } else {
+            // No usage data — still save current messages
+            setMessages((prev) => {
+              streamAssistantIdRef.current = null;
+              if (activeSessionIdRef.current) {
+                debouncedSave(prev, activeSessionIdRef.current);
+              }
+              return prev;
+            });
+          }
+          streamAssistantIdRef.current = null;
+        })
+        .catch(() => {
+          streamAssistantIdRef.current = null;
+          setMessages((prev) => {
+            if (activeSessionIdRef.current) {
+              debouncedSave(prev, activeSessionIdRef.current);
+            }
+            return prev;
+          });
+        });
     });
 
-    const offError = window.filework.onStreamError(({ id, error }) => {
-      if (id !== streamTaskIdRef.current) return;
+    const offError = window.filework.onStreamError(({ id, error, type }) => {
+      // Relaxed matching: accept error when taskId matches, OR when no taskId
+      // is set yet but we are actively loading (race between stream-start and
+      // stream-error events).
+      if (streamTaskIdRef.current && id !== streamTaskIdRef.current) return;
+      if (!streamTaskIdRef.current && !streamAssistantIdRef.current) return;
       console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
       const assistantId = streamAssistantIdRef.current;
       streamTaskIdRef.current = null;
       pendingStopRef.current = false;
       stopRequestedRef.current = false;
       setIsLoading(false);
       setActiveSkill(null);
+      setRetryInfo(null);
+      setLastError({ message: error, type });
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === assistantId);
         if (idx === -1) return prev;
         const updated = [...prev];
         const msg = updated[idx];
-        const fallbackText = msg.content || `出错了: ${error}`;
+        // Append an error part so the error is visible inline in the conversation
+        const errorPart: MessagePart = {
+          type: "error",
+          message: error,
+          errorType: type,
+        };
+        const existingParts = msg.parts && msg.parts.length > 0 ? msg.parts : [];
+        const newParts: MessagePart[] = [...existingParts, errorPart];
         updated[idx] = {
           ...msg,
-          content: fallbackText,
-          parts:
-            msg.parts && msg.parts.length > 0
-              ? msg.parts
-              : [{ type: "text", text: fallbackText }],
+          content: msg.content || error,
+          parts: newParts,
         };
         if (activeSessionIdRef.current) {
           debouncedSave(updated, activeSessionIdRef.current);
@@ -331,6 +450,13 @@ export function useChatSession(workspacePath: string) {
       });
       streamAssistantIdRef.current = null;
     });
+
+    const offRetry = window.filework.onStreamRetry(
+      ({ id, attempt, type, maxRetries }) => {
+        if (id !== streamTaskIdRef.current) return;
+        setRetryInfo({ attempt, type, maxRetries });
+      },
+    );
 
     const offSkillApprovalRequest = window.filework.onSkillApprovalRequest(
       (data) => {
@@ -345,6 +471,7 @@ export function useChatSession(workspacePath: string) {
       offToolCall();
       offToolResult();
       offToolApproval();
+      offRetry();
       offDone();
       offError();
       offSkillApprovalRequest();
@@ -548,6 +675,8 @@ export function useChatSession(workspacePath: string) {
 
   const handleNewChat = async () => {
     if (isLoading) return;
+    setLastUsage(null);
+    setLastError(null);
     await createNewSession();
   };
 
@@ -555,6 +684,8 @@ export function useChatSession(workspacePath: string) {
     if (isLoading || sessionId === activeSessionId) return;
     setActiveSessionId(sessionId);
     setSelectedLlmConfigId(null);
+    setLastUsage(null);
+    setLastError(null);
   };
 
   const handleDeleteSession = async (sessionId: string) => {
@@ -609,6 +740,9 @@ export function useChatSession(workspacePath: string) {
     setMessages(withBoth);
     debouncedSave(withBoth, sessionId);
     setIsLoading(true);
+    setLastUsage(null);
+    setLastError(null);
+    setRetryInfo(null);
     pendingStopRef.current = false;
     stopRequestedRef.current = false;
     streamAssistantIdRef.current = assistantId;
@@ -630,6 +764,43 @@ export function useChatSession(workspacePath: string) {
         parts: parts?.filter((p) => p.type !== "plan"), // Exclude PlanMessagePart
       }));
 
+    // Connection timeout guard: if no stream-start arrives within 30s, surface
+    // an error instead of leaving the UI stuck in loading state.
+    if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+    connectionTimeoutRef.current = setTimeout(() => {
+      if (
+        streamAssistantIdRef.current === assistantId &&
+        !streamTaskIdRef.current
+      ) {
+        const timeoutMsg = "连接超时，未能建立与 AI 服务的连接";
+        const errorPart: MessagePart = {
+          type: "error",
+          message: timeoutMsg,
+          errorType: "timeout",
+        };
+        setLastError({ message: timeoutMsg, type: "timeout" });
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            content: timeoutMsg,
+            parts: [errorPart],
+          };
+          if (activeSessionIdRef.current) {
+            debouncedSave(updated, activeSessionIdRef.current);
+          }
+          return updated;
+        });
+        setIsLoading(false);
+        setRetryInfo(null);
+        streamTaskIdRef.current = null;
+        streamAssistantIdRef.current = null;
+        connectionTimeoutRef.current = null;
+      }
+    }, 30_000);
+
     window.filework
       .checkNeedsPlanning({ prompt: userMessage.content })
       .then(({ needsPlanning: needs }: { needsPlanning: boolean }) => {
@@ -650,15 +821,21 @@ export function useChatSession(workspacePath: string) {
       })
       .catch((error: unknown) => {
         if (streamAssistantIdRef.current !== assistantId) return;
-        const errText = `出错了: ${error instanceof Error ? error.message : "未知错误"}`;
+        const errMsg =
+          error instanceof Error ? error.message : "未知错误";
+        const errorPart: MessagePart = {
+          type: "error",
+          message: errMsg,
+        };
+        setLastError({ message: errMsg });
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === assistantId);
           if (idx === -1) return prev;
           const updated = [...prev];
           updated[idx] = {
             ...updated[idx],
-            content: errText,
-            parts: [{ type: "text", text: errText }],
+            content: errMsg,
+            parts: [errorPart],
           };
           if (activeSessionIdRef.current) {
             debouncedSave(updated, activeSessionIdRef.current);
@@ -666,6 +843,7 @@ export function useChatSession(workspacePath: string) {
           return updated;
         });
         setIsLoading(false);
+        setRetryInfo(null);
         streamTaskIdRef.current = null;
         streamAssistantIdRef.current = null;
       });
@@ -761,7 +939,17 @@ export function useChatSession(workspacePath: string) {
     activeSkill,
     pendingSkillApproval,
     selectedLlmConfigId,
-    setSelectedLlmConfigId,
+    setSelectedLlmConfigId: (id: string | null) => {
+      setSelectedLlmConfigId(id);
+      if (id) {
+        localStorage.setItem("filework-selected-llm-config", id);
+      } else {
+        localStorage.removeItem("filework-selected-llm-config");
+      }
+    },
+    retryInfo,
+    lastUsage,
+    lastError,
     handleSubmit,
     handleApproval,
     handleSkillApproval,
