@@ -74,6 +74,21 @@ export function useChatSession(workspacePath: string) {
   );
 
   // ---------------------------------------------------------------------------
+  // Validate persisted LLM config ID on mount
+  // ---------------------------------------------------------------------------
+  const validatedConfigRef = useRef(false);
+  useEffect(() => {
+    if (validatedConfigRef.current || !selectedLlmConfigId) return;
+    validatedConfigRef.current = true;
+    window.filework.llmConfig.list().then((configs: { id: string }[]) => {
+      if (!configs.some((c) => c.id === selectedLlmConfigId)) {
+        setSelectedLlmConfigId(null);
+        localStorage.removeItem("filework-selected-llm-config");
+      }
+    }).catch(() => {});
+  }, [selectedLlmConfigId]);
+
+  // ---------------------------------------------------------------------------
   // Load sessions when workspace changes
   // ---------------------------------------------------------------------------
   useEffect(() => {
