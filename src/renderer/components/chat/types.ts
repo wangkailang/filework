@@ -39,7 +39,21 @@ export interface ErrorPart {
   errorType?: string;
 }
 
-export type MessagePart = TextPart | ToolPart | PlanMessagePart | ErrorPart;
+export interface UsagePart {
+  type: "usage";
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  modelId: string | null;
+  provider: string | null;
+}
+
+export type MessagePart =
+  | TextPart
+  | ToolPart
+  | PlanMessagePart
+  | ErrorPart
+  | UsagePart;
 
 // ---------------------------------------------------------------------------
 // Chat data types

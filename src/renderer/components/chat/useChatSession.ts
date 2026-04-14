@@ -11,6 +11,7 @@ import type {
   PlanMessagePart,
   ToolApproval,
   ToolPart,
+  UsagePart,
 } from "./types";
 
 export interface RetryInfo {
@@ -111,6 +112,25 @@ export function useChatSession(workspacePath: string) {
           m.role === "assistant" ? { ...m, parts: migrateToParts(m) } : m,
         );
         setMessages(migrated);
+
+        // Restore lastUsage from the last assistant message's UsagePart
+        for (let i = migrated.length - 1; i >= 0; i--) {
+          const msg = migrated[i];
+          if (msg.role !== "assistant" || !msg.parts) continue;
+          const usagePart = msg.parts.find((p: MessagePart) => p.type === "usage") as
+            | UsagePart
+            | undefined;
+          if (usagePart) {
+            setLastUsage({
+              inputTokens: usagePart.inputTokens,
+              outputTokens: usagePart.outputTokens,
+              totalTokens: usagePart.totalTokens,
+              modelId: usagePart.modelId,
+              provider: usagePart.provider,
+            });
+            break;
+          }
+        }
       } catch {
         setMessages([]);
       }
@@ -295,54 +315,80 @@ export function useChatSession(workspacePath: string) {
       setRetryInfo(null);
       setLastError(null);
 
-      // Fetch usage for this task
+      // Normalize stopped-by-user tool parts first
+      if (stoppedByUser && assistantId) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          const msg = updated[idx];
+          const normalizedParts = (msg.parts ?? []).map((part) => {
+            if (part.type !== "tool") return part;
+            if (
+              part.state === "output-available" ||
+              part.state === "output-error"
+            )
+              return part;
+            return {
+              ...part,
+              state: "output-available" as const,
+              result: part.result ?? {
+                success: false,
+                cancelled: true,
+                reason: "用户已停止执行",
+              },
+            };
+          });
+          updated[idx] = {
+            ...msg,
+            parts: normalizedParts,
+            content: contentFromParts(normalizedParts),
+          };
+          return updated;
+        });
+      }
+
+      // Fetch usage for this task and persist as a UsagePart
       window.filework.usage
         .getTaskUsage(id)
         .then((usage: UsageInfo | null) => {
           if (usage && usage.totalTokens != null) {
             setLastUsage(usage);
-          }
-        })
-        .catch(() => {});
-      setMessages((prev) => {
-        let next = prev;
-        if (stoppedByUser && assistantId) {
-          const idx = prev.findIndex((m) => m.id === assistantId);
-          if (idx !== -1) {
-            const updated = [...prev];
-            const msg = updated[idx];
-            const normalizedParts = (msg.parts ?? []).map((part) => {
-              if (part.type !== "tool") return part;
-              if (
-                part.state === "output-available" ||
-                part.state === "output-error"
-              )
-                return part;
-              return {
-                ...part,
-                state: "output-available" as const,
-                result: part.result ?? {
-                  success: false,
-                  cancelled: true,
-                  reason: "用户已停止执行",
-                },
-              };
+            // Append usage part to the assistant message so it persists
+            setMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === assistantId);
+              if (idx === -1) return prev;
+              const updated = [...prev];
+              const msg = updated[idx];
+              const usagePart: UsagePart = { type: "usage", ...usage };
+              const newParts: MessagePart[] = [...(msg.parts ?? []), usagePart];
+              updated[idx] = { ...msg, parts: newParts };
+              if (activeSessionIdRef.current) {
+                debouncedSave(updated, activeSessionIdRef.current);
+              }
+              return updated;
             });
-            updated[idx] = {
-              ...msg,
-              parts: normalizedParts,
-              content: contentFromParts(normalizedParts),
-            };
-            next = updated;
+          } else {
+            // No usage data — still save current messages
+            setMessages((prev) => {
+              streamAssistantIdRef.current = null;
+              if (activeSessionIdRef.current) {
+                debouncedSave(prev, activeSessionIdRef.current);
+              }
+              return prev;
+            });
           }
-        }
-
-        streamAssistantIdRef.current = null;
-        if (activeSessionIdRef.current) {
-          debouncedSave(next, activeSessionIdRef.current);
-        }
-        return next;
-      });
+          streamAssistantIdRef.current = null;
+        })
+        .catch(() => {
+          streamAssistantIdRef.current = null;
+          setMessages((prev) => {
+            if (activeSessionIdRef.current) {
+              debouncedSave(prev, activeSessionIdRef.current);
+            }
+            return prev;
+          });
+        });
     });
 
     const offError = window.filework.onStreamError(({ id, error, type }) => {
@@ -614,6 +660,8 @@ export function useChatSession(workspacePath: string) {
 
   const handleNewChat = async () => {
     if (isLoading) return;
+    setLastUsage(null);
+    setLastError(null);
     await createNewSession();
   };
 
@@ -621,6 +669,8 @@ export function useChatSession(workspacePath: string) {
     if (isLoading || sessionId === activeSessionId) return;
     setActiveSessionId(sessionId);
     setSelectedLlmConfigId(null);
+    setLastUsage(null);
+    setLastError(null);
   };
 
   const handleDeleteSession = async (sessionId: string) => {

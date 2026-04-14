@@ -52,7 +52,7 @@ import { ModelSelector } from "./ModelSelector";
 import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
-import type { ErrorPart, MessagePart, PlanMessagePart, ToolPart } from "./types";
+import type { ErrorPart, MessagePart, PlanMessagePart, ToolPart, UsagePart } from "./types";
 import { useChatSession } from "./useChatSession";
 
 const formatTokens = (n: number | null): string => {
@@ -196,6 +196,23 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 : undefined
             }
           />
+        );
+      }
+      if (part.type === "usage") {
+        const u = part as UsagePart;
+        return (
+          <div
+            key="usage"
+            className="flex items-center gap-3 py-1 text-xs text-muted-foreground"
+          >
+            <span className="inline-flex items-center gap-1">
+              <Zap className="w-3 h-3" />
+              {formatTokens(u.inputTokens)} in / {formatTokens(u.outputTokens)} out
+            </span>
+            {u.modelId && (
+              <span className="opacity-60">{u.modelId}</span>
+            )}
+          </div>
         );
       }
       if (part.type === "error") {
@@ -479,19 +496,27 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 );
               })()}
 
-              {/* Usage info after completion */}
-              {!chat.isLoading && chat.lastUsage && (
-                <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <Zap className="w-3 h-3" />
-                    {formatTokens(chat.lastUsage.inputTokens)} in /{" "}
-                    {formatTokens(chat.lastUsage.outputTokens)} out
-                  </span>
-                  {chat.lastUsage.modelId && (
-                    <span className="opacity-60">{chat.lastUsage.modelId}</span>
-                  )}
-                </div>
-              )}
+              {/* Usage info after completion (for current stream before save) */}
+              {!chat.isLoading &&
+                chat.lastUsage &&
+                !chat.messages.some(
+                  (m) =>
+                    m.role === "assistant" &&
+                    m.parts?.some((p) => p.type === "usage"),
+                ) && (
+                  <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      {formatTokens(chat.lastUsage.inputTokens)} in /{" "}
+                      {formatTokens(chat.lastUsage.outputTokens)} out
+                    </span>
+                    {chat.lastUsage.modelId && (
+                      <span className="opacity-60">
+                        {chat.lastUsage.modelId}
+                      </span>
+                    )}
+                  </div>
+                )}
 
             </>
           )}
