@@ -1,13 +1,23 @@
-import { Cpu, Globe, Monitor, Moon, Settings, Sun, X } from "lucide-react";
+import {
+  BarChart3,
+  Cpu,
+  Globe,
+  Monitor,
+  Moon,
+  Settings,
+  Sun,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
 import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
+import { UsagePanel } from "../settings/UsagePanel";
 
 type Theme = "dark" | "light" | "system";
-type Tab = "general" | "llm";
+type Tab = "general" | "llm" | "usage";
 
 const LOCALE_LABELS: Record<Locales, string> = {
   en: "English",
@@ -93,6 +103,7 @@ export const SettingsModal = ({
   const tabs: { id: Tab; label: string; icon: typeof Settings }[] = [
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
+    { id: "usage", label: "用量统计", icon: BarChart3 },
   ];
 
   return (
@@ -198,6 +209,8 @@ export const SettingsModal = ({
           )}
 
           {activeTab === "llm" && <LlmConfigPanel />}
+
+          {activeTab === "usage" && <UsagePanel />}
         </div>
       </div>
     </div>

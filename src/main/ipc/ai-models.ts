@@ -30,6 +30,12 @@ export const getAIModelByConfigId = (configId?: string) => {
     config.id,
   );
 
+  if (!apiKey && provider !== "custom") {
+    throw new Error(
+      `API Key 未配置，请在设置中填写 ${provider} 的 API Key`,
+    );
+  }
+
   if (provider === "anthropic") {
     const anthropic = createAnthropic({
       apiKey: apiKey || "",

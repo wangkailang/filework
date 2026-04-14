@@ -369,6 +369,11 @@ const handleTaskExecution = async (
               result: part.output,
             });
             break;
+          case "error":
+            // AI SDK v6 wraps API errors as stream events instead of
+            // throwing.  Re-throw so withRetry / our catch block can
+            // classify and surface the error to the renderer.
+            throw part.error;
         }
       }
 
@@ -448,7 +453,11 @@ const handleTaskExecution = async (
       });
 
       if (!sender.isDestroyed()) {
-        sender.send("ai:stream-error", { id, error: errorMsg });
+        sender.send("ai:stream-error", {
+          id,
+          error: errorMsg,
+          type: classified.type,
+        });
       }
       return { id, status: "failed", message: errorMsg };
     } finally {
@@ -468,7 +477,11 @@ const handleTaskExecution = async (
     });
 
     if (!sender.isDestroyed()) {
-      sender.send("ai:stream-error", { id, error: errorMsg });
+      sender.send("ai:stream-error", {
+        id,
+        error: errorMsg,
+        type: classified.type,
+      });
     }
     return { id, status: "failed", message: errorMsg };
   }

@@ -1,9 +1,13 @@
 import {
+  AlertTriangle,
   CopyIcon,
   History,
   Loader2,
   MessageSquarePlus,
+  RefreshCw,
+  Settings,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -48,8 +52,39 @@ import { ModelSelector } from "./ModelSelector";
 import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
-import type { MessagePart, PlanMessagePart, ToolPart } from "./types";
+import type { ErrorPart, MessagePart, PlanMessagePart, ToolPart } from "./types";
 import { useChatSession } from "./useChatSession";
+
+const formatTokens = (n: number | null): string => {
+  if (n == null) return "-";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+};
+
+const ERROR_TYPE_LABELS: Record<string, { label: string; hint: string }> = {
+  auth: { label: "认证失败", hint: "API 密钥无效或已过期，请在设置中检查配置" },
+  billing: {
+    label: "余额不足",
+    hint: "API 账户余额不足，请前往对应平台充值后重试",
+  },
+  rate_limit: {
+    label: "频率超限",
+    hint: "请求频率过高，已自动重试但仍然失败",
+  },
+  context_overflow: {
+    label: "上下文过长",
+    hint: "对话过长，建议开启新对话",
+  },
+  server_error: { label: "服务不可用", hint: "服务端暂时不可用，请稍后重试" },
+  timeout: { label: "请求超时", hint: "连接超时，请稍后重试" },
+};
+
+const RETRY_TYPE_LABELS: Record<string, string> = {
+  rate_limit: "频率限制",
+  context_overflow: "上下文压缩",
+  server_error: "服务错误",
+  timeout: "连接超时",
+};
 
 const suggestions = [
   "帮我整理这个目录的文件，按类型分类",
@@ -163,6 +198,79 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           />
         );
       }
+      if (part.type === "error") {
+        const errPart = part as ErrorPart;
+        const labels = errPart.errorType
+          ? ERROR_TYPE_LABELS[errPart.errorType]
+          : undefined;
+        return (
+          <div
+            key={`error-${errPart.message}`}
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 my-1"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-destructive font-medium">
+                  {labels ? labels.label : "出错了"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {labels ? labels.hint : errPart.message}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  {(errPart.errorType === "server_error" ||
+                    errPart.errorType === "timeout" ||
+                    errPart.errorType === "rate_limit" ||
+                    !errPart.errorType ||
+                    errPart.errorType === "unknown") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lastUser = [...chat.messages]
+                          .reverse()
+                          .find((m) => m.role === "user");
+                        if (lastUser) {
+                          chat.handleSubmit({ text: lastUser.content });
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      重试
+                    </button>
+                  )}
+                  {(errPart.errorType === "auth" ||
+                    errPart.errorType === "billing") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent("filework:open-settings", {
+                            detail: { tab: "llm" },
+                          }),
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+                    >
+                      <Settings className="w-3 h-3" />
+                      检查配置
+                    </button>
+                  )}
+                  {errPart.errorType === "context_overflow" && (
+                    <button
+                      type="button"
+                      onClick={chat.handleNewChat}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+                    >
+                      新对话
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
       return null;
     });
   };
@@ -259,12 +367,28 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 chat.messages[chat.messages.length - 1]?.content === "" &&
                 !chat.messages[chat.messages.length - 1]?.parts?.length && (
                   <div className="flex items-center gap-2 px-4 py-2 text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">
-                      {chat.isPlanGenerating
-                        ? "正在分析任务，生成执行计划..."
-                        : "思考中..."}
-                    </span>
+                    {chat.retryInfo ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">
+                          正在重试 ({chat.retryInfo.attempt}/
+                          {chat.retryInfo.maxRetries})...{" "}
+                          <span className="text-xs opacity-75">
+                            {RETRY_TYPE_LABELS[chat.retryInfo.type] ??
+                              chat.retryInfo.type}
+                          </span>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">
+                          {chat.isPlanGenerating
+                            ? "正在分析任务，生成执行计划..."
+                            : "思考中..."}
+                        </span>
+                      </>
+                    )}
                     {chat.activeSkill && (
                       <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
                         <Sparkles className="w-3 h-3" />
@@ -291,6 +415,84 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                     </span>
                   </div>
                 )}
+
+              {/* Fallback error banner — shown when lastError is set but the
+                  error part was not attached to any message (e.g. race condition
+                  between stream-start and stream-error). */}
+              {!chat.isLoading && chat.lastError && (() => {
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                const hasInlineError = lastMsg?.parts?.some(
+                  (p) => p.type === "error",
+                );
+                if (hasInlineError) return null;
+                const labels = chat.lastError.type
+                  ? ERROR_TYPE_LABELS[chat.lastError.type]
+                  : undefined;
+                return (
+                  <div className="mx-4 my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-destructive font-medium">
+                          {labels ? labels.label : "出错了"}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {labels ? labels.hint : chat.lastError.message}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lastUser = [...chat.messages]
+                                .reverse()
+                                .find((m) => m.role === "user");
+                              if (lastUser) {
+                                chat.handleSubmit({ text: lastUser.content });
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            重试
+                          </button>
+                          {(chat.lastError.type === "auth" ||
+                            chat.lastError.type === "billing") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(
+                                  new CustomEvent("filework:open-settings", {
+                                    detail: { tab: "llm" },
+                                  }),
+                                );
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+                            >
+                              <Settings className="w-3 h-3" />
+                              检查配置
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Usage info after completion */}
+              {!chat.isLoading && chat.lastUsage && (
+                <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    {formatTokens(chat.lastUsage.inputTokens)} in /{" "}
+                    {formatTokens(chat.lastUsage.outputTokens)} out
+                  </span>
+                  {chat.lastUsage.modelId && (
+                    <span className="opacity-60">{chat.lastUsage.modelId}</span>
+                  )}
+                </div>
+              )}
+
             </>
           )}
         </ConversationContent>

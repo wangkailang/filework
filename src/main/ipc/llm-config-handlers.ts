@@ -5,6 +5,7 @@ import {
   deleteLlmConfig,
   getLlmConfig,
   getLlmConfigs,
+  setDefaultLlmConfig,
   updateLlmConfig,
 } from "../db";
 
@@ -113,8 +114,13 @@ export const registerLlmConfigHandlers = () => {
     "llm-config:update",
     async (_event, payload: UpdatePayload) => {
       try {
-        const { id, ...updates } = payload;
-        updateLlmConfig(id, updates);
+        const { id, isDefault, ...updates } = payload;
+        if (Object.keys(updates).length > 0) {
+          updateLlmConfig(id, updates);
+        }
+        if (isDefault) {
+          setDefaultLlmConfig(id);
+        }
         return getLlmConfig(id);
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };

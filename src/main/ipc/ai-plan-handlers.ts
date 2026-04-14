@@ -8,12 +8,14 @@
 import crypto from "node:crypto";
 import type { Tool } from "ai";
 import { ipcMain } from "electron";
+import { classifyError } from "../ai/error-classifier";
 import { addTask, updateTask } from "../db";
 import { needsPlanning, planTask } from "../planner";
 import { cancelPlan, executePlan } from "../planner/executor";
 import type { Plan } from "../planner/types";
-import { getAIModelByConfigId, isAuthError } from "./ai-models";
+import { getAIModelByConfigId } from "./ai-models";
 import { abortControllers, cleanupTask } from "./ai-task-control";
+
 import { buildTools } from "./ai-tool-permissions";
 import { safeTools } from "./ai-tools";
 
@@ -91,14 +93,17 @@ export const registerPlanHandlers = () => {
           return { id, cancelled: true };
         }
 
-        const errorMsg = isAuthError(error)
-          ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-          : error instanceof Error
-            ? error.message
-            : "Unknown error";
+        const classified = classifyError(error);
+        const errorMsg =
+          classified.userMessage ||
+          (error instanceof Error ? error.message : "Unknown error");
         if (!sender.isDestroyed()) {
           sender.send("ai:plan-error", { id, error: errorMsg });
-          sender.send("ai:stream-error", { id, error: errorMsg });
+          sender.send("ai:stream-error", {
+            id,
+            error: errorMsg,
+            type: classified.type,
+          });
         }
         return { id, error: errorMsg };
       } finally {
@@ -185,18 +190,21 @@ export const registerPlanHandlers = () => {
           abortControllers.delete(id);
           return { id, status: "completed" };
         }
-        const errorMsg = isAuthError(error)
-          ? "API Key 无效或已过期，请在设置中检查该渠道配置"
-          : error instanceof Error
-            ? error.message
-            : "Unknown error";
+        const classified = classifyError(error);
+        const errorMsg =
+          classified.userMessage ||
+          (error instanceof Error ? error.message : "Unknown error");
         updateTask(id, {
           status: "failed",
           result: errorMsg,
           completedAt: new Date().toISOString(),
         });
         if (!sender.isDestroyed()) {
-          sender.send("ai:stream-error", { id, error: errorMsg });
+          sender.send("ai:stream-error", {
+            id,
+            error: errorMsg,
+            type: classified.type,
+          });
         }
         return { id, status: "failed", message: errorMsg };
       } finally {

@@ -1,12 +1,11 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface LlmConfig {
   id: string;
   name: string;
   provider: string;
   model: string;
-  isDefault: boolean;
 }
 
 interface ModelSelectorProps {
@@ -22,11 +21,15 @@ export const ModelSelector = ({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const loadConfigs = useCallback(() => {
     window.filework.llmConfig.list().then((result) => {
       if (!("error" in result)) setConfigs(result as LlmConfig[]);
     });
   }, []);
+
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -40,15 +43,16 @@ export const ModelSelector = ({
   if (configs.length <= 1) return null;
 
   const selected =
-    configs.find((c) => c.id === selectedConfigId) ||
-    configs.find((c) => c.isDefault) ||
-    configs[0];
+    configs.find((c) => c.id === selectedConfigId) || configs[0];
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) loadConfigs();
+          setOpen(!open);
+        }}
         className="flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors"
       >
         <span className="max-w-[120px] truncate">{selected?.name}</span>
@@ -82,11 +86,6 @@ export const ModelSelector = ({
                   {c.provider} · {c.model}
                 </div>
               </div>
-              {c.isDefault && (
-                <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
-                  default
-                </span>
-              )}
             </button>
           ))}
         </div>

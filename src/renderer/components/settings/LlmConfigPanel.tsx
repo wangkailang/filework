@@ -1,4 +1,4 @@
-import { Pencil, Plus, Star, StarOff, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 
@@ -11,7 +11,6 @@ interface LlmConfig {
   apiKey: string | null;
   baseUrl: string | null;
   model: string;
-  isDefault: boolean;
 }
 
 interface FormData {
@@ -125,11 +124,6 @@ export const LlmConfigPanel = () => {
     loadConfigs();
   };
 
-  const handleSetDefault = async (id: string) => {
-    await window.filework.llmConfig.update(id, { isDefault: true });
-    loadConfigs();
-  };
-
   const openAdd = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
@@ -172,30 +166,12 @@ export const LlmConfigPanel = () => {
                 <span className="truncate text-sm text-foreground">
                   {c.name}
                 </span>
-                {c.isDefault && (
-                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
-                    {LL.llmConfig_default()}
-                  </span>
-                )}
               </div>
               <div className="text-xs text-muted-foreground">
                 {c.provider} · {c.model}
               </div>
             </div>
             <div className="flex items-center gap-1">
-              {!c.isDefault && (
-                <button
-                  type="button"
-                  onClick={() => handleSetDefault(c.id)}
-                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-yellow-500"
-                  title={LL.llmConfig_setDefault()}
-                >
-                  <StarOff size={14} />
-                </button>
-              )}
-              {c.isDefault && (
-                <Star size={14} className="mx-1 text-yellow-500" />
-              )}
               <button
                 type="button"
                 onClick={() => handleEdit(c)}
