@@ -402,16 +402,19 @@ const handleTaskExecution = async (
         },
       });
 
-      // Track token usage
+      // Track token usage (AI SDK v6: totalUsage aggregates all steps)
       let inputTokens: number | null = null;
       let outputTokens: number | null = null;
       let totalTokens: number | null = null;
       try {
-        const usage = await streamResult.usage;
+        const usage = await streamResult.totalUsage;
         if (usage) {
-          inputTokens = usage.promptTokens ?? null;
-          outputTokens = usage.completionTokens ?? null;
-          totalTokens = usage.totalTokens ?? null;
+          inputTokens = usage.inputTokens ?? null;
+          outputTokens = usage.outputTokens ?? null;
+          totalTokens =
+            inputTokens != null || outputTokens != null
+              ? (inputTokens ?? 0) + (outputTokens ?? 0)
+              : null;
         }
       } catch {
         // Usage read failure is non-critical

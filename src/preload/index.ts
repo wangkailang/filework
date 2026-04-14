@@ -70,18 +70,18 @@ const api = {
     ipcRenderer.on("ai:plan-generating", handler);
     return () => ipcRenderer.removeListener("ai:plan-generating", handler);
   },
-  onPlanReady: (callback: (data: { plan: unknown }) => void) => {
+  onPlanReady: (callback: (data: { id: string; plan: unknown }) => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { plan: unknown },
+      data: { id: string; plan: unknown },
     ) => callback(data);
     ipcRenderer.on("ai:plan-ready", handler);
     return () => ipcRenderer.removeListener("ai:plan-ready", handler);
   },
-  onPlanError: (callback: (data: { error: string }) => void) => {
+  onPlanError: (callback: (data: { id: string; error: string }) => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { error: string },
+      data: { id: string; error: string },
     ) => callback(data);
     ipcRenderer.on("ai:plan-error", handler);
     return () => ipcRenderer.removeListener("ai:plan-error", handler);
