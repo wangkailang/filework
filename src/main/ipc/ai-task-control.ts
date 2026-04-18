@@ -17,6 +17,24 @@ export const activeToolExecutions = new Map<string, Set<AbortController>>();
 /** 工具调用审批等待队列 */
 export const pendingApprovals = new Map<string, (approved: boolean) => void>();
 
+/**
+ * Tasks running under an approved plan — writeFile skips individual
+ * approval to avoid blocking plan execution.
+ * deleteFile and moveFile still require approval (destructive).
+ *
+ * Maps taskId → workspacePath for path-scoped validation.
+ */
+const planApprovedTasks = new Map<string, string>();
+
+/** Mark a task as plan-approved, scoped to writes within workspacePath. */
+export const markPlanApproved = (taskId: string, workspacePath: string): void => {
+  planApprovedTasks.set(taskId, workspacePath);
+};
+
+/** Check if a task is plan-approved and return its workspace path, or undefined. */
+export const getPlanApprovedWorkspace = (taskId: string): string | undefined =>
+  planApprovedTasks.get(taskId);
+
 /** 工具调用与任务的映射关系，用于清理 */
 export const toolCallToTaskMap = new Map<string, string>();
 
@@ -38,6 +56,9 @@ export const cleanupTask = (taskId: string): void => {
 
   // Clean up manual stop flag
   manualStopFlags.delete(taskId);
+
+  // Clean up plan-approved mapping
+  planApprovedTasks.delete(taskId);
 
   // Clean up active tool executions
   const toolControllers = activeToolExecutions.get(taskId);

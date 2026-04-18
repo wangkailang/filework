@@ -179,6 +179,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           <PlanViewer
             key={`plan-${planPart.plan.id}`}
             plan={planPart.plan}
+            isStalled={chat.isStalled}
             onApprove={
               planPart.plan.status === "draft"
                 ? () => chat.handleApprovePlan(planPart.plan.id)

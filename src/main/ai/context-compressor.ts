@@ -6,8 +6,10 @@
  * Inspired by Hermes Agent's ContextCompressor.
  */
 
-import type { LanguageModelV1, ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
+import { addMemoryEvent } from "./memory-debug-store";
+import { createTimeoutController } from "./stream-watchdog";
 import { compressToolResults, estimateTokens } from "./token-budget";
 
 // ---------------------------------------------------------------------------
@@ -16,6 +18,8 @@ import { compressToolResults, estimateTokens } from "./token-budget";
 
 const DEFAULT_TAIL_BUDGET = 20000;
 const DEFAULT_HEAD_COUNT = 2;
+/** Timeout for the LLM compression call: 60 seconds */
+const COMPRESSION_TIMEOUT_MS = 60_000;
 
 const SUMMARY_PREFIX =
   "[对话摘要 — 仅供参考] 以下是早期对话的压缩摘要。这是来自先前上下文的" +
@@ -49,7 +53,7 @@ const SUMMARIZER_PROMPT = `你是一个对话压缩助手。请将以下对话�
 // ---------------------------------------------------------------------------
 
 export interface CompressorOptions {
-  model: LanguageModelV1;
+  model: LanguageModel;
   budget: number;
   /** Token budget reserved for protected tail messages (default: 20000) */
   tailBudget?: number;
@@ -57,12 +61,20 @@ export interface CompressorOptions {
   headCount?: number;
   /** AbortSignal for cancellation */
   signal?: AbortSignal;
+  /** Task ID for memory-debug tracking (optional) */
+  taskId?: string;
+  /** User prompt snippet for memory-debug association (optional) */
+  promptSnippet?: string;
 }
 
 export interface CompressionResult {
   messages: ModelMessage[];
   wasCompressed: boolean;
   summaryTokens: number;
+  /** Token count before compression */
+  originalTokens: number;
+  /** Token count after compression */
+  compressedTokens: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +105,15 @@ export async function compressContext(
   const prunedTokens = estimateTokens(pruned);
 
   if (prunedTokens <= options.budget) {
-    return { messages: pruned, wasCompressed: false, summaryTokens: 0 };
+    if (options.taskId) {
+      addMemoryEvent(
+        options.taskId,
+        "compression-skip",
+        { originalTokens: prunedTokens },
+        options.promptSnippet,
+      );
+    }
+    return { messages: pruned, wasCompressed: false, summaryTokens: 0, originalTokens: prunedTokens, compressedTokens: prunedTokens };
   }
 
   // Step 2: Identify protected head
@@ -114,21 +134,34 @@ export async function compressContext(
   const middle = pruned.slice(headCount, tailStart);
   if (middle.length === 0) {
     // No middle to compress — just return head + tail
+    const noMiddleTokens = estimateTokens(head) + tailTokens;
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
       summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: noMiddleTokens,
     };
   }
 
-  // Step 5: Summarize middle with LLM
+  // Step 5: Summarize middle with LLM (with timeout to avoid blocking)
   try {
     const middleText = serializeMessages(middle);
-    const { text: summary } = await generateText({
-      model: options.model,
-      prompt: SUMMARIZER_PROMPT + middleText,
-      abortSignal: options.signal,
-    });
+
+    const { controller: compressionController, cleanup: cleanupTimeout } =
+      createTimeoutController(COMPRESSION_TIMEOUT_MS, options.signal);
+
+    let summary: string;
+    try {
+      const result = await generateText({
+        model: options.model,
+        prompt: SUMMARIZER_PROMPT + middleText,
+        abortSignal: compressionController.signal,
+      });
+      summary = result.text;
+    } finally {
+      cleanupTimeout();
+    }
 
     const summaryMessage: ModelMessage = {
       role: "system",
@@ -137,10 +170,28 @@ export async function compressContext(
 
     const summaryTokens = estimateTokens([summaryMessage]);
 
+    const compressedTokens = estimateTokens(head) + summaryTokens + tailTokens;
+
+    if (options.taskId) {
+      addMemoryEvent(
+        options.taskId,
+        "compression-write",
+        {
+          originalTokens: prunedTokens,
+          compressedTokens,
+          messagesCompressed: middle.length,
+          summary: summary,
+        },
+        options.promptSnippet,
+      );
+    }
+
     return {
       messages: [...head, summaryMessage, ...tail],
       wasCompressed: true,
       summaryTokens,
+      originalTokens: prunedTokens,
+      compressedTokens,
     };
   } catch (error) {
     console.warn(
@@ -148,10 +199,13 @@ export async function compressContext(
       error instanceof Error ? error.message : error,
     );
     // Fallback: return head + tail without summary
+    const fallbackTokens = estimateTokens(head) + tailTokens;
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
       summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: fallbackTokens,
     };
   }
 }

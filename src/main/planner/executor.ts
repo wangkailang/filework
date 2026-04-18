@@ -9,10 +9,18 @@
 
 import { stepCountIs, streamText } from "ai";
 import type { WebContents } from "electron";
+import {
+  createTimeoutController,
+  StepTimeoutError,
+  StreamWatchdog,
+} from "../ai/stream-watchdog";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan } from "./types";
+
+/** Default per-step timeout: 5 minutes */
+const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface ExecutorOptions {
   plan: Plan;
@@ -72,6 +80,11 @@ export const executePlan = async ({
     }
 
     let stepText = "";
+
+    // Create per-step timeout controller before try so catch can inspect signal.reason
+    const { controller: stepController, cleanup: cleanupTimeout } =
+      createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
+
     try {
       // "Read Before Decide" — re-read plan file to refresh goals in context
       let planContext = "";
@@ -121,46 +134,62 @@ Rules:
         stopWhen: stepCountIs(15),
         system: systemPrompt,
         prompt: stepPrompt,
-        abortSignal,
+        abortSignal: stepController.signal,
       });
 
-      // Stream step output to renderer
-      for await (const part of result.fullStream) {
-        if (sender.isDestroyed()) break;
+      // Start watchdog for heartbeat & stall detection
+      const watchdog = new StreamWatchdog({
+        taskId,
+        sender,
+        planId: plan.id,
+        stepId: step.id,
+        abortController: stepController,
+      });
+      watchdog.start();
 
-        // Check manual stop flag
-        if (manualStopFlags.get(taskId)) {
-          console.log("[Plan] Manual stop flag detected for taskId:", taskId);
-          break;
-        }
+      try {
+        // Stream step output to renderer
+        for await (const part of result.fullStream) {
+          watchdog.activity();
 
-        // Check cancellation mid-stream
-        if (cancelledPlans.has(plan.id)) {
-          break;
-        }
+          if (sender.isDestroyed()) break;
 
-        switch (part.type) {
-          case "text-delta":
-            stepText += part.text;
-            sender.send("ai:stream-delta", { id: taskId, delta: part.text });
+          // Check manual stop flag
+          if (manualStopFlags.get(taskId)) {
+            console.log("[Plan] Manual stop flag detected for taskId:", taskId);
             break;
-          case "tool-call":
-            sender.send("ai:stream-tool-call", {
-              id: taskId,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              args: part.input,
-            });
+          }
+
+          // Check cancellation mid-stream
+          if (cancelledPlans.has(plan.id)) {
             break;
-          case "tool-result":
-            sender.send("ai:stream-tool-result", {
-              id: taskId,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              result: part.output,
-            });
-            break;
+          }
+
+          switch (part.type) {
+            case "text-delta":
+              stepText += part.text;
+              sender.send("ai:stream-delta", { id: taskId, delta: part.text });
+              break;
+            case "tool-call":
+              sender.send("ai:stream-tool-call", {
+                id: taskId,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                args: part.input,
+              });
+              break;
+            case "tool-result":
+              sender.send("ai:stream-tool-result", {
+                id: taskId,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                result: part.output,
+              });
+              break;
+          }
         }
+      } finally {
+        watchdog.stop();
       }
 
       // Mark step completed
@@ -171,7 +200,35 @@ Rules:
           ? `${stepText.slice(0, 200)}...`
           : stepText || "(completed with tool calls only)";
     } catch (error: unknown) {
-      // Handle user-initiated abort — current step completed, remaining skipped
+      // Distinguish step timeout from user-initiated abort.
+      // streamText wraps abort reasons as AbortError, so we check
+      // the controller's signal.reason for our StepTimeoutError.
+      const isStepTimeout =
+        stepController.signal.aborted &&
+        stepController.signal.reason instanceof StepTimeoutError;
+
+      // Step timeout — skip and continue with remaining steps
+      if (isStepTimeout) {
+        const timeoutMsg = `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`;
+        step.status = "skipped";
+        step.error = timeoutMsg;
+
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(plan);
+
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-step-error", {
+            id: taskId,
+            planId: plan.id,
+            stepId: step.id,
+            error: timeoutMsg,
+          });
+        }
+
+        continue;
+      }
+
+      // User-initiated abort — mark current step done, skip remaining
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
         step.resultSummary =
@@ -179,7 +236,6 @@ Rules:
             ? `${stepText.slice(0, 200)}...`
             : stepText || "(aborted by user)";
 
-        // Mark remaining steps as skipped
         for (const remaining of plan.steps) {
           if (remaining.status === "pending") {
             remaining.status = "skipped";
@@ -192,15 +248,14 @@ Rules:
         return plan;
       }
 
+      // Other errors — stop execution
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       step.status = "failed";
       step.error = errorMsg;
 
-      // Error persistence — write failure to plan file
       plan.updatedAt = new Date().toISOString();
       await writePlanFile(plan);
 
-      // Notify renderer of step failure
       if (!sender.isDestroyed()) {
         sender.send("ai:plan-step-error", {
           id: taskId,
@@ -210,11 +265,12 @@ Rules:
         });
       }
 
-      // Stop execution on failure — user can decide to retry or skip
       plan.status = "failed";
       plan.updatedAt = new Date().toISOString();
       await writePlanFile(plan);
       return plan;
+    } finally {
+      cleanupTimeout();
     }
 
     plan.updatedAt = new Date().toISOString();

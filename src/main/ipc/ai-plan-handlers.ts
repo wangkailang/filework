@@ -14,7 +14,11 @@ import { needsPlanning, planTask } from "../planner";
 import { cancelPlan, executePlan } from "../planner/executor";
 import type { Plan } from "../planner/types";
 import { getAIModelByConfigId } from "./ai-models";
-import { abortControllers, cleanupTask } from "./ai-task-control";
+import {
+  abortControllers,
+  cleanupTask,
+  markPlanApproved,
+} from "./ai-task-control";
 
 import { buildTools } from "./ai-tool-permissions";
 import { safeTools } from "./ai-tools";
@@ -112,105 +116,117 @@ export const registerPlanHandlers = () => {
     },
   );
 
+  /**
+   * Shared logic for executing an approved plan.
+   * Used by both ai:executePlan and ai:approvePlan.
+   */
+  const runApprovedPlan = async (
+    event: Electron.IpcMainInvokeEvent,
+    planId: string,
+    llmConfigId?: string,
+  ) => {
+    const plan = pendingPlans.get(planId);
+    if (!plan) {
+      return { error: "Plan not found or already executed" };
+    }
+
+    pendingPlans.delete(planId);
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const sender = event.sender;
+
+    addTask({
+      id,
+      workspaceId: "default",
+      prompt: plan.prompt,
+      status: "running",
+      result: null,
+      filesAffected: null,
+      createdAt: now,
+      completedAt: null,
+    });
+
+    const controller = new AbortController();
+    abortControllers.set(id, controller);
+
+    // Mark as plan-approved: writeFile skips individual approval within workspace
+    markPlanApproved(id, plan.workspacePath);
+
+    try {
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-start", { id });
+      }
+
+      const model = getAIModelByConfigId(llmConfigId);
+      const tools = buildTools(sender, id);
+
+      plan.status = "approved";
+      const finalPlan = await executePlan({
+        plan,
+        model,
+        tools,
+        sender,
+        taskId: id,
+        abortSignal: controller.signal,
+      });
+
+      updateTask(id, {
+        status: finalPlan.status === "completed" ? "completed" : "failed",
+        result: finalPlan.goal,
+        completedAt: new Date().toISOString(),
+      });
+
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-done", { id });
+      }
+
+      return { id, status: finalPlan.status };
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === "AbortError") {
+        updateTask(id, {
+          status: "completed",
+          result: plan.goal,
+          completedAt: new Date().toISOString(),
+        });
+        if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+        abortControllers.delete(id);
+        return { id, status: "completed" };
+      }
+      const classified = classifyError(error);
+      const errorMsg =
+        classified.userMessage ||
+        (error instanceof Error ? error.message : "Unknown error");
+      updateTask(id, {
+        status: "failed",
+        result: errorMsg,
+        completedAt: new Date().toISOString(),
+      });
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-error", {
+          id,
+          error: errorMsg,
+          type: classified.type,
+        });
+      }
+      return { id, status: "failed", message: errorMsg };
+    } finally {
+      cleanupTask(id);
+    }
+  };
+
   /** Execute an approved plan */
   ipcMain.handle(
     "ai:executePlan",
-    async (event, payload: { planId: string; llmConfigId?: string }) => {
-      const plan = pendingPlans.get(payload.planId);
-      if (!plan) {
-        return { error: "Plan not found or already executed" };
-      }
+    async (event, payload: { planId: string; llmConfigId?: string }) =>
+      runApprovedPlan(event, payload.planId, payload.llmConfigId),
+  );
 
-      // Remove from pending plans
-      pendingPlans.delete(payload.planId);
-
-      const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-      const sender = event.sender;
-
-      addTask({
-        id,
-        workspaceId: "default",
-        prompt: plan.prompt,
-        status: "running",
-        result: null,
-        filesAffected: null,
-        createdAt: now,
-        completedAt: null,
-      });
-
-      // Create AbortController for this plan execution
-      const controller = new AbortController();
-      console.log("[Main] Created AbortController for plan taskId:", id);
-      abortControllers.set(id, controller);
-
-      try {
-        if (!sender.isDestroyed()) {
-          sender.send("ai:stream-start", { id });
-        }
-
-        const model = getAIModelByConfigId(payload.llmConfigId);
-        const tools = buildTools(sender, id);
-
-        plan.status = "approved";
-        const finalPlan = await executePlan({
-          plan,
-          model,
-          tools,
-          sender,
-          taskId: id,
-          abortSignal: controller.signal,
-        });
-
-        updateTask(id, {
-          status: finalPlan.status === "completed" ? "completed" : "failed",
-          result: finalPlan.goal,
-          completedAt: new Date().toISOString(),
-        });
-
-        if (!sender.isDestroyed()) {
-          sender.send("ai:stream-done", { id });
-        }
-
-        return { id, status: finalPlan.status };
-      } catch (error: unknown) {
-        if (error instanceof Error && error.name === "AbortError") {
-          // User-initiated abort — treat as normal completion
-          console.log(
-            "[Main] Plan AbortError caught, cleaning up for taskId:",
-            id,
-          );
-          updateTask(id, {
-            status: "completed",
-            result: plan.goal,
-            completedAt: new Date().toISOString(),
-          });
-          if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
-          // Clean up AbortController immediately
-          abortControllers.delete(id);
-          return { id, status: "completed" };
-        }
-        const classified = classifyError(error);
-        const errorMsg =
-          classified.userMessage ||
-          (error instanceof Error ? error.message : "Unknown error");
-        updateTask(id, {
-          status: "failed",
-          result: errorMsg,
-          completedAt: new Date().toISOString(),
-        });
-        if (!sender.isDestroyed()) {
-          sender.send("ai:stream-error", {
-            id,
-            error: errorMsg,
-            type: classified.type,
-          });
-        }
-        return { id, status: "failed", message: errorMsg };
-      } finally {
-        cleanupTask(id);
-      }
-    },
+  /** Approve a plan (alias for executePlan without llmConfigId) */
+  ipcMain.handle(
+    "ai:approvePlan",
+    async (event, payload: { planId: string }) =>
+      runApprovedPlan(event, payload.planId),
   );
 
   /** User rejected a plan */
