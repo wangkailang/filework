@@ -71,6 +71,10 @@ export interface CompressionResult {
   messages: ModelMessage[];
   wasCompressed: boolean;
   summaryTokens: number;
+  /** Token count before compression */
+  originalTokens: number;
+  /** Token count after compression */
+  compressedTokens: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +113,7 @@ export async function compressContext(
         options.promptSnippet,
       );
     }
-    return { messages: pruned, wasCompressed: false, summaryTokens: 0 };
+    return { messages: pruned, wasCompressed: false, summaryTokens: 0, originalTokens: prunedTokens, compressedTokens: prunedTokens };
   }
 
   // Step 2: Identify protected head
@@ -130,10 +134,13 @@ export async function compressContext(
   const middle = pruned.slice(headCount, tailStart);
   if (middle.length === 0) {
     // No middle to compress — just return head + tail
+    const noMiddleTokens = estimateTokens(head) + tailTokens;
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
       summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: noMiddleTokens,
     };
   }
 
@@ -163,13 +170,15 @@ export async function compressContext(
 
     const summaryTokens = estimateTokens([summaryMessage]);
 
+    const compressedTokens = estimateTokens(head) + summaryTokens + tailTokens;
+
     if (options.taskId) {
       addMemoryEvent(
         options.taskId,
         "compression-write",
         {
           originalTokens: prunedTokens,
-          compressedTokens: estimateTokens(head) + summaryTokens + tailTokens,
+          compressedTokens,
           messagesCompressed: middle.length,
           summary: summary,
         },
@@ -181,6 +190,8 @@ export async function compressContext(
       messages: [...head, summaryMessage, ...tail],
       wasCompressed: true,
       summaryTokens,
+      originalTokens: prunedTokens,
+      compressedTokens,
     };
   } catch (error) {
     console.warn(
@@ -188,10 +199,13 @@ export async function compressContext(
       error instanceof Error ? error.message : error,
     );
     // Fallback: return head + tail without summary
+    const fallbackTokens = estimateTokens(head) + tailTokens;
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
       summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: fallbackTokens,
     };
   }
 }

@@ -393,7 +393,12 @@ const api = {
     onEvent: (
       callback: (data: {
         taskId: string;
-        type: string;
+        type:
+          | "compression-write"
+          | "compression-skip"
+          | "cache-write"
+          | "cache-hit";
+        promptSnippet?: string;
         detail: Record<string, unknown>;
       }) => void,
     ) => {
@@ -401,7 +406,12 @@ const api = {
         _event: Electron.IpcRendererEvent,
         data: {
           taskId: string;
-          type: string;
+          type:
+            | "compression-write"
+            | "compression-skip"
+            | "cache-write"
+            | "cache-hit";
+          promptSnippet?: string;
           detail: Record<string, unknown>;
         },
       ) => callback(data);

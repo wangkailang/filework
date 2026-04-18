@@ -80,6 +80,11 @@ export const executePlan = async ({
     }
 
     let stepText = "";
+
+    // Create per-step timeout controller before try so catch can inspect signal.reason
+    const { controller: stepController, cleanup: cleanupTimeout } =
+      createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
+
     try {
       // "Read Before Decide" — re-read plan file to refresh goals in context
       let planContext = "";
@@ -122,10 +127,6 @@ Rules:
 - Respond in the same language as the original prompt.${skillPrompt}`;
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
-
-      // Create a per-step timeout controller (5 min default)
-      const { controller: stepController, cleanup: cleanupTimeout } =
-        createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
 
       const result = streamText({
         model,
@@ -189,7 +190,6 @@ Rules:
         }
       } finally {
         watchdog.stop();
-        cleanupTimeout();
       }
 
       // Mark step completed
@@ -200,7 +200,35 @@ Rules:
           ? `${stepText.slice(0, 200)}...`
           : stepText || "(completed with tool calls only)";
     } catch (error: unknown) {
-      // Handle user-initiated abort — current step completed, remaining skipped
+      // Distinguish step timeout from user-initiated abort.
+      // streamText wraps abort reasons as AbortError, so we check
+      // the controller's signal.reason for our StepTimeoutError.
+      const isStepTimeout =
+        stepController.signal.aborted &&
+        stepController.signal.reason instanceof StepTimeoutError;
+
+      // Step timeout — skip and continue with remaining steps
+      if (isStepTimeout) {
+        const timeoutMsg = `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`;
+        step.status = "skipped";
+        step.error = timeoutMsg;
+
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(plan);
+
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-step-error", {
+            id: taskId,
+            planId: plan.id,
+            stepId: step.id,
+            error: timeoutMsg,
+          });
+        }
+
+        continue;
+      }
+
+      // User-initiated abort — mark current step done, skip remaining
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
         step.resultSummary =
@@ -208,7 +236,6 @@ Rules:
             ? `${stepText.slice(0, 200)}...`
             : stepText || "(aborted by user)";
 
-        // Mark remaining steps as skipped
         for (const remaining of plan.steps) {
           if (remaining.status === "pending") {
             remaining.status = "skipped";
@@ -221,20 +248,14 @@ Rules:
         return plan;
       }
 
-      const isStepTimeout = error instanceof StepTimeoutError;
-      const errorMsg = isStepTimeout
-        ? `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`
-        : error instanceof Error
-          ? error.message
-          : "Unknown error";
+      // Other errors — stop execution
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
       step.status = "failed";
       step.error = errorMsg;
 
-      // Error persistence — write failure to plan file
       plan.updatedAt = new Date().toISOString();
       await writePlanFile(plan);
 
-      // Notify renderer of step failure
       if (!sender.isDestroyed()) {
         sender.send("ai:plan-step-error", {
           id: taskId,
@@ -244,11 +265,12 @@ Rules:
         });
       }
 
-      // Stop execution on failure — user can decide to retry or skip
       plan.status = "failed";
       plan.updatedAt = new Date().toISOString();
       await writePlanFile(plan);
       return plan;
+    } finally {
+      cleanupTimeout();
     }
 
     plan.updatedAt = new Date().toISOString();

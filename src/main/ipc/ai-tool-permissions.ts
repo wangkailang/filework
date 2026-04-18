@@ -5,6 +5,7 @@
  * enforcing tool restrictions, and managing skill-specific permissions.
  */
 
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
@@ -21,14 +22,43 @@ const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
 /**
  * Check if a writeFile call can be auto-approved for a plan-approved task.
- * Returns true only if the target path is within the plan's workspace.
+ * Resolves symlinks via fs.realpath to prevent workspace-escape writes.
+ * For new files (target doesn't exist yet), validates the parent directory.
  */
-const canAutoApproveWrite = (taskId: string, filePath: string): boolean => {
+const canAutoApproveWrite = async (
+  taskId: string,
+  filePath: string,
+): Promise<boolean> => {
   const workspace = getPlanApprovedWorkspace(taskId);
   if (!workspace) return false;
-  const resolved = path.resolve(filePath);
-  const workspaceResolved = path.resolve(workspace);
-  return resolved.startsWith(workspaceResolved + path.sep) || resolved === workspaceResolved;
+
+  try {
+    const realWorkspace = await realpath(workspace);
+
+    // Try resolving the target itself; if it doesn't exist, resolve its parent
+    let realTarget: string;
+    try {
+      realTarget = await realpath(filePath);
+    } catch {
+      // File doesn't exist yet — resolve parent directory instead
+      const parentDir = path.dirname(path.resolve(filePath));
+      try {
+        realTarget = path.join(await realpath(parentDir), path.basename(filePath));
+      } catch {
+        // Parent doesn't exist either — reject (mkdir will create it, but we
+        // can't verify the real path ahead of time)
+        return false;
+      }
+    }
+
+    return (
+      realTarget.startsWith(realWorkspace + path.sep) ||
+      realTarget === realWorkspace
+    );
+  } catch {
+    // Workspace path itself can't be resolved — reject
+    return false;
+  }
 };
 
 /**
@@ -41,7 +71,7 @@ const tryAutoApproveWrite = async (
   toolCallId: string,
   args: { path: string; content: string },
 ): Promise<unknown | null> => {
-  if (!canAutoApproveWrite(taskId, args.path)) return null;
+  if (!(await canAutoApproveWrite(taskId, args.path))) return null;
   console.log(
     `[Tool] Auto-approved writeFile for plan task ${taskId}: ${args.path}`,
   );

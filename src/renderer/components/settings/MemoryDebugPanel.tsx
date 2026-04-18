@@ -14,6 +14,7 @@ interface MemoryEventDetail {
   originalTokens?: number;
   compressedTokens?: number;
   messagesCompressed?: number;
+  summaryTokens?: number;
   summary?: string;
   cacheWriteTokens?: number;
   cacheReadTokens?: number;
@@ -121,9 +122,9 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
         <span className="flex-1" />
 
         {/* Metrics inline */}
-        {event.type === "compression-write" && d.originalTokens != null && (
+        {event.type === "compression-write" && d.originalTokens != null && d.compressedTokens != null && (
           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            {formatTokens(d.originalTokens)} → {formatTokens(d.compressedTokens ?? 0)}
+            {formatTokens(d.originalTokens)} → {formatTokens(d.compressedTokens)}
             {ratio && (
               <span className="ml-1 text-green-400">-{ratio}</span>
             )}
@@ -186,8 +187,8 @@ export const MemoryDebugPanel = () => {
       const incoming: MemoryEvent = {
         id: crypto.randomUUID(),
         taskId: data.taskId,
-        promptSnippet: (data as { promptSnippet?: string }).promptSnippet,
-        type: data.type as MemoryEvent["type"],
+        promptSnippet: data.promptSnippet,
+        type: data.type,
         timestamp: new Date().toISOString(),
         detail: data.detail as MemoryEventDetail,
       };

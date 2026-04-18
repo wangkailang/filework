@@ -201,21 +201,19 @@ const handleTaskExecution = async (
             taskId: id,
             promptSnippet: payload.prompt,
           });
-          // The compressor already wrote to the store via addMemoryEvent;
-          // just forward the event to the renderer.
+          // Forward the compressor's pre-computed token counts to the renderer
           if (!sender.isDestroyed()) {
-            const type = result.wasCompressed
-              ? "compression-write"
-              : "compression-skip";
-            const detail = result.wasCompressed
-              ? { summaryTokens: result.summaryTokens }
-              : { originalTokens: estimateTokens(msgs) };
-            sender.send("ai:memory-event", {
-              taskId: id,
-              type,
-              promptSnippet: payload.prompt?.slice(0, 80),
-              detail,
-            });
+            if (result.wasCompressed) {
+              emitMemoryEvent(sender, id, "compression-write", {
+                originalTokens: result.originalTokens,
+                compressedTokens: result.compressedTokens,
+                summaryTokens: result.summaryTokens,
+              }, payload.prompt);
+            } else {
+              emitMemoryEvent(sender, id, "compression-skip", {
+                originalTokens: result.originalTokens,
+              }, payload.prompt);
+            }
           }
           return result;
         };

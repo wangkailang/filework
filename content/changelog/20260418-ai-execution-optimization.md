@@ -30,7 +30,7 @@ Type: Performance / Reliability / Security
 - `WatchdogEventType` 联合类型：`"stall-warning" | "stall-recovered" | "stall-timeout"`
 - 空闲 30 秒触发 `stall-warning`，通知渲染端显示卡顿提示
 - 恢复数据流时发送 `stall-recovered`
-- 空闲超过 3 分钟触发硬超时 `stall-timeout`，自动 abort 当前流
+- 空闲超过 5 分钟触发硬超时 `stall-timeout`，自动 abort 当前流
 - `createTimeoutController(timeoutMs, parentSignal?)` 工具函数：创建带超时的 AbortController，自动转发父信号，cleanup 时移除所有监听器
 
 ### 2. 步骤级超时

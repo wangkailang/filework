@@ -27,6 +27,8 @@ export interface MemoryEventDetail {
   compressedTokens?: number;
   /** Number of messages that were compressed */
   messagesCompressed?: number;
+  /** Token count of the generated summary message */
+  summaryTokens?: number;
   /** Compressed summary text (truncated to MAX_SUMMARY_LENGTH) */
   summary?: string;
   /** Anthropic cache creation input tokens */
