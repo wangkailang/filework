@@ -1,20 +1,24 @@
 /**
  * AI Model Configuration and Management
  *
- * Handles different AI providers (OpenAI, Anthropic, DeepSeek, Ollama)
- * and model instantiation based on configuration.
+ * Delegates to provider adapters for model instantiation.
+ * This module resolves LLM config from the database and returns
+ * the appropriate model + adapter pair.
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createOpenAI } from "@ai-sdk/openai";
+import {
+  createModelWithAdapter,
+  getAdapter,
+  type ProviderAdapter,
+} from "../ai/adapters";
 import { classifyError } from "../ai/error-classifier";
 import { getDefaultLlmConfig, getLlmConfig } from "../db";
 
 /**
- * Get AI model instance by configuration ID
+ * Get both the model and its provider adapter by configuration ID.
+ * The adapter provides provider-specific options and metadata extraction.
  */
-export const getAIModelByConfigId = (configId?: string) => {
+export const getModelAndAdapterByConfigId = (configId?: string) => {
   const config = configId ? getLlmConfig(configId) : getDefaultLlmConfig();
   if (!config) {
     throw new Error("所选 LLM 配置不存在");
@@ -31,38 +35,26 @@ export const getAIModelByConfigId = (configId?: string) => {
   );
 
   if (!apiKey && provider !== "custom") {
-    throw new Error(
-      `API Key 未配置，请在设置中填写 ${provider} 的 API Key`,
-    );
+    throw new Error(`API Key 未配置，请在设置中填写 ${provider} 的 API Key`);
   }
 
-  if (provider === "anthropic") {
-    const anthropic = createAnthropic({
-      apiKey: apiKey || "",
-      baseURL: baseUrl || undefined,
-    });
-    return anthropic(modelId);
-  }
-
-  if (provider === "deepseek") {
-    const deepseek = createDeepSeek({
-      apiKey: apiKey || "",
-      baseURL: baseUrl || undefined,
-    });
-    return deepseek(modelId);
-  }
-
-  // Default to OpenAI (also handles custom endpoints and Ollama)
-  // Custom endpoint detection: if provider is "custom" or baseUrl doesn't contain openai
-  const isCustomEndpoint =
-    provider === "custom" ||
-    (baseUrl != null && !baseUrl.includes("api.openai.com"));
-  const openai = createOpenAI({
+  return createModelWithAdapter({
+    provider,
     apiKey: apiKey || "",
-    baseURL: baseUrl || undefined,
+    baseUrl,
+    model: modelId,
   });
-  return isCustomEndpoint ? openai.chat(modelId) : openai(modelId);
 };
+
+/** Convenience wrapper — returns only the model (no adapter). */
+export const getAIModelByConfigId = (configId?: string) =>
+  getModelAndAdapterByConfigId(configId).model;
+
+/**
+ * Get the adapter for a provider name (without creating a model).
+ */
+export const getAdapterForProvider = (provider: string): ProviderAdapter =>
+  getAdapter(provider);
 
 /**
  * Check if an error is an authentication failure (401/403)

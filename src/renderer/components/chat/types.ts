@@ -33,10 +33,13 @@ export interface PlanMessagePart {
   plan: PlanView;
 }
 
+export type RecoveryAction = "retry" | "settings" | "new_chat";
+
 export interface ErrorPart {
   type: "error";
   message: string;
   errorType?: string;
+  recoveryActions?: RecoveryAction[];
 }
 
 export interface UsagePart {

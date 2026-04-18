@@ -7,6 +7,7 @@ import type {
   ActiveSkillInfo,
   ChatMessage,
   ChatSession,
+  ErrorPart,
   MessagePart,
   PlanMessagePart,
   ToolApproval,
@@ -31,6 +32,7 @@ export interface UsageInfo {
 export interface StreamErrorInfo {
   message: string;
   type?: string;
+  recoveryActions?: string[];
 }
 
 export function useChatSession(workspacePath: string) {
@@ -414,51 +416,54 @@ export function useChatSession(workspacePath: string) {
         });
     });
 
-    const offError = window.filework.onStreamError(({ id, error, type }) => {
-      // Relaxed matching: accept error when taskId matches, OR when no taskId
-      // is set yet but we are actively loading (race between stream-start and
-      // stream-error events).
-      if (streamTaskIdRef.current && id !== streamTaskIdRef.current) return;
-      if (!streamTaskIdRef.current && !streamAssistantIdRef.current) return;
-      console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-      const assistantId = streamAssistantIdRef.current;
-      streamTaskIdRef.current = null;
-      pendingStopRef.current = false;
-      stopRequestedRef.current = false;
-      setIsLoading(false);
-      setActiveSkill(null);
-      setRetryInfo(null);
-      setLastError({ message: error, type });
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === assistantId);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        const msg = updated[idx];
-        // Append an error part so the error is visible inline in the conversation
-        const errorPart: MessagePart = {
-          type: "error",
-          message: error,
-          errorType: type,
-        };
-        const existingParts =
-          msg.parts && msg.parts.length > 0 ? msg.parts : [];
-        const newParts: MessagePart[] = [...existingParts, errorPart];
-        updated[idx] = {
-          ...msg,
-          content: msg.content || error,
-          parts: newParts,
-        };
-        if (activeSessionIdRef.current) {
-          debouncedSave(updated, activeSessionIdRef.current);
+    const offError = window.filework.onStreamError(
+      ({ id, error, type, recoveryActions }) => {
+        // Relaxed matching: accept error when taskId matches, OR when no taskId
+        // is set yet but we are actively loading (race between stream-start and
+        // stream-error events).
+        if (streamTaskIdRef.current && id !== streamTaskIdRef.current) return;
+        if (!streamTaskIdRef.current && !streamAssistantIdRef.current) return;
+        console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
         }
-        return updated;
-      });
-      streamAssistantIdRef.current = null;
-    });
+        const assistantId = streamAssistantIdRef.current;
+        streamTaskIdRef.current = null;
+        pendingStopRef.current = false;
+        stopRequestedRef.current = false;
+        setIsLoading(false);
+        setActiveSkill(null);
+        setRetryInfo(null);
+        setLastError({ message: error, type, recoveryActions });
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          const msg = updated[idx];
+          // Append an error part so the error is visible inline in the conversation
+          const errorPart: MessagePart = {
+            type: "error",
+            message: error,
+            errorType: type,
+            recoveryActions: recoveryActions as ErrorPart["recoveryActions"],
+          };
+          const existingParts =
+            msg.parts && msg.parts.length > 0 ? msg.parts : [];
+          const newParts: MessagePart[] = [...existingParts, errorPart];
+          updated[idx] = {
+            ...msg,
+            content: msg.content || error,
+            parts: newParts,
+          };
+          if (activeSessionIdRef.current) {
+            debouncedSave(updated, activeSessionIdRef.current);
+          }
+          return updated;
+        });
+        streamAssistantIdRef.current = null;
+      },
+    );
 
     const offRetry = window.filework.onStreamRetry(
       ({ id, attempt, type, maxRetries }) => {
@@ -777,6 +782,25 @@ export function useChatSession(workspacePath: string) {
   };
 
   // ---------------------------------------------------------------------------
+  // Fork session from a specific message
+  // ---------------------------------------------------------------------------
+  const handleForkSession = async (fromMessageId: string) => {
+    if (isLoading || !activeSessionId) return;
+    try {
+      const forked: ChatSession = await window.filework.forkChatSession(
+        activeSessionId,
+        fromMessageId,
+      );
+      setSessions((prev) => [forked, ...prev]);
+      setActiveSessionId(forked.id);
+      setLastUsage(null);
+      setLastError(null);
+    } catch (err) {
+      console.error("[Fork Session] Failed:", err);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // Submit & approval
   // ---------------------------------------------------------------------------
   const handleSubmit = async (message: { text: string }) => {
@@ -1035,5 +1059,6 @@ export function useChatSession(workspacePath: string) {
     handleNewChat,
     handleSelectSession,
     handleDeleteSession,
+    handleForkSession,
   };
 }

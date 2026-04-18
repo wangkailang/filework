@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CopyIcon,
+  GitBranch,
   History,
   Loader2,
   MessageSquarePlus,
@@ -52,7 +53,14 @@ import { ModelSelector } from "./ModelSelector";
 import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
-import type { ErrorPart, MessagePart, PlanMessagePart, ToolPart, UsagePart } from "./types";
+import type {
+  ErrorPart,
+  MessagePart,
+  PlanMessagePart,
+  RecoveryAction,
+  ToolPart,
+  UsagePart,
+} from "./types";
 import { useChatSession } from "./useChatSession";
 
 const formatTokens = (n: number | null): string => {
@@ -77,6 +85,10 @@ const ERROR_TYPE_LABELS: Record<string, { label: string; hint: string }> = {
   },
   server_error: { label: "服务不可用", hint: "服务端暂时不可用，请稍后重试" },
   timeout: { label: "请求超时", hint: "连接超时，请稍后重试" },
+  proxy_intercepted: {
+    label: "网络拦截",
+    hint: "请求被代理或防火墙拦截，请检查网络环境",
+  },
 };
 
 const RETRY_TYPE_LABELS: Record<string, string> = {
@@ -85,6 +97,107 @@ const RETRY_TYPE_LABELS: Record<string, string> = {
   server_error: "服务错误",
   timeout: "连接超时",
 };
+
+/** Fallback recovery actions for errors that don't carry explicit actions (e.g. persisted from older versions) */
+const fallbackRecoveryActions = (errorType?: string): RecoveryAction[] => {
+  switch (errorType) {
+    case "auth":
+    case "billing":
+      return ["settings"];
+    case "context_overflow":
+      return ["new_chat"];
+    case "timeout":
+      return ["retry", "settings"];
+    case "proxy_intercepted":
+      return ["settings"];
+    default:
+      return ["retry"];
+  }
+};
+
+const RECOVERY_ACTION_META: Record<
+  RecoveryAction,
+  { label: string; icon: typeof RefreshCw }
+> = {
+  retry: { label: "重试", icon: RefreshCw },
+  settings: { label: "检查配置", icon: Settings },
+  new_chat: { label: "新对话", icon: MessageSquarePlus },
+};
+
+const RecoveryButton = ({
+  action,
+  chat,
+}: {
+  action: RecoveryAction;
+  chat: ReturnType<typeof useChatSession>;
+}) => {
+  const meta = RECOVERY_ACTION_META[action];
+  const Icon = meta.icon;
+
+  const handleClick = () => {
+    switch (action) {
+      case "retry": {
+        const lastUser = [...chat.messages]
+          .reverse()
+          .find((m) => m.role === "user");
+        if (lastUser) chat.handleSubmit({ text: lastUser.content });
+        break;
+      }
+      case "settings":
+        window.dispatchEvent(
+          new CustomEvent("filework:open-settings", {
+            detail: { tab: "llm" },
+          }),
+        );
+        break;
+      case "new_chat":
+        chat.handleNewChat();
+        break;
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
+    >
+      <Icon className="w-3 h-3" />
+      {meta.label}
+    </button>
+  );
+};
+
+const ErrorBanner = ({
+  label,
+  hint,
+  actions,
+  chat,
+  className,
+}: {
+  label: string;
+  hint: string;
+  actions: RecoveryAction[];
+  chat: ReturnType<typeof useChatSession>;
+  className?: string;
+}) => (
+  <div
+    className={`rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 ${className ?? ""}`}
+  >
+    <div className="flex items-start gap-2">
+      <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-destructive font-medium">{label}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>
+        <div className="flex items-center gap-2 mt-2">
+          {actions.map((action) => (
+            <RecoveryButton key={action} action={action} chat={chat} />
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const suggestions = [
   "帮我整理这个目录的文件，按类型分类",
@@ -208,11 +321,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           >
             <span className="inline-flex items-center gap-1">
               <Zap className="w-3 h-3" />
-              {formatTokens(u.inputTokens)} in / {formatTokens(u.outputTokens)} out
+              {formatTokens(u.inputTokens)} in / {formatTokens(u.outputTokens)}{" "}
+              out
             </span>
-            {u.modelId && (
-              <span className="opacity-60">{u.modelId}</span>
-            )}
+            {u.modelId && <span className="opacity-60">{u.modelId}</span>}
           </div>
         );
       }
@@ -221,72 +333,17 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         const labels = errPart.errorType
           ? ERROR_TYPE_LABELS[errPart.errorType]
           : undefined;
+        const actions: RecoveryAction[] =
+          errPart.recoveryActions ?? fallbackRecoveryActions(errPart.errorType);
         return (
-          <div
+          <ErrorBanner
             key={`error-${errPart.message}`}
-            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 my-1"
-          >
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-destructive font-medium">
-                  {labels ? labels.label : "出错了"}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {labels ? labels.hint : errPart.message}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  {(errPart.errorType === "server_error" ||
-                    errPart.errorType === "timeout" ||
-                    errPart.errorType === "rate_limit" ||
-                    !errPart.errorType ||
-                    errPart.errorType === "unknown") && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const lastUser = [...chat.messages]
-                          .reverse()
-                          .find((m) => m.role === "user");
-                        if (lastUser) {
-                          chat.handleSubmit({ text: lastUser.content });
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      重试
-                    </button>
-                  )}
-                  {(errPart.errorType === "auth" ||
-                    errPart.errorType === "billing") && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(
-                          new CustomEvent("filework:open-settings", {
-                            detail: { tab: "llm" },
-                          }),
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-                    >
-                      <Settings className="w-3 h-3" />
-                      检查配置
-                    </button>
-                  )}
-                  {errPart.errorType === "context_overflow" && (
-                    <button
-                      type="button"
-                      onClick={chat.handleNewChat}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-                    >
-                      新对话
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+            label={labels ? labels.label : "出错了"}
+            hint={labels ? labels.hint : errPart.message}
+            actions={actions}
+            chat={chat}
+            className="my-1"
+          />
         );
       }
       return null;
@@ -366,6 +423,16 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         : msg.content}
                     </MessageContent>
                   </Message>
+                  {msg.role === "user" && !chat.isLoading && (
+                    <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                      <MessageAction
+                        onClick={() => chat.handleForkSession(msg.id)}
+                        label="从此处分支"
+                      >
+                        <GitBranch className="size-3" />
+                      </MessageAction>
+                    </MessageActions>
+                  )}
                   {msg.role === "assistant" &&
                     index === chat.messages.length - 1 && (
                       <MessageActions>
@@ -437,65 +504,32 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
               {/* Fallback error banner — shown when lastError is set but the
                   error part was not attached to any message (e.g. race condition
                   between stream-start and stream-error). */}
-              {!chat.isLoading && chat.lastError && (() => {
-                const lastMsg = chat.messages[chat.messages.length - 1];
-                const hasInlineError = lastMsg?.parts?.some(
-                  (p) => p.type === "error",
-                );
-                if (hasInlineError) return null;
-                const labels = chat.lastError.type
-                  ? ERROR_TYPE_LABELS[chat.lastError.type]
-                  : undefined;
-                return (
-                  <div className="mx-4 my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-destructive font-medium">
-                          {labels ? labels.label : "出错了"}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {labels ? labels.hint : chat.lastError.message}
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const lastUser = [...chat.messages]
-                                .reverse()
-                                .find((m) => m.role === "user");
-                              if (lastUser) {
-                                chat.handleSubmit({ text: lastUser.content });
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-                          >
-                            <RefreshCw className="w-3 h-3" />
-                            重试
-                          </button>
-                          {(chat.lastError.type === "auth" ||
-                            chat.lastError.type === "billing") && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                window.dispatchEvent(
-                                  new CustomEvent("filework:open-settings", {
-                                    detail: { tab: "llm" },
-                                  }),
-                                );
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-                            >
-                              <Settings className="w-3 h-3" />
-                              检查配置
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              {!chat.isLoading &&
+                chat.lastError &&
+                (() => {
+                  const lastMsg = chat.messages[chat.messages.length - 1];
+                  const hasInlineError = lastMsg?.parts?.some(
+                    (p) => p.type === "error",
+                  );
+                  if (hasInlineError) return null;
+                  const labels = chat.lastError.type
+                    ? ERROR_TYPE_LABELS[chat.lastError.type]
+                    : undefined;
+                  const actions: RecoveryAction[] =
+                    (chat.lastError.recoveryActions as
+                      | RecoveryAction[]
+                      | undefined) ??
+                    fallbackRecoveryActions(chat.lastError.type);
+                  return (
+                    <ErrorBanner
+                      label={labels ? labels.label : "出错了"}
+                      hint={labels ? labels.hint : chat.lastError.message}
+                      actions={actions}
+                      chat={chat}
+                      className="mx-4 my-2"
+                    />
+                  );
+                })()}
 
               {/* Usage info after completion (for current stream before save) */}
               {!chat.isLoading &&
@@ -518,7 +552,6 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                     )}
                   </div>
                 )}
-
             </>
           )}
         </ConversationContent>

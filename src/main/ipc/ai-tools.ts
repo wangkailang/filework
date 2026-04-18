@@ -24,8 +24,10 @@ import {
 } from "../utils/incremental-scanner";
 import {
   activeToolExecutions,
+  isToolWhitelistedForTask,
   pendingApprovals,
   toolCallToTaskMap,
+  whitelistToolForTask,
 } from "./ai-task-control";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
@@ -412,6 +414,22 @@ export const requestApproval = (
   args: unknown,
   abortSignal?: AbortSignal,
 ): Promise<boolean> => {
+  // If the user already approved this tool type during the current task,
+  // skip the approval prompt and auto-approve.
+  if (isToolWhitelistedForTask(taskId, toolName)) {
+    console.log(
+      `[Tool] Auto-approved ${toolName} via task whitelist for taskId: ${taskId}`,
+    );
+    if (!sender.isDestroyed()) {
+      sender.send("ai:tool-auto-approved", {
+        id: taskId,
+        toolCallId,
+        toolName,
+      });
+    }
+    return Promise.resolve(true);
+  }
+
   return new Promise<boolean>((resolve) => {
     let settled = false;
     const onAbort = () => {
@@ -425,6 +443,10 @@ export const requestApproval = (
       abortSignal?.removeEventListener("abort", onAbort);
       pendingApprovals.delete(toolCallId);
       toolCallToTaskMap.delete(toolCallId);
+      // If approved, whitelist this tool type for the rest of the task
+      if (approved) {
+        whitelistToolForTask(taskId, toolName);
+      }
       resolve(approved);
     };
 

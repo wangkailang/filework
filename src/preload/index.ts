@@ -179,8 +179,7 @@ const api = {
       },
     ) => callback(data);
     ipcRenderer.on("ai:plan-step-artifacts", handler);
-    return () =>
-      ipcRenderer.removeListener("ai:plan-step-artifacts", handler);
+    return () => ipcRenderer.removeListener("ai:plan-step-artifacts", handler);
   },
 
   // Skill events
@@ -316,11 +315,21 @@ const api = {
     return () => ipcRenderer.removeListener("ai:stream-done", handler);
   },
   onStreamError: (
-    callback: (data: { id: string; error: string; type?: string }) => void,
+    callback: (data: {
+      id: string;
+      error: string;
+      type?: string;
+      recoveryActions?: string[];
+    }) => void,
   ) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { id: string; error: string; type?: string },
+      data: {
+        id: string;
+        error: string;
+        type?: string;
+        recoveryActions?: string[];
+      },
     ) => callback(data);
     ipcRenderer.on("ai:stream-error", handler);
     return () => ipcRenderer.removeListener("ai:stream-error", handler);
@@ -494,6 +503,8 @@ const api = {
   ) => ipcRenderer.invoke("chat:updateSession", sessionId, updates),
   deleteChatSession: (sessionId: string) =>
     ipcRenderer.invoke("chat:deleteSession", sessionId),
+  forkChatSession: (sessionId: string, fromMessageId: string) =>
+    ipcRenderer.invoke("chat:forkSession", sessionId, fromMessageId),
 
   // Chat history (session-scoped)
   getChatHistory: (sessionId: string) =>

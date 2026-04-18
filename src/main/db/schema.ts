@@ -54,6 +54,10 @@ export const chatSessions = sqliteTable("chat_sessions", {
   title: text("title").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  /** Session this was forked from (null for root sessions) */
+  forkFromSessionId: text("fork_from_session_id"),
+  /** Message ID at the fork point (messages up to and including this are copied) */
+  forkFromMessageId: text("fork_from_message_id"),
 });
 
 export const chatMessages = sqliteTable("chat_messages", {
