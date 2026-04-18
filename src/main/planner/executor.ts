@@ -22,6 +22,10 @@ import type { Plan } from "./types";
 /** Default per-step timeout: 5 minutes */
 const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Truncate text to a max length, appending "..." if truncated. */
+const truncateText = (text: string, max: number): string | undefined =>
+  text ? (text.length > max ? `${text.slice(0, max)}...` : text) : undefined;
+
 interface ExecutorOptions {
   plan: Plan;
   model: Parameters<typeof streamText>[0]["model"];
@@ -80,6 +84,10 @@ export const executePlan = async ({
     }
 
     let stepText = "";
+    let toolCallCount = 0;
+    let lastToolName = "";
+    let lastEmittedCompleted = -1;
+    const totalSubSteps = step.subSteps?.length ?? 0;
 
     // Create per-step timeout controller before try so catch can inspect signal.reason
     const { controller: stepController, cleanup: cleanupTimeout } =
@@ -107,6 +115,10 @@ export const executePlan = async ({
         : "";
       const skillTools = skill?.tools ?? {};
 
+      const subStepsList = step.subSteps?.length
+        ? `\n\n## Sub-tasks for this step\n${step.subSteps.map((ss, i) => `${i + 1}. ${ss.label}`).join("\n")}\nComplete each sub-task in order. After finishing each one, mention which sub-task you completed.`
+        : "";
+
       const systemPrompt = `You are FileWork, executing step ${step.id}/${plan.steps.length} of a planned task.
 
 Current workspace: ${plan.workspacePath}
@@ -118,7 +130,7 @@ ${planContext}
 ${previousResults || "(none — this is the first step)"}
 
 ## Current Step
-Step ${step.id}: ${step.action} — ${step.description}
+Step ${step.id}: ${step.action} — ${step.description}${subStepsList}
 
 Rules:
 - Focus ONLY on this step's objective. Do not do work for other steps.
@@ -185,6 +197,27 @@ Rules:
                 toolName: part.toolName,
                 result: part.output,
               });
+              lastToolName = part.toolName;
+              // Track sub-step progress — cap at totalSubSteps-1 so the
+              // last sub-step only completes when the step succeeds.
+              // Only send IPC when the value actually changes.
+              if (totalSubSteps > 0) {
+                toolCallCount++;
+                const completedSubSteps = Math.min(
+                  toolCallCount,
+                  totalSubSteps - 1,
+                );
+                if (completedSubSteps !== lastEmittedCompleted) {
+                  lastEmittedCompleted = completedSubSteps;
+                  sender.send("ai:plan-substep-progress", {
+                    id: taskId,
+                    planId: plan.id,
+                    stepId: step.id,
+                    completed: completedSubSteps,
+                    total: totalSubSteps,
+                  });
+                }
+              }
               break;
           }
         }
@@ -194,11 +227,22 @@ Rules:
 
       // Mark step completed
       step.status = "completed";
-      // Generate a brief summary (first 200 chars of output)
+      // Mark all sub-steps as done and notify renderer
+      if (step.subSteps) {
+        for (const ss of step.subSteps) ss.status = "done";
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-substep-progress", {
+            id: taskId,
+            planId: plan.id,
+            stepId: step.id,
+            completed: totalSubSteps,
+            total: totalSubSteps,
+          });
+        }
+      }
+      // Generate a brief summary for context passing
       step.resultSummary =
-        stepText.length > 200
-          ? `${stepText.slice(0, 200)}...`
-          : stepText || "(completed with tool calls only)";
+        truncateText(stepText, 500) ?? "(completed with tool calls only)";
     } catch (error: unknown) {
       // Distinguish step timeout from user-initiated abort.
       // streamText wraps abort reasons as AbortError, so we check
@@ -209,9 +253,23 @@ Rules:
 
       // Step timeout — skip and continue with remaining steps
       if (isStepTimeout) {
-        const timeoutMsg = `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`;
+        // Build contextual error message
+        const contextParts: string[] = [
+          `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`,
+        ];
+        if (lastToolName) {
+          contextParts.push(`最后执行: ${lastToolName}`);
+        }
+        if (stepText) {
+          const partial =
+            stepText.length > 150 ? `...${stepText.slice(-150)}` : stepText;
+          contextParts.push(`部分输出: ${partial}`);
+        }
+        const timeoutMsg = contextParts.join("。");
         step.status = "skipped";
         step.error = timeoutMsg;
+        // Freeze sub-step progress — don't mark remaining as done
+        step.resultSummary = truncateText(stepText, 500);
 
         plan.updatedAt = new Date().toISOString();
         await writePlanFile(plan);
@@ -232,9 +290,7 @@ Rules:
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
         step.resultSummary =
-          stepText.length > 200
-            ? `${stepText.slice(0, 200)}...`
-            : stepText || "(aborted by user)";
+          truncateText(stepText, 500) ?? "(aborted by user)";
 
         for (const remaining of plan.steps) {
           if (remaining.status === "pending") {
@@ -249,9 +305,13 @@ Rules:
       }
 
       // Other errors — stop execution
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      const rawError = error instanceof Error ? error.message : "Unknown error";
+      const errorContext = lastToolName
+        ? `${rawError} (执行 ${lastToolName} 时出错)`
+        : rawError;
       step.status = "failed";
-      step.error = errorMsg;
+      step.error = errorContext;
+      step.resultSummary = truncateText(stepText, 500);
 
       plan.updatedAt = new Date().toISOString();
       await writePlanFile(plan);
@@ -261,7 +321,7 @@ Rules:
           id: taskId,
           planId: plan.id,
           stepId: step.id,
-          error: errorMsg,
+          error: errorContext,
         });
       }
 

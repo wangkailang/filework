@@ -47,6 +47,12 @@ const renderPlanMarkdown = (plan: Plan): string => {
     lines.push(
       `${emoji} **Step ${step.id}: ${step.action}** — ${step.description}${skill}`,
     );
+    if (step.subSteps?.length) {
+      for (const sub of step.subSteps) {
+        const subEmoji = sub.status === "done" ? "✅" : "⬜";
+        lines.push(`   - ${subEmoji} ${sub.label}`);
+      }
+    }
     if (step.resultSummary) {
       lines.push(`   > Result: ${step.resultSummary}`);
     }

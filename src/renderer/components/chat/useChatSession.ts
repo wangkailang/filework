@@ -57,7 +57,9 @@ export function useChatSession(workspacePath: string) {
   const streamAssistantIdRef = useRef<string | null>(null);
   const pendingStopRef = useRef(false);
   const stopRequestedRef = useRef(false);
-  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -81,12 +83,15 @@ export function useChatSession(workspacePath: string) {
   useEffect(() => {
     if (validatedConfigRef.current || !selectedLlmConfigId) return;
     validatedConfigRef.current = true;
-    window.filework.llmConfig.list().then((configs: { id: string }[]) => {
-      if (!configs.some((c) => c.id === selectedLlmConfigId)) {
-        setSelectedLlmConfigId(null);
-        localStorage.removeItem("filework-selected-llm-config");
-      }
-    }).catch(() => {});
+    window.filework.llmConfig
+      .list()
+      .then((configs: { id: string }[]) => {
+        if (!configs.some((c) => c.id === selectedLlmConfigId)) {
+          setSelectedLlmConfigId(null);
+          localStorage.removeItem("filework-selected-llm-config");
+        }
+      })
+      .catch(() => {});
   }, [selectedLlmConfigId]);
 
   // ---------------------------------------------------------------------------
@@ -133,9 +138,9 @@ export function useChatSession(workspacePath: string) {
         for (let i = migrated.length - 1; i >= 0; i--) {
           const msg = migrated[i];
           if (msg.role !== "assistant" || !msg.parts) continue;
-          const usagePart = msg.parts.find((p: MessagePart) => p.type === "usage") as
-            | UsagePart
-            | undefined;
+          const usagePart = msg.parts.find(
+            (p: MessagePart) => p.type === "usage",
+          ) as UsagePart | undefined;
           if (usagePart) {
             setLastUsage({
               inputTokens: usagePart.inputTokens,
@@ -439,7 +444,8 @@ export function useChatSession(workspacePath: string) {
           message: error,
           errorType: type,
         };
-        const existingParts = msg.parts && msg.parts.length > 0 ? msg.parts : [];
+        const existingParts =
+          msg.parts && msg.parts.length > 0 ? msg.parts : [];
         const newParts: MessagePart[] = [...existingParts, errorPart];
         updated[idx] = {
           ...msg,
@@ -594,6 +600,49 @@ export function useChatSession(workspacePath: string) {
       },
     );
 
+    // Sub-step progress — mark sub-steps as done proportionally
+    const offSubStepProgress = window.filework.onPlanSubStepProgress(
+      ({ planId, stepId, completed }) => {
+        // Use setMessages directly with a single pass to avoid the double-render
+        // that would occur from wrapping updatePlanStep inside another setMessages.
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i];
+            if (!msg.parts) continue;
+            const planPartIdx = msg.parts.findIndex(
+              (p) =>
+                p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
+            );
+            if (planPartIdx === -1) continue;
+
+            const planPart = msg.parts[planPartIdx] as PlanMessagePart;
+            const step = planPart.plan.steps.find((s) => s.id === stepId);
+            if (!step?.subSteps) break;
+
+            const newSubSteps = step.subSteps.map((ss, idx) => ({
+              ...ss,
+              status: (idx < completed ? "done" : "pending") as
+                | "done"
+                | "pending",
+            }));
+
+            const newSteps = planPart.plan.steps.map((s) =>
+              s.id === stepId ? { ...s, subSteps: newSubSteps } : s,
+            );
+            const newParts = [...msg.parts];
+            newParts[planPartIdx] = {
+              type: "plan",
+              plan: { ...planPart.plan, steps: newSteps },
+            };
+            updated[i] = { ...msg, parts: newParts };
+            break;
+          }
+          return updated;
+        });
+      },
+    );
+
     // Watchdog events — track stall state for UI indicators
     const offWatchdog = window.filework.onWatchdog(({ taskId, type }) => {
       if (taskId !== streamTaskIdRef.current) return;
@@ -610,6 +659,7 @@ export function useChatSession(workspacePath: string) {
       offStepStart();
       offStepDone();
       offStepError();
+      offSubStepProgress();
       offWatchdog();
     };
   }, [debouncedSave, updatePlanStep]);
@@ -780,7 +830,8 @@ export function useChatSession(workspacePath: string) {
 
     // Connection timeout guard: if no stream-start arrives within 30s, surface
     // an error instead of leaving the UI stuck in loading state.
-    if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+    if (connectionTimeoutRef.current)
+      clearTimeout(connectionTimeoutRef.current);
     connectionTimeoutRef.current = setTimeout(() => {
       if (
         streamAssistantIdRef.current === assistantId &&
@@ -835,8 +886,7 @@ export function useChatSession(workspacePath: string) {
       })
       .catch((error: unknown) => {
         if (streamAssistantIdRef.current !== assistantId) return;
-        const errMsg =
-          error instanceof Error ? error.message : "未知错误";
+        const errMsg = error instanceof Error ? error.message : "未知错误";
         const errorPart: MessagePart = {
           type: "error",
           message: errMsg,
