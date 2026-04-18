@@ -1,5 +1,12 @@
 /** Planner types — shared between planner, executor, and IPC layer. */
 
+export interface PlanSubStep {
+  /** Short label describing a concrete action within the parent step */
+  label: string;
+  /** Whether this sub-step has been completed */
+  status: "pending" | "done";
+}
+
 export interface PlanStep {
   /** Sequential step id (1-based) */
   id: number;
@@ -9,6 +16,8 @@ export interface PlanStep {
   description: string;
   /** Optional skill id to activate for this step */
   skillId?: string;
+  /** Breakdown of concrete actions within this step */
+  subSteps?: PlanSubStep[];
   /** Execution status */
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   /** Result summary after execution (brief, for context passing) */
@@ -52,5 +61,6 @@ export interface PlannerLLMOutput {
     action: string;
     description: string;
     skillId?: string;
+    subSteps?: string[];
   }>;
 }

@@ -1,24 +1,32 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   ListChecks,
   Loader2,
   SkipForward,
   XCircle,
 } from "lucide-react";
-import { type HTMLAttributes, useEffect, useState } from "react";
+import { type HTMLAttributes, useCallback, useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors src/main/planner/types.ts for renderer use)
 // ---------------------------------------------------------------------------
 
+export interface PlanSubStepView {
+  label: string;
+  status: "pending" | "done";
+}
+
 export interface PlanStepView {
   id: number;
   action: string;
   description: string;
   skillId?: string;
+  subSteps?: PlanSubStepView[];
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   error?: string;
 }
@@ -90,6 +98,63 @@ const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Sub-step list
+// ---------------------------------------------------------------------------
+
+const SubStepList = ({
+  subSteps,
+  stepStatus,
+  stepFailed,
+}: {
+  subSteps: PlanSubStepView[];
+  stepStatus: PlanStepView["status"];
+  stepFailed: boolean;
+}) => {
+  const firstPendingIdx =
+    stepStatus === "running"
+      ? subSteps.findIndex((s) => s.status === "pending")
+      : -1;
+
+  return (
+    <div className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2">
+      {subSteps.map((sub, idx) => {
+        const isFirstPending =
+          sub.status === "pending" && idx === firstPendingIdx;
+        const isUnfinished = stepFailed && sub.status === "pending";
+
+        return (
+          <div
+            key={sub.label}
+            className="flex items-center gap-1.5 text-[11px]"
+          >
+            {sub.status === "done" ? (
+              <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+            ) : isUnfinished ? (
+              <XCircle className="size-3 text-red-400/60 shrink-0" />
+            ) : isFirstPending ? (
+              <Loader2 className="size-3 text-blue-500 animate-spin shrink-0" />
+            ) : (
+              <Circle className="size-3 text-muted-foreground/40 shrink-0" />
+            )}
+            <span
+              className={cn(
+                sub.status === "done"
+                  ? "text-muted-foreground line-through"
+                  : isUnfinished
+                    ? "text-red-400/60 line-through"
+                    : "text-foreground/70",
+              )}
+            >
+              {sub.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Plan Viewer (draft state — shows plan for approval)
 // ---------------------------------------------------------------------------
 
@@ -117,6 +182,18 @@ export const PlanViewer = ({
     (s) => s.status === "completed",
   ).length;
 
+  // Track which steps are expanded — running steps auto-expand
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleExpand = useCallback((stepId: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepId)) next.delete(stepId);
+      else next.add(stepId);
+      return next;
+    });
+  }, []);
+
   return (
     <div
       className={cn(
@@ -143,34 +220,78 @@ export const PlanViewer = ({
 
       {/* Steps */}
       <div className="px-3 py-2 space-y-1.5">
-        {plan.steps.map((step) => (
-          <div key={step.id} className="flex items-start gap-2">
-            <StepIcon status={step.status} />
-            <div className="flex-1 min-w-0">
-              <span
-                className={cn(
-                  "text-xs",
-                  step.status === "completed" &&
-                    "text-muted-foreground line-through",
-                  step.status === "running" && "text-foreground font-medium",
-                  step.status === "failed" && "text-red-400",
-                  step.status === "skipped" && "text-muted-foreground",
-                  step.status === "pending" && "text-foreground/80",
+        {plan.steps.map((step) => {
+          const hasSubSteps = step.subSteps && step.subSteps.length > 0;
+          const stepFailed =
+            step.status === "failed" || step.status === "skipped";
+          const isExpanded =
+            expanded.has(step.id) ||
+            step.status === "running" ||
+            (stepFailed && hasSubSteps);
+
+          const stepContent = (
+            <>
+              <StepIcon status={step.status} />
+              <div className="flex-1 min-w-0">
+                <span
+                  className={cn(
+                    "text-xs",
+                    step.status === "completed" &&
+                      "text-muted-foreground line-through",
+                    step.status === "running" && "text-foreground font-medium",
+                    step.status === "failed" && "text-red-400",
+                    step.status === "skipped" && "text-muted-foreground",
+                    step.status === "pending" && "text-foreground/80",
+                  )}
+                >
+                  {step.action} — {step.description}
+                  {step.status === "running" && (
+                    <RunningStepTimer isStalled={isStalled} />
+                  )}
+                </span>
+                {step.error && (
+                  <div className="text-xs text-red-400 mt-0.5">
+                    错误: {step.error}
+                  </div>
                 )}
-              >
-                {step.action} — {step.description}
-                {step.status === "running" && (
-                  <RunningStepTimer isStalled={isStalled} />
-                )}
-              </span>
-              {step.error && (
-                <div className="text-xs text-red-400 mt-0.5">
-                  错误: {step.error}
-                </div>
+              </div>
+              {hasSubSteps && (
+                <span className="shrink-0 mt-0.5 text-muted-foreground/60">
+                  {isExpanded ? (
+                    <ChevronDown className="size-3" />
+                  ) : (
+                    <ChevronRight className="size-3" />
+                  )}
+                </span>
+              )}
+            </>
+          );
+
+          return (
+            <div key={step.id}>
+              {hasSubSteps ? (
+                <button
+                  type="button"
+                  className="flex items-start gap-2 w-full text-left cursor-pointer select-none bg-transparent border-none p-0"
+                  onClick={() => toggleExpand(step.id)}
+                >
+                  {stepContent}
+                </button>
+              ) : (
+                <div className="flex items-start gap-2">{stepContent}</div>
+              )}
+
+              {/* Sub-steps */}
+              {hasSubSteps && isExpanded && (
+                <SubStepList
+                  subSteps={step.subSteps ?? []}
+                  stepStatus={step.status}
+                  stepFailed={stepFailed}
+                />
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Actions */}

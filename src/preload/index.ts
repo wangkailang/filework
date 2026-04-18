@@ -126,6 +126,29 @@ const api = {
     ipcRenderer.on("ai:plan-step-error", handler);
     return () => ipcRenderer.removeListener("ai:plan-step-error", handler);
   },
+  onPlanSubStepProgress: (
+    callback: (data: {
+      id: string;
+      planId: string;
+      stepId: number;
+      completed: number;
+      total: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        planId: string;
+        stepId: number;
+        completed: number;
+        total: number;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:plan-substep-progress", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:plan-substep-progress", handler);
+  },
 
   // Skill events
   onSkillActivated: (
