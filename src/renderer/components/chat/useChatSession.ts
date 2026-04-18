@@ -643,6 +643,15 @@ export function useChatSession(workspacePath: string) {
       },
     );
 
+    // Step artifacts — attach artifacts to step when step completes
+    const offStepArtifacts = window.filework.onPlanStepArtifacts(
+      ({ planId, stepId, artifacts }) => {
+        updatePlanStep(planId, stepId, {
+          artifacts: artifacts as PlanStepView["artifacts"],
+        });
+      },
+    );
+
     // Watchdog events — track stall state for UI indicators
     const offWatchdog = window.filework.onWatchdog(({ taskId, type }) => {
       if (taskId !== streamTaskIdRef.current) return;
@@ -660,6 +669,7 @@ export function useChatSession(workspacePath: string) {
       offStepDone();
       offStepError();
       offSubStepProgress();
+      offStepArtifacts();
       offWatchdog();
     };
   }, [debouncedSave, updatePlanStep]);

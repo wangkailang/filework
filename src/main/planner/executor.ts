@@ -17,7 +17,7 @@ import {
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { readPlanFile, writePlanFile } from "./plan-file";
-import type { Plan } from "./types";
+import type { Plan, PlanStepArtifact } from "./types";
 
 /** Default per-step timeout: 5 minutes */
 const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -25,6 +25,30 @@ const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 /** Truncate text to a max length, appending "..." if truncated. */
 const truncateText = (text: string, max: number): string | undefined =>
   text ? (text.length > max ? `${text.slice(0, max)}...` : text) : undefined;
+
+/**
+ * Deep-truncate long string values in an object for artifact display.
+ * Returns the original value if already small enough.
+ */
+const truncateDeep = (value: unknown, maxStringLen = 200): unknown => {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    return value.length > maxStringLen
+      ? `${value.slice(0, maxStringLen)}...`
+      : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => truncateDeep(v, maxStringLen));
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = truncateDeep(v, maxStringLen);
+    }
+    return out;
+  }
+  return value;
+};
 
 interface ExecutorOptions {
   plan: Plan;
@@ -88,6 +112,9 @@ export const executePlan = async ({
     let lastToolName = "";
     let lastEmittedCompleted = -1;
     const totalSubSteps = step.subSteps?.length ?? 0;
+    const stepArtifacts: PlanStepArtifact[] = [];
+    // Track pending tool-call args by toolCallId for artifact extraction
+    const pendingToolCalls = new Map<string, { toolName: string; args: Record<string, unknown> }>();
 
     // Create per-step timeout controller before try so catch can inspect signal.reason
     const { controller: stepController, cleanup: cleanupTimeout } =
@@ -189,8 +216,13 @@ Rules:
                 toolName: part.toolName,
                 args: part.input,
               });
+              // Stash args for artifact extraction on result
+              pendingToolCalls.set(part.toolCallId, {
+                toolName: part.toolName,
+                args: part.input as Record<string, unknown>,
+              });
               break;
-            case "tool-result":
+            case "tool-result": {
               sender.send("ai:stream-tool-result", {
                 id: taskId,
                 toolCallId: part.toolCallId,
@@ -198,6 +230,21 @@ Rules:
                 result: part.output,
               });
               lastToolName = part.toolName;
+
+              // Collect artifact for every tool call with its full data
+              const pending = pendingToolCalls.get(part.toolCallId);
+              if (pending) {
+                const resultObj = part.output as Record<string, unknown> | undefined;
+                const success = !(resultObj && resultObj.success === false);
+                stepArtifacts.push({
+                  toolCallId: part.toolCallId,
+                  toolName: pending.toolName,
+                  args: truncateDeep(pending.args) as Record<string, unknown>,
+                  result: truncateDeep(part.output),
+                  success,
+                });
+                pendingToolCalls.delete(part.toolCallId);
+              }
               // Track sub-step progress — cap at totalSubSteps-1 so the
               // last sub-step only completes when the step succeeds.
               // Only send IPC when the value actually changes.
@@ -219,6 +266,7 @@ Rules:
                 }
               }
               break;
+            }
           }
         }
       } finally {
@@ -227,6 +275,18 @@ Rules:
 
       // Mark step completed
       step.status = "completed";
+      // Attach collected artifacts to the step
+      if (stepArtifacts.length > 0) {
+        step.artifacts = stepArtifacts;
+        if (!sender.isDestroyed()) {
+          sender.send("ai:plan-step-artifacts", {
+            id: taskId,
+            planId: plan.id,
+            stepId: step.id,
+            artifacts: stepArtifacts,
+          });
+        }
+      }
       // Mark all sub-steps as done and notify renderer
       if (step.subSteps) {
         for (const ss of step.subSteps) ss.status = "done";
