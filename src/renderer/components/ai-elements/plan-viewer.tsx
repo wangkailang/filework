@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type HTMLAttributes, useCallback, useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
+import { toolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors src/main/planner/types.ts for renderer use)
@@ -21,12 +22,21 @@ export interface PlanSubStepView {
   status: "pending" | "done";
 }
 
+export interface PlanStepArtifactView {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  success: boolean;
+}
+
 export interface PlanStepView {
   id: number;
   action: string;
   description: string;
   skillId?: string;
   subSteps?: PlanSubStepView[];
+  artifacts?: PlanStepArtifactView[];
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   error?: string;
 }
@@ -157,6 +167,84 @@ const SubStepList = ({
 };
 
 // ---------------------------------------------------------------------------
+// Artifact list — shows tool operations with details
+// ---------------------------------------------------------------------------
+
+/** Keys to exclude from args summary (may contain large or sensitive data) */
+const hiddenArgKeys = new Set(["content", "data", "body"]);
+
+/** Format tool args into a brief one-line summary */
+const formatArgsSummary = (args: Record<string, unknown>): string => {
+  if (args.path) return String(args.path);
+  if (args.source && args.destination) return `${args.source} → ${args.destination}`;
+  const keys = Object.keys(args).filter((k) => !hiddenArgKeys.has(k));
+  if (keys.length === 0) return "";
+  return keys.map((k) => {
+    const v = args[k];
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    return s && s.length > 60 ? `${s.slice(0, 60)}...` : s;
+  }).join(", ");
+};
+
+/** Format a tool result for display */
+const formatResult = (result: unknown): string => {
+  if (result == null) return "";
+  if (typeof result === "string") return result;
+  return JSON.stringify(result, null, 2);
+};
+
+const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
+  const [open, setOpen] = useState(false);
+  const label = toolLabels[artifact.toolName] || artifact.toolName;
+  const summary = formatArgsSummary(artifact.args);
+
+  return (
+    <div className="text-[11px]">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 w-full text-left bg-transparent border-none p-0 cursor-pointer select-none"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {artifact.success ? (
+          <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+        ) : (
+          <XCircle className="size-3 text-red-400 shrink-0" />
+        )}
+        <span className="text-foreground/80 font-medium shrink-0">{label}</span>
+        {summary && (
+          <span className="text-muted-foreground truncate" title={summary}>
+            {summary}
+          </span>
+        )}
+        <span className="shrink-0 text-muted-foreground/50 ml-auto">
+          {open ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
+        </span>
+      </button>
+      {open && artifact.result != null && (
+        <pre className="mt-0.5 ml-4.5 px-2 py-1 rounded bg-muted/60 text-[10px] font-mono text-foreground/70 whitespace-pre-wrap break-all max-h-40 overflow-auto">
+          {formatResult(artifact.result)}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+const ArtifactList = ({
+  artifacts,
+}: {
+  artifacts: PlanStepArtifactView[];
+}) => (
+  <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
+    <div className="text-[10px] text-muted-foreground/60 mb-0.5">
+      操作明细 ({artifacts.length})
+    </div>
+    {artifacts.map((a) => (
+      <ArtifactItem key={a.toolCallId} artifact={a} />
+    ))}
+  </div>
+);
+
+// ---------------------------------------------------------------------------
 // Plan Viewer (draft state — shows plan for approval)
 // ---------------------------------------------------------------------------
 
@@ -224,6 +312,8 @@ export const PlanViewer = ({
       <div className="px-3 py-2 space-y-1.5">
         {plan.steps.map((step) => {
           const hasSubSteps = step.subSteps && step.subSteps.length > 0;
+          const hasArtifacts = step.artifacts && step.artifacts.length > 0;
+          const hasExpandable = hasSubSteps || hasArtifacts;
           const stepFailed =
             step.status === "failed" || step.status === "skipped";
           const isExpanded =
@@ -257,7 +347,7 @@ export const PlanViewer = ({
                   </div>
                 )}
               </div>
-              {hasSubSteps && (
+              {hasExpandable && (
                 <span className="shrink-0 mt-0.5 text-muted-foreground/60">
                   {isExpanded ? (
                     <ChevronDown className="size-3" />
@@ -273,7 +363,7 @@ export const PlanViewer = ({
 
           return (
             <div key={step.id}>
-              {hasSubSteps ? (
+              {hasExpandable ? (
                 <button
                   type="button"
                   aria-expanded={isExpanded}
@@ -295,6 +385,11 @@ export const PlanViewer = ({
                   stepStatus={step.status}
                   stepFailed={stepFailed}
                 />
+              )}
+
+              {/* Artifacts */}
+              {hasArtifacts && isExpanded && (
+                <ArtifactList artifacts={step.artifacts ?? []} />
               )}
             </div>
           );

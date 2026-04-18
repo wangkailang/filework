@@ -3,6 +3,7 @@ import type { ChatMessage, ChatSession } from "../db";
 import {
   createChatSession,
   deleteChatSession,
+  forkChatSession,
   getChatHistory,
   getChatSessions,
   saveChatHistory,
@@ -45,6 +46,17 @@ export const registerChatHandlers = () => {
     deleteChatSession(sessionId);
     return true;
   });
+
+  ipcMain.handle(
+    "chat:forkSession",
+    async (
+      _event,
+      sessionId: string,
+      fromMessageId: string,
+    ): Promise<ChatSession> => {
+      return forkChatSession(sessionId, fromMessageId);
+    },
+  );
 
   // Messages (now session-scoped)
   ipcMain.handle("chat:getHistory", async (_event, sessionId: string) => {

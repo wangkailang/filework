@@ -141,6 +141,19 @@ export const initDatabase = async () => {
       .run(sessionId, workspace_path);
   }
 
+  // Migrate: add fork columns to chat_sessions if missing
+  const sessionColumns = sqlite.pragma("table_info(chat_sessions)") as {
+    name: string;
+  }[];
+  if (!sessionColumns.some((c) => c.name === "fork_from_session_id")) {
+    sqlite.exec(
+      "ALTER TABLE chat_sessions ADD COLUMN fork_from_session_id TEXT",
+    );
+    sqlite.exec(
+      "ALTER TABLE chat_sessions ADD COLUMN fork_from_message_id TEXT",
+    );
+  }
+
   // Migrate .env LLM config to database on first run
   migrateLlmConfigFromEnv();
 };
@@ -391,6 +404,81 @@ export const updateChatSession = (
     .set(mapped)
     .where(eq(schema.chatSessions.id, sessionId))
     .run();
+};
+
+/**
+ * Fork a chat session from a specific message point.
+ * Creates a new session and copies all messages up to (and including)
+ * the specified message, preserving conversation history for branching.
+ */
+export const forkChatSession = (
+  sourceSessionId: string,
+  fromMessageId: string,
+): ChatSession => {
+  const source = db
+    .select()
+    .from(schema.chatSessions)
+    .where(eq(schema.chatSessions.id, sourceSessionId))
+    .get();
+  if (!source) {
+    throw new Error("源会话不存在");
+  }
+
+  const newId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Get source messages up to the fork point
+  const allMessages = db
+    .select()
+    .from(schema.chatMessages)
+    .where(eq(schema.chatMessages.sessionId, sourceSessionId))
+    .orderBy(schema.chatMessages.timestamp)
+    .all();
+
+  // Find the fork point index
+  const forkIdx = allMessages.findIndex((m) => m.id === fromMessageId);
+  if (forkIdx === -1) {
+    throw new Error("分叉点消息不存在");
+  }
+  const messagesToCopy = allMessages.slice(0, forkIdx + 1);
+
+  db.transaction((tx) => {
+    // Create the forked session
+    tx.insert(schema.chatSessions)
+      .values({
+        id: newId,
+        workspacePath: source.workspacePath,
+        title: `${source.title} (分支)`,
+        createdAt: now,
+        updatedAt: now,
+        forkFromSessionId: sourceSessionId,
+        forkFromMessageId: fromMessageId,
+      })
+      .run();
+
+    // Copy messages with new IDs
+    for (const msg of messagesToCopy) {
+      tx.insert(schema.chatMessages)
+        .values({
+          id: crypto.randomUUID(),
+          sessionId: newId,
+          workspacePath: msg.workspacePath,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp,
+          parts: msg.parts,
+        })
+        .run();
+    }
+  });
+
+  return {
+    id: newId,
+    workspacePath: source.workspacePath,
+    title: `${source.title} (分支)`,
+    createdAt: now,
+    updatedAt: now,
+  };
 };
 
 export const deleteChatSession = (sessionId: string) => {

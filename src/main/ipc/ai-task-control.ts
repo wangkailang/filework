@@ -27,7 +27,10 @@ export const pendingApprovals = new Map<string, (approved: boolean) => void>();
 const planApprovedTasks = new Map<string, string>();
 
 /** Mark a task as plan-approved, scoped to writes within workspacePath. */
-export const markPlanApproved = (taskId: string, workspacePath: string): void => {
+export const markPlanApproved = (
+  taskId: string,
+  workspacePath: string,
+): void => {
   planApprovedTasks.set(taskId, workspacePath);
 };
 
@@ -37,6 +40,35 @@ export const getPlanApprovedWorkspace = (taskId: string): string | undefined =>
 
 /** 工具调用与任务的映射关系，用于清理 */
 export const toolCallToTaskMap = new Map<string, string>();
+
+/**
+ * Per-task tool whitelist: once a user approves a dangerous tool (e.g.
+ * writeFile) during a task, subsequent calls of the same tool type are
+ * auto-approved for the remainder of that task. This reduces approval
+ * fatigue without compromising security across tasks.
+ */
+const taskToolWhitelist = new Map<string, Set<string>>();
+
+/** Record that `toolName` was user-approved for `taskId`. */
+export const whitelistToolForTask = (
+  taskId: string,
+  toolName: string,
+): void => {
+  let set = taskToolWhitelist.get(taskId);
+  if (!set) {
+    set = new Set();
+    taskToolWhitelist.set(taskId, set);
+  }
+  set.add(toolName);
+};
+
+/** Check if `toolName` has been previously approved for `taskId`. */
+export const isToolWhitelistedForTask = (
+  taskId: string,
+  toolName: string,
+): boolean => {
+  return taskToolWhitelist.get(taskId)?.has(toolName) ?? false;
+};
 
 /**
  * Initialize task execution tracking for a given task ID
@@ -59,6 +91,9 @@ export const cleanupTask = (taskId: string): void => {
 
   // Clean up plan-approved mapping
   planApprovedTasks.delete(taskId);
+
+  // Clean up per-task tool whitelist
+  taskToolWhitelist.delete(taskId);
 
   // Clean up active tool executions
   const toolControllers = activeToolExecutions.get(taskId);

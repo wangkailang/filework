@@ -7,6 +7,19 @@ export interface PlanSubStep {
   status: "pending" | "done";
 }
 
+export interface PlanStepArtifact {
+  /** Tool call id */
+  toolCallId: string;
+  /** Tool name (e.g. "writeFile", "readFile", "listDirectory") */
+  toolName: string;
+  /** Tool call arguments */
+  args: Record<string, unknown>;
+  /** Tool result output (truncated for display) */
+  result?: unknown;
+  /** Whether the tool call succeeded */
+  success: boolean;
+}
+
 export interface PlanStep {
   /** Sequential step id (1-based) */
   id: number;
@@ -18,6 +31,8 @@ export interface PlanStep {
   skillId?: string;
   /** Breakdown of concrete actions within this step */
   subSteps?: PlanSubStep[];
+  /** Artifacts produced during execution */
+  artifacts?: PlanStepArtifact[];
   /** Execution status */
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   /** Result summary after execution (brief, for context passing) */

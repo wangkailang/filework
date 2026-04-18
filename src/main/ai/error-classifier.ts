@@ -16,7 +16,11 @@ export type ErrorType =
   | "context_overflow"
   | "server_error"
   | "timeout"
+  | "proxy_intercepted"
   | "unknown";
+
+/** Recovery actions the renderer can offer to the user */
+export type RecoveryAction = "retry" | "settings" | "new_chat";
 
 export interface ClassifiedError {
   type: ErrorType;
@@ -27,6 +31,8 @@ export interface ClassifiedError {
   backoffMs: number;
   /** User-facing message (Chinese) */
   userMessage: string;
+  /** Suggested recovery actions for the UI to render as buttons */
+  recoveryActions: RecoveryAction[];
   originalError: Error;
 }
 
@@ -77,6 +83,11 @@ const STATUS_PATTERNS: Array<{
       /APICallError|API.?Call.?Error|fetch failed|network error/i.test(m),
     type: "timeout",
   },
+  {
+    test: (m) =>
+      /<!DOCTYPE|<html|cloudflare|captcha|cf-ray|attention required/i.test(m),
+    type: "proxy_intercepted",
+  },
 ];
 
 const ERROR_DEFAULTS: Record<
@@ -90,6 +101,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 0,
     backoffMs: 0,
     userMessage: "API Key 无效或已过期，请在设置中检查该渠道配置",
+    recoveryActions: ["settings"],
   },
   billing: {
     type: "billing",
@@ -98,6 +110,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 0,
     backoffMs: 0,
     userMessage: "API 账户余额不足，请前往对应平台充值后重试",
+    recoveryActions: ["settings"],
   },
   rate_limit: {
     type: "rate_limit",
@@ -106,6 +119,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 3,
     backoffMs: 2000,
     userMessage: "请求频率过高，正在自动重试…",
+    recoveryActions: ["retry"],
   },
   context_overflow: {
     type: "context_overflow",
@@ -114,6 +128,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 1,
     backoffMs: 0,
     userMessage: "对话上下文过长，正在自动压缩后重试…",
+    recoveryActions: ["new_chat"],
   },
   server_error: {
     type: "server_error",
@@ -122,6 +137,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 2,
     backoffMs: 1000,
     userMessage: "服务端暂时不可用，正在自动重试…",
+    recoveryActions: ["retry"],
   },
   timeout: {
     type: "timeout",
@@ -130,6 +146,16 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 2,
     backoffMs: 1500,
     userMessage: "连接超时，正在自动重试…",
+    recoveryActions: ["retry", "settings"],
+  },
+  proxy_intercepted: {
+    type: "proxy_intercepted",
+    retryable: false,
+    shouldCompress: false,
+    maxRetries: 0,
+    backoffMs: 0,
+    userMessage: "请求被网络代理或防火墙拦截，请检查网络环境或代理设置",
+    recoveryActions: ["settings"],
   },
   unknown: {
     type: "unknown",
@@ -138,6 +164,7 @@ const ERROR_DEFAULTS: Record<
     maxRetries: 0,
     backoffMs: 0,
     userMessage: "",
+    recoveryActions: ["retry"],
   },
 };
 

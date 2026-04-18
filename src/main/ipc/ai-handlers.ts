@@ -9,13 +9,14 @@ import crypto from "node:crypto";
 import { stepCountIs, streamText } from "ai";
 import { ipcMain } from "electron";
 import { compressContext } from "../ai/context-compressor";
+import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError, withRetry } from "../ai/error-classifier";
 import { emitMemoryEvent } from "../ai/memory-debug-store";
 import {
   convertToCoreMessages,
   type HistoryMessage,
 } from "../ai/message-converter";
-import { buildProviderOptions } from "../ai/prompt-caching";
+import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { estimateTokens, truncateToFitAsync } from "../ai/token-budget";
 import {
@@ -36,7 +37,10 @@ import {
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
 // Import our new modules
-import { getAIModelByConfigId } from "./ai-models";
+import {
+  getAIModelByConfigId,
+  getModelAndAdapterByConfigId,
+} from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
@@ -131,7 +135,9 @@ const handleTaskExecution = async (
     const llmConfig = payload.llmConfigId
       ? getLlmConfig(payload.llmConfigId)
       : getDefaultLlmConfig();
-    const model = getAIModelByConfigId(payload.llmConfigId);
+    const { model, adapter } = getModelAndAdapterByConfigId(
+      payload.llmConfigId,
+    );
 
     // ── Skill matching: /command format first, then prompt-based ──
     let skill: UnifiedSkill | undefined;
@@ -186,13 +192,31 @@ const handleTaskExecution = async (
         const coreMessages = convertToCoreMessages(
           payload.history as HistoryMessage[],
         );
+
         let compressorCalled = false;
         const compressor = async (
           msgs: import("ai").ModelMessage[],
           budget: number,
         ) => {
           compressorCalled = true;
-          const result = await compressContext(msgs, {
+
+          // Summarize very large tool results (>60KB) before compression.
+          // Only runs when context actually exceeds budget, avoiding
+          // unnecessary LLM calls on short conversations.
+          let preprocessed = msgs;
+          try {
+            preprocessed = await summarizeLargeToolResults(msgs, {
+              model,
+              signal: controller.signal,
+            });
+          } catch (err) {
+            console.warn(
+              "[ai:executeTask] Tool result summarization failed, continuing with raw results:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+
+          const result = await compressContext(preprocessed, {
             model,
             budget,
             signal: controller.signal,
@@ -360,7 +384,7 @@ const handleTaskExecution = async (
       : [];
 
     // ── Streaming with automatic retry ──
-    const providerOptions = buildProviderOptions(llmConfig?.provider ?? "");
+    const providerOptions = adapter.buildProviderOptions();
 
     const streamAndConsume = async () => {
       const commonOptions = {
@@ -386,6 +410,16 @@ const handleTaskExecution = async (
       });
       watchdog.start();
 
+      // Batch text-delta IPC events into 50ms windows to reduce renderer
+      // re-renders from 50+/s down to ~20/s.
+      const deltaBatcher = new DeltaBatcher({
+        flush: (text) => {
+          if (!sender.isDestroyed()) {
+            sender.send("ai:stream-delta", { id, delta: text });
+          }
+        },
+      });
+
       try {
         let partCount = 0;
         for await (const part of result.fullStream) {
@@ -408,9 +442,11 @@ const handleTaskExecution = async (
           switch (part.type) {
             case "text-delta":
               fullText += part.text;
-              sender.send("ai:stream-delta", { id, delta: part.text });
+              deltaBatcher.push(part.text);
               break;
             case "tool-call":
+              // Flush pending text before tool events so ordering is preserved
+              deltaBatcher.drain();
               sender.send("ai:stream-tool-call", {
                 id,
                 toolCallId: part.toolCallId,
@@ -427,6 +463,8 @@ const handleTaskExecution = async (
               });
               break;
             case "error":
+              // Flush pending text before surfacing the error
+              deltaBatcher.drain();
               // AI SDK v6 wraps API errors as stream events instead of
               // throwing.  Re-throw so withRetry / our catch block can
               // classify and surface the error to the renderer.
@@ -434,6 +472,8 @@ const handleTaskExecution = async (
           }
         }
       } finally {
+        // Ensure any remaining buffered text is sent before cleanup
+        deltaBatcher.drain();
         watchdog.stop();
       }
 
@@ -480,47 +520,14 @@ const handleTaskExecution = async (
         // Usage read failure is non-critical
       }
 
-      // Track prompt-cache events (Anthropic + OpenAI)
+      // Track prompt-cache events via provider adapter
       try {
         const providerMeta = await streamResult.providerMetadata;
         const promptSnippet = payload.prompt;
-        let cacheWrite: number | null = null;
-        let cacheRead: number | null = null;
-
-        // Anthropic: cacheCreationInputTokens / cache_read_input_tokens
-        const anthropic = providerMeta?.anthropic as
-          | Record<string, unknown>
-          | undefined;
-        if (anthropic) {
-          cacheWrite =
-            (anthropic.cacheCreationInputTokens as number | null) ?? null;
-          const rawUsage = anthropic.usage as
-            | Record<string, unknown>
-            | null
-            | undefined;
-          cacheRead =
-            (rawUsage?.cache_read_input_tokens as number | null) ?? null;
-        }
-
-        // OpenAI: usage.prompt_tokens_details.cached_tokens
-        const openai = providerMeta?.openai as
-          | Record<string, unknown>
-          | undefined;
-        if (openai && cacheWrite == null && cacheRead == null) {
-          const oaiUsage = openai.usage as
-            | Record<string, unknown>
-            | null
-            | undefined;
-          const promptDetails = oaiUsage?.prompt_tokens_details as
-            | Record<string, unknown>
-            | null
-            | undefined;
-          const cachedTokens =
-            (promptDetails?.cached_tokens as number | null) ?? null;
-          if (cachedTokens && cachedTokens > 0) {
-            cacheRead = cachedTokens;
-          }
-        }
+        const { cacheWriteTokens: cacheWrite, cacheReadTokens: cacheRead } =
+          adapter.extractCacheMetrics(
+            providerMeta as Record<string, unknown> | undefined,
+          );
 
         if (cacheWrite && cacheWrite > 0) {
           emitMemoryEvent(
@@ -589,6 +596,7 @@ const handleTaskExecution = async (
           id,
           error: errorMsg,
           type: classified.type,
+          recoveryActions: classified.recoveryActions,
         });
       }
       return { id, status: "failed", message: errorMsg };
@@ -613,6 +621,7 @@ const handleTaskExecution = async (
         id,
         error: errorMsg,
         type: classified.type,
+        recoveryActions: classified.recoveryActions,
       });
     }
     return { id, status: "failed", message: errorMsg };
