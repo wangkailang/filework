@@ -141,12 +141,22 @@ ${skillCatalog}
 };
 
 /** Validate that a parsed object has the expected PlannerLLMOutput shape */
-const isValidPlanOutput = (obj: unknown): obj is PlannerLLMOutput =>
-  typeof obj === "object" &&
-  obj !== null &&
-  "steps" in obj &&
-  Array.isArray((obj as PlannerLLMOutput).steps) &&
-  (obj as PlannerLLMOutput).steps.length > 0;
+const isValidPlanOutput = (obj: unknown): obj is PlannerLLMOutput => {
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.goal !== "string" || o.goal.trim() === "") return false;
+  if (!Array.isArray(o.steps) || o.steps.length === 0) return false;
+  return (o.steps as unknown[]).every((s) => {
+    if (typeof s !== "object" || s === null) return false;
+    const step = s as Record<string, unknown>;
+    if (typeof step.action !== "string" || step.action.trim() === "")
+      return false;
+    if (typeof step.description !== "string" || step.description.trim() === "")
+      return false;
+    if ("subSteps" in step && !Array.isArray(step.subSteps)) return false;
+    return true;
+  });
+};
 
 /** Try to parse JSON and validate its shape. Returns null on failure. */
 const tryParsePlan = (json: string): PlannerLLMOutput | null => {
@@ -269,13 +279,18 @@ const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
     });
   }
 
-  // If no patterns matched, fall back to single step
+  // If no patterns matched, use a generic 3-step structure
   if (steps.length === 0) {
-    steps.push({ action: "execute", description: prompt });
+    steps.push(
+      { action: "analyze", description: "分析任务需求，检查工作区相关文件" },
+      { action: "execute", description: prompt },
+      { action: "review", description: "检查执行结果，确保输出完整正确" },
+    );
   }
 
-  // Always add a final review step for multi-step plans
-  if (steps.length > 1) {
+  // Add a final review step if keyword-matched steps don't already end with one
+  const lastAction = steps[steps.length - 1].action;
+  if (steps.length > 1 && lastAction !== "review") {
     steps.push({
       action: "review",
       description: "检查生成的文件，确保内容完整且格式正确",

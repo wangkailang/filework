@@ -102,10 +102,12 @@ const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
 // ---------------------------------------------------------------------------
 
 const SubStepList = ({
+  id,
   subSteps,
   stepStatus,
   stepFailed,
 }: {
+  id: string;
   subSteps: PlanSubStepView[];
   stepStatus: PlanStepView["status"];
   stepFailed: boolean;
@@ -116,7 +118,7 @@ const SubStepList = ({
       : -1;
 
   return (
-    <div className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2">
+    <div id={id} className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2">
       {subSteps.map((sub, idx) => {
         const isFirstPending =
           sub.status === "pending" && idx === firstPendingIdx;
@@ -124,7 +126,7 @@ const SubStepList = ({
 
         return (
           <div
-            key={sub.label}
+            key={`${id}-${sub.label}`}
             className="flex items-center gap-1.5 text-[11px]"
           >
             {sub.status === "done" ? (
@@ -267,11 +269,15 @@ export const PlanViewer = ({
             </>
           );
 
+          const subStepListId = `substeps-${step.id}`;
+
           return (
             <div key={step.id}>
               {hasSubSteps ? (
                 <button
                   type="button"
+                  aria-expanded={isExpanded}
+                  aria-controls={subStepListId}
                   className="flex items-start gap-2 w-full text-left cursor-pointer select-none bg-transparent border-none p-0"
                   onClick={() => toggleExpand(step.id)}
                 >
@@ -284,6 +290,7 @@ export const PlanViewer = ({
               {/* Sub-steps */}
               {hasSubSteps && isExpanded && (
                 <SubStepList
+                  id={subStepListId}
                   subSteps={step.subSteps ?? []}
                   stepStatus={step.status}
                   stepFailed={stepFailed}

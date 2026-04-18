@@ -262,7 +262,7 @@ Rules:
         }
         if (stepText) {
           const partial =
-            stepText.length > 150 ? `${stepText.slice(-150)}...` : stepText;
+            stepText.length > 150 ? `...${stepText.slice(-150)}` : stepText;
           contextParts.push(`部分输出: ${partial}`);
         }
         const timeoutMsg = contextParts.join("。");
@@ -290,9 +290,7 @@ Rules:
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
         step.resultSummary =
-          stepText.length > 200
-            ? `${stepText.slice(0, 200)}...`
-            : stepText || "(aborted by user)";
+          truncateText(stepText, 500) ?? "(aborted by user)";
 
         for (const remaining of plan.steps) {
           if (remaining.status === "pending") {
