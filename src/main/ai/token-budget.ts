@@ -174,7 +174,7 @@ export function truncateToFit(
   }
 
   // Strategy 2: remove early messages from the beginning
-  let truncated = true;
+  const truncated = true;
   while (result.length > 1 && estimateTokens(result) > effectiveBudget) {
     result = result.slice(1);
   }

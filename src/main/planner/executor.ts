@@ -10,9 +10,9 @@
 import { stepCountIs, streamText } from "ai";
 import type { WebContents } from "electron";
 import {
+  createTimeoutController,
   StepTimeoutError,
   StreamWatchdog,
-  createTimeoutController,
 } from "../ai/stream-watchdog";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";

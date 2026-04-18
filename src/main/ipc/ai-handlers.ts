@@ -10,11 +10,13 @@ import { stepCountIs, streamText } from "ai";
 import { ipcMain } from "electron";
 import { compressContext } from "../ai/context-compressor";
 import { classifyError, withRetry } from "../ai/error-classifier";
+import { emitMemoryEvent } from "../ai/memory-debug-store";
 import {
   convertToCoreMessages,
   type HistoryMessage,
 } from "../ai/message-converter";
 import { buildProviderOptions } from "../ai/prompt-caching";
+import { StreamWatchdog } from "../ai/stream-watchdog";
 import { estimateTokens, truncateToFitAsync } from "../ai/token-budget";
 import {
   addTask,
@@ -33,9 +35,6 @@ import {
   wrapWithSecurityBoundary,
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
-
-import { StreamWatchdog } from "../ai/stream-watchdog";
-
 // Import our new modules
 import { getAIModelByConfigId } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
@@ -49,7 +48,6 @@ import {
 } from "./ai-task-control";
 import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
-import { emitMemoryEvent } from "../ai/memory-debug-store";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 
@@ -204,15 +202,27 @@ const handleTaskExecution = async (
           // Forward the compressor's pre-computed token counts to the renderer
           if (!sender.isDestroyed()) {
             if (result.wasCompressed) {
-              emitMemoryEvent(sender, id, "compression-write", {
-                originalTokens: result.originalTokens,
-                compressedTokens: result.compressedTokens,
-                summaryTokens: result.summaryTokens,
-              }, payload.prompt);
+              emitMemoryEvent(
+                sender,
+                id,
+                "compression-write",
+                {
+                  originalTokens: result.originalTokens,
+                  compressedTokens: result.compressedTokens,
+                  summaryTokens: result.summaryTokens,
+                },
+                payload.prompt,
+              );
             } else {
-              emitMemoryEvent(sender, id, "compression-skip", {
-                originalTokens: result.originalTokens,
-              }, payload.prompt);
+              emitMemoryEvent(
+                sender,
+                id,
+                "compression-skip",
+                {
+                  originalTokens: result.originalTokens,
+                },
+                payload.prompt,
+              );
             }
           }
           return result;
@@ -513,14 +523,26 @@ const handleTaskExecution = async (
         }
 
         if (cacheWrite && cacheWrite > 0) {
-          emitMemoryEvent(sender, id, "cache-write", {
-            cacheWriteTokens: cacheWrite,
-          }, promptSnippet);
+          emitMemoryEvent(
+            sender,
+            id,
+            "cache-write",
+            {
+              cacheWriteTokens: cacheWrite,
+            },
+            promptSnippet,
+          );
         }
         if (cacheRead && cacheRead > 0) {
-          emitMemoryEvent(sender, id, "cache-hit", {
-            cacheReadTokens: cacheRead,
-          }, promptSnippet);
+          emitMemoryEvent(
+            sender,
+            id,
+            "cache-hit",
+            {
+              cacheReadTokens: cacheRead,
+            },
+            promptSnippet,
+          );
         }
       } catch {
         // Cache metadata read failure is non-critical
