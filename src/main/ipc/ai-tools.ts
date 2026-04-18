@@ -401,6 +401,9 @@ export const statefulTools: Record<string, Tool> = {
 /**
  * Request approval from the renderer and wait for the response
  */
+/** Default approval timeout: 5 minutes */
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const requestApproval = (
   sender: Electron.WebContents,
   taskId: string,
@@ -410,18 +413,45 @@ export const requestApproval = (
   abortSignal?: AbortSignal,
 ): Promise<boolean> => {
   return new Promise<boolean>((resolve) => {
-    pendingApprovals.set(toolCallId, resolve);
+    let settled = false;
+    const onAbort = () => {
+      console.log("[Tool] Aborting tool approval request:", toolCallId);
+      settle(false);
+    };
+    const settle = (approved: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onAbort);
+      pendingApprovals.delete(toolCallId);
+      toolCallToTaskMap.delete(toolCallId);
+      resolve(approved);
+    };
+
+    pendingApprovals.set(toolCallId, settle);
     toolCallToTaskMap.set(toolCallId, taskId);
+
+    // Auto-deny after timeout to prevent indefinite hang
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn(
+          `[Tool] Approval timeout (${APPROVAL_TIMEOUT_MS}ms) for ${toolName}, auto-denying:`,
+          toolCallId,
+        );
+        if (!sender.isDestroyed()) {
+          sender.send("ai:approval-timeout", {
+            id: taskId,
+            toolCallId,
+            toolName,
+            timeoutMs: APPROVAL_TIMEOUT_MS,
+          });
+        }
+        settle(false);
+      }
+    }, APPROVAL_TIMEOUT_MS);
 
     // Handle abort signal
     if (abortSignal) {
-      const onAbort = () => {
-        console.log("[Tool] Aborting tool approval request:", toolCallId);
-        pendingApprovals.delete(toolCallId);
-        toolCallToTaskMap.delete(toolCallId);
-        resolve(false); // Deny approval on abort
-      };
-
       if (abortSignal.aborted) {
         onAbort();
         return;

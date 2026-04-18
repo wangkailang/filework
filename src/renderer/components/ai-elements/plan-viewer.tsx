@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CheckCircle2,
   Circle,
   ListChecks,
@@ -6,7 +7,7 @@ import {
   SkipForward,
   XCircle,
 } from "lucide-react";
-import type { HTMLAttributes } from "react";
+import { type HTMLAttributes, useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -55,11 +56,47 @@ const StepIcon = ({ status }: { status: PlanStepView["status"] }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Running step elapsed timer
+// ---------------------------------------------------------------------------
+
+const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  const timeStr =
+    minutes > 0
+      ? `${minutes}:${seconds.toString().padStart(2, "0")}`
+      : `${seconds}s`;
+
+  return (
+    <span
+      className={cn(
+        "ml-1 text-[10px] tabular-nums",
+        isStalled ? "text-amber-500" : "text-muted-foreground",
+      )}
+    >
+      {isStalled && <AlertTriangle className="inline size-3 mr-0.5 -mt-0.5" />}
+      {timeStr}
+      {isStalled && " 响应缓慢"}
+    </span>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Plan Viewer (draft state — shows plan for approval)
 // ---------------------------------------------------------------------------
 
 interface PlanViewerProps extends HTMLAttributes<HTMLDivElement> {
   plan: PlanView;
+  /** Whether the current running step appears stalled (no activity) */
+  isStalled?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
   onCancel?: () => void;
@@ -67,6 +104,7 @@ interface PlanViewerProps extends HTMLAttributes<HTMLDivElement> {
 
 export const PlanViewer = ({
   plan,
+  isStalled = false,
   onApprove,
   onReject,
   onCancel,
@@ -121,6 +159,9 @@ export const PlanViewer = ({
                 )}
               >
                 {step.action} — {step.description}
+                {step.status === "running" && (
+                  <RunningStepTimer isStalled={isStalled} />
+                )}
               </span>
               {step.error && (
                 <div className="text-xs text-red-400 mt-0.5">

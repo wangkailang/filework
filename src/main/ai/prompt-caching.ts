@@ -15,9 +15,12 @@
  * For Anthropic, enables ephemeral cache control which caches the system
  * prompt and conversation prefix, reducing input token costs on subsequent turns.
  */
+type JSONValue = null | string | number | boolean | JSONObject | JSONValue[];
+type JSONObject = { [key: string]: JSONValue };
+
 export function buildProviderOptions(
   provider: string,
-): Record<string, unknown> {
+): Record<string, JSONObject> {
   if (provider !== "anthropic") {
     return {};
   }

@@ -5,9 +5,10 @@
  * enforcing tool restrictions, and managing skill-specific permissions.
  */
 
+import path from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
-import { initTaskExecution } from "./ai-task-control";
+import { getPlanApprovedWorkspace, initTaskExecution } from "./ai-task-control";
 import {
   rawExecutors,
   requestApproval,
@@ -17,6 +18,43 @@ import {
 } from "./ai-tools";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
+
+/**
+ * Check if a writeFile call can be auto-approved for a plan-approved task.
+ * Returns true only if the target path is within the plan's workspace.
+ */
+const canAutoApproveWrite = (taskId: string, filePath: string): boolean => {
+  const workspace = getPlanApprovedWorkspace(taskId);
+  if (!workspace) return false;
+  const resolved = path.resolve(filePath);
+  const workspaceResolved = path.resolve(workspace);
+  return resolved.startsWith(workspaceResolved + path.sep) || resolved === workspaceResolved;
+};
+
+/**
+ * Auto-approve a writeFile call if the task is plan-approved and the path is in workspace.
+ * Returns the write result if auto-approved, or null to fall through to manual approval.
+ */
+const tryAutoApproveWrite = async (
+  taskId: string,
+  sender: Electron.WebContents,
+  toolCallId: string,
+  args: { path: string; content: string },
+): Promise<unknown | null> => {
+  if (!canAutoApproveWrite(taskId, args.path)) return null;
+  console.log(
+    `[Tool] Auto-approved writeFile for plan task ${taskId}: ${args.path}`,
+  );
+  if (!sender.isDestroyed()) {
+    sender.send("ai:tool-auto-approved", {
+      id: taskId,
+      toolCallId,
+      toolName: "writeFile",
+      path: args.path,
+    });
+  }
+  return rawExecutors.writeFile(args);
+};
 
 /**
  * Build skill-specific tools based on allowed-tools configuration.
@@ -47,6 +85,8 @@ export const buildSkillSpecificTools = (
             args: { path: string; content: string },
             { toolCallId, abortSignal },
           ) => {
+            const autoResult = await tryAutoApproveWrite(taskId, sender, toolCallId, args);
+            if (autoResult !== null) return autoResult;
             const approved = await requestApproval(
               sender,
               taskId,
@@ -195,6 +235,8 @@ export const buildTools = (
         args: { path: string; content: string },
         { toolCallId, abortSignal },
       ) => {
+        const autoResult = await tryAutoApproveWrite(taskId, sender, toolCallId, args);
+        if (autoResult !== null) return autoResult;
         const approved = await requestApproval(
           sender,
           taskId,

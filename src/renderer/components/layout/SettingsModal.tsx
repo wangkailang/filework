@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Brain,
   Cpu,
   Globe,
   Monitor,
@@ -14,10 +15,11 @@ import type { Locales } from "../../i18n/i18n-types";
 import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
+import { MemoryDebugPanel } from "../settings/MemoryDebugPanel";
 import { UsagePanel } from "../settings/UsagePanel";
 
 type Theme = "dark" | "light" | "system";
-type Tab = "general" | "llm" | "usage";
+type Tab = "general" | "llm" | "usage" | "memory-debug";
 
 const LOCALE_LABELS: Record<Locales, string> = {
   en: "English",
@@ -104,6 +106,7 @@ export const SettingsModal = ({
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "usage", label: "用量统计", icon: BarChart3 },
+    { id: "memory-debug", label: "Memory Debug", icon: Brain },
   ];
 
   return (
@@ -211,6 +214,8 @@ export const SettingsModal = ({
           {activeTab === "llm" && <LlmConfigPanel />}
 
           {activeTab === "usage" && <UsagePanel />}
+
+          {activeTab === "memory-debug" && <MemoryDebugPanel />}
         </div>
       </div>
     </div>

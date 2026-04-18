@@ -50,6 +50,7 @@ export function useChatSession(workspacePath: string) {
   const [retryInfo, setRetryInfo] = useState<RetryInfo | null>(null);
   const [lastUsage, setLastUsage] = useState<UsageInfo | null>(null);
   const [lastError, setLastError] = useState<StreamErrorInfo | null>(null);
+  const [isStalled, setIsStalled] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const streamTaskIdRef = useRef<string | null>(null);
@@ -174,6 +175,7 @@ export function useChatSession(workspacePath: string) {
     const offStart = window.filework.onStreamStart(({ id }) => {
       console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
+      setIsStalled(false);
       // Connection established – cancel the timeout guard
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -329,6 +331,7 @@ export function useChatSession(workspacePath: string) {
       setActiveSkill(null);
       setRetryInfo(null);
       setLastError(null);
+      setIsStalled(false);
 
       // Normalize stopped-by-user tool parts first
       if (stoppedByUser && assistantId) {
@@ -591,12 +594,23 @@ export function useChatSession(workspacePath: string) {
       },
     );
 
+    // Watchdog events — track stall state for UI indicators
+    const offWatchdog = window.filework.onWatchdog(({ taskId, type }) => {
+      if (taskId !== streamTaskIdRef.current) return;
+      if (type === "stall-warning") {
+        setIsStalled(true);
+      } else if (type === "stall-recovered" || type === "stall-timeout") {
+        setIsStalled(false);
+      }
+    });
+
     return () => {
       offPlanReady();
       offPlanError();
       offStepStart();
       offStepDone();
       offStepError();
+      offWatchdog();
     };
   }, [debouncedSave, updatePlanStep]);
 
@@ -950,6 +964,7 @@ export function useChatSession(workspacePath: string) {
     retryInfo,
     lastUsage,
     lastError,
+    isStalled,
     handleSubmit,
     handleApproval,
     handleSkillApproval,

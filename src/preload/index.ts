@@ -270,6 +270,76 @@ const api = {
     return () => ipcRenderer.removeListener("ai:stream-error", handler);
   },
 
+  // Watchdog events (stall detection)
+  onWatchdog: (
+    callback: (data: {
+      taskId: string;
+      type: "stall-warning" | "stall-recovered" | "stall-timeout";
+      planId?: string;
+      stepId?: number;
+      idleMs?: number;
+      threshold?: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        taskId: string;
+        type: "stall-warning" | "stall-recovered" | "stall-timeout";
+        planId?: string;
+        stepId?: number;
+        idleMs?: number;
+        threshold?: number;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:watchdog", handler);
+    return () => ipcRenderer.removeListener("ai:watchdog", handler);
+  },
+
+  // Approval timeout event
+  onApprovalTimeout: (
+    callback: (data: {
+      id: string;
+      toolCallId: string;
+      toolName: string;
+      timeoutMs: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        toolCallId: string;
+        toolName: string;
+        timeoutMs: number;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:approval-timeout", handler);
+    return () => ipcRenderer.removeListener("ai:approval-timeout", handler);
+  },
+
+  // Auto-approved tool event (plan execution skips individual approval)
+  onToolAutoApproved: (
+    callback: (data: {
+      id: string;
+      toolCallId: string;
+      toolName: string;
+      path: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        toolCallId: string;
+        toolName: string;
+        path: string;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:tool-auto-approved", handler);
+    return () => ipcRenderer.removeListener("ai:tool-auto-approved", handler);
+  },
+
   // Settings
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),
   setSetting: (key: string, value: string) =>
@@ -313,6 +383,31 @@ const api = {
     }) => ipcRenderer.invoke("usage:getAggregateUsage", params ?? {}),
     getRecentUsage: (limit?: number) =>
       ipcRenderer.invoke("usage:getRecentUsage", { limit }),
+  },
+
+  // Memory debug
+  memoryDebug: {
+    getEvents: (limit?: number) =>
+      ipcRenderer.invoke("memory-debug:getEvents", { limit }),
+    clear: () => ipcRenderer.invoke("memory-debug:clear"),
+    onEvent: (
+      callback: (data: {
+        taskId: string;
+        type: string;
+        detail: Record<string, unknown>;
+      }) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          taskId: string;
+          type: string;
+          detail: Record<string, unknown>;
+        },
+      ) => callback(data);
+      ipcRenderer.on("ai:memory-event", handler);
+      return () => ipcRenderer.removeListener("ai:memory-event", handler);
+    },
   },
 
   // Workspace history

@@ -15,7 +15,7 @@ import {
   type HistoryMessage,
 } from "../ai/message-converter";
 import { buildProviderOptions } from "../ai/prompt-caching";
-import { truncateToFitAsync } from "../ai/token-budget";
+import { estimateTokens, truncateToFitAsync } from "../ai/token-budget";
 import {
   addTask,
   getDefaultLlmConfig,
@@ -34,6 +34,8 @@ import {
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
 
+import { StreamWatchdog } from "../ai/stream-watchdog";
+
 // Import our new modules
 import { getAIModelByConfigId } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
@@ -47,6 +49,8 @@ import {
 } from "./ai-task-control";
 import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
+import { emitMemoryEvent } from "../ai/memory-debug-store";
+import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 
 /**
@@ -184,21 +188,56 @@ const handleTaskExecution = async (
         const coreMessages = convertToCoreMessages(
           payload.history as HistoryMessage[],
         );
-        const compressor = (
+        let compressorCalled = false;
+        const compressor = async (
           msgs: import("ai").ModelMessage[],
           budget: number,
-        ) =>
-          compressContext(msgs, {
+        ) => {
+          compressorCalled = true;
+          const result = await compressContext(msgs, {
             model,
             budget,
             signal: controller.signal,
+            taskId: id,
+            promptSnippet: payload.prompt,
           });
+          // The compressor already wrote to the store via addMemoryEvent;
+          // just forward the event to the renderer.
+          if (!sender.isDestroyed()) {
+            const type = result.wasCompressed
+              ? "compression-write"
+              : "compression-skip";
+            const detail = result.wasCompressed
+              ? { summaryTokens: result.summaryTokens }
+              : { originalTokens: estimateTokens(msgs) };
+            sender.send("ai:memory-event", {
+              taskId: id,
+              type,
+              promptSnippet: payload.prompt?.slice(0, 80),
+              detail,
+            });
+          }
+          return result;
+        };
         const { messages: truncatedMessages } = await truncateToFitAsync(
           coreMessages,
           undefined,
           compressor,
         );
         convertedHistory = truncatedMessages;
+
+        // If compressor was never called (history fits within budget),
+        // still emit a compression-skip event so the debug panel shows activity
+        if (!compressorCalled) {
+          const historyTokens = estimateTokens(coreMessages);
+          emitMemoryEvent(
+            sender,
+            id,
+            "compression-skip",
+            { originalTokens: historyTokens },
+            payload.prompt,
+          );
+        }
       } catch (err) {
         console.warn(
           "[ai:executeTask] Failed to convert history, falling back to prompt mode:",
@@ -331,50 +370,63 @@ const handleTaskExecution = async (
 
       const result = streamText(streamOptions);
 
-      let partCount = 0;
-      for await (const part of result.fullStream) {
-        partCount++;
-        console.log(
-          `[Main] Processing part ${partCount} for taskId:`,
-          id,
-          "type:",
-          part.type,
-        );
+      // Start watchdog for heartbeat & stall detection
+      const watchdog = new StreamWatchdog({
+        taskId: id,
+        sender,
+        abortController: controller,
+      });
+      watchdog.start();
 
-        if (manualStopFlags.get(id)) {
-          console.log("[Main] Manual stop flag detected for taskId:", id);
-          break;
+      try {
+        let partCount = 0;
+        for await (const part of result.fullStream) {
+          watchdog.activity();
+          partCount++;
+          console.log(
+            `[Main] Processing part ${partCount} for taskId:`,
+            id,
+            "type:",
+            part.type,
+          );
+
+          if (manualStopFlags.get(id)) {
+            console.log("[Main] Manual stop flag detected for taskId:", id);
+            break;
+          }
+
+          if (sender.isDestroyed()) break;
+
+          switch (part.type) {
+            case "text-delta":
+              fullText += part.text;
+              sender.send("ai:stream-delta", { id, delta: part.text });
+              break;
+            case "tool-call":
+              sender.send("ai:stream-tool-call", {
+                id,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                args: part.input,
+              });
+              break;
+            case "tool-result":
+              sender.send("ai:stream-tool-result", {
+                id,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                result: part.output,
+              });
+              break;
+            case "error":
+              // AI SDK v6 wraps API errors as stream events instead of
+              // throwing.  Re-throw so withRetry / our catch block can
+              // classify and surface the error to the renderer.
+              throw part.error;
+          }
         }
-
-        if (sender.isDestroyed()) break;
-
-        switch (part.type) {
-          case "text-delta":
-            fullText += part.text;
-            sender.send("ai:stream-delta", { id, delta: part.text });
-            break;
-          case "tool-call":
-            sender.send("ai:stream-tool-call", {
-              id,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              args: part.input,
-            });
-            break;
-          case "tool-result":
-            sender.send("ai:stream-tool-result", {
-              id,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              result: part.output,
-            });
-            break;
-          case "error":
-            // AI SDK v6 wraps API errors as stream events instead of
-            // throwing.  Re-throw so withRetry / our catch block can
-            // classify and surface the error to the renderer.
-            throw part.error;
-        }
+      } finally {
+        watchdog.stop();
       }
 
       return result;
@@ -419,6 +471,63 @@ const handleTaskExecution = async (
       } catch {
         // Usage read failure is non-critical
       }
+
+      // Track prompt-cache events (Anthropic + OpenAI)
+      try {
+        const providerMeta = await streamResult.providerMetadata;
+        const promptSnippet = payload.prompt;
+        let cacheWrite: number | null = null;
+        let cacheRead: number | null = null;
+
+        // Anthropic: cacheCreationInputTokens / cache_read_input_tokens
+        const anthropic = providerMeta?.anthropic as
+          | Record<string, unknown>
+          | undefined;
+        if (anthropic) {
+          cacheWrite =
+            (anthropic.cacheCreationInputTokens as number | null) ?? null;
+          const rawUsage = anthropic.usage as
+            | Record<string, unknown>
+            | null
+            | undefined;
+          cacheRead =
+            (rawUsage?.cache_read_input_tokens as number | null) ?? null;
+        }
+
+        // OpenAI: usage.prompt_tokens_details.cached_tokens
+        const openai = providerMeta?.openai as
+          | Record<string, unknown>
+          | undefined;
+        if (openai && cacheWrite == null && cacheRead == null) {
+          const oaiUsage = openai.usage as
+            | Record<string, unknown>
+            | null
+            | undefined;
+          const promptDetails = oaiUsage?.prompt_tokens_details as
+            | Record<string, unknown>
+            | null
+            | undefined;
+          const cachedTokens =
+            (promptDetails?.cached_tokens as number | null) ?? null;
+          if (cachedTokens && cachedTokens > 0) {
+            cacheRead = cachedTokens;
+          }
+        }
+
+        if (cacheWrite && cacheWrite > 0) {
+          emitMemoryEvent(sender, id, "cache-write", {
+            cacheWriteTokens: cacheWrite,
+          }, promptSnippet);
+        }
+        if (cacheRead && cacheRead > 0) {
+          emitMemoryEvent(sender, id, "cache-hit", {
+            cacheReadTokens: cacheRead,
+          }, promptSnippet);
+        }
+      } catch {
+        // Cache metadata read failure is non-critical
+      }
+
       updateTask(id, {
         status: "completed",
         result: fullText,
@@ -641,4 +750,6 @@ export const registerAIHandlers = () => {
   registerPlanHandlers();
 
   registerUsageHandlers();
+
+  registerMemoryDebugHandlers();
 };

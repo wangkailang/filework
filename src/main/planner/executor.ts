@@ -9,10 +9,18 @@
 
 import { stepCountIs, streamText } from "ai";
 import type { WebContents } from "electron";
+import {
+  StepTimeoutError,
+  StreamWatchdog,
+  createTimeoutController,
+} from "../ai/stream-watchdog";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan } from "./types";
+
+/** Default per-step timeout: 5 minutes */
+const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface ExecutorOptions {
   plan: Plan;
@@ -115,52 +123,73 @@ Rules:
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
 
+      // Create a per-step timeout controller (5 min default)
+      const { controller: stepController, cleanup: cleanupTimeout } =
+        createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
+
       const result = streamText({
         model,
         tools: { ...tools, ...skillTools },
         stopWhen: stepCountIs(15),
         system: systemPrompt,
         prompt: stepPrompt,
-        abortSignal,
+        abortSignal: stepController.signal,
       });
 
-      // Stream step output to renderer
-      for await (const part of result.fullStream) {
-        if (sender.isDestroyed()) break;
+      // Start watchdog for heartbeat & stall detection
+      const watchdog = new StreamWatchdog({
+        taskId,
+        sender,
+        planId: plan.id,
+        stepId: step.id,
+        abortController: stepController,
+      });
+      watchdog.start();
 
-        // Check manual stop flag
-        if (manualStopFlags.get(taskId)) {
-          console.log("[Plan] Manual stop flag detected for taskId:", taskId);
-          break;
-        }
+      try {
+        // Stream step output to renderer
+        for await (const part of result.fullStream) {
+          watchdog.activity();
 
-        // Check cancellation mid-stream
-        if (cancelledPlans.has(plan.id)) {
-          break;
-        }
+          if (sender.isDestroyed()) break;
 
-        switch (part.type) {
-          case "text-delta":
-            stepText += part.text;
-            sender.send("ai:stream-delta", { id: taskId, delta: part.text });
+          // Check manual stop flag
+          if (manualStopFlags.get(taskId)) {
+            console.log("[Plan] Manual stop flag detected for taskId:", taskId);
             break;
-          case "tool-call":
-            sender.send("ai:stream-tool-call", {
-              id: taskId,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              args: part.input,
-            });
+          }
+
+          // Check cancellation mid-stream
+          if (cancelledPlans.has(plan.id)) {
             break;
-          case "tool-result":
-            sender.send("ai:stream-tool-result", {
-              id: taskId,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              result: part.output,
-            });
-            break;
+          }
+
+          switch (part.type) {
+            case "text-delta":
+              stepText += part.text;
+              sender.send("ai:stream-delta", { id: taskId, delta: part.text });
+              break;
+            case "tool-call":
+              sender.send("ai:stream-tool-call", {
+                id: taskId,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                args: part.input,
+              });
+              break;
+            case "tool-result":
+              sender.send("ai:stream-tool-result", {
+                id: taskId,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                result: part.output,
+              });
+              break;
+          }
         }
+      } finally {
+        watchdog.stop();
+        cleanupTimeout();
       }
 
       // Mark step completed
@@ -192,7 +221,12 @@ Rules:
         return plan;
       }
 
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      const isStepTimeout = error instanceof StepTimeoutError;
+      const errorMsg = isStepTimeout
+        ? `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`
+        : error instanceof Error
+          ? error.message
+          : "Unknown error";
       step.status = "failed";
       step.error = errorMsg;
 
