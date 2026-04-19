@@ -1,5 +1,7 @@
 import { ArrowLeft, Blocks, ExternalLink, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
 
 type SourceType = "built-in" | "project" | "personal" | "additional";
@@ -37,12 +39,14 @@ interface SkillDetailData extends SkillListItem {
   external?: SkillExternalInfo & { body?: string };
 }
 
-const SOURCE_LABELS: Record<SourceType, string> = {
-  "built-in": "内置",
-  project: "项目",
-  personal: "个人",
-  additional: "扩展",
-};
+const getSourceLabels = (
+  LL: TranslationFunctions,
+): Record<SourceType, string> => ({
+  "built-in": LL.skillsModal_sourceBuiltIn(),
+  project: LL.skillsModal_sourceProject(),
+  personal: LL.skillsModal_sourcePersonal(),
+  additional: LL.skillsModal_sourceAdditional(),
+});
 
 const SOURCE_COLORS: Record<SourceType, string> = {
   "built-in": "bg-blue-500/10 text-blue-500",
@@ -57,6 +61,7 @@ interface SkillsModalProps {
 }
 
 export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
+  const { LL } = useI18nContext();
   const [skills, setSkills] = useState<SkillListItem[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
   const [search, setSearch] = useState("");
@@ -153,7 +158,9 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
             )}
             <Blocks className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-base font-medium text-foreground">
-              {selectedSkillId ? (detail?.name ?? "...") : "技能管理"}
+              {selectedSkillId
+                ? (detail?.name ?? "...")
+                : LL.skillsModal_title()}
             </h2>
           </div>
           <button
@@ -201,59 +208,64 @@ const SkillListView = ({
   onSearchChange: (s: string) => void;
   availableSources: SourceType[];
   onSelect: (id: string) => void;
-}) => (
-  <>
-    {/* Search + Filters */}
-    <div className="px-6 pt-4 pb-2 space-y-3 shrink-0">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="搜索技能..."
-          className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-muted/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-      </div>
-      <div className="flex gap-1.5 flex-wrap">
-        <FilterTab
-          active={filter === "all"}
-          onClick={() => onFilterChange("all")}
-        >
-          全部 ({skills.length})
-        </FilterTab>
-        {availableSources.map((src) => (
-          <FilterTab
-            key={src}
-            active={filter === src}
-            onClick={() => onFilterChange(src)}
-          >
-            {SOURCE_LABELS[src]}
-          </FilterTab>
-        ))}
-      </div>
-    </div>
+}) => {
+  const { LL } = useI18nContext();
+  const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
 
-    {/* List */}
-    <div className="flex-1 overflow-y-auto px-6 pb-4">
-      {skills.length === 0 ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">
-          未找到匹配的技能
+  return (
+    <>
+      {/* Search + Filters */}
+      <div className="px-6 pt-4 pb-2 space-y-3 shrink-0">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={LL.skillsModal_search()}
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-muted/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
         </div>
-      ) : (
-        <div className="space-y-2 pt-1">
-          {skills.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              onClick={() => onSelect(skill.id)}
-            />
+        <div className="flex gap-1.5 flex-wrap">
+          <FilterTab
+            active={filter === "all"}
+            onClick={() => onFilterChange("all")}
+          >
+            {LL.skillsModal_all(String(skills.length))}
+          </FilterTab>
+          {availableSources.map((src) => (
+            <FilterTab
+              key={src}
+              active={filter === src}
+              onClick={() => onFilterChange(src)}
+            >
+              {sourceLabels[src]}
+            </FilterTab>
           ))}
         </div>
-      )}
-    </div>
-  </>
-);
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto px-6 pb-4">
+        {skills.length === 0 ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            {LL.skillsModal_notFound()}
+          </div>
+        ) : (
+          <div className="space-y-2 pt-1">
+            {skills.map((skill) => (
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                onClick={() => onSelect(skill.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
 
 const FilterTab = ({
   active,
@@ -286,57 +298,64 @@ const SkillCard = ({
 }: {
   skill: SkillListItem;
   onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="w-full text-left rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors group"
-  >
-    <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-medium text-sm text-foreground truncate">
-            {skill.name}
-          </span>
-          <span
-            className={cn(
-              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-              SOURCE_COLORS[skill.source],
-            )}
-          >
-            {SOURCE_LABELS[skill.source]}
-          </span>
-          <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
-            {skill.category === "task" ? "任务" : "工具"}
-          </span>
+}) => {
+  const { LL } = useI18nContext();
+  const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors group"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-medium text-sm text-foreground truncate">
+              {skill.name}
+            </span>
+            <span
+              className={cn(
+                "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                SOURCE_COLORS[skill.source],
+              )}
+            >
+              {sourceLabels[skill.source]}
+            </span>
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+              {skill.category === "task"
+                ? LL.skillsModal_task()
+                : LL.skillsModal_tool()}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground line-clamp-2">
+            {skill.description}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-2">
-          {skill.description}
-        </p>
+        <span className="shrink-0 font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+          {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
+        </span>
       </div>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-        {skill.isExternal ? `/${skill.id}` : "自动匹配"}
-      </span>
-    </div>
-    {skill.keywords.length > 0 && (
-      <div className="flex flex-wrap gap-1 mt-2">
-        {skill.keywords.slice(0, 6).map((kw) => (
-          <span
-            key={kw}
-            className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-          >
-            {kw}
-          </span>
-        ))}
-        {skill.keywords.length > 6 && (
-          <span className="text-[10px] text-muted-foreground">
-            +{skill.keywords.length - 6}
-          </span>
-        )}
-      </div>
-    )}
-  </button>
-);
+      {skill.keywords.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {skill.keywords.slice(0, 6).map((kw) => (
+            <span
+              key={kw}
+              className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {kw}
+            </span>
+          ))}
+          {skill.keywords.length > 6 && (
+            <span className="text-[10px] text-muted-foreground">
+              +{skill.keywords.length - 6}
+            </span>
+          )}
+        </div>
+      )}
+    </button>
+  );
+};
 
 /* ── Skill Detail View ───────────────────────────────────────────── */
 
@@ -347,10 +366,13 @@ const SkillDetailView = ({
   detail: SkillDetailData | null;
   loading: boolean;
 }) => {
+  const { LL } = useI18nContext();
+  const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
+
   if (loading || !detail) {
     return (
       <div className="flex-1 flex items-center justify-center py-12 text-sm text-muted-foreground">
-        {loading ? "加载中..." : "未找到技能信息"}
+        {loading ? LL.skillsModal_loading() : LL.skillsModal_notFoundInfo()}
       </div>
     );
   }
@@ -367,46 +389,48 @@ const SkillDetailView = ({
             SOURCE_COLORS[detail.source],
           )}
         >
-          {SOURCE_LABELS[detail.source]}
+          {sourceLabels[detail.source]}
         </span>
         <span className="rounded px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-          {detail.category === "task" ? "任务型" : "工具型"}
+          {detail.category === "task"
+            ? LL.skillsModal_taskType()
+            : LL.skillsModal_toolType()}
         </span>
         {ext?.context === "fork" && (
           <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-600">
-            独立上下文
+            {LL.skillsModal_isolatedContext()}
           </span>
         )}
         {ext?.disableModelInvocation && (
           <span className="rounded px-2 py-0.5 text-xs font-medium bg-red-500/10 text-red-500">
-            仅手动触发
+            {LL.skillsModal_manualOnly()}
           </span>
         )}
       </div>
 
       {/* Description */}
-      <Section title="描述">
+      <Section title={LL.skillsModal_description()}>
         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
           {detail.description}
         </p>
       </Section>
 
       {/* Usage */}
-      <Section title="使用方式">
+      <Section title={LL.skillsModal_usage()}>
         {detail.isExternal ? (
           <code className="block text-sm bg-muted rounded-md px-3 py-2 text-foreground">
-            /{detail.id} &lt;你的指令&gt;
+            {LL.skillsModal_usageCommand(detail.id)}
           </code>
         ) : (
           <p className="text-sm text-muted-foreground">
-            在对话中直接描述需求即可，AI 会根据关键词自动匹配此技能。
+            {LL.skillsModal_usageAuto()}
           </p>
         )}
       </Section>
 
       {/* Suggestions */}
       {detail.suggestions.length > 0 && (
-        <Section title="建议提示词">
+        <Section title={LL.skillsModal_suggestions()}>
           <div className="space-y-1.5">
             {detail.suggestions.map((s) => (
               <div
@@ -422,7 +446,7 @@ const SkillDetailView = ({
 
       {/* Keywords */}
       {detail.keywords.length > 0 && (
-        <Section title="关键词">
+        <Section title={LL.skillsModal_keywords()}>
           <div className="flex flex-wrap gap-1.5">
             {detail.keywords.map((kw) => (
               <span
@@ -440,7 +464,7 @@ const SkillDetailView = ({
       {ext && (
         <>
           {/* Source path */}
-          <Section title="来源路径">
+          <Section title={LL.skillsModal_sourcePath()}>
             <div className="flex items-center gap-2">
               <code className="text-xs bg-muted rounded px-2 py-1 text-muted-foreground break-all flex-1">
                 {ext.sourcePath}
@@ -449,7 +473,7 @@ const SkillDetailView = ({
                 type="button"
                 onClick={() => window.filework.showInFinder(ext.sourcePath)}
                 className="shrink-0 p-1 rounded hover:bg-accent transition-colors"
-                title="在 Finder 中显示"
+                title={LL.skillsModal_showInFinder()}
               >
                 <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
@@ -458,7 +482,7 @@ const SkillDetailView = ({
 
           {/* Allowed tools */}
           {ext.allowedTools.length > 0 && (
-            <Section title="允许的工具">
+            <Section title={LL.skillsModal_allowedTools()}>
               <div className="flex flex-wrap gap-1.5">
                 {ext.allowedTools.map((t) => (
                   <span
@@ -474,12 +498,12 @@ const SkillDetailView = ({
 
           {/* Requirements */}
           {ext.requires && (
-            <Section title="运行依赖">
+            <Section title={LL.skillsModal_dependencies()}>
               <div className="space-y-1.5 text-xs">
                 {ext.requires.bins && ext.requires.bins.length > 0 && (
                   <div className="flex gap-2">
                     <span className="text-muted-foreground shrink-0 w-12">
-                      命令
+                      {LL.skillsModal_depCommand()}
                     </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.bins.join(", ")}
@@ -499,7 +523,7 @@ const SkillDetailView = ({
                 {ext.requires.env && ext.requires.env.length > 0 && (
                   <div className="flex gap-2">
                     <span className="text-muted-foreground shrink-0 w-12">
-                      环境变量
+                      {LL.skillsModal_depEnvVar()}
                     </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.env.join(", ")}
@@ -509,7 +533,7 @@ const SkillDetailView = ({
                 {ext.requires.os && ext.requires.os.length > 0 && (
                   <div className="flex gap-2">
                     <span className="text-muted-foreground shrink-0 w-12">
-                      系统
+                      {LL.skillsModal_depSystem()}
                     </span>
                     <span className="font-mono text-foreground">
                       {ext.requires.os.join(", ")}
@@ -521,9 +545,9 @@ const SkillDetailView = ({
           )}
 
           {ext.hasHooks && (
-            <Section title="生命周期">
+            <Section title={LL.skillsModal_lifecycle()}>
               <p className="text-xs text-muted-foreground">
-                此技能包含 pre-activate / post-complete 钩子脚本
+                {LL.skillsModal_lifecycleHint()}
               </p>
             </Section>
           )}

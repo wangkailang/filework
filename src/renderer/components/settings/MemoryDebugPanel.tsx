@@ -9,6 +9,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
 
 interface MemoryEventDetail {
   originalTokens?: number;
@@ -24,11 +26,7 @@ interface MemoryEvent {
   id: string;
   taskId: string;
   promptSnippet?: string;
-  type:
-    | "compression-write"
-    | "compression-skip"
-    | "cache-write"
-    | "cache-hit";
+  type: "compression-write" | "compression-skip" | "cache-write" | "cache-hit";
   timestamp: string;
   detail: MemoryEventDetail;
 }
@@ -57,38 +55,40 @@ const compressionRatio = (
   return `${pct}%`;
 };
 
-const TYPE_CONFIG: Record<
+const TYPE_ICONS: Record<
   MemoryEvent["type"],
-  { label: string; icon: typeof Brain; color: string }
+  { icon: typeof Brain; color: string }
 > = {
-  "compression-write": {
-    label: "Context 压缩",
-    icon: Brain,
-    color: "text-orange-400",
-  },
-  "compression-skip": {
-    label: "压缩跳过",
-    icon: Brain,
-    color: "text-muted-foreground",
-  },
-  "cache-write": {
-    label: "Cache 写入",
-    icon: Database,
-    color: "text-blue-400",
-  },
-  "cache-hit": {
-    label: "Cache 命中",
-    icon: Zap,
-    color: "text-green-400",
-  },
+  "compression-write": { icon: Brain, color: "text-orange-400" },
+  "compression-skip": { icon: Brain, color: "text-muted-foreground" },
+  "cache-write": { icon: Database, color: "text-blue-400" },
+  "cache-hit": { icon: Zap, color: "text-green-400" },
+};
+
+const getTypeLabel = (
+  type: MemoryEvent["type"],
+  LL: TranslationFunctions,
+): string => {
+  switch (type) {
+    case "compression-write":
+      return LL.memoryDebug_contextCompression();
+    case "compression-skip":
+      return LL.memoryDebug_compressionSkipped();
+    case "cache-write":
+      return LL.memoryDebug_cacheWrite();
+    case "cache-hit":
+      return LL.memoryDebug_cacheHit();
+  }
 };
 
 const EventRow = ({ event }: { event: MemoryEvent }) => {
+  const { LL } = useI18nContext();
   const [expanded, setExpanded] = useState(false);
-  const config = TYPE_CONFIG[event.type];
+  const config = TYPE_ICONS[event.type];
   const Icon = config.icon;
+  const label = getTypeLabel(event.type, LL);
   const d = event.detail;
-  const hasExpandable = !!(d.summary);
+  const hasExpandable = !!d.summary;
   const ratio = compressionRatio(d.originalTokens, d.compressedTokens);
 
   return (
@@ -109,7 +109,7 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
         )}
         <Icon className={`w-3.5 h-3.5 shrink-0 ${config.color}`} />
         <span className={`text-xs font-medium shrink-0 ${config.color}`}>
-          {config.label}
+          {label}
         </span>
 
         {/* Prompt snippet */}
@@ -122,28 +122,30 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
         <span className="flex-1" />
 
         {/* Metrics inline */}
-        {event.type === "compression-write" && d.originalTokens != null && d.compressedTokens != null && (
-          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            {formatTokens(d.originalTokens)} → {formatTokens(d.compressedTokens)}
-            {ratio && (
-              <span className="ml-1 text-green-400">-{ratio}</span>
-            )}
-            {d.messagesCompressed != null && ` (${d.messagesCompressed} 条)`}
-          </span>
-        )}
+        {event.type === "compression-write" &&
+          d.originalTokens != null &&
+          d.compressedTokens != null && (
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+              {formatTokens(d.originalTokens)} →{" "}
+              {formatTokens(d.compressedTokens)}
+              {ratio && <span className="ml-1 text-green-400">-{ratio}</span>}
+              {d.messagesCompressed != null &&
+                ` ${LL.memoryDebug_messagesCompressed(String(d.messagesCompressed))}`}
+            </span>
+          )}
         {event.type === "compression-skip" && d.originalTokens != null && (
           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            {formatTokens(d.originalTokens)} (未超限)
+            {formatTokens(d.originalTokens)} {LL.memoryDebug_notOverLimit()}
           </span>
         )}
         {event.type === "cache-write" && d.cacheWriteTokens != null && (
           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            写入 {formatTokens(d.cacheWriteTokens)} tokens
+            {LL.memoryDebug_cacheWriteTokens(formatTokens(d.cacheWriteTokens))}
           </span>
         )}
         {event.type === "cache-hit" && d.cacheReadTokens != null && (
           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            命中 {formatTokens(d.cacheReadTokens)} tokens
+            {LL.memoryDebug_cacheReadTokens(formatTokens(d.cacheReadTokens))}
           </span>
         )}
         <span className="text-[10px] text-muted-foreground tabular-nums ml-2 shrink-0">
@@ -163,6 +165,7 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
 };
 
 export const MemoryDebugPanel = () => {
+  const { LL } = useI18nContext();
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -209,7 +212,7 @@ export const MemoryDebugPanel = () => {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
-        <span className="text-sm">加载调试数据...</span>
+        <span className="text-sm">{LL.memoryDebug_loading()}</span>
       </div>
     );
   }
@@ -218,10 +221,8 @@ export const MemoryDebugPanel = () => {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <Brain className="w-8 h-8 mb-2 opacity-40" />
-        <span className="text-sm">暂无 Memory 事件</span>
-        <span className="text-xs mt-1">
-          对话触发 Context 压缩或 Cache 后将显示在这里
-        </span>
+        <span className="text-sm">{LL.memoryDebug_empty()}</span>
+        <span className="text-xs mt-1">{LL.memoryDebug_emptyHint()}</span>
       </div>
     );
   }
@@ -264,7 +265,7 @@ export const MemoryDebugPanel = () => {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <Trash2 className="w-3 h-3" />
-            清除
+            {LL.memoryDebug_clear()}
           </button>
         </div>
       </div>
@@ -272,18 +273,22 @@ export const MemoryDebugPanel = () => {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">压缩次数</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_compressionCount()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {compressionWrites.length}
           </div>
           {avgRatio && (
             <div className="text-[10px] text-green-400">
-              平均压缩率 {avgRatio}
+              {LL.memoryDebug_avgRatio(avgRatio)}
             </div>
           )}
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">压缩节省</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_compressionSaved()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {totalSaved > 0 ? formatTokens(totalSaved) : "-"}
           </div>
@@ -294,13 +299,15 @@ export const MemoryDebugPanel = () => {
           )}
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">Cache 命中</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_cacheHitCount()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {totalCacheRead > 0 ? formatTokens(totalCacheRead) : "-"}
           </div>
           {cacheHits.length > 0 && (
             <div className="text-[10px] text-muted-foreground">
-              {cacheHits.length} 次命中
+              {LL.memoryDebug_hitTimes(String(cacheHits.length))}
             </div>
           )}
         </div>
@@ -309,7 +316,7 @@ export const MemoryDebugPanel = () => {
       {/* Event list */}
       <div className="space-y-1.5">
         <span className="text-xs font-medium text-muted-foreground">
-          事件日志 ({events.length})
+          {LL.memoryDebug_eventLog(String(events.length))}
         </span>
         <div className="space-y-1">
           {events.map((event) => (

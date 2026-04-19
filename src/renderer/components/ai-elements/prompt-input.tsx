@@ -246,7 +246,7 @@ export const PromptInputSubmit = ({
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className,
       )}
-      aria-label={isActive ? "停止生成" : "Send"}
+      aria-label={isActive ? "Stop" : "Send"}
       onClick={
         isActive
           ? (e) => {

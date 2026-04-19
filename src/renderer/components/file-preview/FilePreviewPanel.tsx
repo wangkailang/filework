@@ -1,5 +1,6 @@
 import { FileWarning, Loader2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import {
   CodeViewer,
   getFileExtension,
@@ -63,6 +64,7 @@ export const FilePreviewPanel = ({
   filePath,
   onClose,
 }: FilePreviewPanelProps) => {
+  const { LL } = useI18nContext();
   const [content, setContent] = useState<string | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,9 @@ export const FilePreviewPanel = ({
         })
         .catch((err) => {
           if (!cancelled) {
-            setError(err instanceof Error ? err.message : "读取图片失败");
+            setError(
+              err instanceof Error ? err.message : LL.preview_readImageError(),
+            );
             setIsLoading(false);
           }
         });
@@ -124,7 +128,9 @@ export const FilePreviewPanel = ({
         })
         .catch((err) => {
           if (!cancelled) {
-            setError(err instanceof Error ? err.message : "读取文件失败");
+            setError(
+              err instanceof Error ? err.message : LL.preview_readFileError(),
+            );
             setIsLoading(false);
           }
         });
@@ -133,7 +139,7 @@ export const FilePreviewPanel = ({
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, fileName, supported, isImage, isPdf, isVideo]);
+  }, [absolutePath, fileName, supported, isImage, isPdf, isVideo, LL]);
 
   return (
     <div className="flex h-full flex-col bg-background border-r border-border">
@@ -153,7 +159,7 @@ export const FilePreviewPanel = ({
           type="button"
           onClick={onClose}
           className="shrink-0 rounded p-1 hover:bg-accent transition-colors"
-          aria-label="关闭预览"
+          aria-label={LL.preview_close()}
         >
           <X className="w-4 h-4 text-muted-foreground" />
         </button>
@@ -164,7 +170,7 @@ export const FilePreviewPanel = ({
         {isLoading && (
           <div className="flex items-center justify-center h-full gap-2 text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">读取文件中...</span>
+            <span className="text-sm">{LL.preview_loading()}</span>
           </div>
         )}
 
@@ -172,11 +178,11 @@ export const FilePreviewPanel = ({
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6">
             <FileWarning className="w-10 h-10" />
             <p className="text-sm text-center">
-              暂不支持预览{" "}
+              {LL.preview_unsupported()}{" "}
               <span className="font-mono text-foreground">
-                {ext || "此类型"}
+                {ext || LL.preview_unsupportedType()}
               </span>{" "}
-              文件
+              {LL.preview_files()}
             </p>
           </div>
         )}
@@ -198,7 +204,7 @@ export const FilePreviewPanel = ({
                 type="button"
                 onClick={zoomOut}
                 className="rounded p-1 hover:bg-accent transition-colors"
-                aria-label="缩小"
+                aria-label={LL.preview_zoomOut()}
               >
                 <ZoomOut className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -213,7 +219,7 @@ export const FilePreviewPanel = ({
                 type="button"
                 onClick={zoomIn}
                 className="rounded p-1 hover:bg-accent transition-colors"
-                aria-label="放大"
+                aria-label={LL.preview_zoomIn()}
               >
                 <ZoomIn className="w-4 h-4 text-muted-foreground" />
               </button>

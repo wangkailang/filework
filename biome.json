@@ -1,5 +1,16 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!src/renderer/i18n/i18n-types.ts",
+      "!src/renderer/i18n/i18n-util.ts",
+      "!src/renderer/i18n/i18n-util.sync.ts",
+      "!src/renderer/i18n/i18n-util.async.ts",
+      "!src/renderer/i18n/i18n-react.tsx",
+      "!src/renderer/i18n/formatters.ts"
+    ]
+  },
   "formatter": {
     "indentStyle": "space"
   },

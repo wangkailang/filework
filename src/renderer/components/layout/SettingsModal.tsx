@@ -105,7 +105,7 @@ export const SettingsModal = ({
   const tabs: { id: Tab; label: string; icon: typeof Settings }[] = [
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
-    { id: "usage", label: "用量统计", icon: BarChart3 },
+    { id: "usage", label: LL.usage_title(), icon: BarChart3 },
     { id: "memory-debug", label: "Memory Debug", icon: Brain },
   ];
 

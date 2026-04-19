@@ -10,7 +10,9 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -69,34 +71,38 @@ const formatTokens = (n: number | null): string => {
   return String(n);
 };
 
-const ERROR_TYPE_LABELS: Record<string, { label: string; hint: string }> = {
-  auth: { label: "认证失败", hint: "API 密钥无效或已过期，请在设置中检查配置" },
-  billing: {
-    label: "余额不足",
-    hint: "API 账户余额不足，请前往对应平台充值后重试",
-  },
+const getErrorTypeLabels = (
+  LL: TranslationFunctions,
+): Record<string, { label: string; hint: string }> => ({
+  auth: { label: LL.errorType_auth(), hint: LL.errorType_authHint() },
+  billing: { label: LL.errorType_billing(), hint: LL.errorType_billingHint() },
   rate_limit: {
-    label: "频率超限",
-    hint: "请求频率过高，已自动重试但仍然失败",
+    label: LL.errorType_rateLimit(),
+    hint: LL.errorType_rateLimitHint(),
   },
   context_overflow: {
-    label: "上下文过长",
-    hint: "对话过长，建议开启新对话",
+    label: LL.errorType_contextOverflow(),
+    hint: LL.errorType_contextOverflowHint(),
   },
-  server_error: { label: "服务不可用", hint: "服务端暂时不可用，请稍后重试" },
-  timeout: { label: "请求超时", hint: "连接超时，请稍后重试" },
+  server_error: {
+    label: LL.errorType_serverError(),
+    hint: LL.errorType_serverErrorHint(),
+  },
+  timeout: { label: LL.errorType_timeout(), hint: LL.errorType_timeoutHint() },
   proxy_intercepted: {
-    label: "网络拦截",
-    hint: "请求被代理或防火墙拦截，请检查网络环境",
+    label: LL.errorType_proxyIntercepted(),
+    hint: LL.errorType_proxyInterceptedHint(),
   },
-};
+});
 
-const RETRY_TYPE_LABELS: Record<string, string> = {
-  rate_limit: "频率限制",
-  context_overflow: "上下文压缩",
-  server_error: "服务错误",
-  timeout: "连接超时",
-};
+const getRetryTypeLabels = (
+  LL: TranslationFunctions,
+): Record<string, string> => ({
+  rate_limit: LL.retry_rateLimit(),
+  context_overflow: LL.retry_contextOverflow(),
+  server_error: LL.retry_serverError(),
+  timeout: LL.retry_timeout(),
+});
 
 /** Fallback recovery actions for errors that don't carry explicit actions (e.g. persisted from older versions) */
 const fallbackRecoveryActions = (errorType?: string): RecoveryAction[] => {
@@ -115,14 +121,19 @@ const fallbackRecoveryActions = (errorType?: string): RecoveryAction[] => {
   }
 };
 
-const RECOVERY_ACTION_META: Record<
-  RecoveryAction,
-  { label: string; icon: typeof RefreshCw }
-> = {
-  retry: { label: "重试", icon: RefreshCw },
-  settings: { label: "检查配置", icon: Settings },
-  new_chat: { label: "新对话", icon: MessageSquarePlus },
+const RECOVERY_ACTION_ICONS: Record<RecoveryAction, typeof RefreshCw> = {
+  retry: RefreshCw,
+  settings: Settings,
+  new_chat: MessageSquarePlus,
 };
+
+const getRecoveryLabels = (
+  LL: TranslationFunctions,
+): Record<RecoveryAction, string> => ({
+  retry: LL.recovery_retry(),
+  settings: LL.recovery_settings(),
+  new_chat: LL.recovery_newChat(),
+});
 
 const RecoveryButton = ({
   action,
@@ -131,8 +142,9 @@ const RecoveryButton = ({
   action: RecoveryAction;
   chat: ReturnType<typeof useChatSession>;
 }) => {
-  const meta = RECOVERY_ACTION_META[action];
-  const Icon = meta.icon;
+  const { LL } = useI18nContext();
+  const Icon = RECOVERY_ACTION_ICONS[action];
+  const recoveryLabels = useMemo(() => getRecoveryLabels(LL), [LL]);
 
   const handleClick = () => {
     switch (action) {
@@ -163,7 +175,7 @@ const RecoveryButton = ({
       className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
     >
       <Icon className="w-3 h-3" />
-      {meta.label}
+      {recoveryLabels[action]}
     </button>
   );
 };
@@ -199,16 +211,19 @@ const ErrorBanner = ({
   </div>
 );
 
-const suggestions = [
-  "帮我整理这个目录的文件，按类型分类",
-  "分析这个目录的内容，生成一份报告",
-  "找出所有重复的文件",
-  "统计各类型文件的数量和大小",
-];
-
 export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
+  const { LL } = useI18nContext();
   const [showHistory, setShowHistory] = useState(false);
   const chat = useChatSession(workspacePath);
+
+  const ERROR_TYPE_LABELS = useMemo(() => getErrorTypeLabels(LL), [LL]);
+  const RETRY_TYPE_LABELS = useMemo(() => getRetryTypeLabels(LL), [LL]);
+  const suggestions = [
+    LL.suggestion_organize(),
+    LL.suggestion_report(),
+    LL.suggestion_duplicates(),
+    LL.suggestion_stats(),
+  ];
 
   // ---------------------------------------------------------------------------
   // Render helpers
@@ -235,22 +250,26 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                       variant="outline"
                       onClick={() => chat.handleApproval(inv.toolCallId, false)}
                     >
-                      拒绝
+                      {LL.chat_reject()}
                     </ConfirmationAction>
                     <ConfirmationAction
                       variant="default"
                       onClick={() => chat.handleApproval(inv.toolCallId, true)}
                     >
-                      批准
+                      {LL.chat_approve()}
                     </ConfirmationAction>
                   </ConfirmationActions>
                 </>
               )}
               {inv.approval.state === "approval-accepted" && (
-                <ConfirmationAccepted>已批准执行</ConfirmationAccepted>
+                <ConfirmationAccepted>
+                  {LL.chat_approved()}
+                </ConfirmationAccepted>
               )}
               {inv.approval.state === "approval-rejected" && (
-                <ConfirmationRejected>已拒绝执行</ConfirmationRejected>
+                <ConfirmationRejected>
+                  {LL.chat_rejected()}
+                </ConfirmationRejected>
               )}
             </Confirmation>
           </div>
@@ -338,7 +357,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         return (
           <ErrorBanner
             key={`error-${errPart.message}`}
-            label={labels ? labels.label : "出错了"}
+            label={labels ? labels.label : LL.chat_error()}
             hint={labels ? labels.hint : errPart.message}
             actions={actions}
             chat={chat}
@@ -377,7 +396,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           >
             <History className="size-3.5" />
             <span>
-              历史对话{hasSessions ? ` (${chat.sessions.length})` : ""}
+              {LL.session_history()}
+              {hasSessions ? ` (${chat.sessions.length})` : ""}
             </span>
           </button>
           <button
@@ -387,7 +407,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
           >
             <MessageSquarePlus className="size-3.5" />
-            <span>新对话</span>
+            <span>{LL.session_newChat()}</span>
           </button>
         </div>
       )}
@@ -396,8 +416,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         <ConversationContent>
           {!hasMessages ? (
             <ConversationEmptyState
-              title="有什么可以帮你的？"
-              description="告诉我你想对这个目录做什么"
+              title={LL.chat_emptyTitle()}
+              description={LL.chat_emptyDescription()}
             >
               <div className="grid grid-cols-2 gap-2 max-w-lg w-full">
                 {suggestions.map((suggestion) => (
@@ -427,7 +447,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                     <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                       <MessageAction
                         onClick={() => chat.handleForkSession(msg.id)}
-                        label="从此处分支"
+                        label={LL.chat_forkHere()}
                       >
                         <GitBranch className="size-3" />
                       </MessageAction>
@@ -456,8 +476,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
                         <span className="text-sm">
-                          正在重试 ({chat.retryInfo.attempt}/
-                          {chat.retryInfo.maxRetries})...{" "}
+                          {LL.chat_retrying(
+                            String(chat.retryInfo.attempt),
+                            String(chat.retryInfo.maxRetries),
+                          )}{" "}
                           <span className="text-xs opacity-75">
                             {RETRY_TYPE_LABELS[chat.retryInfo.type] ??
                               chat.retryInfo.type}
@@ -469,8 +491,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span className="text-sm">
                           {chat.isPlanGenerating
-                            ? "正在分析任务，生成执行计划..."
-                            : "思考中..."}
+                            ? LL.chat_planGenerating()
+                            : LL.chat_thinking()}
                         </span>
                       </>
                     )}
@@ -522,7 +544,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                     fallbackRecoveryActions(chat.lastError.type);
                   return (
                     <ErrorBanner
-                      label={labels ? labels.label : "出错了"}
+                      label={labels ? labels.label : LL.chat_error()}
                       hint={labels ? labels.hint : chat.lastError.message}
                       actions={actions}
                       chat={chat}
@@ -571,7 +593,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 <PromptInputTextarea
                   value={chat.input}
                   onChange={(e) => chat.setInput(e.target.value)}
-                  placeholder="告诉我你想做什么... (Enter 发送)"
+                  placeholder={LL.chat_inputPlaceholder()}
                 />
               </div>
             </PromptInputBody>

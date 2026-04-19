@@ -164,7 +164,7 @@ export const Sidebar = ({
               type="button"
               onClick={handleRefresh}
               className="p-1 rounded hover:bg-accent transition-colors"
-              title="刷新目录"
+              title={LL.sidebar_refresh()}
             >
               <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
@@ -172,7 +172,7 @@ export const Sidebar = ({
               type="button"
               onClick={onCloseDirectory}
               className="p-1 rounded hover:bg-accent transition-colors"
-              title="关闭目录"
+              title={LL.sidebar_closeDir()}
             >
               <X className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
@@ -199,7 +199,7 @@ export const Sidebar = ({
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <Blocks className="w-4 h-4" />
-            技能
+            {LL.sidebar_skills()}
           </button>
           <button
             type="button"

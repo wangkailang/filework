@@ -9,9 +9,16 @@ import {
   SkipForward,
   XCircle,
 } from "lucide-react";
-import { type HTMLAttributes, useCallback, useEffect, useState } from "react";
+import {
+  type HTMLAttributes,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
-import { toolLabels } from "./tool-labels";
+import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors src/main/planner/types.ts for renderer use)
@@ -78,6 +85,7 @@ const StepIcon = ({ status }: { status: PlanStepView["status"] }) => {
 // ---------------------------------------------------------------------------
 
 const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
+  const { LL } = useI18nContext();
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -102,7 +110,7 @@ const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
     >
       {isStalled && <AlertTriangle className="inline size-3 mr-0.5 -mt-0.5" />}
       {timeStr}
-      {isStalled && " 响应缓慢"}
+      {isStalled && ` ${LL.plan_stalled()}`}
     </span>
   );
 };
@@ -128,7 +136,10 @@ const SubStepList = ({
       : -1;
 
   return (
-    <div id={id} className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2">
+    <div
+      id={id}
+      className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2"
+    >
       {subSteps.map((sub, idx) => {
         const isFirstPending =
           sub.status === "pending" && idx === firstPendingIdx;
@@ -176,14 +187,17 @@ const hiddenArgKeys = new Set(["content", "data", "body"]);
 /** Format tool args into a brief one-line summary */
 const formatArgsSummary = (args: Record<string, unknown>): string => {
   if (args.path) return String(args.path);
-  if (args.source && args.destination) return `${args.source} → ${args.destination}`;
+  if (args.source && args.destination)
+    return `${args.source} → ${args.destination}`;
   const keys = Object.keys(args).filter((k) => !hiddenArgKeys.has(k));
   if (keys.length === 0) return "";
-  return keys.map((k) => {
-    const v = args[k];
-    const s = typeof v === "string" ? v : JSON.stringify(v);
-    return s && s.length > 60 ? `${s.slice(0, 60)}...` : s;
-  }).join(", ");
+  return keys
+    .map((k) => {
+      const v = args[k];
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      return s && s.length > 60 ? `${s.slice(0, 60)}...` : s;
+    })
+    .join(", ");
 };
 
 /** Format a tool result for display */
@@ -194,8 +208,10 @@ const formatResult = (result: unknown): string => {
 };
 
 const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
+  const { LL } = useI18nContext();
   const [open, setOpen] = useState(false);
-  const label = toolLabels[artifact.toolName] || artifact.toolName;
+  const toolLabelMap = useMemo(() => getToolLabels(LL), [LL]);
+  const label = toolLabelMap[artifact.toolName] || artifact.toolName;
   const summary = formatArgsSummary(artifact.args);
 
   return (
@@ -217,7 +233,11 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
           </span>
         )}
         <span className="shrink-0 text-muted-foreground/50 ml-auto">
-          {open ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
+          {open ? (
+            <ChevronDown className="size-2.5" />
+          ) : (
+            <ChevronRight className="size-2.5" />
+          )}
         </span>
       </button>
       {open && artifact.result != null && (
@@ -229,20 +249,19 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
   );
 };
 
-const ArtifactList = ({
-  artifacts,
-}: {
-  artifacts: PlanStepArtifactView[];
-}) => (
-  <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
-    <div className="text-[10px] text-muted-foreground/60 mb-0.5">
-      操作明细 ({artifacts.length})
+const ArtifactList = ({ artifacts }: { artifacts: PlanStepArtifactView[] }) => {
+  const { LL } = useI18nContext();
+  return (
+    <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
+      <div className="text-[10px] text-muted-foreground/60 mb-0.5">
+        {LL.plan_artifacts(String(artifacts.length))}
+      </div>
+      {artifacts.map((a) => (
+        <ArtifactItem key={a.toolCallId} artifact={a} />
+      ))}
     </div>
-    {artifacts.map((a) => (
-      <ArtifactItem key={a.toolCallId} artifact={a} />
-    ))}
-  </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Plan Viewer (draft state — shows plan for approval)
@@ -266,6 +285,7 @@ export const PlanViewer = ({
   className,
   ...props
 }: PlanViewerProps) => {
+  const { LL } = useI18nContext();
   const isDraft = plan.status === "draft";
   const isExecuting = plan.status === "executing" || plan.status === "approved";
   const completedSteps = plan.steps.filter(
@@ -296,7 +316,9 @@ export const PlanViewer = ({
       <div className="flex items-start gap-2 px-3 py-2.5 border-b border-border">
         <ListChecks className="size-4 text-primary mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-foreground text-xs">执行计划</div>
+          <div className="font-medium text-foreground text-xs">
+            {LL.plan_title()}
+          </div>
           <div className="text-xs text-muted-foreground mt-0.5">
             {plan.goal}
           </div>
@@ -343,7 +365,7 @@ export const PlanViewer = ({
                 </span>
                 {step.error && (
                   <div className="text-xs text-red-400 mt-0.5">
-                    错误: {step.error}
+                    {LL.plan_stepError(step.error)}
                   </div>
                 )}
               </div>
@@ -405,7 +427,7 @@ export const PlanViewer = ({
               onClick={onReject}
               className="inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium border border-border bg-transparent hover:bg-accent hover:text-foreground transition-colors"
             >
-              拒绝
+              {LL.plan_reject()}
             </button>
           )}
           {onApprove && (
@@ -414,7 +436,7 @@ export const PlanViewer = ({
               onClick={onApprove}
               className="inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              开始执行
+              {LL.plan_start()}
             </button>
           )}
         </div>
@@ -427,7 +449,7 @@ export const PlanViewer = ({
             onClick={onCancel}
             className="inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium border border-border bg-transparent hover:bg-accent hover:text-foreground transition-colors"
           >
-            取消执行
+            {LL.plan_cancel()}
           </button>
         </div>
       )}
@@ -446,9 +468,9 @@ export const PlanViewer = ({
         >
           {plan.status === "completed" && <CheckCircle2 className="size-3.5" />}
           {plan.status === "failed" && <XCircle className="size-3.5" />}
-          {plan.status === "completed" && "计划执行完成"}
-          {plan.status === "failed" && "计划执行失败"}
-          {plan.status === "cancelled" && "计划已取消"}
+          {plan.status === "completed" && LL.plan_completed()}
+          {plan.status === "failed" && LL.plan_failed()}
+          {plan.status === "cancelled" && LL.plan_cancelled()}
         </div>
       )}
     </div>

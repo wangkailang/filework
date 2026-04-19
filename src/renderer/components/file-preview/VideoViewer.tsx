@@ -1,5 +1,6 @@
 import { FileWarning } from "lucide-react";
 import { useRef, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 
 interface VideoViewerProps {
   filePath: string;
@@ -7,6 +8,7 @@ interface VideoViewerProps {
 }
 
 export const VideoViewer = ({ filePath, fileName }: VideoViewerProps) => {
+  const { LL } = useI18nContext();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
   const src = `local-file://open?path=${encodeURIComponent(filePath)}`;
@@ -15,7 +17,7 @@ export const VideoViewer = ({ filePath, fileName }: VideoViewerProps) => {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6">
         <FileWarning className="w-10 h-10" />
-        <p className="text-sm text-center">无法播放此视频文件</p>
+        <p className="text-sm text-center">{LL.preview_videoError()}</p>
       </div>
     );
   }
@@ -28,9 +30,9 @@ export const VideoViewer = ({ filePath, fileName }: VideoViewerProps) => {
         controls
         className="max-w-full max-h-full rounded"
         onError={() => setError(true)}
-        aria-label={`视频预览: ${fileName}`}
+        aria-label={LL.preview_videoLabel(fileName)}
       >
-        <track kind="captions" srcLang="zh" label="中文字幕" />
+        <track kind="captions" />
       </video>
     </div>
   );

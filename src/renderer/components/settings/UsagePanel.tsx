@@ -1,5 +1,6 @@
 import { BarChart3, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 
 interface AggregateUsage {
   totalInput: number;
@@ -45,6 +46,7 @@ const formatTokens = (n: number): string => {
 };
 
 export const UsagePanel = () => {
+  const { LL } = useI18nContext();
   const [aggregate, setAggregate] = useState<AggregateUsage | null>(null);
   const [recent, setRecent] = useState<RecentUsageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ export const UsagePanel = () => {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
-        <span className="text-sm">加载用量数据...</span>
+        <span className="text-sm">{LL.usage_loading()}</span>
       </div>
     );
   }
@@ -82,7 +84,7 @@ export const UsagePanel = () => {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <BarChart3 className="w-8 h-8 mb-2 opacity-40" />
-        <span className="text-sm">暂无用量数据</span>
+        <span className="text-sm">{LL.usage_empty()}</span>
       </div>
     );
   }
@@ -93,24 +95,32 @@ export const UsagePanel = () => {
 
   return (
     <div className="space-y-5">
-      <h3 className="text-sm font-medium text-foreground">Token 用量统计</h3>
+      <h3 className="text-sm font-medium text-foreground">
+        {LL.usage_title()}
+      </h3>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">总消耗</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_total()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalTokens)}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">输入</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_input()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalInput)}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">输出</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_output()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalOutput)}
           </div>
@@ -121,7 +131,7 @@ export const UsagePanel = () => {
       {modelEntries.length > 0 && (
         <div className="space-y-2">
           <span className="text-xs font-medium text-muted-foreground">
-            按模型
+            {LL.usage_byModel()}
           </span>
           <div className="space-y-1.5">
             {modelEntries.map(([model, stats]) => {
@@ -136,7 +146,8 @@ export const UsagePanel = () => {
                       {model}
                     </span>
                     <span className="text-muted-foreground">
-                      {formatTokens(stats.totalTokens)} ({stats.taskCount} 次)
+                      {formatTokens(stats.totalTokens)}{" "}
+                      {LL.usage_tasks(String(stats.taskCount))}
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -156,7 +167,7 @@ export const UsagePanel = () => {
       {recent.length > 0 && (
         <div className="space-y-2">
           <span className="text-xs font-medium text-muted-foreground">
-            最近使用
+            {LL.usage_recent()}
           </span>
           <div className="space-y-1">
             {recent.map((item) => (

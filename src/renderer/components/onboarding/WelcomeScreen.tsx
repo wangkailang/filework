@@ -1,5 +1,6 @@
 import { Clock, FolderOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 
 interface RecentWorkspace {
   path: string;
@@ -12,6 +13,7 @@ interface WelcomeScreenProps {
 }
 
 export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
+  const { LL } = useI18nContext();
   const [recentList, setRecentList] = useState<RecentWorkspace[]>([]);
 
   useEffect(() => {
@@ -54,9 +56,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           <h1 className="text-2xl font-semibold text-foreground mb-2">
             FileWork
           </h1>
-          <p className="text-muted-foreground">
-            你的本地文件 AI 助手。选择一个工作目录，告诉我你想做什么。
-          </p>
+          <p className="text-muted-foreground">{LL.welcome_description()}</p>
         </div>
 
         <button
@@ -65,7 +65,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
         >
           <FolderOpen className="w-5 h-5" />
-          选择工作目录
+          {LL.welcome_selectDirectory()}
         </button>
 
         {/* Recent workspaces */}
@@ -73,7 +73,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           <div className="w-full max-w-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
               <Clock className="w-3 h-3" />
-              <span>最近打开</span>
+              <span>{LL.welcome_recentlyOpened()}</span>
             </div>
             <div className="space-y-1">
               {recentList.slice(0, 5).map((ws) => (
@@ -94,7 +94,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
                     type="button"
                     onClick={(e) => handleRemoveRecent(e, ws.path)}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-all"
-                    title="移除"
+                    title={LL.welcome_remove()}
                   >
                     <X className="w-3 h-3 text-muted-foreground" />
                   </button>
@@ -104,9 +104,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          FileWork 只在你选择的目录中工作，数据不会离开你的电脑。
-        </p>
+        <p className="text-xs text-muted-foreground">{LL.welcome_privacy()}</p>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import type { PlanStepView, PlanView } from "../ai-elements/plan-viewer";
 import { contentFromParts, migrateToParts, truncateTitle } from "./helpers";
@@ -36,6 +37,7 @@ export interface StreamErrorInfo {
 }
 
 export function useChatSession(workspacePath: string) {
+  const { LL } = useI18nContext();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -360,7 +362,7 @@ export function useChatSession(workspacePath: string) {
               result: part.result ?? {
                 success: false,
                 cancelled: true,
-                reason: "用户已停止执行",
+                reason: LL.chat_userStopped(),
               },
             };
           });
@@ -490,7 +492,7 @@ export function useChatSession(workspacePath: string) {
       offError();
       offSkillApprovalRequest();
     };
-  }, [debouncedSave]);
+  }, [debouncedSave, LL]);
 
   // ---------------------------------------------------------------------------
   // Plan step updater
@@ -560,7 +562,7 @@ export function useChatSession(workspacePath: string) {
         updated[idx] = {
           ...msg,
           parts: newParts,
-          content: `执行计划: ${planView.goal}`,
+          content: `${LL.chat_planExecution(planView.goal)}`,
         };
         return updated;
       });
@@ -576,7 +578,7 @@ export function useChatSession(workspacePath: string) {
         if (idx === -1) return prev;
         const updated = [...prev];
         const msg = updated[idx];
-        const errText = `计划生成失败: ${error}`;
+        const errText = LL.chat_planFailed(String(error));
         updated[idx] = {
           ...msg,
           content: errText,
@@ -677,7 +679,7 @@ export function useChatSession(workspacePath: string) {
       offStepArtifacts();
       offWatchdog();
     };
-  }, [debouncedSave, updatePlanStep]);
+  }, [debouncedSave, updatePlanStep, LL]);
 
   // ---------------------------------------------------------------------------
   // Plan approval / rejection
@@ -871,7 +873,7 @@ export function useChatSession(workspacePath: string) {
         streamAssistantIdRef.current === assistantId &&
         !streamTaskIdRef.current
       ) {
-        const timeoutMsg = "连接超时，未能建立与 AI 服务的连接";
+        const timeoutMsg = LL.chat_connectionTimeout();
         const errorPart: MessagePart = {
           type: "error",
           message: timeoutMsg,
@@ -920,7 +922,8 @@ export function useChatSession(workspacePath: string) {
       })
       .catch((error: unknown) => {
         if (streamAssistantIdRef.current !== assistantId) return;
-        const errMsg = error instanceof Error ? error.message : "未知错误";
+        const errMsg =
+          error instanceof Error ? error.message : LL.chat_unknownError();
         const errorPart: MessagePart = {
           type: "error",
           message: errMsg,
