@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { codeToHtml } from "shiki";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
 /** Supported file extensions for code preview */
@@ -67,6 +68,7 @@ const isDarkMode = (): boolean => {
 };
 
 export const CodeViewer = ({ code, filename, className }: CodeViewerProps) => {
+  const { LL } = useI18nContext();
   const [html, setHtml] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [dark, setDark] = useState(isDarkMode);
@@ -110,7 +112,7 @@ export const CodeViewer = ({ code, filename, className }: CodeViewerProps) => {
           className,
         )}
       >
-        加载中...
+        {LL.code_loading()}
       </div>
     );
   }

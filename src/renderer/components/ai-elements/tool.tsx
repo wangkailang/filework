@@ -6,7 +6,9 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import { type HTMLAttributes, type ReactNode, useState } from "react";
+import { type HTMLAttributes, type ReactNode, useMemo, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
 import {
   Collapsible,
@@ -68,33 +70,33 @@ interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   state: ToolState;
 }
 
-const stateConfig: Record<
-  ToolState,
-  { icon: ReactNode; label: string; color: string }
-> = {
+import { getToolLabels } from "./tool-labels";
+
+const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   "input-streaming": {
     icon: <CircleDashed className="size-3.5 animate-pulse" />,
-    label: "准备中",
     color: "text-muted-foreground",
   },
   "input-available": {
     icon: <Loader2 className="size-3.5 animate-spin" />,
-    label: "执行中",
     color: "text-blue-500",
   },
   "output-available": {
     icon: <CheckCircle2 className="size-3.5" />,
-    label: "完成",
     color: "text-green-500",
   },
   "output-error": {
     icon: <XCircle className="size-3.5" />,
-    label: "出错",
     color: "text-red-500",
   },
 };
 
-import { toolLabels } from "./tool-labels";
+const getStateLabels = (LL: TranslationFunctions): Record<ToolState, string> => ({
+  "input-streaming": LL.tool_preparing(),
+  "input-available": LL.tool_running(),
+  "output-available": LL.tool_done(),
+  "output-error": LL.tool_error(),
+});
 
 export const ToolHeader = ({
   toolName,
@@ -102,8 +104,12 @@ export const ToolHeader = ({
   className,
   ...props
 }: ToolHeaderProps) => {
-  const config = stateConfig[state];
-  const label = toolLabels[toolName] || toolName;
+  const { LL } = useI18nContext();
+  const config = stateIcons[state];
+  const stateLabels = useMemo(() => getStateLabels(LL), [LL]);
+  const stateLabel = stateLabels[state];
+  const toolLabelMap = useMemo(() => getToolLabels(LL), [LL]);
+  const label = toolLabelMap[toolName] || toolName;
   const { open } = useCollapsible();
 
   return (
@@ -122,7 +128,7 @@ export const ToolHeader = ({
         )}
         <span className={cn("flex items-center gap-1.5", config.color)}>
           {config.icon}
-          <span className="text-xs font-medium">{config.label}</span>
+          <span className="text-xs font-medium">{stateLabel}</span>
         </span>
         <span className="text-xs text-muted-foreground font-mono">{label}</span>
       </div>
@@ -156,6 +162,7 @@ interface ToolInputProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
+  const { LL } = useI18nContext();
   if (input == null) return null;
 
   const formatted =
@@ -167,7 +174,7 @@ export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
       {...props}
     >
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-        参数
+        {LL.tool_params()}
       </div>
       <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-all max-h-40 overflow-auto">
         {formatted}
@@ -191,12 +198,13 @@ export const ToolOutput = ({
   className,
   ...props
 }: ToolOutputProps) => {
+  const { LL } = useI18nContext();
   if (!output && !errorText) return null;
 
   return (
     <div className={cn("px-3 py-2", className)} {...props}>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-        {errorText ? "错误" : "结果"}
+        {errorText ? LL.tool_errorLabel() : LL.tool_result()}
       </div>
       {errorText ? (
         <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap break-all">

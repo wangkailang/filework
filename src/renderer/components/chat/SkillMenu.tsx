@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
 /** Shape returned by the `listSkills` IPC call. */
@@ -22,6 +23,7 @@ export interface SkillMenuProps {
  * after `/`, and supports keyboard navigation (↑ / ↓ / Enter / Escape).
  */
 export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
+  const { LL } = useI18nContext();
   const [skills, setSkills] = useState<SkillMenuItem[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [fetched, setFetched] = useState(false);
@@ -135,10 +137,10 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
       {filtered.length === 0 ? (
         <div className="px-3 py-2 text-sm text-muted-foreground">
           {skills.length === 0
-            ? "正在加载技能..."
+            ? LL.skill_loading()
             : query
-              ? `未找到匹配 "${query}" 的技能`
-              : "输入技能名称进行搜索"}
+              ? LL.skill_notFound(query)
+              : LL.skill_searchHint()}
         </div>
       ) : (
         filtered.map((skill, i) => (

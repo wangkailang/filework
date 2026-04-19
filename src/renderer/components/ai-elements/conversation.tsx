@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ export const ConversationScrollButton = ({
   className,
   ...props
 }: ConversationScrollButtonProps) => {
+  const { LL } = useI18nContext();
   const { isAtBottom, scrollToBottom } = useConversation();
 
   if (isAtBottom) return null;
@@ -208,11 +210,11 @@ export const ConversationScrollButton = ({
         "hover:bg-accent hover:text-foreground transition-colors",
         className,
       )}
-      aria-label="滚动到底部"
+      aria-label={LL.conv_scrollToBottom()}
       {...props}
     >
       <ArrowDown className="size-3" />
-      <span>新消息</span>
+      <span>{LL.conv_newMessages()}</span>
     </button>
   );
 };
@@ -229,12 +231,14 @@ interface DownloadMessage {
 
 export const messagesToMarkdown = (
   messages: DownloadMessage[],
+  roleLabels: { user: string; assistant: string },
   formatter?: (msg: DownloadMessage, index: number) => string,
 ): string =>
   messages
     .map((msg, i) => {
       if (formatter) return formatter(msg, i);
-      const role = msg.role === "user" ? "用户" : "助手";
+      const role =
+        msg.role === "user" ? roleLabels.user : roleLabels.assistant;
       const text =
         msg.parts
           ?.filter((p) => p.type === "text" && p.text)
@@ -258,8 +262,12 @@ export const ConversationDownload = ({
   className,
   ...props
 }: ConversationDownloadProps) => {
+  const { LL } = useI18nContext();
   const handleDownload = () => {
-    const md = messagesToMarkdown(messages);
+    const md = messagesToMarkdown(messages, {
+      user: LL.conv_roleUser(),
+      assistant: LL.conv_roleAssistant(),
+    });
     const blob = new Blob([md], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -283,7 +291,7 @@ export const ConversationDownload = ({
         "opacity-0 group-hover:opacity-100",
         className,
       )}
-      aria-label="下载对话"
+      aria-label={LL.conv_download()}
       {...props}
     >
       <Download className="size-3" />

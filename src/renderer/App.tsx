@@ -59,7 +59,7 @@ export const App = () => {
   }
 
   return (
-    <TypesafeI18n locale={locale}>
+    <TypesafeI18n key={locale} locale={locale}>
       {!workspacePath ? (
         <WelcomeScreen onSelectDirectory={handleSetWorkspace} />
       ) : (
