@@ -120,9 +120,7 @@ export const SettingsModal = ({
 
       <div
         className={`relative flex bg-background border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden transition-[max-width,height] duration-200 ${
-          activeTab === "memory-debug"
-            ? "max-w-4xl h-150"
-            : "max-w-2xl h-105"
+          activeTab === "memory-debug" ? "max-w-4xl h-150" : "max-w-2xl h-105"
         }`}
       >
         {/* Left sidebar tabs */}

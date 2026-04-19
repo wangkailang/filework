@@ -19,7 +19,10 @@ import { EventDistributionChart } from "./charts/EventDistributionChart";
 import { getTypeLabel } from "./charts/memory-debug-utils";
 import { TokenTimelineChart } from "./charts/TokenTimelineChart";
 import { useMemoryChartData } from "./charts/useMemoryChartData";
-import type { MemoryEvent, MemoryEventDetail } from "./charts/useMemoryChartData";
+import type {
+  MemoryEvent,
+  MemoryEventDetail,
+} from "./charts/useMemoryChartData";
 
 const formatTime = (iso: string): string => {
   const d = new Date(iso);
@@ -51,7 +54,6 @@ const TYPE_ICONS: Record<
   "cache-write": { icon: Database, color: "text-blue-400" },
   "cache-hit": { icon: Zap, color: "text-green-400" },
 };
-
 
 const EventRow = ({ event }: { event: MemoryEvent }) => {
   const { LL } = useI18nContext();
@@ -142,7 +144,9 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
 
       {expanded && (d.summary || d.error) && (
         <div className="px-2.5 pb-2 pt-0">
-          <pre className={`text-[11px] whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto ${d.error ? "text-red-400" : "text-muted-foreground"}`}>
+          <pre
+            className={`text-[11px] whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto ${d.error ? "text-red-400" : "text-muted-foreground"}`}
+          >
             {d.error ?? d.summary}
           </pre>
         </div>
@@ -198,34 +202,29 @@ export const MemoryDebugPanel = () => {
     setEvents([]);
   };
 
-  const {
-    compressionWrites,
-    cacheHits,
-    totalSaved,
-    avgRatio,
-    totalCacheRead,
-  } = useMemo(() => {
-    const cw = events.filter((e) => e.type === "compression-write");
-    const ch = events.filter((e) => e.type === "cache-hit");
-    const origSum = cw.reduce(
-      (acc, e) => acc + (e.detail.originalTokens ?? 0),
-      0,
-    );
-    const compSum = cw.reduce(
-      (acc, e) => acc + (e.detail.compressedTokens ?? 0),
-      0,
-    );
-    return {
-      compressionWrites: cw,
-      cacheHits: ch,
-      totalSaved: origSum - compSum,
-      avgRatio: compressionRatio(origSum, compSum),
-      totalCacheRead: ch.reduce(
-        (acc, e) => acc + (e.detail.cacheReadTokens ?? 0),
+  const { compressionWrites, cacheHits, totalSaved, avgRatio, totalCacheRead } =
+    useMemo(() => {
+      const cw = events.filter((e) => e.type === "compression-write");
+      const ch = events.filter((e) => e.type === "cache-hit");
+      const origSum = cw.reduce(
+        (acc, e) => acc + (e.detail.originalTokens ?? 0),
         0,
-      ),
-    };
-  }, [events]);
+      );
+      const compSum = cw.reduce(
+        (acc, e) => acc + (e.detail.compressedTokens ?? 0),
+        0,
+      );
+      return {
+        compressionWrites: cw,
+        cacheHits: ch,
+        totalSaved: origSum - compSum,
+        avgRatio: compressionRatio(origSum, compSum),
+        totalCacheRead: ch.reduce(
+          (acc, e) => acc + (e.detail.cacheReadTokens ?? 0),
+          0,
+        ),
+      };
+    }, [events]);
 
   if (loading) {
     return (
@@ -251,12 +250,16 @@ export const MemoryDebugPanel = () => {
       {/* Header + stat badges */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium text-foreground">{LL.memoryDebug_title()}</h3>
+          <h3 className="text-sm font-medium text-foreground">
+            {LL.memoryDebug_title()}
+          </h3>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-orange-400/10 px-2 py-0.5 text-[10px] font-medium text-orange-400">
               <Brain className="w-3 h-3" />
               {compressionWrites.length}
-              {avgRatio && <span className="text-orange-400/70">({avgRatio})</span>}
+              {avgRatio && (
+                <span className="text-orange-400/70">({avgRatio})</span>
+              )}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-blue-400/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
               {totalSaved > 0 ? formatTokens(totalSaved) : "-"}{" "}

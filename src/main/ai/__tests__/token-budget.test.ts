@@ -277,7 +277,9 @@ describe("getTokenBudgetForModel", () => {
   });
 
   it("returns DEFAULT_TOKEN_BUDGET for unknown models", () => {
-    expect(getTokenBudgetForModel("some-unknown-model")).toBe(DEFAULT_TOKEN_BUDGET);
+    expect(getTokenBudgetForModel("some-unknown-model")).toBe(
+      DEFAULT_TOKEN_BUDGET,
+    );
   });
 
   it("is case-insensitive", () => {

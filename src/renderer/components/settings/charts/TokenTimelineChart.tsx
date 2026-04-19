@@ -32,8 +32,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
     (CHART_W - BAR_GAP * (data.length - 1)) / data.length,
   );
 
-  const scaleY = (v: number) =>
-    PAD_TOP + usableH - (v / maxTokens) * usableH;
+  const scaleY = (v: number) => PAD_TOP + usableH - (v / maxTokens) * usableH;
 
   return (
     <div className="relative">
@@ -107,18 +106,17 @@ export const TokenTimelineChart = ({ data }: Props) => {
         <div
           className="absolute z-10 bg-popover border border-border rounded-md shadow-lg text-xs px-2 py-1 pointer-events-none"
           style={{
-            left: `${Math.min(
-              (hover / data.length) * 100,
-              75,
-            )}%`,
+            left: `${Math.min((hover / data.length) * 100, 75)}%`,
             top: 20,
           }}
         >
           <div>
-            {LL.memoryDebug_original()}: {formatTokens(data[hover].originalTokens)}
+            {LL.memoryDebug_original()}:{" "}
+            {formatTokens(data[hover].originalTokens)}
           </div>
           <div>
-            {LL.memoryDebug_compressed()}: {formatTokens(data[hover].compressedTokens)}
+            {LL.memoryDebug_compressed()}:{" "}
+            {formatTokens(data[hover].compressedTokens)}
           </div>
           {data[hover].originalTokens > 0 && (
             <div className="text-green-400">

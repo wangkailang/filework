@@ -115,7 +115,14 @@ export async function compressContext(
         options.promptSnippet,
       );
     }
-    return { messages: pruned, wasCompressed: false, hadError: false, summaryTokens: 0, originalTokens: prunedTokens, compressedTokens: prunedTokens };
+    return {
+      messages: pruned,
+      wasCompressed: false,
+      hadError: false,
+      summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: prunedTokens,
+    };
   }
 
   // Step 2: Identify protected head

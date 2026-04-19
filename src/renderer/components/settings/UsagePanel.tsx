@@ -40,7 +40,6 @@ interface RecentUsageItem {
   provider: string | null;
 }
 
-
 export const UsagePanel = () => {
   const { LL } = useI18nContext();
   const [aggregate, setAggregate] = useState<AggregateUsage | null>(null);

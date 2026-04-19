@@ -37,8 +37,7 @@ export const CacheEfficiencyChart = ({ data }: Props) => {
     (CHART_W - BAR_GAP * (data.length - 1)) / data.length,
   );
 
-  const scaleY = (v: number) =>
-    PAD_TOP + usableH - (v / maxTokens) * usableH;
+  const scaleY = (v: number) => PAD_TOP + usableH - (v / maxTokens) * usableH;
 
   return (
     <div className="relative">

@@ -45,8 +45,7 @@ export const registerMemoryDebugHandlers = () => {
             compressedTokens: compressed,
             messagesCompressed: 3 + Math.floor(Math.random() * 15),
             summaryTokens: compressed,
-            summary:
-              "用户讨论了文件整理方案，AI 提出按日期和类型分类的建议...",
+            summary: "用户讨论了文件整理方案，AI 提出按日期和类型分类的建议...",
           };
         },
         snippet: "帮我整理这个目录的文件",
@@ -78,12 +77,7 @@ export const registerMemoryDebugHandlers = () => {
     const now = Date.now();
     for (let i = 0; i < count; i++) {
       const pick = types[Math.floor(Math.random() * types.length)];
-      addMemoryEvent(
-        `seed-task-${i}`,
-        pick.type,
-        pick.detail(),
-        pick.snippet,
-      );
+      addMemoryEvent(`seed-task-${i}`, pick.type, pick.detail(), pick.snippet);
       // Backdate timestamps so the timeline looks realistic.
       // getMemoryEvents returns shallow copies that share object references
       // with the store, so this mutation updates the canonical event in-place.
