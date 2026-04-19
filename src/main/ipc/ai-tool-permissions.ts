@@ -43,7 +43,10 @@ const canAutoApproveWrite = async (
       // File doesn't exist yet — resolve parent directory instead
       const parentDir = path.dirname(path.resolve(filePath));
       try {
-        realTarget = path.join(await realpath(parentDir), path.basename(filePath));
+        realTarget = path.join(
+          await realpath(parentDir),
+          path.basename(filePath),
+        );
       } catch {
         // Parent doesn't exist either — reject (mkdir will create it, but we
         // can't verify the real path ahead of time)
@@ -115,7 +118,12 @@ export const buildSkillSpecificTools = (
             args: { path: string; content: string },
             { toolCallId, abortSignal },
           ) => {
-            const autoResult = await tryAutoApproveWrite(taskId, sender, toolCallId, args);
+            const autoResult = await tryAutoApproveWrite(
+              taskId,
+              sender,
+              toolCallId,
+              args,
+            );
             if (autoResult !== null) return autoResult;
             const approved = await requestApproval(
               sender,
@@ -265,7 +273,12 @@ export const buildTools = (
         args: { path: string; content: string },
         { toolCallId, abortSignal },
       ) => {
-        const autoResult = await tryAutoApproveWrite(taskId, sender, toolCallId, args);
+        const autoResult = await tryAutoApproveWrite(
+          taskId,
+          sender,
+          toolCallId,
+          args,
+        );
         if (autoResult !== null) return autoResult;
         const approved = await requestApproval(
           sender,

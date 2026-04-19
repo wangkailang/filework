@@ -114,7 +114,10 @@ export const executePlan = async ({
     const totalSubSteps = step.subSteps?.length ?? 0;
     const stepArtifacts: PlanStepArtifact[] = [];
     // Track pending tool-call args by toolCallId for artifact extraction
-    const pendingToolCalls = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+    const pendingToolCalls = new Map<
+      string,
+      { toolName: string; args: Record<string, unknown> }
+    >();
 
     // Create per-step timeout controller before try so catch can inspect signal.reason
     const { controller: stepController, cleanup: cleanupTimeout } =
@@ -234,7 +237,9 @@ Rules:
               // Collect artifact for every tool call with its full data
               const pending = pendingToolCalls.get(part.toolCallId);
               if (pending) {
-                const resultObj = part.output as Record<string, unknown> | undefined;
+                const resultObj = part.output as
+                  | Record<string, unknown>
+                  | undefined;
                 const success = !(resultObj && resultObj.success === false);
                 stepArtifacts.push({
                   toolCallId: part.toolCallId,
@@ -349,8 +354,7 @@ Rules:
       // User-initiated abort — mark current step done, skip remaining
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
-        step.resultSummary =
-          truncateText(stepText, 500) ?? "(aborted by user)";
+        step.resultSummary = truncateText(stepText, 500) ?? "(aborted by user)";
 
         for (const remaining of plan.steps) {
           if (remaining.status === "pending") {

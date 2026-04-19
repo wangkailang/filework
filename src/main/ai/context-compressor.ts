@@ -70,6 +70,8 @@ export interface CompressorOptions {
 export interface CompressionResult {
   messages: ModelMessage[];
   wasCompressed: boolean;
+  /** True when LLM summarization failed and fell back to head+tail */
+  hadError: boolean;
   summaryTokens: number;
   /** Token count before compression */
   originalTokens: number;
@@ -113,7 +115,14 @@ export async function compressContext(
         options.promptSnippet,
       );
     }
-    return { messages: pruned, wasCompressed: false, summaryTokens: 0, originalTokens: prunedTokens, compressedTokens: prunedTokens };
+    return {
+      messages: pruned,
+      wasCompressed: false,
+      hadError: false,
+      summaryTokens: 0,
+      originalTokens: prunedTokens,
+      compressedTokens: prunedTokens,
+    };
   }
 
   // Step 2: Identify protected head
@@ -138,6 +147,7 @@ export async function compressContext(
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
+      hadError: false,
       summaryTokens: 0,
       originalTokens: prunedTokens,
       compressedTokens: noMiddleTokens,
@@ -189,6 +199,7 @@ export async function compressContext(
     return {
       messages: [...head, summaryMessage, ...tail],
       wasCompressed: true,
+      hadError: false,
       summaryTokens,
       originalTokens: prunedTokens,
       compressedTokens,
@@ -198,11 +209,24 @@ export async function compressContext(
       "[ContextCompressor] LLM summarization failed, falling back to pruned messages:",
       error instanceof Error ? error.message : error,
     );
+    if (options.taskId) {
+      addMemoryEvent(
+        options.taskId,
+        "compression-error",
+        {
+          originalTokens: prunedTokens,
+          messagesCompressed: middle.length,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        options.promptSnippet,
+      );
+    }
     // Fallback: return head + tail without summary
     const fallbackTokens = estimateTokens(head) + tailTokens;
     return {
       messages: [...head, ...tail],
       wasCompressed: false,
+      hadError: true,
       summaryTokens: 0,
       originalTokens: prunedTokens,
       compressedTokens: fallbackTokens,

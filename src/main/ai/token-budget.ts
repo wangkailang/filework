@@ -4,9 +4,66 @@ import type { ModelMessage } from "ai";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_TOKEN_BUDGET = 80000;
+export const DEFAULT_TOKEN_BUDGET = 80_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+const SAFETY_MARGIN = 2_000;
 const TOOL_RESULT_COMPRESS_THRESHOLD = 2000;
-const TOKEN_ESTIMATE_RATIO = 4;
+
+// ---------------------------------------------------------------------------
+// Model context window map
+// ---------------------------------------------------------------------------
+
+/**
+ * Known context window sizes (in tokens) for common models.
+ * Prefix-matched: "claude-3.5-sonnet-20241022" matches "claude-3.5-sonnet".
+ * More specific prefixes should come first.
+ */
+const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
+  // Anthropic
+  ["claude-opus-4", 200_000],
+  ["claude-sonnet-4", 200_000],
+  ["claude-3.7", 200_000],
+  ["claude-3.5-sonnet", 200_000],
+  ["claude-3.5-haiku", 200_000],
+  ["claude-3-opus", 200_000],
+  ["claude-3-sonnet", 200_000],
+  ["claude-3-haiku", 200_000],
+  ["claude", 200_000],
+  // OpenAI
+  ["gpt-4.1", 1_000_000],
+  ["gpt-4o", 128_000],
+  ["gpt-4-turbo", 128_000],
+  ["gpt-4-0125", 128_000],
+  ["gpt-4-1106", 128_000],
+  ["gpt-4", 8_192],
+  ["gpt-3.5-turbo", 16_385],
+  ["o4-mini", 200_000],
+  ["o3", 200_000],
+  ["o3-mini", 200_000],
+  ["o1", 200_000],
+  ["o1-mini", 128_000],
+  // DeepSeek
+  ["deepseek-chat", 64_000],
+  ["deepseek-coder", 64_000],
+  ["deepseek-reasoner", 64_000],
+  ["deepseek", 64_000],
+];
+
+/**
+ * Compute the input token budget for a given model.
+ *
+ * Formula: contextWindow - maxOutputTokens - safetyMargin
+ * Falls back to DEFAULT_TOKEN_BUDGET for unknown models.
+ */
+export function getTokenBudgetForModel(modelId: string): number {
+  const lower = modelId.toLowerCase();
+  for (const [prefix, contextWindow] of MODEL_CONTEXT_WINDOWS) {
+    if (lower.startsWith(prefix)) {
+      return contextWindow - DEFAULT_MAX_OUTPUT_TOKENS - SAFETY_MARGIN;
+    }
+  }
+  return DEFAULT_TOKEN_BUDGET;
+}
 const TRUNCATION_NOTICE =
   "[系统提示] 部分早期对话已被省略，以下为最近的对话内容。";
 const COMPRESSED_PLACEHOLDER = "[工具结果已压缩]";
@@ -18,18 +75,34 @@ const COMPRESSED_PLACEHOLDER = "[工具结果已压缩]";
 export interface TruncationResult {
   messages: ModelMessage[];
   wasTruncated: boolean;
+  /** Number of messages dropped by simple truncation (0 if not truncated) */
+  messagesDropped: number;
 }
 
 // ---------------------------------------------------------------------------
 // Token estimation
 // ---------------------------------------------------------------------------
 
+// CJK Unified Ideographs and common CJK ranges (global flag for matchAll)
+const CJK_RE_G =
+  /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u{20000}-\u{2FA1F}]/gu;
+
 /**
  * Estimate the token count of a single string.
- * Uses a simple heuristic: Math.ceil(charCount / 4).
+ *
+ * Latin/ASCII text: ~4 chars per token (GPT/Claude average).
+ * CJK text: ~1.5 chars per token — each character is typically 1-2 tokens
+ * in common tokenizers (cl100k, claude).
+ *
+ * Uses a single global regex match to count CJK characters, avoiding
+ * per-character iteration overhead on large strings (tool results up to 200KB).
  */
 function estimateStringTokens(text: string): number {
-  return Math.ceil(text.length / TOKEN_ESTIMATE_RATIO);
+  CJK_RE_G.lastIndex = 0;
+  const cjkChars = text.match(CJK_RE_G)?.length ?? 0;
+  const latinChars = text.length - cjkChars;
+  // CJK: ~1.5 chars/token  |  Latin/ASCII: ~4 chars/token
+  return Math.ceil(cjkChars / 1.5 + latinChars / 4);
 }
 
 /**
@@ -158,23 +231,23 @@ export function truncateToFit(
     budget != null && budget > 0 ? budget : DEFAULT_TOKEN_BUDGET;
 
   if (messages.length === 0) {
-    return { messages: [], wasTruncated: false };
+    return { messages: [], wasTruncated: false, messagesDropped: 0 };
   }
 
   // Check if already within budget
   if (estimateTokens(messages) <= effectiveBudget) {
-    return { messages: [...messages], wasTruncated: false };
+    return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
   }
 
   // Strategy 1: compress large tool results
   let result = compressToolResults(messages);
 
   if (estimateTokens(result) <= effectiveBudget) {
-    return { messages: result, wasTruncated: false };
+    return { messages: result, wasTruncated: false, messagesDropped: 0 };
   }
 
   // Strategy 2: remove early messages from the beginning
-  const truncated = true;
+  const originalCount = result.length;
   while (result.length > 1 && estimateTokens(result) > effectiveBudget) {
     result = result.slice(1);
   }
@@ -185,46 +258,48 @@ export function truncateToFit(
   }
 
   // Strategy 3: insert truncation notice at the beginning
-  if (truncated) {
-    const notice: ModelMessage = {
-      role: "system",
-      content: TRUNCATION_NOTICE,
-    };
-    const noticeTokens = estimateTokens([notice]);
+  const notice: ModelMessage = {
+    role: "system",
+    content: TRUNCATION_NOTICE,
+  };
+  const noticeTokens = estimateTokens([notice]);
 
-    // Make room for the notice if needed
-    while (
-      result.length > 1 &&
-      estimateTokens(result) + noticeTokens > effectiveBudget
-    ) {
-      result = result.slice(1);
-    }
-
-    // If single message + notice still over budget, truncate the message further
-    if (
-      result.length === 1 &&
-      estimateTokens(result) + noticeTokens > effectiveBudget
-    ) {
-      const availableBudget = effectiveBudget - noticeTokens;
-      if (availableBudget > 0) {
-        result = [truncateSingleMessage(result[0], availableBudget)];
-      }
-    }
-
-    result = [notice, ...result];
+  // Make room for the notice if needed
+  while (
+    result.length > 1 &&
+    estimateTokens(result) + noticeTokens > effectiveBudget
+  ) {
+    result = result.slice(1);
   }
 
-  return { messages: result, wasTruncated: truncated };
+  // If single message + notice still over budget, truncate the message further
+  if (
+    result.length === 1 &&
+    estimateTokens(result) + noticeTokens > effectiveBudget
+  ) {
+    const availableBudget = effectiveBudget - noticeTokens;
+    if (availableBudget > 0) {
+      result = [truncateSingleMessage(result[0], availableBudget)];
+    }
+  }
+
+  result = [notice, ...result];
+  // Subtract 1 for the notice message we added
+  const messagesDropped = originalCount - (result.length - 1);
+
+  return { messages: result, wasTruncated: true, messagesDropped };
 }
 
 /**
  * Truncate a single message's text content to fit within a token budget.
+ * Uses the CJK ratio (1.5 chars/token) as a conservative estimate so we
+ * never exceed the budget regardless of script.
  */
 function truncateSingleMessage(
   msg: ModelMessage,
   budget: number,
 ): ModelMessage {
-  const maxChars = budget * TOKEN_ESTIMATE_RATIO;
+  const maxChars = Math.floor(budget * 1.5);
 
   // Only truncate string content for user/system/assistant messages
   if (typeof msg.content === "string" && msg.role !== "tool") {
@@ -285,18 +360,18 @@ export async function truncateToFitAsync(
     budget != null && budget > 0 ? budget : DEFAULT_TOKEN_BUDGET;
 
   if (messages.length === 0) {
-    return { messages: [], wasTruncated: false };
+    return { messages: [], wasTruncated: false, messagesDropped: 0 };
   }
 
   // Check if already within budget
   if (estimateTokens(messages) <= effectiveBudget) {
-    return { messages: [...messages], wasTruncated: false };
+    return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
   }
 
   // Strategy 1: compress tool results
   const compressed = compressToolResults(messages);
   if (estimateTokens(compressed) <= effectiveBudget) {
-    return { messages: compressed, wasTruncated: false };
+    return { messages: compressed, wasTruncated: false, messagesDropped: 0 };
   }
 
   // Strategy 2: try LLM compression if available
@@ -307,6 +382,7 @@ export async function truncateToFitAsync(
         return {
           messages: result.messages,
           wasTruncated: result.wasCompressed,
+          messagesDropped: 0,
         };
       }
     } catch (err) {

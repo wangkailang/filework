@@ -223,10 +223,8 @@ export const registerPlanHandlers = () => {
   );
 
   /** Approve a plan (alias for executePlan without llmConfigId) */
-  ipcMain.handle(
-    "ai:approvePlan",
-    async (event, payload: { planId: string }) =>
-      runApprovedPlan(event, payload.planId),
+  ipcMain.handle("ai:approvePlan", async (event, payload: { planId: string }) =>
+    runApprovedPlan(event, payload.planId),
   );
 
   /** User rejected a plan */

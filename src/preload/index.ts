@@ -455,12 +455,16 @@ const api = {
     getEvents: (limit?: number) =>
       ipcRenderer.invoke("memory-debug:getEvents", { limit }),
     clear: () => ipcRenderer.invoke("memory-debug:clear"),
+    seed: () => ipcRenderer.invoke("memory-debug:seed"),
     onEvent: (
       callback: (data: {
         taskId: string;
         type:
           | "compression-write"
           | "compression-skip"
+          | "compression-error"
+          | "result-summarize"
+          | "truncation-drop"
           | "cache-write"
           | "cache-hit";
         promptSnippet?: string;
@@ -474,6 +478,9 @@ const api = {
           type:
             | "compression-write"
             | "compression-skip"
+            | "compression-error"
+            | "result-summarize"
+            | "truncation-drop"
             | "cache-write"
             | "cache-hit";
           promptSnippet?: string;

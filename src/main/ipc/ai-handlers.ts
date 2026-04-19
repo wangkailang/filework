@@ -18,7 +18,11 @@ import {
 } from "../ai/message-converter";
 import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
-import { estimateTokens, truncateToFitAsync } from "../ai/token-budget";
+import {
+  estimateTokens,
+  getTokenBudgetForModel,
+  truncateToFitAsync,
+} from "../ai/token-budget";
 import {
   addTask,
   getDefaultLlmConfig,
@@ -208,6 +212,8 @@ const handleTaskExecution = async (
             preprocessed = await summarizeLargeToolResults(msgs, {
               model,
               signal: controller.signal,
+              taskId: id,
+              promptSnippet: payload.prompt,
             });
           } catch (err) {
             console.warn(
@@ -223,50 +229,61 @@ const handleTaskExecution = async (
             taskId: id,
             promptSnippet: payload.prompt,
           });
-          // Forward the compressor's pre-computed token counts to the renderer
+          // Forward to renderer via IPC (compressContext already wrote to store)
           if (!sender.isDestroyed()) {
-            if (result.wasCompressed) {
-              emitMemoryEvent(
-                sender,
-                id,
-                "compression-write",
-                {
-                  originalTokens: result.originalTokens,
-                  compressedTokens: result.compressedTokens,
-                  summaryTokens: result.summaryTokens,
-                },
-                payload.prompt,
-              );
-            } else {
-              emitMemoryEvent(
-                sender,
-                id,
-                "compression-skip",
-                {
-                  originalTokens: result.originalTokens,
-                },
-                payload.prompt,
-              );
-            }
+            const eventType = result.hadError
+              ? "compression-error"
+              : result.wasCompressed
+                ? "compression-write"
+                : "compression-skip";
+            sender.send("ai:memory-event", {
+              taskId: id,
+              type: eventType,
+              promptSnippet: payload.prompt?.slice(0, 80),
+              detail: result.wasCompressed
+                ? {
+                    originalTokens: result.originalTokens,
+                    compressedTokens: result.compressedTokens,
+                    summaryTokens: result.summaryTokens,
+                  }
+                : { originalTokens: result.originalTokens },
+            });
           }
           return result;
         };
-        const { messages: truncatedMessages } = await truncateToFitAsync(
+        const tokenBudget = llmConfig?.model
+          ? getTokenBudgetForModel(llmConfig.model)
+          : undefined;
+        const originalTokens = estimateTokens(coreMessages);
+        const truncationResult = await truncateToFitAsync(
           coreMessages,
-          undefined,
+          tokenBudget,
           compressor,
         );
-        convertedHistory = truncatedMessages;
+        convertedHistory = truncationResult.messages;
+
+        // Track when messages were silently dropped by simple truncation
+        if (truncationResult.messagesDropped > 0 && !sender.isDestroyed()) {
+          emitMemoryEvent(
+            sender,
+            id,
+            "truncation-drop",
+            {
+              messagesDropped: truncationResult.messagesDropped,
+              originalTokens,
+            },
+            payload.prompt,
+          );
+        }
 
         // If compressor was never called (history fits within budget),
         // still emit a compression-skip event so the debug panel shows activity
         if (!compressorCalled) {
-          const historyTokens = estimateTokens(coreMessages);
           emitMemoryEvent(
             sender,
             id,
             "compression-skip",
-            { originalTokens: historyTokens },
+            { originalTokens },
             payload.prompt,
           );
         }
@@ -600,9 +617,6 @@ const handleTaskExecution = async (
         });
       }
       return { id, status: "failed", message: errorMsg };
-    } finally {
-      console.log("[Main] Cleanup for taskId:", id);
-      cleanupTask(id);
     }
   } catch (error: unknown) {
     const classified = classifyError(error);
@@ -625,6 +639,11 @@ const handleTaskExecution = async (
       });
     }
     return { id, status: "failed", message: errorMsg };
+  } finally {
+    // Ensure controller is always cleaned up, even if errors occur
+    // before the inner try block (e.g. in getModelAndAdapterByConfigId,
+    // convertToCoreMessages, or truncateToFitAsync).
+    cleanupTask(id);
   }
 };
 
