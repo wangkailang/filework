@@ -42,8 +42,7 @@ export const ModelSelector = ({
 
   if (configs.length <= 1) return null;
 
-  const selected =
-    configs.find((c) => c.id === selectedConfigId) || configs[0];
+  const selected = configs.find((c) => c.id === selectedConfigId) || configs[0];
 
   return (
     <div ref={ref} className="relative">

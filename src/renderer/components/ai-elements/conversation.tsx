@@ -237,8 +237,7 @@ export const messagesToMarkdown = (
   messages
     .map((msg, i) => {
       if (formatter) return formatter(msg, i);
-      const role =
-        msg.role === "user" ? roleLabels.user : roleLabels.assistant;
+      const role = msg.role === "user" ? roleLabels.user : roleLabels.assistant;
       const text =
         msg.parts
           ?.filter((p) => p.type === "text" && p.text)

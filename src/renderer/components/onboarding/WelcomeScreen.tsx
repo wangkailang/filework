@@ -56,9 +56,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           <h1 className="text-2xl font-semibold text-foreground mb-2">
             FileWork
           </h1>
-          <p className="text-muted-foreground">
-            {LL.welcome_description()}
-          </p>
+          <p className="text-muted-foreground">{LL.welcome_description()}</p>
         </div>
 
         <button
@@ -106,9 +104,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          {LL.welcome_privacy()}
-        </p>
+        <p className="text-xs text-muted-foreground">{LL.welcome_privacy()}</p>
       </div>
     </div>
   );

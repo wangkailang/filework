@@ -111,7 +111,9 @@ export const FilePreviewPanel = ({
         })
         .catch((err) => {
           if (!cancelled) {
-            setError(err instanceof Error ? err.message : LL.preview_readImageError());
+            setError(
+              err instanceof Error ? err.message : LL.preview_readImageError(),
+            );
             setIsLoading(false);
           }
         });
@@ -126,7 +128,9 @@ export const FilePreviewPanel = ({
         })
         .catch((err) => {
           if (!cancelled) {
-            setError(err instanceof Error ? err.message : LL.preview_readFileError());
+            setError(
+              err instanceof Error ? err.message : LL.preview_readFileError(),
+            );
             setIsLoading(false);
           }
         });

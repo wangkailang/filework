@@ -94,19 +94,25 @@ const en: BaseTranslation = {
 
   // Error types
   errorType_auth: "Auth Failed",
-  errorType_authHint: "API key is invalid or expired, please check configuration in settings",
+  errorType_authHint:
+    "API key is invalid or expired, please check configuration in settings",
   errorType_billing: "Insufficient Balance",
-  errorType_billingHint: "API account balance insufficient, please top up on the provider platform",
+  errorType_billingHint:
+    "API account balance insufficient, please top up on the provider platform",
   errorType_rateLimit: "Rate Limited",
-  errorType_rateLimitHint: "Request rate too high, auto-retried but still failed",
+  errorType_rateLimitHint:
+    "Request rate too high, auto-retried but still failed",
   errorType_contextOverflow: "Context Too Long",
-  errorType_contextOverflowHint: "Conversation too long, please start a new chat",
+  errorType_contextOverflowHint:
+    "Conversation too long, please start a new chat",
   errorType_serverError: "Service Unavailable",
-  errorType_serverErrorHint: "Server temporarily unavailable, please try again later",
+  errorType_serverErrorHint:
+    "Server temporarily unavailable, please try again later",
   errorType_timeout: "Request Timeout",
   errorType_timeoutHint: "Connection timed out, please try again later",
   errorType_proxyIntercepted: "Network Blocked",
-  errorType_proxyInterceptedHint: "Request blocked by proxy or firewall, please check network settings",
+  errorType_proxyInterceptedHint:
+    "Request blocked by proxy or firewall, please check network settings",
 
   // Retry labels
   retry_rateLimit: "Rate Limit",
@@ -176,7 +182,7 @@ const en: BaseTranslation = {
 
   // Skill menu
   skill_loading: "Loading skills...",
-  skill_notFound: "No skills matching \"{0:string}\"",
+  skill_notFound: 'No skills matching "{0:string}"',
   skill_searchHint: "Type skill name to search",
 
   // Skill approval
@@ -205,7 +211,8 @@ const en: BaseTranslation = {
   skillsModal_description: "Description",
   skillsModal_usage: "Usage",
   skillsModal_usageCommand: "/{0:string} <your instruction>",
-  skillsModal_usageAuto: "Just describe your needs in the conversation, AI will auto-match this skill by keywords.",
+  skillsModal_usageAuto:
+    "Just describe your needs in the conversation, AI will auto-match this skill by keywords.",
   skillsModal_suggestions: "Suggested Prompts",
   skillsModal_keywords: "Keywords",
   skillsModal_sourcePath: "Source Path",
@@ -216,7 +223,8 @@ const en: BaseTranslation = {
   skillsModal_depEnvVar: "Environment Variable",
   skillsModal_depSystem: "System",
   skillsModal_lifecycle: "Lifecycle",
-  skillsModal_lifecycleHint: "This skill includes pre-activate / post-complete hook scripts",
+  skillsModal_lifecycleHint:
+    "This skill includes pre-activate / post-complete hook scripts",
   skillsModal_sourceBuiltIn: "Built-in",
   skillsModal_sourceProject: "Project",
   skillsModal_sourcePersonal: "Personal",
@@ -262,7 +270,8 @@ const en: BaseTranslation = {
   chat_userStopped: "User stopped execution",
   chat_planExecution: "Execution plan: {0:string}",
   chat_planFailed: "Plan generation failed: {0:string}",
-  chat_connectionTimeout: "Connection timed out, failed to establish connection to AI service",
+  chat_connectionTimeout:
+    "Connection timed out, failed to establish connection to AI service",
   chat_unknownError: "Unknown error",
 
   // Errors

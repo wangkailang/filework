@@ -39,7 +39,9 @@ interface SkillDetailData extends SkillListItem {
   external?: SkillExternalInfo & { body?: string };
 }
 
-const getSourceLabels = (LL: TranslationFunctions): Record<SourceType, string> => ({
+const getSourceLabels = (
+  LL: TranslationFunctions,
+): Record<SourceType, string> => ({
   "built-in": LL.skillsModal_sourceBuiltIn(),
   project: LL.skillsModal_sourceProject(),
   personal: LL.skillsModal_sourcePersonal(),
@@ -331,9 +333,7 @@ const SkillCard = ({
           </p>
         </div>
         <span className="shrink-0 font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-          {skill.isExternal
-            ? `/${skill.id}`
-            : LL.skillsModal_autoMatch()}
+          {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
         </span>
       </div>
       {skill.keywords.length > 0 && (

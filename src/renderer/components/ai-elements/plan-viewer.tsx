@@ -136,7 +136,10 @@ const SubStepList = ({
       : -1;
 
   return (
-    <div id={id} className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2">
+    <div
+      id={id}
+      className="ml-6 mt-1 space-y-0.5 border-l border-border/50 pl-2"
+    >
       {subSteps.map((sub, idx) => {
         const isFirstPending =
           sub.status === "pending" && idx === firstPendingIdx;
@@ -184,14 +187,17 @@ const hiddenArgKeys = new Set(["content", "data", "body"]);
 /** Format tool args into a brief one-line summary */
 const formatArgsSummary = (args: Record<string, unknown>): string => {
   if (args.path) return String(args.path);
-  if (args.source && args.destination) return `${args.source} → ${args.destination}`;
+  if (args.source && args.destination)
+    return `${args.source} → ${args.destination}`;
   const keys = Object.keys(args).filter((k) => !hiddenArgKeys.has(k));
   if (keys.length === 0) return "";
-  return keys.map((k) => {
-    const v = args[k];
-    const s = typeof v === "string" ? v : JSON.stringify(v);
-    return s && s.length > 60 ? `${s.slice(0, 60)}...` : s;
-  }).join(", ");
+  return keys
+    .map((k) => {
+      const v = args[k];
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      return s && s.length > 60 ? `${s.slice(0, 60)}...` : s;
+    })
+    .join(", ");
 };
 
 /** Format a tool result for display */
@@ -227,7 +233,11 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
           </span>
         )}
         <span className="shrink-0 text-muted-foreground/50 ml-auto">
-          {open ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
+          {open ? (
+            <ChevronDown className="size-2.5" />
+          ) : (
+            <ChevronRight className="size-2.5" />
+          )}
         </span>
       </button>
       {open && artifact.result != null && (
@@ -239,21 +249,17 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
   );
 };
 
-const ArtifactList = ({
-  artifacts,
-}: {
-  artifacts: PlanStepArtifactView[];
-}) => {
+const ArtifactList = ({ artifacts }: { artifacts: PlanStepArtifactView[] }) => {
   const { LL } = useI18nContext();
   return (
-  <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
-    <div className="text-[10px] text-muted-foreground/60 mb-0.5">
-      {LL.plan_artifacts(String(artifacts.length))}
+    <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
+      <div className="text-[10px] text-muted-foreground/60 mb-0.5">
+        {LL.plan_artifacts(String(artifacts.length))}
+      </div>
+      {artifacts.map((a) => (
+        <ArtifactItem key={a.toolCallId} artifact={a} />
+      ))}
     </div>
-    {artifacts.map((a) => (
-      <ArtifactItem key={a.toolCallId} artifact={a} />
-    ))}
-  </div>
   );
 };
 
@@ -310,7 +316,9 @@ export const PlanViewer = ({
       <div className="flex items-start gap-2 px-3 py-2.5 border-b border-border">
         <ListChecks className="size-4 text-primary mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-foreground text-xs">{LL.plan_title()}</div>
+          <div className="font-medium text-foreground text-xs">
+            {LL.plan_title()}
+          </div>
           <div className="text-xs text-muted-foreground mt-0.5">
             {plan.goal}
           </div>

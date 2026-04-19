@@ -71,17 +71,33 @@ const formatTokens = (n: number | null): string => {
   return String(n);
 };
 
-const getErrorTypeLabels = (LL: TranslationFunctions): Record<string, { label: string; hint: string }> => ({
+const getErrorTypeLabels = (
+  LL: TranslationFunctions,
+): Record<string, { label: string; hint: string }> => ({
   auth: { label: LL.errorType_auth(), hint: LL.errorType_authHint() },
   billing: { label: LL.errorType_billing(), hint: LL.errorType_billingHint() },
-  rate_limit: { label: LL.errorType_rateLimit(), hint: LL.errorType_rateLimitHint() },
-  context_overflow: { label: LL.errorType_contextOverflow(), hint: LL.errorType_contextOverflowHint() },
-  server_error: { label: LL.errorType_serverError(), hint: LL.errorType_serverErrorHint() },
+  rate_limit: {
+    label: LL.errorType_rateLimit(),
+    hint: LL.errorType_rateLimitHint(),
+  },
+  context_overflow: {
+    label: LL.errorType_contextOverflow(),
+    hint: LL.errorType_contextOverflowHint(),
+  },
+  server_error: {
+    label: LL.errorType_serverError(),
+    hint: LL.errorType_serverErrorHint(),
+  },
   timeout: { label: LL.errorType_timeout(), hint: LL.errorType_timeoutHint() },
-  proxy_intercepted: { label: LL.errorType_proxyIntercepted(), hint: LL.errorType_proxyInterceptedHint() },
+  proxy_intercepted: {
+    label: LL.errorType_proxyIntercepted(),
+    hint: LL.errorType_proxyInterceptedHint(),
+  },
 });
 
-const getRetryTypeLabels = (LL: TranslationFunctions): Record<string, string> => ({
+const getRetryTypeLabels = (
+  LL: TranslationFunctions,
+): Record<string, string> => ({
   rate_limit: LL.retry_rateLimit(),
   context_overflow: LL.retry_contextOverflow(),
   server_error: LL.retry_serverError(),
@@ -111,7 +127,9 @@ const RECOVERY_ACTION_ICONS: Record<RecoveryAction, typeof RefreshCw> = {
   new_chat: MessageSquarePlus,
 };
 
-const getRecoveryLabels = (LL: TranslationFunctions): Record<RecoveryAction, string> => ({
+const getRecoveryLabels = (
+  LL: TranslationFunctions,
+): Record<RecoveryAction, string> => ({
   retry: LL.recovery_retry(),
   settings: LL.recovery_settings(),
   new_chat: LL.recovery_newChat(),
@@ -244,10 +262,14 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 </>
               )}
               {inv.approval.state === "approval-accepted" && (
-                <ConfirmationAccepted>{LL.chat_approved()}</ConfirmationAccepted>
+                <ConfirmationAccepted>
+                  {LL.chat_approved()}
+                </ConfirmationAccepted>
               )}
               {inv.approval.state === "approval-rejected" && (
-                <ConfirmationRejected>{LL.chat_rejected()}</ConfirmationRejected>
+                <ConfirmationRejected>
+                  {LL.chat_rejected()}
+                </ConfirmationRejected>
               )}
             </Confirmation>
           </div>
@@ -374,7 +396,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           >
             <History className="size-3.5" />
             <span>
-              {LL.session_history()}{hasSessions ? ` (${chat.sessions.length})` : ""}
+              {LL.session_history()}
+              {hasSessions ? ` (${chat.sessions.length})` : ""}
             </span>
           </button>
           <button
@@ -453,7 +476,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
                         <span className="text-sm">
-                          {LL.chat_retrying(String(chat.retryInfo.attempt), String(chat.retryInfo.maxRetries))}{" "}
+                          {LL.chat_retrying(
+                            String(chat.retryInfo.attempt),
+                            String(chat.retryInfo.maxRetries),
+                          )}{" "}
                           <span className="text-xs opacity-75">
                             {RETRY_TYPE_LABELS[chat.retryInfo.type] ??
                               chat.retryInfo.type}

@@ -922,7 +922,8 @@ export function useChatSession(workspacePath: string) {
       })
       .catch((error: unknown) => {
         if (streamAssistantIdRef.current !== assistantId) return;
-        const errMsg = error instanceof Error ? error.message : LL.chat_unknownError();
+        const errMsg =
+          error instanceof Error ? error.message : LL.chat_unknownError();
         const errorPart: MessagePart = {
           type: "error",
           message: errMsg,

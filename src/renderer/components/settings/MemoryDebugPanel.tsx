@@ -26,11 +26,7 @@ interface MemoryEvent {
   id: string;
   taskId: string;
   promptSnippet?: string;
-  type:
-    | "compression-write"
-    | "compression-skip"
-    | "cache-write"
-    | "cache-hit";
+  type: "compression-write" | "compression-skip" | "cache-write" | "cache-hit";
   timestamp: string;
   detail: MemoryEventDetail;
 }
@@ -59,7 +55,10 @@ const compressionRatio = (
   return `${pct}%`;
 };
 
-const TYPE_ICONS: Record<MemoryEvent["type"], { icon: typeof Brain; color: string }> = {
+const TYPE_ICONS: Record<
+  MemoryEvent["type"],
+  { icon: typeof Brain; color: string }
+> = {
   "compression-write": { icon: Brain, color: "text-orange-400" },
   "compression-skip": { icon: Brain, color: "text-muted-foreground" },
   "cache-write": { icon: Database, color: "text-blue-400" },
@@ -71,10 +70,14 @@ const getTypeLabel = (
   LL: TranslationFunctions,
 ): string => {
   switch (type) {
-    case "compression-write": return LL.memoryDebug_contextCompression();
-    case "compression-skip": return LL.memoryDebug_compressionSkipped();
-    case "cache-write": return LL.memoryDebug_cacheWrite();
-    case "cache-hit": return LL.memoryDebug_cacheHit();
+    case "compression-write":
+      return LL.memoryDebug_contextCompression();
+    case "compression-skip":
+      return LL.memoryDebug_compressionSkipped();
+    case "cache-write":
+      return LL.memoryDebug_cacheWrite();
+    case "cache-hit":
+      return LL.memoryDebug_cacheHit();
   }
 };
 
@@ -85,7 +88,7 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
   const Icon = config.icon;
   const label = getTypeLabel(event.type, LL);
   const d = event.detail;
-  const hasExpandable = !!(d.summary);
+  const hasExpandable = !!d.summary;
   const ratio = compressionRatio(d.originalTokens, d.compressedTokens);
 
   return (
@@ -119,15 +122,17 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
         <span className="flex-1" />
 
         {/* Metrics inline */}
-        {event.type === "compression-write" && d.originalTokens != null && d.compressedTokens != null && (
-          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-            {formatTokens(d.originalTokens)} → {formatTokens(d.compressedTokens)}
-            {ratio && (
-              <span className="ml-1 text-green-400">-{ratio}</span>
-            )}
-            {d.messagesCompressed != null && ` ${LL.memoryDebug_messagesCompressed(String(d.messagesCompressed))}`}
-          </span>
-        )}
+        {event.type === "compression-write" &&
+          d.originalTokens != null &&
+          d.compressedTokens != null && (
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+              {formatTokens(d.originalTokens)} →{" "}
+              {formatTokens(d.compressedTokens)}
+              {ratio && <span className="ml-1 text-green-400">-{ratio}</span>}
+              {d.messagesCompressed != null &&
+                ` ${LL.memoryDebug_messagesCompressed(String(d.messagesCompressed))}`}
+            </span>
+          )}
         {event.type === "compression-skip" && d.originalTokens != null && (
           <span className="text-[10px] text-muted-foreground whitespace-nowrap">
             {formatTokens(d.originalTokens)} {LL.memoryDebug_notOverLimit()}
@@ -217,9 +222,7 @@ export const MemoryDebugPanel = () => {
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <Brain className="w-8 h-8 mb-2 opacity-40" />
         <span className="text-sm">{LL.memoryDebug_empty()}</span>
-        <span className="text-xs mt-1">
-          {LL.memoryDebug_emptyHint()}
-        </span>
+        <span className="text-xs mt-1">{LL.memoryDebug_emptyHint()}</span>
       </div>
     );
   }
@@ -270,7 +273,9 @@ export const MemoryDebugPanel = () => {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.memoryDebug_compressionCount()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_compressionCount()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {compressionWrites.length}
           </div>
@@ -281,7 +286,9 @@ export const MemoryDebugPanel = () => {
           )}
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.memoryDebug_compressionSaved()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_compressionSaved()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {totalSaved > 0 ? formatTokens(totalSaved) : "-"}
           </div>
@@ -292,7 +299,9 @@ export const MemoryDebugPanel = () => {
           )}
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.memoryDebug_cacheHitCount()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.memoryDebug_cacheHitCount()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {totalCacheRead > 0 ? formatTokens(totalCacheRead) : "-"}
           </div>

@@ -86,19 +86,26 @@ const ja: Translation = {
 
   // Error types
   errorType_auth: "認証失敗",
-  errorType_authHint: "APIキーが無効または期限切れです。設定で構成を確認してください",
+  errorType_authHint:
+    "APIキーが無効または期限切れです。設定で構成を確認してください",
   errorType_billing: "残高不足",
-  errorType_billingHint: "APIアカウントの残高が不足しています。プラットフォームでチャージしてください",
+  errorType_billingHint:
+    "APIアカウントの残高が不足しています。プラットフォームでチャージしてください",
   errorType_rateLimit: "レート制限超過",
-  errorType_rateLimitHint: "リクエスト頻度が高すぎます。自動リトライしましたが失敗しました",
+  errorType_rateLimitHint:
+    "リクエスト頻度が高すぎます。自動リトライしましたが失敗しました",
   errorType_contextOverflow: "コンテキスト超過",
-  errorType_contextOverflowHint: "会話が長すぎます。新しいチャットを開始してください",
+  errorType_contextOverflowHint:
+    "会話が長すぎます。新しいチャットを開始してください",
   errorType_serverError: "サービス利用不可",
-  errorType_serverErrorHint: "サーバーが一時的に利用できません。しばらくしてから再試行してください",
+  errorType_serverErrorHint:
+    "サーバーが一時的に利用できません。しばらくしてから再試行してください",
   errorType_timeout: "リクエストタイムアウト",
-  errorType_timeoutHint: "接続がタイムアウトしました。しばらくしてから再試行してください",
+  errorType_timeoutHint:
+    "接続がタイムアウトしました。しばらくしてから再試行してください",
   errorType_proxyIntercepted: "ネットワークブロック",
-  errorType_proxyInterceptedHint: "リクエストがプロキシまたはファイアウォールにブロックされました。ネットワーク設定を確認してください",
+  errorType_proxyInterceptedHint:
+    "リクエストがプロキシまたはファイアウォールにブロックされました。ネットワーク設定を確認してください",
 
   // Retry labels
   retry_rateLimit: "レート制限",
@@ -168,7 +175,7 @@ const ja: Translation = {
 
   // Skill menu
   skill_loading: "スキルを読み込み中...",
-  skill_notFound: "\"{0}\" に一致するスキルが見つかりません",
+  skill_notFound: '"{0}" に一致するスキルが見つかりません',
   skill_searchHint: "スキル名を入力して検索",
 
   // Skill approval
@@ -197,7 +204,8 @@ const ja: Translation = {
   skillsModal_description: "説明",
   skillsModal_usage: "使用方法",
   skillsModal_usageCommand: "/{0} <指示>",
-  skillsModal_usageAuto: "会話で要件を説明するだけで、AIがキーワードに基づいてこのスキルを自動マッチします。",
+  skillsModal_usageAuto:
+    "会話で要件を説明するだけで、AIがキーワードに基づいてこのスキルを自動マッチします。",
   skillsModal_suggestions: "おすすめプロンプト",
   skillsModal_keywords: "キーワード",
   skillsModal_sourcePath: "ソースパス",
@@ -208,7 +216,8 @@ const ja: Translation = {
   skillsModal_depEnvVar: "環境変数",
   skillsModal_depSystem: "システム",
   skillsModal_lifecycle: "ライフサイクル",
-  skillsModal_lifecycleHint: "このスキルにはpre-activate / post-completeフックスクリプトが含まれています",
+  skillsModal_lifecycleHint:
+    "このスキルにはpre-activate / post-completeフックスクリプトが含まれています",
   skillsModal_sourceBuiltIn: "ビルトイン",
   skillsModal_sourceProject: "プロジェクト",
   skillsModal_sourcePersonal: "個人",
@@ -254,7 +263,8 @@ const ja: Translation = {
   chat_userStopped: "ユーザーが実行を停止しました",
   chat_planExecution: "実行計画: {0}",
   chat_planFailed: "計画生成に失敗: {0}",
-  chat_connectionTimeout: "接続タイムアウト、AIサービスへの接続を確立できませんでした",
+  chat_connectionTimeout:
+    "接続タイムアウト、AIサービスへの接続を確立できませんでした",
   chat_unknownError: "不明なエラー",
 
   // Errors

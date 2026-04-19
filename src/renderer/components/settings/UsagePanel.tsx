@@ -95,24 +95,32 @@ export const UsagePanel = () => {
 
   return (
     <div className="space-y-5">
-      <h3 className="text-sm font-medium text-foreground">{LL.usage_title()}</h3>
+      <h3 className="text-sm font-medium text-foreground">
+        {LL.usage_title()}
+      </h3>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.usage_total()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_total()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalTokens)}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.usage_input()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_input()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalInput)}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">{LL.usage_output()}</div>
+          <div className="text-xs text-muted-foreground">
+            {LL.usage_output()}
+          </div>
           <div className="text-lg font-semibold text-foreground">
             {formatTokens(aggregate.totalOutput)}
           </div>
@@ -138,7 +146,8 @@ export const UsagePanel = () => {
                       {model}
                     </span>
                     <span className="text-muted-foreground">
-                      {formatTokens(stats.totalTokens)} {LL.usage_tasks(String(stats.taskCount))}
+                      {formatTokens(stats.totalTokens)}{" "}
+                      {LL.usage_tasks(String(stats.taskCount))}
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden">

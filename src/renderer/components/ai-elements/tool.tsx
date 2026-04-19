@@ -91,7 +91,9 @@ const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   },
 };
 
-const getStateLabels = (LL: TranslationFunctions): Record<ToolState, string> => ({
+const getStateLabels = (
+  LL: TranslationFunctions,
+): Record<ToolState, string> => ({
   "input-streaming": LL.tool_preparing(),
   "input-available": LL.tool_running(),
   "output-available": LL.tool_done(),

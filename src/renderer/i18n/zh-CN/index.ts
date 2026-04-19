@@ -165,7 +165,7 @@ const zhCN: Translation = {
 
   // Skill menu
   skill_loading: "正在加载技能...",
-  skill_notFound: "未找到匹配 \"{0}\" 的技能",
+  skill_notFound: '未找到匹配 "{0}" 的技能',
   skill_searchHint: "输入技能名称进行搜索",
 
   // Skill approval
@@ -194,7 +194,8 @@ const zhCN: Translation = {
   skillsModal_description: "描述",
   skillsModal_usage: "使用方式",
   skillsModal_usageCommand: "/{0} <你的指令>",
-  skillsModal_usageAuto: "在对话中直接描述需求即可，AI 会根据关键词自动匹配此技能。",
+  skillsModal_usageAuto:
+    "在对话中直接描述需求即可，AI 会根据关键词自动匹配此技能。",
   skillsModal_suggestions: "建议提示词",
   skillsModal_keywords: "关键词",
   skillsModal_sourcePath: "来源路径",
