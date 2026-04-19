@@ -1,6 +1,7 @@
 import { BarChart3, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { formatTokens } from "../../utils/format";
 
 interface AggregateUsage {
   totalInput: number;
@@ -39,11 +40,6 @@ interface RecentUsageItem {
   provider: string | null;
 }
 
-const formatTokens = (n: number): string => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-};
 
 export const UsagePanel = () => {
   const { LL } = useI18nContext();

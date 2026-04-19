@@ -9,43 +9,13 @@
 
 import crypto from "node:crypto";
 import type { WebContents } from "electron";
+import type {
+  MemoryEvent,
+  MemoryEventDetail,
+  MemoryEventType,
+} from "../../shared/memory-types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type MemoryEventType =
-  | "compression-write"
-  | "compression-skip"
-  | "cache-write"
-  | "cache-hit";
-
-export interface MemoryEventDetail {
-  /** Token count before compression */
-  originalTokens?: number;
-  /** Token count after compression */
-  compressedTokens?: number;
-  /** Number of messages that were compressed */
-  messagesCompressed?: number;
-  /** Token count of the generated summary message */
-  summaryTokens?: number;
-  /** Compressed summary text (truncated to MAX_SUMMARY_LENGTH) */
-  summary?: string;
-  /** Anthropic cache creation input tokens */
-  cacheWriteTokens?: number;
-  /** Anthropic cache read input tokens */
-  cacheReadTokens?: number;
-}
-
-export interface MemoryEvent {
-  id: string;
-  taskId: string;
-  /** First ~80 chars of the user prompt that triggered this task */
-  promptSnippet?: string;
-  type: MemoryEventType;
-  timestamp: string;
-  detail: MemoryEventDetail;
-}
+export type { MemoryEvent, MemoryEventDetail, MemoryEventType };
 
 // ---------------------------------------------------------------------------
 // Constants

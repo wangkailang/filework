@@ -745,6 +745,14 @@ type RootTranslation = {
 	 */
 	usage_recent: string
 	/**
+	 * M​e​m​o​r​y​ ​D​e​b​u​g
+	 */
+	memoryDebug_title: string
+	/**
+	 * s​a​v​e​d
+	 */
+	memoryDebug_savedLabel: string
+	/**
 	 * C​o​n​t​e​x​t​ ​C​o​m​p​r​e​s​s​i​o​n
 	 */
 	memoryDebug_contextCompression: string
@@ -752,6 +760,32 @@ type RootTranslation = {
 	 * C​o​m​p​r​e​s​s​i​o​n​ ​S​k​i​p​p​e​d
 	 */
 	memoryDebug_compressionSkipped: string
+	/**
+	 * C​o​m​p​r​e​s​s​i​o​n​ ​F​a​i​l​e​d
+	 */
+	memoryDebug_compressionError: string
+	/**
+	 * F​a​i​l​e​d
+	 */
+	memoryDebug_compressionErrorShort: string
+	/**
+	 * R​e​s​u​l​t​ ​S​u​m​m​a​r​i​z​e​d
+	 */
+	memoryDebug_resultSummarize: string
+	/**
+	 * {​0​}​ ​r​e​s​u​l​t​s​ ​s​u​m​m​a​r​i​z​e​d
+	 * @param {string} 0
+	 */
+	memoryDebug_resultsSummarized: RequiredParams<'0'>
+	/**
+	 * M​e​s​s​a​g​e​s​ ​D​r​o​p​p​e​d
+	 */
+	memoryDebug_truncationDrop: string
+	/**
+	 * {​0​}​ ​m​e​s​s​a​g​e​s​ ​d​r​o​p​p​e​d
+	 * @param {string} 0
+	 */
+	memoryDebug_messagesDroppedCount: RequiredParams<'0'>
 	/**
 	 * C​a​c​h​e​ ​W​r​i​t​e
 	 */
@@ -796,23 +830,6 @@ type RootTranslation = {
 	 */
 	memoryDebug_clear: string
 	/**
-	 * C​o​m​p​r​e​s​s​i​o​n​ ​C​o​u​n​t
-	 */
-	memoryDebug_compressionCount: string
-	/**
-	 * A​v​g​ ​r​a​t​i​o​ ​{​0​}
-	 * @param {string} 0
-	 */
-	memoryDebug_avgRatio: RequiredParams<'0'>
-	/**
-	 * C​o​m​p​r​e​s​s​i​o​n​ ​S​a​v​e​d
-	 */
-	memoryDebug_compressionSaved: string
-	/**
-	 * C​a​c​h​e​ ​H​i​t​s
-	 */
-	memoryDebug_cacheHitCount: string
-	/**
 	 * {​0​}​ ​h​i​t​s
 	 * @param {string} 0
 	 */
@@ -822,6 +839,42 @@ type RootTranslation = {
 	 * @param {string} 0
 	 */
 	memoryDebug_eventLog: RequiredParams<'0'>
+	/**
+	 * V​i​s​u​a​l​i​z​a​t​i​o​n
+	 */
+	memoryDebug_visualization: string
+	/**
+	 * T​o​k​e​n​ ​C​o​m​p​r​e​s​s​i​o​n
+	 */
+	memoryDebug_tokenTimeline: string
+	/**
+	 * C​a​c​h​e​ ​A​c​t​i​v​i​t​y
+	 */
+	memoryDebug_cacheActivity: string
+	/**
+	 * E​v​e​n​t​ ​T​y​p​e​s
+	 */
+	memoryDebug_eventTypes: string
+	/**
+	 * O​r​i​g​i​n​a​l
+	 */
+	memoryDebug_original: string
+	/**
+	 * C​o​m​p​r​e​s​s​e​d
+	 */
+	memoryDebug_compressed: string
+	/**
+	 * W​r​i​t​t​e​n
+	 */
+	memoryDebug_written: string
+	/**
+	 * R​e​a​d
+	 */
+	memoryDebug_read: string
+	/**
+	 * N​o​ ​d​a​t​a
+	 */
+	memoryDebug_noData: string
 	/**
 	 * R​e​f​r​e​s​h​ ​d​i​r​e​c​t​o​r​y
 	 */
@@ -1592,6 +1645,14 @@ export type TranslationFunctions = {
 	 */
 	usage_recent: () => LocalizedString
 	/**
+	 * Memory Debug
+	 */
+	memoryDebug_title: () => LocalizedString
+	/**
+	 * saved
+	 */
+	memoryDebug_savedLabel: () => LocalizedString
+	/**
 	 * Context Compression
 	 */
 	memoryDebug_contextCompression: () => LocalizedString
@@ -1599,6 +1660,30 @@ export type TranslationFunctions = {
 	 * Compression Skipped
 	 */
 	memoryDebug_compressionSkipped: () => LocalizedString
+	/**
+	 * Compression Failed
+	 */
+	memoryDebug_compressionError: () => LocalizedString
+	/**
+	 * Failed
+	 */
+	memoryDebug_compressionErrorShort: () => LocalizedString
+	/**
+	 * Result Summarized
+	 */
+	memoryDebug_resultSummarize: () => LocalizedString
+	/**
+	 * {0} results summarized
+	 */
+	memoryDebug_resultsSummarized: (arg0: string) => LocalizedString
+	/**
+	 * Messages Dropped
+	 */
+	memoryDebug_truncationDrop: () => LocalizedString
+	/**
+	 * {0} messages dropped
+	 */
+	memoryDebug_messagesDroppedCount: (arg0: string) => LocalizedString
 	/**
 	 * Cache Write
 	 */
@@ -1640,22 +1725,6 @@ export type TranslationFunctions = {
 	 */
 	memoryDebug_clear: () => LocalizedString
 	/**
-	 * Compression Count
-	 */
-	memoryDebug_compressionCount: () => LocalizedString
-	/**
-	 * Avg ratio {0}
-	 */
-	memoryDebug_avgRatio: (arg0: string) => LocalizedString
-	/**
-	 * Compression Saved
-	 */
-	memoryDebug_compressionSaved: () => LocalizedString
-	/**
-	 * Cache Hits
-	 */
-	memoryDebug_cacheHitCount: () => LocalizedString
-	/**
 	 * {0} hits
 	 */
 	memoryDebug_hitTimes: (arg0: string) => LocalizedString
@@ -1663,6 +1732,42 @@ export type TranslationFunctions = {
 	 * Event Log ({0})
 	 */
 	memoryDebug_eventLog: (arg0: string) => LocalizedString
+	/**
+	 * Visualization
+	 */
+	memoryDebug_visualization: () => LocalizedString
+	/**
+	 * Token Compression
+	 */
+	memoryDebug_tokenTimeline: () => LocalizedString
+	/**
+	 * Cache Activity
+	 */
+	memoryDebug_cacheActivity: () => LocalizedString
+	/**
+	 * Event Types
+	 */
+	memoryDebug_eventTypes: () => LocalizedString
+	/**
+	 * Original
+	 */
+	memoryDebug_original: () => LocalizedString
+	/**
+	 * Compressed
+	 */
+	memoryDebug_compressed: () => LocalizedString
+	/**
+	 * Written
+	 */
+	memoryDebug_written: () => LocalizedString
+	/**
+	 * Read
+	 */
+	memoryDebug_read: () => LocalizedString
+	/**
+	 * No data
+	 */
+	memoryDebug_noData: () => LocalizedString
 	/**
 	 * Refresh directory
 	 */

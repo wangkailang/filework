@@ -10,6 +10,7 @@
 
 import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
+import { addMemoryEvent } from "./memory-debug-store";
 import { createTimeoutController } from "./stream-watchdog";
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,10 @@ const SUMMARIZE_PROMPT = `你是一个工具结果摘要助手。请将以下工
 export interface SummarizeOptions {
   model: LanguageModel;
   signal?: AbortSignal;
+  /** Task ID for memory-debug tracking */
+  taskId?: string;
+  /** User prompt snippet for memory-debug association */
+  promptSnippet?: string;
 }
 
 /**
@@ -83,6 +88,7 @@ export async function summarizeLargeToolResults(
       ModelMessage,
       { role: "tool" }
     >;
+    let summarizedCount = 0;
     for (const part of cloned.content) {
       if (part.type === "tool-result" && isVeryLarge(part.output)) {
         const raw = extractText(part.output);
@@ -92,6 +98,7 @@ export async function summarizeLargeToolResults(
             type: "text",
             value: `[工具结果摘要] ${summary}`,
           };
+          summarizedCount++;
         } catch (err) {
           console.warn(
             "[result-summarizer] LLM summarization failed, using truncation fallback:",
@@ -103,6 +110,14 @@ export async function summarizeLargeToolResults(
           };
         }
       }
+    }
+    if (summarizedCount > 0 && opts.taskId) {
+      addMemoryEvent(
+        opts.taskId,
+        "result-summarize",
+        { resultsSummarized: summarizedCount },
+        opts.promptSnippet,
+      );
     }
     results.push(cloned);
   }

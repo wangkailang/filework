@@ -106,7 +106,7 @@ export const SettingsModal = ({
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "usage", label: LL.usage_title(), icon: BarChart3 },
-    { id: "memory-debug", label: "Memory Debug", icon: Brain },
+    { id: "memory-debug", label: LL.memoryDebug_title(), icon: Brain },
   ];
 
   return (
@@ -118,7 +118,13 @@ export const SettingsModal = ({
         aria-label="Close settings"
       />
 
-      <div className="relative flex bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl mx-4 h-[420px] overflow-hidden">
+      <div
+        className={`relative flex bg-background border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden transition-[max-width,height] duration-200 ${
+          activeTab === "memory-debug"
+            ? "max-w-4xl h-150"
+            : "max-w-2xl h-105"
+        }`}
+      >
         {/* Left sidebar tabs */}
         <div className="flex flex-col w-44 shrink-0 border-r border-border bg-muted/50 py-3">
           <div className="flex items-center justify-between px-4 pb-3 border-b border-border mb-2">

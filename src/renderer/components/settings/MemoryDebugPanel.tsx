@@ -1,41 +1,25 @@
 import {
+  AlertTriangle,
   Brain,
   ChevronDown,
   ChevronRight,
   Database,
+  FileText,
   Loader2,
   RefreshCw,
+  Scissors,
   Trash2,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
-import type { TranslationFunctions } from "../../i18n/i18n-types";
-
-interface MemoryEventDetail {
-  originalTokens?: number;
-  compressedTokens?: number;
-  messagesCompressed?: number;
-  summaryTokens?: number;
-  summary?: string;
-  cacheWriteTokens?: number;
-  cacheReadTokens?: number;
-}
-
-interface MemoryEvent {
-  id: string;
-  taskId: string;
-  promptSnippet?: string;
-  type: "compression-write" | "compression-skip" | "cache-write" | "cache-hit";
-  timestamp: string;
-  detail: MemoryEventDetail;
-}
-
-const formatTokens = (n: number): string => {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-};
+import { formatTokens } from "../../utils/format";
+import { CacheEfficiencyChart } from "./charts/CacheEfficiencyChart";
+import { EventDistributionChart } from "./charts/EventDistributionChart";
+import { getTypeLabel } from "./charts/memory-debug-utils";
+import { TokenTimelineChart } from "./charts/TokenTimelineChart";
+import { useMemoryChartData } from "./charts/useMemoryChartData";
+import type { MemoryEvent, MemoryEventDetail } from "./charts/useMemoryChartData";
 
 const formatTime = (iso: string): string => {
   const d = new Date(iso);
@@ -61,25 +45,13 @@ const TYPE_ICONS: Record<
 > = {
   "compression-write": { icon: Brain, color: "text-orange-400" },
   "compression-skip": { icon: Brain, color: "text-muted-foreground" },
+  "compression-error": { icon: AlertTriangle, color: "text-red-400" },
+  "result-summarize": { icon: FileText, color: "text-purple-400" },
+  "truncation-drop": { icon: Scissors, color: "text-amber-400" },
   "cache-write": { icon: Database, color: "text-blue-400" },
   "cache-hit": { icon: Zap, color: "text-green-400" },
 };
 
-const getTypeLabel = (
-  type: MemoryEvent["type"],
-  LL: TranslationFunctions,
-): string => {
-  switch (type) {
-    case "compression-write":
-      return LL.memoryDebug_contextCompression();
-    case "compression-skip":
-      return LL.memoryDebug_compressionSkipped();
-    case "cache-write":
-      return LL.memoryDebug_cacheWrite();
-    case "cache-hit":
-      return LL.memoryDebug_cacheHit();
-  }
-};
 
 const EventRow = ({ event }: { event: MemoryEvent }) => {
   const { LL } = useI18nContext();
@@ -88,7 +60,7 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
   const Icon = config.icon;
   const label = getTypeLabel(event.type, LL);
   const d = event.detail;
-  const hasExpandable = !!d.summary;
+  const hasExpandable = !!(d.summary || d.error);
   const ratio = compressionRatio(d.originalTokens, d.compressedTokens);
 
   return (
@@ -148,15 +120,30 @@ const EventRow = ({ event }: { event: MemoryEvent }) => {
             {LL.memoryDebug_cacheReadTokens(formatTokens(d.cacheReadTokens))}
           </span>
         )}
+        {event.type === "compression-error" && (
+          <span className="text-[10px] text-red-400 whitespace-nowrap">
+            {LL.memoryDebug_compressionErrorShort()}
+          </span>
+        )}
+        {event.type === "result-summarize" && d.resultsSummarized != null && (
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+            {LL.memoryDebug_resultsSummarized(String(d.resultsSummarized))}
+          </span>
+        )}
+        {event.type === "truncation-drop" && d.messagesDropped != null && (
+          <span className="text-[10px] text-amber-400 whitespace-nowrap">
+            {LL.memoryDebug_messagesDroppedCount(String(d.messagesDropped))}
+          </span>
+        )}
         <span className="text-[10px] text-muted-foreground tabular-nums ml-2 shrink-0">
           {formatTime(event.timestamp)}
         </span>
       </button>
 
-      {expanded && d.summary && (
+      {expanded && (d.summary || d.error) && (
         <div className="px-2.5 pb-2 pt-0">
-          <pre className="text-[11px] text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
-            {d.summary}
+          <pre className={`text-[11px] whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto ${d.error ? "text-red-400" : "text-muted-foreground"}`}>
+            {d.error ?? d.summary}
           </pre>
         </div>
       )}
@@ -168,7 +155,10 @@ export const MemoryDebugPanel = () => {
   const { LL } = useI18nContext();
   const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCharts, setShowCharts] = useState(true);
   const unsubRef = useRef<(() => void) | null>(null);
+  const { tokenTimeline, cacheBuckets, eventDistribution } =
+    useMemoryChartData(events);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,6 +198,35 @@ export const MemoryDebugPanel = () => {
     setEvents([]);
   };
 
+  const {
+    compressionWrites,
+    cacheHits,
+    totalSaved,
+    avgRatio,
+    totalCacheRead,
+  } = useMemo(() => {
+    const cw = events.filter((e) => e.type === "compression-write");
+    const ch = events.filter((e) => e.type === "cache-hit");
+    const origSum = cw.reduce(
+      (acc, e) => acc + (e.detail.originalTokens ?? 0),
+      0,
+    );
+    const compSum = cw.reduce(
+      (acc, e) => acc + (e.detail.compressedTokens ?? 0),
+      0,
+    );
+    return {
+      compressionWrites: cw,
+      cacheHits: ch,
+      totalSaved: origSum - compSum,
+      avgRatio: compressionRatio(origSum, compSum),
+      totalCacheRead: ch.reduce(
+        (acc, e) => acc + (e.detail.cacheReadTokens ?? 0),
+        0,
+      ),
+    };
+  }, [events]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -227,30 +246,33 @@ export const MemoryDebugPanel = () => {
     );
   }
 
-  // Aggregate stats
-  const compressionWrites = events.filter(
-    (e) => e.type === "compression-write",
-  );
-  const cacheHits = events.filter((e) => e.type === "cache-hit");
-  const totalOriginal = compressionWrites.reduce(
-    (acc, e) => acc + (e.detail.originalTokens ?? 0),
-    0,
-  );
-  const totalCompressed = compressionWrites.reduce(
-    (acc, e) => acc + (e.detail.compressedTokens ?? 0),
-    0,
-  );
-  const totalSaved = totalOriginal - totalCompressed;
-  const avgRatio = compressionRatio(totalOriginal, totalCompressed);
-  const totalCacheRead = cacheHits.reduce(
-    (acc, e) => acc + (e.detail.cacheReadTokens ?? 0),
-    0,
-  );
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Header + stat badges */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-foreground">Memory Debug</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-medium text-foreground">{LL.memoryDebug_title()}</h3>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-400/10 px-2 py-0.5 text-[10px] font-medium text-orange-400">
+              <Brain className="w-3 h-3" />
+              {compressionWrites.length}
+              {avgRatio && <span className="text-orange-400/70">({avgRatio})</span>}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-400/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+              {totalSaved > 0 ? formatTokens(totalSaved) : "-"}{" "}
+              {LL.memoryDebug_savedLabel()}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-400/10 px-2 py-0.5 text-[10px] font-medium text-green-400">
+              <Zap className="w-3 h-3" />
+              {totalCacheRead > 0 ? formatTokens(totalCacheRead) : "-"}
+              {cacheHits.length > 0 && (
+                <span className="text-green-400/70">
+                  ({LL.memoryDebug_hitTimes(String(cacheHits.length))})
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -270,47 +292,35 @@ export const MemoryDebugPanel = () => {
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">
-            {LL.memoryDebug_compressionCount()}
-          </div>
-          <div className="text-lg font-semibold text-foreground">
-            {compressionWrites.length}
-          </div>
-          {avgRatio && (
-            <div className="text-[10px] text-green-400">
-              {LL.memoryDebug_avgRatio(avgRatio)}
-            </div>
+      {/* Visualization */}
+      <div>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
+          onClick={() => setShowCharts((v) => !v)}
+        >
+          {showCharts ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
           )}
-        </div>
-        <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">
-            {LL.memoryDebug_compressionSaved()}
-          </div>
-          <div className="text-lg font-semibold text-foreground">
-            {totalSaved > 0 ? formatTokens(totalSaved) : "-"}
-          </div>
-          {totalOriginal > 0 && (
-            <div className="text-[10px] text-muted-foreground">
-              {formatTokens(totalOriginal)} → {formatTokens(totalCompressed)}
+          {LL.memoryDebug_visualization()}
+        </button>
+        {showCharts && (
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-3 space-y-3">
+              <div className="rounded-lg border border-border bg-muted px-3 py-2.5">
+                <TokenTimelineChart data={tokenTimeline} />
+              </div>
+              <div className="rounded-lg border border-border bg-muted px-3 py-2.5">
+                <CacheEfficiencyChart data={cacheBuckets} />
+              </div>
             </div>
-          )}
-        </div>
-        <div className="rounded-lg border border-border bg-muted px-3 py-2">
-          <div className="text-xs text-muted-foreground">
-            {LL.memoryDebug_cacheHitCount()}
-          </div>
-          <div className="text-lg font-semibold text-foreground">
-            {totalCacheRead > 0 ? formatTokens(totalCacheRead) : "-"}
-          </div>
-          {cacheHits.length > 0 && (
-            <div className="text-[10px] text-muted-foreground">
-              {LL.memoryDebug_hitTimes(String(cacheHits.length))}
+            <div className="col-span-2 rounded-lg border border-border bg-muted px-3 py-2.5 flex items-center justify-center">
+              <EventDistributionChart data={eventDistribution} />
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Event list */}
@@ -318,7 +328,7 @@ export const MemoryDebugPanel = () => {
         <span className="text-xs font-medium text-muted-foreground">
           {LL.memoryDebug_eventLog(String(events.length))}
         </span>
-        <div className="space-y-1">
+        <div className="space-y-1 max-h-48 overflow-y-auto">
           {events.map((event) => (
             <EventRow key={event.id} event={event} />
           ))}
