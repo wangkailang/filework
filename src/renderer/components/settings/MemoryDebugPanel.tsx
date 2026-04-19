@@ -18,11 +18,11 @@ import { CacheEfficiencyChart } from "./charts/CacheEfficiencyChart";
 import { EventDistributionChart } from "./charts/EventDistributionChart";
 import { getTypeLabel } from "./charts/memory-debug-utils";
 import { TokenTimelineChart } from "./charts/TokenTimelineChart";
-import { useMemoryChartData } from "./charts/useMemoryChartData";
 import type {
   MemoryEvent,
   MemoryEventDetail,
 } from "./charts/useMemoryChartData";
+import { useMemoryChartData } from "./charts/useMemoryChartData";
 
 const formatTime = (iso: string): string => {
   const d = new Date(iso);

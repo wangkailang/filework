@@ -47,8 +47,8 @@ export function useMemoryChartData(events: MemoryEvent[]) {
       .reverse() // oldest first for timeline
       .map((e) => ({
         timestamp: e.timestamp,
-        originalTokens: e.detail.originalTokens!,
-        compressedTokens: e.detail.compressedTokens!,
+        originalTokens: e.detail.originalTokens ?? 0,
+        compressedTokens: e.detail.compressedTokens ?? 0,
       }));
   }, [events]);
 
@@ -65,8 +65,8 @@ export function useMemoryChartData(events: MemoryEvent[]) {
         type: e.type as "cache-write" | "cache-hit",
         tokens:
           e.type === "cache-write"
-            ? e.detail.cacheWriteTokens!
-            : e.detail.cacheReadTokens!,
+            ? (e.detail.cacheWriteTokens ?? 0)
+            : (e.detail.cacheReadTokens ?? 0),
       }));
   }, [events]);
 
