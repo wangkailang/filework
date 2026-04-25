@@ -42,6 +42,7 @@ export interface PlanStepView {
   action: string;
   description: string;
   skillId?: string;
+  verification?: string;
   subSteps?: PlanSubStepView[];
   artifacts?: PlanStepArtifactView[];
   status: "pending" | "running" | "completed" | "failed" | "skipped";
@@ -363,6 +364,11 @@ export const PlanViewer = ({
                     <RunningStepTimer isStalled={isStalled} />
                   )}
                 </span>
+                {step.verification && (
+                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+                    {LL.plan_verify()}: {step.verification}
+                  </div>
+                )}
                 {step.error && (
                   <div className="text-xs text-red-400 mt-0.5">
                     {LL.plan_stepError(step.error)}

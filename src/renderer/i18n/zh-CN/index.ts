@@ -139,6 +139,10 @@ const zhCN: Translation = {
   plan_failed: "计划执行失败",
   plan_cancelled: "计划已取消",
   plan_stepError: "错误: {0}",
+  plan_verify: "验证",
+
+  // Clarification
+  clarification_title: "需要确认",
 
   // Conversation
   conv_scrollToBottom: "滚动到底部",

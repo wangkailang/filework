@@ -29,6 +29,8 @@ export interface PlanStep {
   description: string;
   /** Optional skill id to activate for this step */
   skillId?: string;
+  /** How to verify this step succeeded (e.g. "listDirectory confirms files moved") */
+  verification?: string;
   /** Breakdown of concrete actions within this step */
   subSteps?: PlanSubStep[];
   /** Artifacts produced during execution */
@@ -77,5 +79,6 @@ export interface PlannerLLMOutput {
     description: string;
     skillId?: string;
     subSteps?: string[];
+    verify?: string;
   }>;
 }

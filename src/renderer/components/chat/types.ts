@@ -51,12 +51,19 @@ export interface UsagePart {
   provider: string | null;
 }
 
+export interface ClarificationPart {
+  type: "clarification";
+  question: string;
+  options?: string[];
+}
+
 export type MessagePart =
   | TextPart
   | ToolPart
   | PlanMessagePart
   | ErrorPart
-  | UsagePart;
+  | UsagePart
+  | ClarificationPart;
 
 // ---------------------------------------------------------------------------
 // Chat data types

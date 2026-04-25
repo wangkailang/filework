@@ -149,6 +149,10 @@ const ja: Translation = {
   plan_failed: "計画失敗",
   plan_cancelled: "計画キャンセル済み",
   plan_stepError: "エラー: {0}",
+  plan_verify: "検証",
+
+  // Clarification
+  clarification_title: "確認が必要",
 
   // Conversation
   conv_scrollToBottom: "一番下にスクロール",

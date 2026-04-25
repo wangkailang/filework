@@ -116,6 +116,7 @@ ${skillCatalog}
   - GOOD: "读取 report.md 提取章节标题", "对比原文检查遗漏段落", "按时间线重组第3-5节"
   - Sub-steps should mention concrete files, data, or operations so the user knows exactly what will happen.
 - Simple steps (single tool call) can omit subSteps.
+- Every step SHOULD include a "verify" field: a concrete check the executor can perform to confirm the step succeeded (e.g. "listDirectory confirms files sorted into YYYY-MM subdirectories", "readFile checks report.md contains all sections").
 
 ## JSON schema
 \`\`\`
@@ -126,7 +127,8 @@ ${skillCatalog}
       "action": "string — short verb label",
       "description": "string — what this step does, mention target files/paths",
       "skillId": "string | undefined — skill id if applicable",
-      "subSteps": ["读取 data.csv 提取关键指标", "生成对比图表数据"] // optional
+      "subSteps": ["读取 data.csv 提取关键指标", "生成对比图表数据"], // optional
+      "verify": "string — how to confirm this step succeeded" // recommended
     }
   ]
 }
@@ -313,6 +315,7 @@ const buildPlan = async (
     action: s.action,
     description: s.description,
     skillId: s.skillId,
+    verification: s.verify,
     subSteps: s.subSteps?.map(
       (label): PlanSubStep => ({ label, status: "pending" }),
     ),
