@@ -323,6 +323,20 @@ export function useStreamSubscription({
       },
     );
 
+    const offClarification = window.filework.onStreamClarification(
+      ({ id, question, options }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          parts.push({
+            type: "clarification",
+            question,
+            options: options?.filter(Boolean),
+          });
+          return parts;
+        });
+      },
+    );
+
     const offRetry = window.filework.onStreamRetry(
       ({ id, attempt, type, maxRetries }) => {
         if (id !== streamTaskIdRef.current) return;
@@ -346,6 +360,7 @@ export function useStreamSubscription({
       offRetry();
       offDone();
       offError();
+      offClarification();
       offSkillApprovalRequest();
     };
   }, [

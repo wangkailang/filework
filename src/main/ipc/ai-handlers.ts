@@ -346,9 +346,12 @@ const handleTaskExecution = async (
             ? buildSkillSpecificTools(allowedTools, sender, id)
             : buildTools(sender, id);
         const deps: ExecutorDeps = {
-          getModel: () => getAIModelByConfigId(payload.llmConfigId) as any,
+          getModel: () => getAIModelByConfigId(payload.llmConfigId),
           allTools: tools,
-          rawExecutors,
+          rawExecutors: rawExecutors as unknown as Record<
+            string,
+            (...args: unknown[]) => Promise<unknown>
+          >,
           safeTools,
         };
 
@@ -410,10 +413,10 @@ const handleTaskExecution = async (
     );
 
     // ── Build messages from history (if available) ──
-    const useMessagesMode = !!convertedHistory?.length;
+    const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
     const builtMessages: import("ai").ModelMessage[] = useMessagesMode
       ? [
-          ...convertedHistory!,
+          ...(convertedHistory ?? []),
           { role: "user" as const, content: payload.prompt },
         ]
       : [];

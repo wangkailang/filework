@@ -36,7 +36,7 @@ interface SidebarProps {
 
 export const Sidebar = ({
   workspacePath,
-  onChangeDirectory,
+  onChangeDirectory: _onChangeDirectory,
   onCloseDirectory,
   onLocaleChange,
   onSelectFile,

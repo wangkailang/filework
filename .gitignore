@@ -9,3 +9,11 @@ release/
 .env
 .env.local
 tmp/
+
+# Local editor/agent configuration (not part of source)
+.claude/settings.json
+.claude/settings.local.json
+.vscode/settings.json
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo

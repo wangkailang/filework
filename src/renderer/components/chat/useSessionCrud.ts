@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, MessagePart, UsagePart } from "./types";
-import type { ChatSession } from "./types";
 import { migrateToParts } from "./helpers";
-import type { UsageInfo, StreamErrorInfo } from "./useChatSession";
+import type { ChatMessage, ChatSession, MessagePart, UsagePart } from "./types";
+import type { StreamErrorInfo, UsageInfo } from "./useChatSession";
 
 export function useSessionCrud(workspacePath: string) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);

@@ -275,7 +275,15 @@ export function useChatSession(workspacePath: string) {
         stream.streamTaskIdRef.current = null;
         stream.streamAssistantIdRef.current = null;
       });
-  }, [stream.isLoading]);
+  }, [
+    stream.isLoading,
+    stream.pendingStopRef,
+    stream.stopRequestedRef,
+    stream.streamAssistantIdRef,
+    stream.streamTaskIdRef,
+    stream.setActiveSkill,
+    stream.setIsLoading,
+  ]);
 
   const handleSkillApproval = (approved: boolean) => {
     if (!stream.pendingSkillApproval) return;

@@ -22,7 +22,8 @@ describe("IncrementalScanner", () => {
 
     const scanner = new IncrementalScanner();
 
-    const cacheManager = (scanner as any).cacheManager as {
+    const cacheManager = (scanner as unknown as { cacheManager: unknown })
+      .cacheManager as {
       saveCache: () => Promise<void>;
     };
     const originalSaveCache = cacheManager.saveCache.bind(cacheManager);

@@ -97,12 +97,21 @@ export const registerLlmConfigHandlers = () => {
         return { error: validationError };
       }
 
+      // Validation already guarantees required fields, but we still guard here
+      // to satisfy lint rules (no non-null assertions) and keep runtime safe.
+      const name = data.name ?? "";
+      const provider = data.provider ?? "";
+      const model = data.model ?? "";
+      if (!name || !provider || !model) {
+        return { error: "Invalid LLM config payload" };
+      }
+
       return createLlmConfig({
-        name: data.name!,
-        provider: data.provider!,
+        name,
+        provider,
         apiKey: data.apiKey ?? null,
         baseUrl: data.baseUrl ?? null,
-        model: data.model!,
+        model,
         isDefault: data.isDefault ?? false,
       });
     } catch (err) {

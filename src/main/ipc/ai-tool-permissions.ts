@@ -233,8 +233,8 @@ export const buildSkillSpecificTools = (
               };
             return statefulTools.clearDirectoryCache.execute?.(args, {
               toolCallId,
-              abortSignal,
-            } as any);
+              messages: [],
+            });
           },
         },
         taskId,
@@ -350,10 +350,42 @@ export const buildTools = (
     wrappedSafeTools[name] = wrapToolWithAbort(tool, taskId);
   }
 
+  const askClarification: Tool = wrapToolWithAbort(
+    {
+      description:
+        "Ask the user a clarification question (optionally with multiple-choice options). Use this when the user's intent is ambiguous. After calling this tool, stop and wait for the user's reply.",
+      inputSchema: z.object({
+        question: z.string().describe("The clarification question to ask"),
+        options: z
+          .array(z.string())
+          .optional()
+          .describe("Optional multiple-choice options for the user"),
+      }),
+      execute: async ({
+        question,
+        options,
+      }: {
+        question: string;
+        options?: string[];
+      }) => {
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-clarification", {
+            id: taskId,
+            question,
+            options: options?.filter(Boolean),
+          });
+        }
+        return { asked: true };
+      },
+    },
+    taskId,
+  );
+
   return {
     ...wrappedSafeTools,
     writeFile: guardedWriteFile,
     moveFile: guardedMoveFile,
     deleteFile: guardedDeleteFile,
+    askClarification,
   };
 };

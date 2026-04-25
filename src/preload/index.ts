@@ -335,6 +335,21 @@ const api = {
     return () => ipcRenderer.removeListener("ai:stream-error", handler);
   },
 
+  onStreamClarification: (
+    callback: (data: {
+      id: string;
+      question: string;
+      options?: string[];
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { id: string; question: string; options?: string[] },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-clarification", handler);
+    return () => ipcRenderer.removeListener("ai:stream-clarification", handler);
+  },
+
   // Watchdog events (stall detection)
   onWatchdog: (
     callback: (data: {
