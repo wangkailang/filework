@@ -12,7 +12,22 @@ export function useSessionCrud(workspacePath: string) {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
   activeSessionIdRef.current = activeSessionId;
+  messagesRef.current = messages;
+
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const sessionId = activeSessionIdRef.current;
+    const latestMessages = messagesRef.current;
+    if (latestMessages.length > 0 && sessionId) {
+      window.filework.saveChatHistory(sessionId, workspacePath, latestMessages);
+    }
+  }, [workspacePath]);
 
   const debouncedSave = useCallback(
     (msgs: ChatMessage[], sessionId: string) => {
@@ -84,25 +99,19 @@ export function useSessionCrud(workspacePath: string) {
 
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (messages.length > 0 && activeSessionId) {
-        window.filework.saveChatHistory(
-          activeSessionId,
-          workspacePath,
-          messages,
-        );
-      }
+      flushPendingSave();
     };
-  }, [workspacePath, messages, activeSessionId]);
+  }, [flushPendingSave]);
 
   const createNewSession = useCallback(async (): Promise<string> => {
+    flushPendingSave();
     const session: ChatSession =
       await window.filework.createChatSession(workspacePath);
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
     setMessages([]);
     return session.id;
-  }, [workspacePath]);
+  }, [flushPendingSave, workspacePath]);
 
   const handleNewChat = useCallback(
     async (isLoading: boolean) => {
@@ -117,15 +126,19 @@ export function useSessionCrud(workspacePath: string) {
   const handleSelectSession = useCallback(
     (sessionId: string, isLoading: boolean) => {
       if (isLoading || sessionId === activeSessionId) return;
+      flushPendingSave();
       setActiveSessionId(sessionId);
       setLastUsage(null);
       setLastError(null);
     },
-    [activeSessionId],
+    [activeSessionId, flushPendingSave],
   );
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
+      if (sessionId === activeSessionId) {
+        flushPendingSave();
+      }
       await window.filework.deleteChatSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (sessionId === activeSessionId) {
@@ -138,13 +151,14 @@ export function useSessionCrud(workspacePath: string) {
         }
       }
     },
-    [activeSessionId, sessions],
+    [activeSessionId, flushPendingSave, sessions],
   );
 
   const handleForkSession = useCallback(
     async (fromMessageId: string, isLoading: boolean) => {
       if (isLoading || !activeSessionId) return;
       try {
+        flushPendingSave();
         const forked: ChatSession = await window.filework.forkChatSession(
           activeSessionId,
           fromMessageId,
@@ -157,7 +171,7 @@ export function useSessionCrud(workspacePath: string) {
         console.error("[Fork Session] Failed:", err);
       }
     },
-    [activeSessionId],
+    [activeSessionId, flushPendingSave],
   );
 
   return {
