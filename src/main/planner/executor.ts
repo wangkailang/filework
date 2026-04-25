@@ -149,6 +149,10 @@ export const executePlan = async ({
         ? `\n\n## Sub-tasks for this step\n${step.subSteps.map((ss, i) => `${i + 1}. ${ss.label}`).join("\n")}\nComplete each sub-task in order. After finishing each one, mention which sub-task you completed.`
         : "";
 
+      const verificationInstruction = step.verification
+        ? `\n\n## Verification\nAfter completing this step, verify: ${step.verification}`
+        : "";
+
       const systemPrompt = `You are FileWork, executing step ${step.id}/${plan.steps.length} of a planned task.
 
 Current workspace: ${plan.workspacePath}
@@ -160,7 +164,7 @@ ${planContext}
 ${previousResults || "(none — this is the first step)"}
 
 ## Current Step
-Step ${step.id}: ${step.action} — ${step.description}${subStepsList}
+Step ${step.id}: ${step.action} — ${step.description}${subStepsList}${verificationInstruction}
 
 Rules:
 - Focus ONLY on this step's objective. Do not do work for other steps.

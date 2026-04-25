@@ -23,7 +23,7 @@ function makeSkill(overrides: Partial<UnifiedSkill> = {}): UnifiedSkill {
 
 function makeExternalSkill(
   overrides: Partial<UnifiedSkill> = {},
-  fmOverrides: Record<string, any> = {},
+  fmOverrides: Record<string, unknown> = {},
 ): UnifiedSkill {
   return makeSkill({
     external: {
@@ -31,7 +31,7 @@ function makeExternalSkill(
       frontmatter: {
         name: "test-skill",
         description: "A test skill",
-        ...fmOverrides,
+        ...(fmOverrides as Record<string, unknown>),
       },
       body: "You are a test skill.",
       sourcePath: "/workspace/.agents/skills/test-skill/SKILL.md",
@@ -41,27 +41,45 @@ function makeExternalSkill(
 }
 
 function makeDeps(overrides: Partial<ExecutorDeps> = {}): ExecutorDeps {
+  type Tool = import("ai").Tool;
   return {
-    getModel: vi.fn(() => ({}) as any),
+    getModel: vi.fn(
+      () =>
+        ({}) as unknown as Parameters<
+          typeof import("ai").streamText
+        >[0]["model"],
+    ),
     allTools: {
-      readFile: { description: "Read file", execute: vi.fn() } as any,
-      listDirectory: { description: "List dir", execute: vi.fn() } as any,
+      readFile: {
+        description: "Read file",
+        execute: vi.fn(),
+      } as unknown as Tool,
+      listDirectory: {
+        description: "List dir",
+        execute: vi.fn(),
+      } as unknown as Tool,
       writeFile: {
         description: "Write file (guarded)",
         execute: vi.fn(),
-      } as any,
+      } as unknown as Tool,
       deleteFile: {
         description: "Delete file (guarded)",
         execute: vi.fn(),
-      } as any,
+      } as unknown as Tool,
     },
     rawExecutors: {
       writeFile: vi.fn(async () => ({ success: true })),
       deleteFile: vi.fn(async () => ({ success: true })),
     },
     safeTools: {
-      readFile: { description: "Read file", execute: vi.fn() } as any,
-      listDirectory: { description: "List dir", execute: vi.fn() } as any,
+      readFile: {
+        description: "Read file",
+        execute: vi.fn(),
+      } as unknown as Tool,
+      listDirectory: {
+        description: "List dir",
+        execute: vi.fn(),
+      } as unknown as Tool,
     },
     ...overrides,
   };
@@ -73,7 +91,10 @@ function makeCtx(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
     processedPrompt: "You are a test skill.",
     systemPrompt: "Help me with testing",
     workspacePath: "/workspace",
-    sender: { isDestroyed: () => false, send: vi.fn() } as any,
+    sender: {
+      isDestroyed: () => false,
+      send: vi.fn(),
+    } as unknown as Electron.WebContents,
     taskId: "task-1",
     injectionMode: "eager",
     ...overrides,
@@ -302,7 +323,11 @@ describe("executeSkill", () => {
     const { runHook } = await import("../hooks");
     // Create a skill that will trigger fork mode, and mock streamText to throw
     const { streamText } = await import("ai");
-    (streamText as any).mockImplementationOnce(() => {
+    (
+      streamText as unknown as {
+        mockImplementationOnce: (fn: () => unknown) => void;
+      }
+    ).mockImplementationOnce(() => {
       throw new Error("AI error");
     });
 

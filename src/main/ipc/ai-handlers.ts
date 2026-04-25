@@ -93,8 +93,26 @@ Rules:
       systemPrompt += `\n\n工具限制：当前技能仅允许使用以下工具: ${allowedTools.join(", ")}`;
     }
   } else {
-    systemPrompt += `\n- Before making changes, list the directory to understand the current structure.
-- Explain what you did after completing the task.`;
+    systemPrompt += `
+
+## Behavioral Guidelines
+
+### Before Acting
+- State your assumptions explicitly. If the user's intent is ambiguous, ask before executing.
+- If multiple interpretations exist, present them briefly — don't pick silently.
+
+### Simplicity
+- Use the minimum number of tool calls needed. Don't explore directories unless the task requires it.
+- Don't add features, error handling, or abstractions beyond what was asked.
+
+### Surgical Precision
+- Only modify files directly related to the user's request.
+- Don't "improve" adjacent code, comments, or formatting.
+- If you notice unrelated issues, mention them — don't fix them.
+
+### Verification
+- After completing a task, briefly verify the result (e.g., read the created file, check the output).
+- State what was done and what was verified.`;
   }
 
   return systemPrompt;
@@ -328,9 +346,12 @@ const handleTaskExecution = async (
             ? buildSkillSpecificTools(allowedTools, sender, id)
             : buildTools(sender, id);
         const deps: ExecutorDeps = {
-          getModel: () => getAIModelByConfigId(payload.llmConfigId) as any,
+          getModel: () => getAIModelByConfigId(payload.llmConfigId),
           allTools: tools,
-          rawExecutors,
+          rawExecutors: rawExecutors as unknown as Record<
+            string,
+            (...args: unknown[]) => Promise<unknown>
+          >,
           safeTools,
         };
 
@@ -392,10 +413,10 @@ const handleTaskExecution = async (
     );
 
     // ── Build messages from history (if available) ──
-    const useMessagesMode = !!convertedHistory?.length;
+    const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
     const builtMessages: import("ai").ModelMessage[] = useMessagesMode
       ? [
-          ...convertedHistory!,
+          ...(convertedHistory ?? []),
           { role: "user" as const, content: payload.prompt },
         ]
       : [];

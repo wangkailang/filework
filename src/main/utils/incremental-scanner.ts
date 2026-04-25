@@ -199,7 +199,9 @@ class CacheManager {
     );
 
     while (ordered.length > policy.maxDirectories) {
-      const [oldestPath] = ordered.shift()!;
+      const oldest = ordered.shift();
+      if (!oldest) break;
+      const [oldestPath] = oldest;
       this.memoryCache.delete(oldestPath);
     }
 
@@ -208,7 +210,9 @@ class CacheManager {
       0,
     );
     while (totalFiles > policy.maxTotalFiles && ordered.length > 0) {
-      const [oldestPath, oldestSnapshot] = ordered.shift()!;
+      const oldest = ordered.shift();
+      if (!oldest) break;
+      const [oldestPath, oldestSnapshot] = oldest;
       this.memoryCache.delete(oldestPath);
       totalFiles -= oldestSnapshot.files.size;
     }

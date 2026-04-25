@@ -14,7 +14,7 @@
 
 import { execSync } from "node:child_process";
 import { dirname } from "node:path";
-import type { Tool } from "ai";
+import type { Tool, ToolExecutionOptions } from "ai";
 import { stepCountIs, streamText } from "ai";
 
 import { runHook } from "./hooks";
@@ -30,11 +30,11 @@ const DEFAULT_LAZY_THRESHOLD = 10;
 /** Dependencies injected into executor functions (avoids tight coupling to ai-handlers). */
 export interface ExecutorDeps {
   /** Returns the default AI model instance. */
-  getModel: () => ReturnType<typeof import("@ai-sdk/openai").createOpenAI>;
+  getModel: () => Parameters<typeof streamText>[0]["model"];
   /** Full tool set with approval guards for dangerous operations. */
   allTools: Record<string, Tool>;
   /** Raw executors for dangerous tools (no approval). */
-  rawExecutors: Record<string, (...args: any[]) => Promise<any>>;
+  rawExecutors: Record<string, (...args: unknown[]) => Promise<unknown>>;
   /** Safe (read-only) tools. */
   safeTools: Record<string, Tool>;
 }
@@ -268,7 +268,7 @@ export async function executeSubagent(
   const systemPrompt = wrapWithSecurityBoundary(processedPrompt, source);
 
   // ── Resolve model ──
-  let model: any;
+  let model: Parameters<typeof streamText>[0]["model"];
   if (fm?.model) {
     try {
       model = createModelOverride(fm.model, deps);
@@ -443,7 +443,7 @@ function wrapToolWithErrorHandler(tool: Tool, toolName: string): Tool {
 
   return {
     ...tool,
-    execute: async (args: any, options: any) => {
+    execute: async (args: unknown, options: ToolExecutionOptions) => {
       try {
         return await originalExecute(args, options);
       } catch (err) {
@@ -467,7 +467,10 @@ function wrapToolWithErrorHandler(tool: Tool, toolName: string): Tool {
  * This is a simplified heuristic — in production, a more robust
  * model resolution strategy would be used.
  */
-function createModelOverride(_modelId: string, deps: ExecutorDeps): any {
+function createModelOverride(
+  _modelId: string,
+  deps: ExecutorDeps,
+): Parameters<typeof streamText>[0]["model"] {
   // For now, delegate to the default model getter.
   // The integration task (11.x) will wire this up to the full
   // provider resolution logic from getAIModel.

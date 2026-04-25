@@ -468,6 +468,14 @@ type RootTranslation = {
 	 */
 	plan_stepError: RequiredParams<'0'>
 	/**
+	 * V​e​r​i​f​y
+	 */
+	plan_verify: string
+	/**
+	 * C​l​a​r​i​f​i​c​a​t​i​o​n​ ​N​e​e​d​e​d
+	 */
+	clarification_title: string
+	/**
 	 * S​c​r​o​l​l​ ​t​o​ ​b​o​t​t​o​m
 	 */
 	conv_scrollToBottom: string
@@ -1372,6 +1380,14 @@ export type TranslationFunctions = {
 	 * Error: {0}
 	 */
 	plan_stepError: (arg0: string) => LocalizedString
+	/**
+	 * Verify
+	 */
+	plan_verify: () => LocalizedString
+	/**
+	 * Clarification Needed
+	 */
+	clarification_title: () => LocalizedString
 	/**
 	 * Scroll to bottom
 	 */

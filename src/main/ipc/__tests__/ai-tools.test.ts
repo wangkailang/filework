@@ -61,13 +61,20 @@ describe("safeTools.listDirectory", () => {
 
     const { safeTools } = await import("../ai-tools");
 
+    type ListDirArgs = Parameters<
+      NonNullable<typeof safeTools.listDirectory.execute>
+    >[0];
+    type ToolCtx = Parameters<
+      NonNullable<typeof safeTools.listDirectory.execute>
+    >[1];
+
     const result = await safeTools.listDirectory.execute?.(
       {
         path: "/tmp",
         incremental: true,
         includeStats: false,
-      } as any,
-      {} as any,
+      } satisfies ListDirArgs,
+      { toolCallId: "t1", messages: [] } satisfies ToolCtx,
     );
 
     expect(result).toEqual([
@@ -95,7 +102,7 @@ describe("safeTools.runCommand", () => {
       child.stdout = stdout;
       child.stderr = stderr;
 
-      const spawnMock = vi.fn(() => child as any);
+      const spawnMock = vi.fn(() => child as unknown);
       vi.doMock("node:child_process", () => ({
         spawn: spawnMock,
       }));
@@ -121,13 +128,28 @@ describe("safeTools.runCommand", () => {
 
       const killSpy = vi
         .spyOn(process, "kill")
-        .mockImplementation((() => true) as any);
+        .mockImplementation(
+          ((_pid: number, _signal?: NodeJS.Signals | number) =>
+            true) as typeof process.kill,
+        );
       const { safeTools } = await import("../ai-tools");
 
       const controller = new AbortController();
+      type RunCommandArgs = Parameters<
+        NonNullable<typeof safeTools.runCommand.execute>
+      >[0];
+      type RunCommandCtx = Parameters<
+        NonNullable<typeof safeTools.runCommand.execute>
+      >[1];
       const runPromise = safeTools.runCommand.execute?.(
-        { command: "npx agent-browser open https://example.com" } as any,
-        { abortSignal: controller.signal } as any,
+        {
+          command: "npx agent-browser open https://example.com",
+        } satisfies RunCommandArgs,
+        {
+          abortSignal: controller.signal,
+          toolCallId: "t1",
+          messages: [],
+        } satisfies RunCommandCtx,
       );
 
       controller.abort();

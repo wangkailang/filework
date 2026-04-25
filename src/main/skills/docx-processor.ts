@@ -12,19 +12,25 @@ const DOCX_EXTENSIONS = [".docx"];
  */
 const extractText = (node: {
   type: string;
-  children?: any[];
+  children?: unknown[];
   value?: string;
 }): string => {
   if (node.type === "text") return node.value ?? "";
   if (!node.children) return "";
-  return node.children.map(extractText).join("");
+  return node.children
+    .filter(
+      (c): c is { type: string; children?: unknown[]; value?: string } =>
+        typeof c === "object" && c !== null && "type" in c,
+    )
+    .map(extractText)
+    .join("");
 };
 
 /**
  * Resolve JSZip from mammoth's dependency tree.
  * mammoth bundles jszip internally; we use createRequire to access it.
  */
-const loadJSZip = (): any => {
+const loadJSZip = (): unknown => {
   const { createRequire } = require("node:module");
   const mammothRequire = createRequire(require.resolve("mammoth"));
   return mammothRequire("jszip");
@@ -49,7 +55,14 @@ const parseDocxMetadata = async (
     modifiedAt: null,
   };
   try {
-    const JSZip = loadJSZip();
+    type JSZipLike = {
+      loadAsync: (input: Buffer) => Promise<{
+        file: (
+          path: string,
+        ) => { async: (kind: "string") => Promise<string> } | null;
+      }>;
+    };
+    const JSZip = loadJSZip() as JSZipLike;
     const zip = await JSZip.loadAsync(buffer);
     const coreXmlFile = zip.file("docProps/core.xml");
     if (!coreXmlFile) return defaults;
@@ -111,12 +124,26 @@ const readDocxStructureTool: Tool = {
           path,
         },
         {
-          transformDocument: (document: { type: string; children?: any[] }) => {
+          transformDocument: (document: {
+            type: string;
+            children?: unknown[];
+          }) => {
             if (document.children) {
               for (const child of document.children) {
-                if (child.type === "paragraph") {
-                  const text = extractText(child);
-                  const style = child.styleName || "Normal";
+                if (
+                  typeof child === "object" &&
+                  child !== null &&
+                  "type" in child &&
+                  (child as { type?: unknown }).type === "paragraph"
+                ) {
+                  const typedChild = child as {
+                    type: string;
+                    children?: unknown[];
+                    value?: string;
+                    styleName?: string;
+                  };
+                  const text = extractText(typedChild);
+                  const style = typedChild.styleName || "Normal";
                   paragraphs.push({ text, style });
                 }
               }

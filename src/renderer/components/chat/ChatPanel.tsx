@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   CopyIcon,
   GitBranch,
+  HelpCircle,
   History,
   Loader2,
   MessageSquarePlus,
@@ -56,6 +57,7 @@ import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
 import type {
+  ClarificationPart,
   ErrorPart,
   MessagePart,
   PlanMessagePart,
@@ -363,6 +365,41 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             chat={chat}
             className="my-1"
           />
+        );
+      }
+      if (part.type === "clarification") {
+        const cp = part as ClarificationPart;
+        return (
+          <div
+            key={`clarify-${cp.question}`}
+            className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 my-1"
+          >
+            <div className="flex items-start gap-2">
+              <HelpCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium text-primary">
+                  {LL.clarification_title()}
+                </div>
+                <div className="text-sm text-foreground mt-0.5">
+                  {cp.question}
+                </div>
+                {cp.options && cp.options.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {cp.options.map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => chat.handleSubmit({ text: opt })}
+                        className="inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent hover:text-foreground transition-colors"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         );
       }
       return null;

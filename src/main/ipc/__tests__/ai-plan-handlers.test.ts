@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const registeredHandlers = new Map<string, Function>();
+const registeredHandlers = new Map<string, (...args: unknown[]) => unknown>();
 
 const planTaskMock = vi.fn();
 const cleanupTaskMock = vi.fn();
@@ -9,9 +9,11 @@ const abortControllers = new Map<string, AbortController>();
 
 vi.mock("electron", () => ({
   ipcMain: {
-    handle: vi.fn((channel: string, handler: Function) => {
-      registeredHandlers.set(channel, handler);
-    }),
+    handle: vi.fn(
+      (channel: string, handler: (...args: unknown[]) => unknown) => {
+        registeredHandlers.set(channel, handler);
+      },
+    ),
   },
 }));
 

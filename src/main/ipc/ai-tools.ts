@@ -506,7 +506,11 @@ export const wrapToolWithAbort = (
   taskId: string,
 ): Tool => ({
   ...originalTool,
-  execute: async (args: any, context: any) => {
+  execute: async (args: unknown, context: unknown) => {
+    const ctx = context as { abortSignal?: AbortSignal } & Record<
+      string,
+      unknown
+    >;
     // Create a combined AbortController that responds to both:
     // 1. The original abortSignal from AI SDK
     // 2. Our manual task cancellation
@@ -529,10 +533,9 @@ export const wrapToolWithAbort = (
     // Create combined abort signal (fallback for older Node.js versions)
     let combinedSignal: AbortSignal;
     if (typeof AbortSignal.any === "function") {
-      combinedSignal = AbortSignal.any([
-        context.abortSignal,
-        taskAbortController.signal,
-      ]);
+      const signals: AbortSignal[] = [taskAbortController.signal];
+      if (ctx.abortSignal) signals.unshift(ctx.abortSignal);
+      combinedSignal = AbortSignal.any(signals);
     } else {
       // Fallback: create a new controller that responds to either signal
       const combinedController = new AbortController();
@@ -543,10 +546,10 @@ export const wrapToolWithAbort = (
         }
       };
 
-      if (context.abortSignal?.aborted || taskAbortController.signal.aborted) {
+      if (ctx.abortSignal?.aborted || taskAbortController.signal.aborted) {
         combinedController.abort();
       } else {
-        context.abortSignal?.addEventListener("abort", abortHandler, {
+        ctx.abortSignal?.addEventListener("abort", abortHandler, {
           once: true,
         });
         taskAbortController.signal.addEventListener("abort", abortHandler, {
@@ -568,9 +571,12 @@ export const wrapToolWithAbort = (
       console.log(`[Tool] Tool args:`, JSON.stringify(args).substring(0, 100));
 
       const result = await originalTool.execute?.(args, {
-        ...context,
+        ...ctx,
         abortSignal: combinedSignal,
-      });
+        toolCallId: String((ctx as Record<string, unknown>).toolCallId ?? ""),
+        messages:
+          ((ctx as Record<string, unknown>).messages as unknown[]) ?? [],
+      } as unknown as import("ai").ToolExecutionOptions);
 
       console.log(
         `[Tool] Completed execution for task ${taskId}, result:`,
