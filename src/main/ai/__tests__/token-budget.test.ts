@@ -4,6 +4,7 @@ import {
   DEFAULT_TOKEN_BUDGET,
   estimateTokens,
   getTokenBudgetForModel,
+  TOOL_RESULT_COMPRESS_THRESHOLD_CHARS,
   truncateToFit,
 } from "../token-budget";
 
@@ -251,6 +252,10 @@ describe("truncateToFit", () => {
 
   it("exports DEFAULT_TOKEN_BUDGET as 80000", () => {
     expect(DEFAULT_TOKEN_BUDGET).toBe(80_000);
+  });
+
+  it("exports TOOL_RESULT_COMPRESS_THRESHOLD_CHARS as 2000", () => {
+    expect(TOOL_RESULT_COMPRESS_THRESHOLD_CHARS).toBe(2000);
   });
 });
 

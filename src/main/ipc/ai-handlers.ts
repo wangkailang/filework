@@ -18,6 +18,7 @@ import {
 } from "../ai/message-converter";
 import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
+import { emitTaskTraceEvent } from "../ai/task-trace-store";
 import {
   estimateTokens,
   getTokenBudgetForModel,
@@ -51,6 +52,7 @@ import {
   cleanupTask,
   manualStopFlags,
   pendingApprovals,
+  setTaskWorkspace,
   stopTaskExecution,
   toolCallToTaskMap,
 } from "./ai-task-control";
@@ -154,12 +156,35 @@ const handleTaskExecution = async (
       sender.send("ai:stream-start", { id });
     }
 
+    setTaskWorkspace(id, payload.workspacePath);
+
+    emitTaskTraceEvent(sender, {
+      taskId: id,
+      type: "task-start",
+      timestamp: now,
+      detail: {
+        workspacePath: payload.workspacePath,
+        hasHistory:
+          Array.isArray(payload.history) && payload.history.length > 0,
+      },
+    });
+
     const llmConfig = payload.llmConfigId
       ? getLlmConfig(payload.llmConfigId)
       : getDefaultLlmConfig();
     const { model, adapter } = getModelAndAdapterByConfigId(
       payload.llmConfigId,
     );
+
+    emitTaskTraceEvent(sender, {
+      taskId: id,
+      type: "model-selected",
+      timestamp: new Date().toISOString(),
+      detail: {
+        provider: llmConfig?.provider ?? null,
+        modelId: llmConfig?.model ?? null,
+      },
+    });
 
     // ── Skill matching: /command format first, then prompt-based ──
     let skill: UnifiedSkill | undefined;
@@ -280,6 +305,18 @@ const handleTaskExecution = async (
         );
         convertedHistory = truncationResult.messages;
 
+        emitTaskTraceEvent(sender, {
+          taskId: id,
+          type: "context-budget",
+          timestamp: new Date().toISOString(),
+          detail: {
+            tokenBudget: tokenBudget ?? null,
+            originalTokens,
+            wasTruncated: truncationResult.wasTruncated,
+            messagesDropped: truncationResult.messagesDropped,
+          },
+        });
+
         // Track when messages were silently dropped by simple truncation
         if (truncationResult.messagesDropped > 0 && !sender.isDestroyed()) {
           emitMemoryEvent(
@@ -324,6 +361,18 @@ const handleTaskExecution = async (
           source: skill.external?.source?.type ?? "built-in",
         });
       }
+
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "skill-activated",
+        timestamp: new Date().toISOString(),
+        detail: {
+          skillId: skill.id,
+          skillName: skill.name,
+          source: skill.external?.source?.type ?? "built-in",
+          isExplicitSkillCommand,
+        },
+      });
 
       const trustLevel = skill.external
         ? getTrustLevel(skill.external.source.type)
@@ -537,6 +586,17 @@ const handleTaskExecution = async (
               maxRetries: classified.maxRetries,
             });
           }
+
+          emitTaskTraceEvent(sender, {
+            taskId: id,
+            type: "retry",
+            timestamp: new Date().toISOString(),
+            detail: {
+              attempt,
+              errorType: classified.type,
+              maxRetries: classified.maxRetries,
+            },
+          });
         },
       });
 
@@ -604,6 +664,18 @@ const handleTaskExecution = async (
         totalTokens,
       });
 
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "task-done",
+        timestamp: new Date().toISOString(),
+        detail: {
+          status: "completed",
+          inputTokens,
+          outputTokens,
+          totalTokens,
+        },
+      });
+
       if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
       return { id, status: "completed" };
     } catch (error: unknown) {
@@ -613,6 +685,13 @@ const handleTaskExecution = async (
           status: "completed",
           result: fullText,
           completedAt: new Date().toISOString(),
+        });
+
+        emitTaskTraceEvent(sender, {
+          taskId: id,
+          type: "task-aborted",
+          timestamp: new Date().toISOString(),
+          detail: { status: "completed" },
         });
         if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
         return { id, status: "completed" };
@@ -627,6 +706,17 @@ const handleTaskExecution = async (
         status: "failed",
         result: errorMsg,
         completedAt: new Date().toISOString(),
+      });
+
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "task-failed",
+        timestamp: new Date().toISOString(),
+        detail: {
+          status: "failed",
+          errorType: classified.type,
+          message: errorMsg,
+        },
       });
 
       if (!sender.isDestroyed()) {
@@ -649,6 +739,17 @@ const handleTaskExecution = async (
       status: "failed",
       result: errorMsg,
       completedAt: new Date().toISOString(),
+    });
+
+    emitTaskTraceEvent(sender, {
+      taskId: id,
+      type: "task-failed",
+      timestamp: new Date().toISOString(),
+      detail: {
+        status: "failed",
+        errorType: classified.type,
+        message: errorMsg,
+      },
     });
 
     if (!sender.isDestroyed()) {

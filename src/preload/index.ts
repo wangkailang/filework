@@ -507,6 +507,38 @@ const api = {
     },
   },
 
+  // Task trace (durable execution trace)
+  taskTrace: {
+    getEvents: (taskId: string, limit?: number) =>
+      ipcRenderer.invoke("task-trace:getEvents", { taskId, limit }),
+    getSummary: (taskId: string) =>
+      ipcRenderer.invoke("task-trace:getSummary", { taskId }),
+    onEvent: (
+      callback: (data: {
+        taskId: string;
+        type: string;
+        timestamp: string;
+        toolCallId?: string;
+        toolName?: string;
+        detail: Record<string, unknown>;
+      }) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          taskId: string;
+          type: string;
+          timestamp: string;
+          toolCallId?: string;
+          toolName?: string;
+          detail: Record<string, unknown>;
+        },
+      ) => callback(data);
+      ipcRenderer.on("ai:task-trace-event", handler);
+      return () => ipcRenderer.removeListener("ai:task-trace-event", handler);
+    },
+  },
+
   // Workspace history
   getRecentWorkspaces: () => ipcRenderer.invoke("workspace:getRecent"),
   addRecentWorkspace: (path: string, name: string) =>

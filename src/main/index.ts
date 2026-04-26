@@ -23,6 +23,7 @@ import { registerChatHandlers } from "./ipc/chat-handlers";
 import { registerFileHandlers } from "./ipc/file-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
+import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
 import { skillRegistry } from "./skills";
 import { initSkillDiscovery } from "./skills-runtime";
@@ -116,6 +117,7 @@ app.whenReady().then(async () => {
   registerLlmConfigHandlers();
   registerWorkspaceHandlers();
   registerChatHandlers();
+  registerTaskTraceHandlers();
 
   // Discover personal-level skills at startup (project skills are loaded on workspace open)
   initSkillDiscovery(skillRegistry, "").catch((err) => {

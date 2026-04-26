@@ -18,6 +18,7 @@ import {
 import { dirname, extname, join } from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
+import { emitTaskTraceEvent } from "../ai/task-trace-store";
 import {
   type FileEntry,
   getIncrementalScanner,
@@ -48,6 +49,7 @@ export const dangerousToolDescriptions: Record<
   moveFile: (args) => `移动 ${args.source} → ${args.destination}`,
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
+  runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
 };
 
 /** Raw execute functions for dangerous tools (without approval guard) */
@@ -320,8 +322,23 @@ export const safeTools: Record<string, Tool> = {
   directoryStats: {
     description:
       "Get statistics about a directory (file count, size, extensions)",
-    inputSchema: pathSchema,
-    execute: async ({ path: dirPath }: { path: string }) => {
+    inputSchema: z.object({
+      path: z.string().describe("Absolute path to directory"),
+      maxEntries: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(50_000)
+        .describe("Hard cap on scanned entries to avoid huge recursive walks"),
+    }),
+    execute: async ({
+      path: dirPath,
+      maxEntries = 50_000,
+    }: {
+      path: string;
+      maxEntries?: number;
+    }) => {
       const entries = await readdir(dirPath, {
         withFileTypes: true,
         recursive: true,
@@ -330,7 +347,10 @@ export const safeTools: Record<string, Tool> = {
       let totalDirs = 0;
       let totalSize = 0;
       const extensions: Record<string, number> = {};
+      let scanned = 0;
       for (const entry of entries) {
+        if (scanned >= maxEntries) break;
+        scanned++;
         if (entry.name.startsWith(".")) continue;
         const fullPath = join(entry.parentPath || dirPath, entry.name);
         if (
@@ -352,7 +372,15 @@ export const safeTools: Record<string, Tool> = {
           // skip inaccessible
         }
       }
-      return { totalFiles, totalDirs, totalSize, extensions };
+      return {
+        totalFiles,
+        totalDirs,
+        totalSize,
+        extensions,
+        scannedEntries: scanned,
+        hitLimit: scanned >= maxEntries,
+        maxEntries,
+      };
     },
   },
 
@@ -511,6 +539,14 @@ export const wrapToolWithAbort = (
       string,
       unknown
     >;
+    const toolCallId = String(
+      (ctx as Record<string, unknown>).toolCallId ?? "",
+    );
+    const toolName =
+      typeof (ctx as Record<string, unknown>).toolName === "string"
+        ? String((ctx as Record<string, unknown>).toolName)
+        : undefined;
+    const startedAt = Date.now();
     // Create a combined AbortController that responds to both:
     // 1. The original abortSignal from AI SDK
     // 2. Our manual task cancellation
@@ -570,13 +606,36 @@ export const wrapToolWithAbort = (
       );
       console.log(`[Tool] Tool args:`, JSON.stringify(args).substring(0, 100));
 
+      emitTaskTraceEvent(null, {
+        taskId,
+        type: "tool-start",
+        timestamp: new Date().toISOString(),
+        toolCallId: toolCallId || undefined,
+        toolName,
+        detail: {
+          description: originalTool.description?.slice(0, 120) ?? null,
+        },
+      });
+
       const result = await originalTool.execute?.(args, {
         ...ctx,
         abortSignal: combinedSignal,
-        toolCallId: String((ctx as Record<string, unknown>).toolCallId ?? ""),
+        toolCallId,
         messages:
           ((ctx as Record<string, unknown>).messages as unknown[]) ?? [],
       } as unknown as import("ai").ToolExecutionOptions);
+
+      emitTaskTraceEvent(null, {
+        taskId,
+        type: "tool-end",
+        timestamp: new Date().toISOString(),
+        toolCallId: toolCallId || undefined,
+        toolName,
+        detail: {
+          durationMs: Date.now() - startedAt,
+          ok: true,
+        },
+      });
 
       console.log(
         `[Tool] Completed execution for task ${taskId}, result:`,
@@ -586,8 +645,31 @@ export const wrapToolWithAbort = (
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         console.log(`[Tool] Tool execution aborted for task ${taskId}`);
+        emitTaskTraceEvent(null, {
+          taskId,
+          type: "tool-error",
+          timestamp: new Date().toISOString(),
+          toolCallId: toolCallId || undefined,
+          toolName,
+          detail: {
+            durationMs: Date.now() - startedAt,
+            cancelled: true,
+          },
+        });
         return { success: false, cancelled: true, reason: "工具执行被取消" };
       }
+      emitTaskTraceEvent(null, {
+        taskId,
+        type: "tool-error",
+        timestamp: new Date().toISOString(),
+        toolCallId: toolCallId || undefined,
+        toolName,
+        detail: {
+          durationMs: Date.now() - startedAt,
+          cancelled: false,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
       throw error;
     } finally {
       // Clean up the task controller

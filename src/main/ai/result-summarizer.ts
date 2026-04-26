@@ -12,6 +12,7 @@ import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
 import { addMemoryEvent } from "./memory-debug-store";
 import { createTimeoutController } from "./stream-watchdog";
+import { TOOL_RESULT_COMPRESS_THRESHOLD_CHARS } from "./token-budget";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -106,7 +107,7 @@ export async function summarizeLargeToolResults(
           );
           (part as { output: { type: "text"; value: string } }).output = {
             type: "text",
-            value: `[工具结果已截断] ${raw.slice(0, 2000)}...`,
+            value: `[工具结果已截断] ${raw.slice(0, TOOL_RESULT_COMPRESS_THRESHOLD_CHARS)}...`,
           };
         }
       }
