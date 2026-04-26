@@ -8,6 +8,7 @@
 
 import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
+import { upsertTaskSummary } from "../db";
 import { addMemoryEvent } from "./memory-debug-store";
 import { createTimeoutController } from "./stream-watchdog";
 import { compressToolResults, estimateTokens } from "./token-budget";
@@ -194,6 +195,15 @@ export async function compressContext(
         },
         options.promptSnippet,
       );
+
+      upsertTaskSummary({
+        taskId: options.taskId,
+        createdAt: new Date().toISOString(),
+        summary,
+        originalTokens: prunedTokens,
+        compressedTokens,
+        summaryTokens,
+      });
     }
 
     return {

@@ -27,6 +27,25 @@ export const tasks = sqliteTable("tasks", {
   provider: text("provider"),
 });
 
+export const taskTraceEvents = sqliteTable("task_trace_events", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  type: text("type").notNull(),
+  timestamp: text("timestamp").notNull(),
+  toolCallId: text("tool_call_id"),
+  toolName: text("tool_name"),
+  detail: text("detail").notNull(), // JSON
+});
+
+export const taskSummaries = sqliteTable("task_summaries", {
+  taskId: text("task_id").primaryKey(),
+  createdAt: text("created_at").notNull(),
+  summary: text("summary").notNull(),
+  originalTokens: integer("original_tokens"),
+  compressedTokens: integer("compressed_tokens"),
+  summaryTokens: integer("summary_tokens"),
+});
+
 export const fileOperations = sqliteTable("file_operations", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull(),

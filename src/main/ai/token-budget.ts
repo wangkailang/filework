@@ -7,7 +7,7 @@ import type { ModelMessage } from "ai";
 export const DEFAULT_TOKEN_BUDGET = 80_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
 const SAFETY_MARGIN = 2_000;
-const TOOL_RESULT_COMPRESS_THRESHOLD = 2000;
+export const TOOL_RESULT_COMPRESS_THRESHOLD_CHARS = 2_000;
 
 // ---------------------------------------------------------------------------
 // Model context window map
@@ -201,10 +201,10 @@ function isLargeToolResult(
 ): boolean {
   if (!output) return false;
   if ("value" in output && typeof output.value === "string") {
-    return output.value.length > TOOL_RESULT_COMPRESS_THRESHOLD;
+    return output.value.length > TOOL_RESULT_COMPRESS_THRESHOLD_CHARS;
   }
   const serialized = JSON.stringify(output);
-  return serialized.length > TOOL_RESULT_COMPRESS_THRESHOLD;
+  return serialized.length > TOOL_RESULT_COMPRESS_THRESHOLD_CHARS;
 }
 
 // ---------------------------------------------------------------------------

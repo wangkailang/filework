@@ -16,10 +16,11 @@ import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
 import { MemoryDebugPanel } from "../settings/MemoryDebugPanel";
+import { TaskTracePanel } from "../settings/TaskTracePanel";
 import { UsagePanel } from "../settings/UsagePanel";
 
 type Theme = "dark" | "light" | "system";
-type Tab = "general" | "llm" | "usage" | "memory-debug";
+type Tab = "general" | "llm" | "usage" | "memory-debug" | "task-trace";
 
 const LOCALE_LABELS: Record<Locales, string> = {
   en: "English",
@@ -107,10 +108,11 @@ export const SettingsModal = ({
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "usage", label: LL.usage_title(), icon: BarChart3 },
     { id: "memory-debug", label: LL.memoryDebug_title(), icon: Brain },
+    { id: "task-trace", label: "Task Trace", icon: Monitor },
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+    <div className="fixed inset-0 z-100 flex items-center justify-center">
       <button
         type="button"
         className="absolute inset-0 bg-black/50 cursor-default"
@@ -220,6 +222,8 @@ export const SettingsModal = ({
           {activeTab === "usage" && <UsagePanel />}
 
           {activeTab === "memory-debug" && <MemoryDebugPanel />}
+
+          {activeTab === "task-trace" && <TaskTracePanel />}
         </div>
       </div>
     </div>

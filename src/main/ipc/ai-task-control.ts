@@ -41,6 +41,19 @@ export const getPlanApprovedWorkspace = (taskId: string): string | undefined =>
 /** 工具调用与任务的映射关系，用于清理 */
 export const toolCallToTaskMap = new Map<string, string>();
 
+/** taskId → workspacePath mapping for path-scoped restrictions (e.g. runCommand cwd) */
+const taskWorkspaces = new Map<string, string>();
+
+export const setTaskWorkspace = (
+  taskId: string,
+  workspacePath: string,
+): void => {
+  taskWorkspaces.set(taskId, workspacePath);
+};
+
+export const getTaskWorkspace = (taskId: string): string | undefined =>
+  taskWorkspaces.get(taskId);
+
 /**
  * Per-task tool whitelist: once a user approves a dangerous tool (e.g.
  * writeFile) during a task, subsequent calls of the same tool type are
@@ -94,6 +107,9 @@ export const cleanupTask = (taskId: string): void => {
 
   // Clean up per-task tool whitelist
   taskToolWhitelist.delete(taskId);
+
+  // Clean up task workspace mapping
+  taskWorkspaces.delete(taskId);
 
   // Clean up active tool executions
   const toolControllers = activeToolExecutions.get(taskId);

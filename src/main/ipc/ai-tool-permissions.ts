@@ -9,7 +9,11 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
-import { getPlanApprovedWorkspace, initTaskExecution } from "./ai-task-control";
+import {
+  getPlanApprovedWorkspace,
+  getTaskWorkspace,
+  initTaskExecution,
+} from "./ai-task-control";
 import {
   rawExecutors,
   requestApproval,
@@ -19,6 +23,40 @@ import {
 } from "./ai-tools";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
+
+const isInWorkspace = async (
+  taskId: string,
+  paths: string[],
+): Promise<boolean> => {
+  const workspace =
+    getTaskWorkspace(taskId) ?? getPlanApprovedWorkspace(taskId);
+  if (!workspace) return false;
+  try {
+    const realWorkspace = await realpath(workspace);
+    for (const p of paths) {
+      // Resolve existing targets; for new paths resolve parent dir.
+      let realTarget: string;
+      try {
+        realTarget = await realpath(p);
+      } catch {
+        const parentDir = path.dirname(path.resolve(p));
+        const parentReal = await realpath(parentDir);
+        realTarget = path.join(parentReal, path.basename(p));
+      }
+      if (
+        !(
+          realTarget === realWorkspace ||
+          realTarget.startsWith(realWorkspace + path.sep)
+        )
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Check if a writeFile call can be auto-approved for a plan-approved task.
@@ -157,6 +195,15 @@ export const buildSkillSpecificTools = (
             args: { source: string; destination: string },
             { toolCallId, abortSignal },
           ) => {
+            if (
+              !(await isInWorkspace(taskId, [args.source, args.destination]))
+            ) {
+              return {
+                success: false,
+                denied: true,
+                reason: "路径必须在当前 workspace 内",
+              };
+            }
             const approved = await requestApproval(
               sender,
               taskId,
@@ -185,6 +232,13 @@ export const buildSkillSpecificTools = (
             args: { path: string },
             { toolCallId, abortSignal },
           ) => {
+            if (!(await isInWorkspace(taskId, [args.path]))) {
+              return {
+                success: false,
+                denied: true,
+                reason: "路径必须在当前 workspace 内",
+              };
+            }
             const approved = await requestApproval(
               sender,
               taskId,
@@ -217,6 +271,13 @@ export const buildSkillSpecificTools = (
             args: { path?: string },
             { toolCallId, abortSignal },
           ) => {
+            if (args.path && !(await isInWorkspace(taskId, [args.path]))) {
+              return {
+                success: false,
+                denied: true,
+                reason: "路径必须在当前 workspace 内",
+              };
+            }
             const approved = await requestApproval(
               sender,
               taskId,
@@ -307,6 +368,13 @@ export const buildTools = (
         args: { source: string; destination: string },
         { toolCallId, abortSignal },
       ) => {
+        if (!(await isInWorkspace(taskId, [args.source, args.destination]))) {
+          return {
+            success: false,
+            denied: true,
+            reason: "路径必须在当前 workspace 内",
+          };
+        }
         const approved = await requestApproval(
           sender,
           taskId,
@@ -328,6 +396,13 @@ export const buildTools = (
       description: "Delete a file or directory. Requires user approval.",
       inputSchema: pathSchema,
       execute: async (args: { path: string }, { toolCallId, abortSignal }) => {
+        if (!(await isInWorkspace(taskId, [args.path]))) {
+          return {
+            success: false,
+            denied: true,
+            reason: "路径必须在当前 workspace 内",
+          };
+        }
         const approved = await requestApproval(
           sender,
           taskId,
@@ -347,7 +422,61 @@ export const buildTools = (
   // Wrap all safe tools with abort tracking as well
   const wrappedSafeTools: Record<string, Tool> = {};
   for (const [name, tool] of Object.entries(safeTools)) {
-    wrappedSafeTools[name] = wrapToolWithAbort(tool, taskId);
+    if (name === "runCommand") {
+      const guardedRunCommand: Tool = wrapToolWithAbort(
+        {
+          ...tool,
+          description:
+            "Execute a shell command in the workspace (requires user approval).",
+          execute: async (
+            args: { command: string; cwd?: string },
+            { toolCallId, abortSignal },
+          ) => {
+            const workspace = getTaskWorkspace(taskId);
+            const requestedCwd = args.cwd ?? workspace ?? process.cwd();
+            const resolved = path.resolve(requestedCwd);
+            const resolvedWorkspace = workspace
+              ? path.resolve(workspace)
+              : null;
+            if (
+              resolvedWorkspace &&
+              resolved !== resolvedWorkspace &&
+              !resolved.startsWith(resolvedWorkspace + path.sep)
+            ) {
+              return {
+                success: false,
+                denied: true,
+                reason: "cwd 必须在当前 workspace 内",
+              };
+            }
+
+            const approved = await requestApproval(
+              sender,
+              taskId,
+              toolCallId,
+              "runCommand",
+              { command: args.command, cwd: resolved },
+              abortSignal,
+            );
+            if (!approved)
+              return {
+                success: false,
+                denied: true,
+                reason: "用户拒绝了此操作",
+              };
+            return tool.execute?.({ command: args.command, cwd: resolved }, {
+              toolCallId,
+              abortSignal,
+              messages: [],
+            } as unknown as import("ai").ToolExecutionOptions);
+          },
+        },
+        taskId,
+      );
+      wrappedSafeTools[name] = guardedRunCommand;
+    } else {
+      wrappedSafeTools[name] = wrapToolWithAbort(tool, taskId);
+    }
   }
 
   const askClarification: Tool = wrapToolWithAbort(

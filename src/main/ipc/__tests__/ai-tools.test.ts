@@ -181,3 +181,96 @@ describe("safeTools.runCommand", () => {
     }
   });
 });
+
+describe("buildTools.runCommand guard", () => {
+  it("denies runCommand when cwd is outside workspace", async () => {
+    vi.resetModules();
+    const sender = {
+      isDestroyed: () => false,
+      send: vi.fn(),
+    } as unknown as Electron.WebContents;
+
+    const { setTaskWorkspace } = await import("../ai-task-control");
+    const { buildTools } = await import("../ai-tool-permissions");
+
+    setTaskWorkspace("task-1", "/workspace");
+
+    const tools = buildTools(sender, "task-1");
+    const res = await tools.runCommand.execute?.(
+      { command: "echo hi", cwd: "/tmp" },
+      {
+        toolCallId: "t1",
+        messages: [],
+      } as unknown as import("ai").ToolExecutionOptions,
+    );
+
+    expect(res).toEqual(
+      expect.objectContaining({
+        success: false,
+        denied: true,
+      }),
+    );
+  });
+});
+
+describe("safeTools.directoryStats", () => {
+  it("respects maxEntries cap", async () => {
+    vi.resetModules();
+
+    // Mock fs.promises.readdir to return many entries
+    const fakeEntries = Array.from({ length: 100_000 }).map((_, i) => ({
+      name: `f${i}.txt`,
+      isDirectory: () => false,
+      parentPath: "/tmp",
+    }));
+
+    vi.doMock("node:fs/promises", async () => {
+      const actual =
+        await vi.importActual<typeof import("node:fs/promises")>(
+          "node:fs/promises",
+        );
+      return {
+        ...actual,
+        readdir: vi.fn(async () => fakeEntries as unknown),
+        stat: vi.fn(async () => ({ size: 1, mtime: new Date(0) })),
+      };
+    });
+
+    vi.doMock("../../utils/incremental-scanner", () => ({
+      getIncrementalScanner: () => ({
+        scanIncremental: vi.fn(async () => ({
+          added: [],
+          modified: [],
+          unchanged: [],
+          deleted: [],
+          totalFiles: 0,
+          scanTime: 1,
+        })),
+        getCacheStats: vi.fn(() => ({
+          directories: 0,
+          totalFiles: 0,
+          memoryUsage: 0,
+        })),
+      }),
+      FileEntry: {},
+    }));
+
+    const { safeTools } = await import("../ai-tools");
+
+    const res = await safeTools.directoryStats.execute?.(
+      { path: "/tmp", maxEntries: 1000 },
+      {
+        toolCallId: "t1",
+        messages: [],
+      } as unknown as import("ai").ToolExecutionOptions,
+    );
+
+    expect(res).toEqual(
+      expect.objectContaining({
+        maxEntries: 1000,
+      }),
+    );
+    expect((res as { scannedEntries?: number }).scannedEntries).toBe(1000);
+    expect((res as { hitLimit?: boolean }).hitLimit).toBe(true);
+  });
+});

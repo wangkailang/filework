@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -39,6 +40,24 @@ export const initDatabase = async () => {
       files_affected TEXT,
       created_at TEXT NOT NULL,
       completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS task_trace_events (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      tool_call_id TEXT,
+      tool_name TEXT,
+      detail TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_trace_task ON task_trace_events(task_id, timestamp);
+    CREATE TABLE IF NOT EXISTS task_summaries (
+      task_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      original_tokens INTEGER,
+      compressed_tokens INTEGER,
+      summary_tokens INTEGER
     );
     CREATE TABLE IF NOT EXISTS file_operations (
       id TEXT PRIMARY KEY,
@@ -120,6 +139,28 @@ export const initDatabase = async () => {
     sqlite.exec("ALTER TABLE tasks ADD COLUMN provider TEXT");
   }
 
+  // Migrate: create task_trace_events table if missing (older DBs)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS task_trace_events (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      tool_call_id TEXT,
+      tool_name TEXT,
+      detail TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_trace_task ON task_trace_events(task_id, timestamp);
+    CREATE TABLE IF NOT EXISTS task_summaries (
+      task_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      original_tokens INTEGER,
+      compressed_tokens INTEGER,
+      summary_tokens INTEGER
+    );
+  `);
+
   // Migrate orphan messages (no session_id) into auto-created sessions
   const orphans = sqlite
     .prepare(
@@ -185,6 +226,25 @@ interface Task {
   totalTokens?: number | null;
   modelId?: string | null;
   provider?: string | null;
+}
+
+export interface TaskTraceEvent {
+  id: string;
+  taskId: string;
+  type: string;
+  timestamp: string;
+  toolCallId?: string | null;
+  toolName?: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface TaskSummary {
+  taskId: string;
+  createdAt: string;
+  summary: string;
+  originalTokens?: number | null;
+  compressedTokens?: number | null;
+  summaryTokens?: number | null;
 }
 
 interface FileOperation {
@@ -298,6 +358,106 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
   if (updates.modelId !== undefined) mapped.modelId = updates.modelId;
   if (updates.provider !== undefined) mapped.provider = updates.provider;
   db.update(schema.tasks).set(mapped).where(eq(schema.tasks.id, id)).run();
+};
+
+// ============================================================================
+// Task Trace Events (durable task lifecycle/tool trace)
+// ============================================================================
+
+const MAX_TRACE_DETAIL_CHARS = 20_000;
+
+const safeJsonStringify = (value: unknown): string => {
+  try {
+    const json = JSON.stringify(value);
+    return json.length > MAX_TRACE_DETAIL_CHARS
+      ? `${json.slice(0, MAX_TRACE_DETAIL_CHARS)}...(truncated)`
+      : json;
+  } catch {
+    return JSON.stringify({ error: "unserializable_detail" });
+  }
+};
+
+export const addTaskTraceEvent = (event: Omit<TaskTraceEvent, "id">) => {
+  const id = crypto.randomUUID();
+  if (db) {
+    db.insert(schema.taskTraceEvents)
+      .values({
+        id,
+        taskId: event.taskId,
+        type: event.type,
+        timestamp: event.timestamp,
+        toolCallId: event.toolCallId ?? null,
+        toolName: event.toolName ?? null,
+        detail: safeJsonStringify(event.detail),
+      })
+      .run();
+  }
+  return { ...event, id };
+};
+
+export const getTaskTraceEvents = (taskId: string, limit = 200) => {
+  if (!db) return [] as TaskTraceEvent[];
+  const rows = db
+    .select()
+    .from(schema.taskTraceEvents)
+    .where(eq(schema.taskTraceEvents.taskId, taskId))
+    .all()
+    .slice(-limit);
+  return rows.map((r) => ({
+    id: r.id,
+    taskId: r.taskId,
+    type: r.type,
+    timestamp: r.timestamp,
+    toolCallId: r.toolCallId,
+    toolName: r.toolName,
+    detail: r.detail ? (JSON.parse(r.detail) as Record<string, unknown>) : {},
+  })) as TaskTraceEvent[];
+};
+
+// ============================================================================
+// Task Summaries (durable conversation compression summaries)
+// ============================================================================
+
+export const upsertTaskSummary = (s: TaskSummary) => {
+  if (!db) return;
+  db.insert(schema.taskSummaries)
+    .values({
+      taskId: s.taskId,
+      createdAt: s.createdAt,
+      summary: s.summary,
+      originalTokens: s.originalTokens ?? null,
+      compressedTokens: s.compressedTokens ?? null,
+      summaryTokens: s.summaryTokens ?? null,
+    })
+    .onConflictDoUpdate({
+      target: schema.taskSummaries.taskId,
+      set: {
+        createdAt: s.createdAt,
+        summary: s.summary,
+        originalTokens: s.originalTokens ?? null,
+        compressedTokens: s.compressedTokens ?? null,
+        summaryTokens: s.summaryTokens ?? null,
+      },
+    })
+    .run();
+};
+
+export const getTaskSummary = (taskId: string): TaskSummary | null => {
+  if (!db) return null;
+  const row = db
+    .select()
+    .from(schema.taskSummaries)
+    .where(eq(schema.taskSummaries.taskId, taskId))
+    .get();
+  if (!row) return null;
+  return {
+    taskId: row.taskId,
+    createdAt: row.createdAt,
+    summary: row.summary,
+    originalTokens: row.originalTokens ?? null,
+    compressedTokens: row.compressedTokens ?? null,
+    summaryTokens: row.summaryTokens ?? null,
+  };
 };
 
 // ============================================================================
