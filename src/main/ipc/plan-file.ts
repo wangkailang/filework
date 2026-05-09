@@ -6,7 +6,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Plan } from "./types";
+import type { Plan } from "./plan-types";
 
 const PLAN_DIR = ".filework";
 const PLAN_FILE = "task_plan.md";

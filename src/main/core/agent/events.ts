@@ -105,6 +105,12 @@ export type AgentEvent =
       agentId: string;
       status: AgentEndStatus;
       error?: ClassifiedAgentError;
+      /** Aggregated usage from all turns. Populated when streamText resolves it. */
+      totalUsage?: TokenUsage;
+      /** Provider-specific metadata (e.g. cache headers). Opaque to core. */
+      providerMetadata?: Record<string, unknown>;
+      /** Concatenation of all assistant message_end finalText values. */
+      finalText?: string;
     }
   | {
       type: "retry";
