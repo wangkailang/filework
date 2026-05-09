@@ -64,66 +64,10 @@ import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
 import { buildApprovalHook } from "./approval-hook";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
+import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
 
-/**
- * Enhanced system prompt generation based on skill usage
- */
-const buildSystemPrompt = (
-  workspacePath: string,
-  skill?: UnifiedSkill,
-  skillArgs?: string,
-  isExplicitSkillCommand?: boolean,
-): string => {
-  let systemPrompt = `You are FileWork, a local file management AI assistant. You help users organize, analyze, and manage files in their directories.
-
-Current workspace: ${workspacePath}
-
-Rules:
-- Always use absolute paths based on the workspace path provided.
-- Be careful with delete operations — confirm the scope is correct.
-- Respond in the same language as the user's prompt.`;
-
-  // Add skill-specific instructions
-  if (skill) {
-    if (isExplicitSkillCommand) {
-      systemPrompt += `\n\n重要：用户已明确调用 ${skill.name} 技能执行任务: "${skillArgs}"
-请直接执行指定任务，不要进行不必要的环境探索或目录列举。`;
-
-      if (skill.id === "agent-browser") {
-        systemPrompt += `\n当前任务是网页相关操作，请直接使用 npx agent-browser 命令执行任务，避免使用其他文件操作工具。`;
-      }
-    }
-
-    if (skill.external?.frontmatter["allowed-tools"]) {
-      const allowedTools = skill.external.frontmatter["allowed-tools"];
-      systemPrompt += `\n\n工具限制：当前技能仅允许使用以下工具: ${allowedTools.join(", ")}`;
-    }
-  } else {
-    systemPrompt += `
-
-## Behavioral Guidelines
-
-### Before Acting
-- State your assumptions explicitly. If the user's intent is ambiguous, ask before executing.
-- If multiple interpretations exist, present them briefly — don't pick silently.
-
-### Simplicity
-- Use the minimum number of tool calls needed. Don't explore directories unless the task requires it.
-- Don't add features, error handling, or abstractions beyond what was asked.
-
-### Surgical Precision
-- Only modify files directly related to the user's request.
-- Don't "improve" adjacent code, comments, or formatting.
-- If you notice unrelated issues, mention them — don't fix them.
-
-### Verification
-- After completing a task, briefly verify the result (e.g., read the created file, check the output).
-- State what was done and what was verified.`;
-  }
-
-  return systemPrompt;
-};
+// buildSystemPrompt extracted to ./system-prompt.ts (M2 PR 2 — domain-neutral).
 
 /**
  * Main task execution handler
@@ -451,12 +395,12 @@ const handleTaskExecution = async (
     const skillTools = skill?.tools ?? {};
 
     const systemPrompt =
-      buildSystemPrompt(
-        payload.workspacePath,
+      buildAgentSystemPrompt({
+        workspacePath: payload.workspacePath,
         skill,
         skillArgs,
         isExplicitSkillCommand,
-      ) + skillPrompt;
+      }) + skillPrompt;
 
     console.log(
       `[System Prompt] Generated for skill ${skill?.name || "none"}:`,
