@@ -1,4 +1,4 @@
-/** Planner types — shared between planner, executor, and IPC layer. */
+/** Planner types — shared between plan-generator, plan-runner, and IPC layer. */
 
 export interface PlanSubStep {
   /** Short label describing a concrete action within the parent step */

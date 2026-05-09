@@ -10,18 +10,17 @@ import type { Tool } from "ai";
 import { ipcMain } from "electron";
 import { classifyError } from "../ai/error-classifier";
 import { addTask, updateTask } from "../db";
-import { needsPlanning, planTask } from "../planner";
-import { cancelPlan, executePlan } from "../planner/executor";
-import type { Plan } from "../planner/types";
 import { getAIModelByConfigId } from "./ai-models";
 import {
   abortControllers,
   cleanupTask,
   markPlanApproved,
 } from "./ai-task-control";
-
 import { buildTools } from "./ai-tool-permissions";
 import { safeTools } from "./ai-tools";
+import { needsPlanning, planTask } from "./plan-generator";
+import { cancelPlan, executePlan } from "./plan-runner";
+import type { Plan } from "./plan-types";
 
 /** Pending plans waiting for user approval */
 const pendingPlans = new Map<string, Plan>();
