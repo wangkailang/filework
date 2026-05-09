@@ -45,11 +45,7 @@ import {
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
 import { buildAgentToolRegistry } from "./agent-tools";
-// Import our new modules
-import {
-  getAIModelByConfigId,
-  getModelAndAdapterByConfigId,
-} from "./ai-models";
+import { getModelAndAdapterByConfigId } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
@@ -60,9 +56,11 @@ import {
   stopTaskExecution,
   toolCallToTaskMap,
 } from "./ai-task-control";
-import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
-import { rawExecutors, safeTools } from "./ai-tools";
 import { buildApprovalHook } from "./approval-hook";
+// (buildSkillSpecificTools / buildTools no longer needed — fork mode now
+// uses createForkSkillRunner which builds its own ToolRegistry. Legacy
+// helpers stay in ai-tool-permissions.ts for now; deletion in M2 PR 4.)
+import { createForkSkillRunner } from "./fork-skill-runner";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
@@ -338,20 +336,14 @@ const handleTaskExecution = async (
       );
 
       if (skill.external?.frontmatter.context === "fork") {
-        const allowedTools = skill.external?.frontmatter["allowed-tools"];
-        const tools =
-          allowedTools && allowedTools.length > 0
-            ? buildSkillSpecificTools(allowedTools, sender, id)
-            : buildTools(sender, id);
-        const deps: ExecutorDeps = {
-          getModel: () => getAIModelByConfigId(payload.llmConfigId),
-          allTools: tools,
-          rawExecutors: rawExecutors as unknown as Record<
-            string,
-            (...args: unknown[]) => Promise<unknown>
-          >,
-          safeTools,
-        };
+        const runSubagent = createForkSkillRunner({
+          sender,
+          taskId: id,
+          parentSignal: controller.signal,
+          workspacePath: payload.workspacePath,
+          llmConfigId: payload.llmConfigId,
+        });
+        const deps: ExecutorDeps = { runSubagent };
 
         await executeSkill(
           {
