@@ -182,6 +182,46 @@ export function usePlanFlow({
       },
     );
 
+    const offStepArtifact = window.filework.onPlanStepArtifact(
+      ({ planId, stepId, artifact }) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i];
+            if (!msg.parts) continue;
+            const planPartIdx = msg.parts.findIndex(
+              (p) =>
+                p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
+            );
+            if (planPartIdx === -1) continue;
+
+            const planPart = msg.parts[planPartIdx] as PlanMessagePart;
+            const newSteps = planPart.plan.steps.map((s) => {
+              if (s.id !== stepId) return s;
+              const existing = s.artifacts ?? [];
+              if (existing.some((a) => a.toolCallId === artifact.toolCallId))
+                return s;
+              return {
+                ...s,
+                artifacts: [
+                  ...existing,
+                  artifact as NonNullable<PlanStepView["artifacts"]>[number],
+                ],
+              };
+            });
+            const newParts = [...msg.parts];
+            newParts[planPartIdx] = {
+              type: "plan",
+              plan: { ...planPart.plan, steps: newSteps },
+            };
+            updated[i] = { ...msg, parts: newParts };
+            break;
+          }
+          return updated;
+        });
+      },
+    );
+
     const offWatchdog = window.filework.onWatchdog(({ taskId, type }) => {
       if (taskId !== streamTaskIdRef.current) return;
       if (type === "stall-warning") {
@@ -199,6 +239,7 @@ export function usePlanFlow({
       offStepError();
       offSubStepProgress();
       offStepArtifacts();
+      offStepArtifact();
       offWatchdog();
     };
   }, [
