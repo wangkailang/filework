@@ -66,7 +66,8 @@ export function getTokenBudgetForModel(modelId: string): number {
 }
 const TRUNCATION_NOTICE =
   "[系统提示] 部分早期对话已被省略，以下为最近的对话内容。";
-const COMPRESSED_PLACEHOLDER = "[工具结果已压缩]";
+const COMPRESSED_SNIPPET_HEAD_CHARS = 1_000;
+const COMPRESSED_SNIPPET_TAIL_CHARS = 500;
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -186,9 +187,10 @@ export function compressToolResults(messages: ModelMessage[]): ModelMessage[] {
     const cloned = cloneMessage(msg) as Extract<ModelMessage, { role: "tool" }>;
     for (const part of cloned.content) {
       if (part.type === "tool-result" && isLargeToolResult(part.output)) {
+        const rawValue = extractToolResultText(part.output);
         (part as { output: { type: "text"; value: string } }).output = {
           type: "text",
-          value: COMPRESSED_PLACEHOLDER,
+          value: buildCompressedToolResult(rawValue),
         };
       }
     }
@@ -200,11 +202,39 @@ function isLargeToolResult(
   output: { type: string; value?: unknown } | undefined,
 ): boolean {
   if (!output) return false;
+  return (
+    extractToolResultText(output).length > TOOL_RESULT_COMPRESS_THRESHOLD_CHARS
+  );
+}
+
+function extractToolResultText(output: {
+  type: string;
+  value?: unknown;
+}): string {
   if ("value" in output && typeof output.value === "string") {
-    return output.value.length > TOOL_RESULT_COMPRESS_THRESHOLD_CHARS;
+    return output.value;
   }
-  const serialized = JSON.stringify(output);
-  return serialized.length > TOOL_RESULT_COMPRESS_THRESHOLD_CHARS;
+  return JSON.stringify(output);
+}
+
+function buildCompressedToolResult(rawValue: string): string {
+  if (
+    rawValue.length <=
+    COMPRESSED_SNIPPET_HEAD_CHARS + COMPRESSED_SNIPPET_TAIL_CHARS
+  ) {
+    return rawValue;
+  }
+
+  const omittedChars =
+    rawValue.length -
+    COMPRESSED_SNIPPET_HEAD_CHARS -
+    COMPRESSED_SNIPPET_TAIL_CHARS;
+  return [
+    `[工具结果已压缩，原始长度 ${rawValue.length} 字符，省略中间 ${omittedChars} 字符]`,
+    rawValue.slice(0, COMPRESSED_SNIPPET_HEAD_CHARS),
+    `[...中间内容已省略 ${omittedChars} 字符...]`,
+    rawValue.slice(-COMPRESSED_SNIPPET_TAIL_CHARS),
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
