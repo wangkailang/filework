@@ -245,14 +245,25 @@ Rules:
                   | Record<string, unknown>
                   | undefined;
                 const success = !(resultObj && resultObj.success === false);
-                stepArtifacts.push({
+                const artifact: PlanStepArtifact = {
                   toolCallId: part.toolCallId,
                   toolName: pending.toolName,
                   args: truncateDeep(pending.args) as Record<string, unknown>,
                   result: truncateDeep(part.output),
                   success,
-                });
+                };
+                stepArtifacts.push(artifact);
                 pendingToolCalls.delete(part.toolCallId);
+                // Stream the artifact immediately so the renderer can show
+                // what the running step has done so far.
+                if (!sender.isDestroyed()) {
+                  sender.send("ai:plan-step-artifact", {
+                    id: taskId,
+                    planId: plan.id,
+                    stepId: step.id,
+                    artifact,
+                  });
+                }
               }
               // Track sub-step progress — cap at totalSubSteps-1 so the
               // last sub-step only completes when the step succeeds.

@@ -31,6 +31,40 @@ const buildSkillCatalog = (): string =>
  * - "tool" skills (pdf-processor, xlsx-processor) provide capabilities, not separate tasks
  * - Only count "task" skills (report-generator, file-organizer) as distinct task intents
  */
+/**
+ * Detect whether the prompt references files, paths, or workspace operations.
+ * Used to gate planning for pure knowledge questions.
+ */
+const hasFileReference = (prompt: string): boolean => {
+  const fileSignals = [
+    /\.[a-z0-9]{2,5}\b/i,
+    /\b(file|files|folder|directory|dir|path|workspace)s?\b/i,
+    /文件|目录|文件夹|工作区|路径|当前目录/,
+    /[/\\][\w.\-]+/,
+    /\w+[/\\](?=\s|$|[一-鿿])/, // "reports/" / "docs/" 后接空格或中文
+    /下的|里的|目录下/,
+    /\b(this|these|that|those)\s+(doc|document|report|spreadsheet|table)/i,
+    /这(个|些)?\s*(文件|文档|报告|表格|目录)/,
+  ];
+  return fileSignals.some((p) => p.test(prompt));
+};
+
+/**
+ * Detect a pure knowledge / analytical question (compare, explain, etc.).
+ * These should be answered directly without invoking the planner.
+ */
+const isKnowledgeQuestion = (prompt: string): boolean => {
+  const trimmed = prompt.trim();
+  const knowledgeStarters = [
+    /^(分析|对比|比较|介绍|解释|说明|讨论|科普|阐述|论述)/,
+    /^(请|帮我|帮忙|能否|可以)?\s*(分析|对比|比较|介绍|解释|说明|讨论|科普)/,
+    /^(什么是|为什么|怎么样|有什么(区别|不同|差异|优势|劣势|优劣))/,
+    /^(analy[sz]e|compare|contrast|explain|describe|discuss|tell me about)\b/i,
+    /^(what(\s+is|'s)|why|how does|how do|difference between)/i,
+  ];
+  return knowledgeStarters.some((p) => p.test(trimmed));
+};
+
 export const needsPlanning = (prompt: string): boolean => {
   const lower = prompt.toLowerCase();
 
@@ -41,6 +75,10 @@ export const needsPlanning = (prompt: string): boolean => {
     /^(summarize|explain|translate|read|extract|convert|open|view)\b/i,
   ];
   if (simpleIntentPatterns.some((p) => p.test(lower.trim()))) return false;
+
+  // ── Knowledge / analytical questions without any file reference ──
+  // "分析 A 和 B 的区别" / "compare A vs B" — answer directly, no plan.
+  if (isKnowledgeQuestion(prompt) && !hasFileReference(prompt)) return false;
 
   // ── Multi-action indicators (Chinese + English) ──
   const multiActionPatterns = [
@@ -95,9 +133,10 @@ export const planTask = async (
 Current workspace: ${workspacePath}
 
 ## Your workflow
-1. BRIEFLY inspect the workspace with read-only tools (listDirectory, directoryStats) — use at most 2-3 tool calls. Do NOT read file contents unless absolutely necessary for planning.
-2. Analyze the user's request and break it into 3-7 ordered steps.
-3. Output a JSON execution plan.
+1. First decide if the request actually needs workspace files. If it is a pure knowledge / analytical question (compare X and Y, explain a concept, "什么是…", "分析…的区别和优劣") and the user did NOT reference any local file, path, or workspace artifact, output a SINGLE-STEP plan with action "answer" and skip exploration entirely. Do NOT call listDirectory or any other tool in that case.
+2. Otherwise, BRIEFLY inspect the workspace with read-only tools (listDirectory, directoryStats) — use at most 2-3 tool calls. Do NOT read file contents unless absolutely necessary for planning.
+3. Analyze the user's request and break it into 3-7 ordered steps.
+4. Output a JSON execution plan.
 
 CRITICAL: You MUST output the JSON plan. Do not spend all your turns on exploration. If unsure about details, plan conservatively — the executor will discover details during execution.
 
@@ -107,6 +146,7 @@ ${skillCatalog}
 ## Rules
 - You MUST output valid JSON as the LAST part of your response, wrapped in \`\`\`json code fence.
 - Break complex requests into 3-7 discrete steps. NEVER output a single step for a multi-part request.
+- EXCEPTION: For pure knowledge / analytical questions with no file targets, output exactly ONE step: { "action": "answer", "description": "<short restatement of the user's question>" } — no skillId, no subSteps, no verify. The executor will answer directly without searching the workspace.
 - Each step should be a discrete, independently executable action.
 - Assign a skillId only if the step clearly maps to one of the available skills.
 - Keep step descriptions concise but specific. Include concrete file names, paths, or targets when known.

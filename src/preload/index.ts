@@ -181,6 +181,38 @@ const api = {
     ipcRenderer.on("ai:plan-step-artifacts", handler);
     return () => ipcRenderer.removeListener("ai:plan-step-artifacts", handler);
   },
+  onPlanStepArtifact: (
+    callback: (data: {
+      id: string;
+      planId: string;
+      stepId: number;
+      artifact: {
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+        result?: unknown;
+        success: boolean;
+      };
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        planId: string;
+        stepId: number;
+        artifact: {
+          toolCallId: string;
+          toolName: string;
+          args: Record<string, unknown>;
+          result?: unknown;
+          success: boolean;
+        };
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:plan-step-artifact", handler);
+    return () => ipcRenderer.removeListener("ai:plan-step-artifact", handler);
+  },
 
   // Skill events
   onSkillActivated: (
