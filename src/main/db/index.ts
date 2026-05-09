@@ -532,6 +532,25 @@ export const removeRecentWorkspace = (path: string) => {
 // ============================================================================
 // Chat Sessions
 // ============================================================================
+//
+// TODO(M3 PR 2): the eight chat-related exports below are kept only as a
+// migration source for `src/main/db/jsonl-migration.ts`. Runtime reads/writes
+// have moved to `core/session/jsonl-store.ts`. Drop these (and the
+// chat_sessions / chat_messages tables in schema.ts) after JSONL has shipped
+// for one release cycle.
+
+/**
+ * Migration helper — return every chat session across every workspace,
+ * ordered by createdAt ascending. Plain `getChatSessions(path)` requires
+ * a workspace filter, but sessions can exist for paths that were never
+ * registered in the `workspaces` table.
+ */
+export const getAllChatSessionsForMigration = (): ChatSession[] =>
+  db
+    .select()
+    .from(schema.chatSessions)
+    .orderBy(schema.chatSessions.createdAt)
+    .all();
 
 export const createChatSession = (
   workspacePath: string,

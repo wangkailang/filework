@@ -1,15 +1,14 @@
 import { CheckCircle2, ShieldAlert, XCircle } from "lucide-react";
 import type { HTMLAttributes } from "react";
+import type { ApprovalState } from "../../../main/core/session/message-parts";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — re-exported from the shared core types so the JSONL session store
+// and the renderer agree on a single source of truth.
 // ---------------------------------------------------------------------------
 
-export type ApprovalState =
-  | "approval-requested"
-  | "approval-accepted"
-  | "approval-rejected";
+export type { ApprovalState } from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
 // Root

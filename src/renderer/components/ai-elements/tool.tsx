@@ -7,6 +7,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { type HTMLAttributes, type ReactNode, useMemo, useState } from "react";
+import type { ToolState } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
@@ -18,14 +19,11 @@ import {
 } from "./collapsible";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — re-exported from the shared core types so the JSONL session store
+// and the renderer agree on a single source of truth.
 // ---------------------------------------------------------------------------
 
-export type ToolState =
-  | "input-streaming"
-  | "input-available"
-  | "output-available"
-  | "output-error";
+export type { ToolState } from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
 // Root

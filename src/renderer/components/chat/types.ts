@@ -1,69 +1,26 @@
-import type { ApprovalState } from "../ai-elements/confirmation";
-import type { PlanView } from "../ai-elements/plan-viewer";
-import type { ToolState } from "../ai-elements/tool";
+import type {
+  MessagePart,
+  ToolApproval,
+  ToolState,
+} from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
-// Message part types
+// Message part types — single source of truth in core/session/message-parts.
+// Re-exported here so existing renderer imports (`from "./types"`) keep
+// working without changes.
 // ---------------------------------------------------------------------------
 
-export interface ToolApproval {
-  toolCallId: string;
-  toolName: string;
-  description: string;
-  state: ApprovalState;
-}
-
-export interface TextPart {
-  type: "text";
-  text: string;
-}
-
-export interface ToolPart {
-  type: "tool";
-  toolCallId: string;
-  toolName: string;
-  args: unknown;
-  result?: unknown;
-  state: ToolState;
-  approval?: ToolApproval;
-}
-
-export interface PlanMessagePart {
-  type: "plan";
-  plan: PlanView;
-}
-
-export type RecoveryAction = "retry" | "settings" | "new_chat";
-
-export interface ErrorPart {
-  type: "error";
-  message: string;
-  errorType?: string;
-  recoveryActions?: RecoveryAction[];
-}
-
-export interface UsagePart {
-  type: "usage";
-  inputTokens: number | null;
-  outputTokens: number | null;
-  totalTokens: number | null;
-  modelId: string | null;
-  provider: string | null;
-}
-
-export interface ClarificationPart {
-  type: "clarification";
-  question: string;
-  options?: string[];
-}
-
-export type MessagePart =
-  | TextPart
-  | ToolPart
-  | PlanMessagePart
-  | ErrorPart
-  | UsagePart
-  | ClarificationPart;
+export type {
+  ClarificationPart,
+  ErrorPart,
+  MessagePart,
+  PlanMessagePart,
+  RecoveryAction,
+  TextPart,
+  ToolApproval,
+  ToolPart,
+  UsagePart,
+} from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
 // Chat data types

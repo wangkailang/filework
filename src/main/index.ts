@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { config } from "dotenv";
 import {
@@ -17,7 +18,9 @@ config({ path: join(app.getAppPath(), ".env") });
 // Also try from __dirname for bundled builds
 config({ path: join(__dirname, "../../.env") });
 
+import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { initDatabase } from "./db";
+import { migrateChatToJsonl } from "./db/jsonl-migration";
 import { registerAIHandlers } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import { registerFileHandlers } from "./ipc/file-handlers";
@@ -110,13 +113,28 @@ app.whenReady().then(async () => {
   // Initialize SQLite database
   await initDatabase();
 
+  // Set up JSONL session store + run one-shot migration from SQLite chat
+  // tables. Synchronous so chat IPC handlers never see a partially-migrated
+  // store.
+  const sessionStore = new JsonlSessionStore(
+    join(homedir(), ".filework", "sessions"),
+  );
+  try {
+    await migrateChatToJsonl(sessionStore);
+  } catch (err) {
+    console.error(
+      "[startup] Chat migration failed; sessions may be empty until restart:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   // Register IPC handlers
   registerFileHandlers();
   registerAIHandlers();
   registerSettingsHandlers();
   registerLlmConfigHandlers();
   registerWorkspaceHandlers();
-  registerChatHandlers();
+  registerChatHandlers(sessionStore);
   registerTaskTraceHandlers();
 
   // Discover personal-level skills at startup (project skills are loaded on workspace open)
