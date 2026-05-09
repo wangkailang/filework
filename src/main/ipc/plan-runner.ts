@@ -36,6 +36,7 @@ import { buildAgentToolRegistry } from "./agent-tools";
 import { buildApprovalHook } from "./approval-hook";
 import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan, PlanStepArtifact } from "./plan-types";
+import { buildPlanStepSystemPrompt } from "./system-prompt";
 
 /** Default per-step timeout: 5 minutes */
 const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -152,37 +153,15 @@ export const executePlan = async ({
         .join("\n");
 
       const skill = step.skillId ? getSkill(step.skillId) : undefined;
-      const skillPrompt = skill
-        ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt}`
-        : "";
       const skillTools = skill?.tools ?? {};
 
-      const subStepsList = step.subSteps?.length
-        ? `\n\n## Sub-tasks for this step\n${step.subSteps.map((ss, i) => `${i + 1}. ${ss.label}`).join("\n")}\nComplete each sub-task in order. After finishing each one, mention which sub-task you completed.`
-        : "";
-
-      const verificationInstruction = step.verification
-        ? `\n\n## Verification\nAfter completing this step, verify: ${step.verification}`
-        : "";
-
-      const systemPrompt = `You are FileWork, executing step ${step.id}/${plan.steps.length} of a planned task.
-
-Current workspace: ${plan.workspacePath}
-
-## Current Plan (from disk)
-${planContext}
-
-## Previous Step Results
-${previousResults || "(none — this is the first step)"}
-
-## Current Step
-Step ${step.id}: ${step.action} — ${step.description}${subStepsList}${verificationInstruction}
-
-Rules:
-- Focus ONLY on this step's objective. Do not do work for other steps.
-- Use absolute paths based on the workspace path.
-- Be concise in your response.
-- Respond in the same language as the original prompt.${skillPrompt}`;
+      const systemPrompt = buildPlanStepSystemPrompt({
+        plan,
+        step,
+        planContext,
+        previousResults,
+        skill,
+      });
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
 
