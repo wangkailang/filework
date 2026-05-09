@@ -21,7 +21,7 @@ import { cn } from "../../lib/utils";
 import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
-// Types (mirrors src/main/planner/types.ts for renderer use)
+// Types (mirrors src/main/ipc/plan-types.ts for renderer use)
 // ---------------------------------------------------------------------------
 
 export interface PlanSubStepView {

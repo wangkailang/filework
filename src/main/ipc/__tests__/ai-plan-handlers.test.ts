@@ -17,7 +17,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-vi.mock("../../planner", () => ({
+vi.mock("../plan-generator", () => ({
   needsPlanning: vi.fn(() => false),
   planTask: planTaskMock,
 }));
@@ -49,7 +49,7 @@ vi.mock("../../db", () => ({
   updateTask: vi.fn(),
 }));
 
-vi.mock("../../planner/executor", () => ({
+vi.mock("../plan-runner", () => ({
   executePlan: vi.fn(),
   cancelPlan: vi.fn(),
 }));

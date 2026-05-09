@@ -1,26 +1,35 @@
 /**
- * Planner module — generates a structured execution plan from a user prompt.
+ * Plan generator — turns a user prompt into a structured Plan.
  *
- * The plan phase uses a lightweight LLM call with read-only tools so it can
- * inspect the workspace before proposing a plan. No side effects.
+ * Lives in the IPC layer (not core/) because:
+ * - It uses a separate `generateText` call with a read-only tool subset,
+ *   not the AgentLoop turn-stream
+ * - Its 4-strategy JSON-extraction fallback is tuned for filework's model
+ *   population (DeepSeek + custom OpenAI-compatible endpoints) and is not
+ *   a domain-neutral concern
+ *
+ * Replaces `src/main/planner/index.ts` (logic preserved verbatim).
  */
 
+import crypto from "node:crypto";
 import { generateText, stepCountIs } from "ai";
 import { skills } from "../skills";
 import { writePlanFile } from "./plan-file";
-import type { Plan, PlannerLLMOutput, PlanStep, PlanSubStep } from "./types";
+import type {
+  Plan,
+  PlannerLLMOutput,
+  PlanStep,
+  PlanSubStep,
+} from "./plan-types";
 
-// Re-export types for convenience
-export type { Plan, PlanStep } from "./types";
+// Re-export types for convenience for callers that previously imported via
+// the old `../planner` barrel.
+export type { Plan, PlanStep } from "./plan-types";
 
 /** Build the skill catalog string for the planner system prompt */
 const buildSkillCatalog = (): string =>
   skills.map((s) => `- **${s.id}**: ${s.name} — ${s.description}`).join("\n");
 
-/**
- * Heuristic: should this prompt go through the planner?
- * Returns true for complex, multi-step tasks.
- */
 /**
  * Heuristic: should this prompt go through the planner?
  * Returns true for complex, multi-step tasks.
@@ -35,7 +44,6 @@ export const needsPlanning = (prompt: string): boolean => {
   const lower = prompt.toLowerCase();
 
   // ── Fast exit: simple intent patterns should NEVER trigger planning ──
-  // These are single-action requests even if they mention file types
   const simpleIntentPatterns = [
     /^(总结|概括|概述|解释|翻译|阅读|读取|查看|打开|提取|转换).{0,80}(文件|内容|文本|pdf|xlsx|docx|csv)/i,
     /^(summarize|explain|translate|read|extract|convert|open|view)\b/i,
@@ -50,12 +58,9 @@ export const needsPlanning = (prompt: string): boolean => {
   if (multiActionPatterns.some((p) => p.test(lower))) return true;
 
   // ── Long prompts with genuine complexity ──
-  // Raised threshold; length alone is a weak signal
   if (prompt.length > 300) return true;
 
   // ── Multiple "task" skill hits → likely multi-step ──
-  // Only count skills with category "task" (those that produce side effects).
-  // "tool" skills just provide read capabilities and don't constitute separate tasks.
   let taskSkillHits = 0;
   for (const skill of skills) {
     if (skill.category !== "task") continue;
@@ -136,7 +141,6 @@ ${skillCatalog}
     prompt,
   });
 
-  // Extract JSON from the LLM response
   const text = result.text;
   const parsed = extractPlanJson(text, prompt);
   return buildPlan(planId, prompt, workspacePath, parsed, now);
@@ -199,7 +203,6 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
   // Strategy 3: find JSON object containing "steps" array
   const stepsIdx = text.indexOf('"steps"');
   if (stepsIdx !== -1) {
-    // Find the enclosing { before "steps"
     const braceStart = text.lastIndexOf("{", stepsIdx);
     const braceEnd = text.lastIndexOf("}");
     if (braceStart !== -1 && braceEnd > stepsIdx) {
@@ -227,7 +230,6 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
     );
   }
 
-  // Fallback: try to produce a reasonable multi-step plan from the prompt
   return buildFallbackPlan(prompt);
 };
 
@@ -238,10 +240,8 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
 const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
   const goal = prompt.length > 100 ? `${prompt.slice(0, 100)}...` : prompt;
 
-  // Detect common multi-part patterns and split accordingly
   const lower = prompt.toLowerCase();
 
-  // Pattern: "总结/整理 X 并/同时/然后 生成 Y"
   const hasGenerate = /生成|创建|制作|输出|写|create|generate|make|write/i.test(
     lower,
   );
@@ -281,7 +281,6 @@ const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
     });
   }
 
-  // If no patterns matched, use a generic 3-step structure
   if (steps.length === 0) {
     steps.push(
       { action: "analyze", description: "分析任务需求，检查工作区相关文件" },
@@ -290,7 +289,6 @@ const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
     );
   }
 
-  // Add a final review step if keyword-matched steps don't already end with one
   const lastAction = steps[steps.length - 1].action;
   if (steps.length > 1 && lastAction !== "review") {
     steps.push({
@@ -333,7 +331,6 @@ const buildPlan = async (
     updatedAt: now,
   };
 
-  // Write the plan file to disk (filesystem as memory)
   await writePlanFile(plan);
 
   return plan;

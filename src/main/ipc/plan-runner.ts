@@ -1,23 +1,39 @@
 /**
- * Plan executor — runs plan steps sequentially, streaming results to the renderer.
+ * Plan runner — drives an approved Plan through the AgentLoop, one step
+ * at a time, streaming each step's output to the renderer over the
+ * pre-existing `ai:stream-*` and `ai:plan-step-*` IPC channels.
  *
- * Key patterns:
- * - "Read Before Decide": re-reads plan file before each step
- * - Error persistence: logs failures to the plan file
- * - Context passing: injects previous step summaries into each step's prompt
+ * Replaces `src/main/planner/executor.ts`. Behavior parity:
+ * - "Read Before Decide": re-reads the plan file before each step
+ * - Per-step timeout (5 min default) via `createTimeoutController`
+ * - Stream watchdog per step
+ * - Sub-step progress emitted on each tool result (capped at totalSubSteps-1
+ *   so the final sub-step only completes when the step itself succeeds)
+ * - Cancellation paths: external `cancelPlan`, manual stop flag,
+ *   AbortError from upstream
+ * - Step failure persisted into task_plan.md with contextual error message
+ *
+ * The driver is now `AgentLoop` (single per-step `streamText` call wrapped
+ * in retry + event translator) instead of the inline `streamText`/fullStream
+ * loop that lived in planner/executor.ts.
  */
 
-import { stepCountIs, streamText } from "ai";
+import type { LanguageModel, Tool } from "ai";
 import type { WebContents } from "electron";
+
+import { classifyError } from "../ai/error-classifier";
 import {
   createTimeoutController,
   StepTimeoutError,
   StreamWatchdog,
 } from "../ai/stream-watchdog";
+import { AgentLoop } from "../core/agent/agent-loop";
+import type { ClassifiedRetryError } from "../core/agent/retry";
+import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { readPlanFile, writePlanFile } from "./plan-file";
-import type { Plan, PlanStepArtifact } from "./types";
+import type { Plan, PlanStepArtifact } from "./plan-types";
 
 /** Default per-step timeout: 5 minutes */
 const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -50,16 +66,16 @@ const truncateDeep = (value: unknown, maxStringLen = 200): unknown => {
   return value;
 };
 
-interface ExecutorOptions {
+interface PlanRunnerOptions {
   plan: Plan;
-  model: Parameters<typeof streamText>[0]["model"];
-  tools: Parameters<typeof streamText>[0]["tools"];
+  model: LanguageModel;
+  tools: Record<string, Tool>;
   sender: WebContents;
   taskId: string;
   abortSignal?: AbortSignal;
 }
 
-/** Cancelled plan ids — set by the cancel handler */
+/** Cancelled plan ids — set by the cancel handler. */
 const cancelledPlans = new Set<string>();
 
 export const cancelPlan = (planId: string): void => {
@@ -77,13 +93,14 @@ export const executePlan = async ({
   sender,
   taskId,
   abortSignal,
-}: ExecutorOptions): Promise<Plan> => {
+}: PlanRunnerOptions): Promise<Plan> => {
   plan.status = "executing";
   plan.updatedAt = new Date().toISOString();
   await writePlanFile(plan);
 
+  const workspace = new LocalWorkspace(plan.workspacePath);
+
   for (const step of plan.steps) {
-    // Check cancellation
     if (cancelledPlans.has(plan.id)) {
       step.status = "skipped";
       plan.status = "cancelled";
@@ -97,7 +114,6 @@ export const executePlan = async ({
     plan.updatedAt = new Date().toISOString();
     await writePlanFile(plan);
 
-    // Notify renderer of step progress
     if (!sender.isDestroyed()) {
       sender.send("ai:plan-step-start", {
         id: taskId,
@@ -113,13 +129,11 @@ export const executePlan = async ({
     let lastEmittedCompleted = -1;
     const totalSubSteps = step.subSteps?.length ?? 0;
     const stepArtifacts: PlanStepArtifact[] = [];
-    // Track pending tool-call args by toolCallId for artifact extraction
     const pendingToolCalls = new Map<
       string,
       { toolName: string; args: Record<string, unknown> }
     >();
 
-    // Create per-step timeout controller before try so catch can inspect signal.reason
     const { controller: stepController, cleanup: cleanupTimeout } =
       createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
 
@@ -129,16 +143,14 @@ export const executePlan = async ({
       try {
         planContext = await readPlanFile(plan.workspacePath);
       } catch {
-        // Plan file might not exist yet on first step, that's ok
+        // Plan file might not exist yet on first step.
       }
 
-      // Build context from previous completed steps
       const previousResults = plan.steps
         .filter((s) => s.status === "completed" && s.resultSummary)
         .map((s) => `Step ${s.id} (${s.action}): ${s.resultSummary}`)
         .join("\n");
 
-      // Get skill-specific system prompt and tools
       const skill = step.skillId ? getSkill(step.skillId) : undefined;
       const skillPrompt = skill
         ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt}`
@@ -174,16 +186,7 @@ Rules:
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
 
-      const result = streamText({
-        model,
-        tools: { ...tools, ...skillTools },
-        stopWhen: stepCountIs(15),
-        system: systemPrompt,
-        prompt: stepPrompt,
-        abortSignal: stepController.signal,
-      });
-
-      // Start watchdog for heartbeat & stall detection
+      // Watchdog scoped to this step.
       const watchdog = new StreamWatchdog({
         taskId,
         sender,
@@ -193,70 +196,86 @@ Rules:
       });
       watchdog.start();
 
+      const agentLoop = new AgentLoop({
+        workspace,
+        model,
+        tools: { ...tools, ...skillTools },
+        systemPrompt,
+        signal: stepController.signal,
+        agentId: `${taskId}:plan-step-${step.id}`,
+        maxStepsPerTurn: 15,
+        classifyError: (err): ClassifiedRetryError => {
+          const c = classifyError(err);
+          return {
+            type: c.type,
+            retryable: c.retryable,
+            maxRetries: c.maxRetries,
+            backoffMs: c.backoffMs,
+          };
+        },
+      });
+
+      let manualStop = false;
+      let cancelledMid = false;
       try {
-        // Stream step output to renderer
-        for await (const part of result.fullStream) {
+        for await (const ev of agentLoop.run(stepPrompt)) {
           watchdog.activity();
 
           if (sender.isDestroyed()) break;
 
-          // Check manual stop flag
           if (manualStopFlags.get(taskId)) {
             console.log("[Plan] Manual stop flag detected for taskId:", taskId);
-            break;
+            manualStop = true;
+            if (!stepController.signal.aborted) stepController.abort();
+            // Continue draining so agent_end is observed.
           }
 
-          // Check cancellation mid-stream
           if (cancelledPlans.has(plan.id)) {
-            break;
+            cancelledMid = true;
+            if (!stepController.signal.aborted) stepController.abort();
           }
 
-          switch (part.type) {
-            case "text-delta":
-              stepText += part.text;
-              sender.send("ai:stream-delta", { id: taskId, delta: part.text });
+          switch (ev.type) {
+            case "message_update":
+              stepText += ev.deltaText;
+              sender.send("ai:stream-delta", {
+                id: taskId,
+                delta: ev.deltaText,
+              });
               break;
-            case "tool-call":
+            case "tool_execution_start":
               sender.send("ai:stream-tool-call", {
                 id: taskId,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                args: part.input,
+                toolCallId: ev.toolCallId,
+                toolName: ev.toolName,
+                args: ev.args,
               });
-              // Stash args for artifact extraction on result
-              pendingToolCalls.set(part.toolCallId, {
-                toolName: part.toolName,
-                args: part.input as Record<string, unknown>,
+              pendingToolCalls.set(ev.toolCallId, {
+                toolName: ev.toolName,
+                args: ev.args as Record<string, unknown>,
               });
               break;
-            case "tool-result": {
+            case "tool_execution_end": {
               sender.send("ai:stream-tool-result", {
                 id: taskId,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                result: part.output,
+                toolCallId: ev.toolCallId,
+                toolName: ev.toolName,
+                result: ev.result,
               });
-              lastToolName = part.toolName;
+              lastToolName = ev.toolName;
 
-              // Collect artifact for every tool call with its full data
-              const pending = pendingToolCalls.get(part.toolCallId);
+              const pending = pendingToolCalls.get(ev.toolCallId);
               if (pending) {
-                const resultObj = part.output as
-                  | Record<string, unknown>
-                  | undefined;
-                const success = !(resultObj && resultObj.success === false);
                 stepArtifacts.push({
-                  toolCallId: part.toolCallId,
+                  toolCallId: ev.toolCallId,
                   toolName: pending.toolName,
                   args: truncateDeep(pending.args) as Record<string, unknown>,
-                  result: truncateDeep(part.output),
-                  success,
+                  result: truncateDeep(ev.result),
+                  success: ev.success,
                 });
-                pendingToolCalls.delete(part.toolCallId);
+                pendingToolCalls.delete(ev.toolCallId);
               }
-              // Track sub-step progress — cap at totalSubSteps-1 so the
-              // last sub-step only completes when the step succeeds.
-              // Only send IPC when the value actually changes.
+
               if (totalSubSteps > 0) {
                 toolCallCount++;
                 const completedSubSteps = Math.min(
@@ -276,15 +295,53 @@ Rules:
               }
               break;
             }
+            case "agent_end":
+              // Surfacing the loop's terminal status as an exception lets
+              // the existing catch branch differentiate timeout / abort /
+              // failure with the same logic as before.
+              if (ev.status === "failed") {
+                throw new Error(ev.error?.message ?? "Plan step failed");
+              }
+              if (ev.status === "cancelled") {
+                // Convert cancellation into an AbortError so the catch
+                // branch picks the user-abort path.
+                const ab = new Error("aborted");
+                ab.name = "AbortError";
+                throw ab;
+              }
+              break;
           }
         }
       } finally {
         watchdog.stop();
       }
 
-      // Mark step completed
+      if (cancelledMid) {
+        step.status = "skipped";
+        plan.status = "cancelled";
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(plan);
+        cancelledPlans.delete(plan.id);
+        cleanupTimeout();
+        return plan;
+      }
+
+      if (manualStop) {
+        step.status = "completed";
+        step.resultSummary = truncateText(stepText, 500) ?? "(stopped by user)";
+        for (const remaining of plan.steps) {
+          if (remaining.status === "pending") {
+            remaining.status = "skipped";
+          }
+        }
+        plan.status = "cancelled";
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(plan);
+        cleanupTimeout();
+        return plan;
+      }
+
       step.status = "completed";
-      // Attach collected artifacts to the step
       if (stepArtifacts.length > 0) {
         step.artifacts = stepArtifacts;
         if (!sender.isDestroyed()) {
@@ -296,7 +353,6 @@ Rules:
           });
         }
       }
-      // Mark all sub-steps as done and notify renderer
       if (step.subSteps) {
         for (const ss of step.subSteps) ss.status = "done";
         if (!sender.isDestroyed()) {
@@ -309,20 +365,14 @@ Rules:
           });
         }
       }
-      // Generate a brief summary for context passing
       step.resultSummary =
         truncateText(stepText, 500) ?? "(completed with tool calls only)";
     } catch (error: unknown) {
-      // Distinguish step timeout from user-initiated abort.
-      // streamText wraps abort reasons as AbortError, so we check
-      // the controller's signal.reason for our StepTimeoutError.
       const isStepTimeout =
         stepController.signal.aborted &&
         stepController.signal.reason instanceof StepTimeoutError;
 
-      // Step timeout — skip and continue with remaining steps
       if (isStepTimeout) {
-        // Build contextual error message
         const contextParts: string[] = [
           `步骤超时 (${DEFAULT_STEP_TIMEOUT_MS / 1000}s)，已自动跳过`,
         ];
@@ -337,7 +387,6 @@ Rules:
         const timeoutMsg = contextParts.join("。");
         step.status = "skipped";
         step.error = timeoutMsg;
-        // Freeze sub-step progress — don't mark remaining as done
         step.resultSummary = truncateText(stepText, 500);
 
         plan.updatedAt = new Date().toISOString();
@@ -355,7 +404,6 @@ Rules:
         continue;
       }
 
-      // User-initiated abort — mark current step done, skip remaining
       if (error instanceof Error && error.name === "AbortError") {
         step.status = "completed";
         step.resultSummary = truncateText(stepText, 500) ?? "(aborted by user)";
@@ -372,7 +420,6 @@ Rules:
         return plan;
       }
 
-      // Other errors — stop execution
       const rawError = error instanceof Error ? error.message : "Unknown error";
       const errorContext = lastToolName
         ? `${rawError} (执行 ${lastToolName} 时出错)`
@@ -404,7 +451,6 @@ Rules:
     plan.updatedAt = new Date().toISOString();
     await writePlanFile(plan);
 
-    // Notify renderer of step completion
     if (!sender.isDestroyed()) {
       sender.send("ai:plan-step-done", {
         id: taskId,
