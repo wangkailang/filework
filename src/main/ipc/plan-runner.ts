@@ -18,7 +18,7 @@
  * loop that lived in planner/executor.ts.
  */
 
-import type { LanguageModel, Tool } from "ai";
+import type { LanguageModel } from "ai";
 import type { WebContents } from "electron";
 
 import { classifyError } from "../ai/error-classifier";
@@ -32,6 +32,8 @@ import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
+import { buildAgentToolRegistry } from "./agent-tools";
+import { buildApprovalHook } from "./approval-hook";
 import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan, PlanStepArtifact } from "./plan-types";
 
@@ -69,7 +71,6 @@ const truncateDeep = (value: unknown, maxStringLen = 200): unknown => {
 interface PlanRunnerOptions {
   plan: Plan;
   model: LanguageModel;
-  tools: Record<string, Tool>;
   sender: WebContents;
   taskId: string;
   abortSignal?: AbortSignal;
@@ -89,7 +90,6 @@ export const cancelPlan = (planId: string): void => {
 export const executePlan = async ({
   plan,
   model,
-  tools,
   sender,
   taskId,
   abortSignal,
@@ -196,10 +196,27 @@ Rules:
       });
       watchdog.start();
 
+      // Build a fresh ToolRegistry per step. The registry is cheap to
+      // construct (just a Map) and per-step lifecycle keeps state isolated.
+      const toolRegistry = buildAgentToolRegistry({
+        sender,
+        taskId,
+        workspace,
+      });
+      const beforeToolCall = buildApprovalHook({ sender, taskId });
+      const registryTools = toolRegistry.toAiSdkTools({
+        ctxFactory: ({ toolCallId }) => ({
+          workspace,
+          signal: stepController.signal,
+          toolCallId,
+        }),
+        beforeToolCall,
+      });
+
       const agentLoop = new AgentLoop({
         workspace,
         model,
-        tools: { ...tools, ...skillTools },
+        tools: { ...registryTools, ...skillTools },
         systemPrompt,
         signal: stepController.signal,
         agentId: `${taskId}:plan-step-${step.id}`,

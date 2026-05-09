@@ -16,7 +16,6 @@ import {
   cleanupTask,
   markPlanApproved,
 } from "./ai-task-control";
-import { buildTools } from "./ai-tool-permissions";
 import { safeTools } from "./ai-tools";
 import { needsPlanning, planTask } from "./plan-generator";
 import { cancelPlan, executePlan } from "./plan-runner";
@@ -158,13 +157,11 @@ export const registerPlanHandlers = () => {
       }
 
       const model = getAIModelByConfigId(llmConfigId);
-      const tools = buildTools(sender, id);
 
       plan.status = "approved";
       const finalPlan = await executePlan({
         plan,
         model,
-        tools,
         sender,
         taskId: id,
         abortSignal: controller.signal,

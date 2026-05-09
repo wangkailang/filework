@@ -44,6 +44,7 @@ import {
   wrapWithSecurityBoundary,
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
+import { buildAgentToolRegistry } from "./agent-tools";
 // Import our new modules
 import {
   getAIModelByConfigId,
@@ -61,6 +62,7 @@ import {
 } from "./ai-task-control";
 import { buildSkillSpecificTools, buildTools } from "./ai-tool-permissions";
 import { rawExecutors, safeTools } from "./ai-tools";
+import { buildApprovalHook } from "./approval-hook";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { registerUsageHandlers } from "./usage-handlers";
 
@@ -435,19 +437,16 @@ const handleTaskExecution = async (
       skillPrompt = `\n\n${wrapWithSecurityBoundary(preprocessed.systemPrompt, source)}`;
     }
 
-    let originalTools: Record<string, import("ai").Tool>;
-    if (skill?.external?.frontmatter["allowed-tools"]) {
-      const allowedTools = skill.external.frontmatter["allowed-tools"];
+    const allowedTools = skill?.external?.frontmatter["allowed-tools"];
+    if (allowedTools) {
       console.log(
-        `[Skill Tools] Using restricted tool set for ${skill.name}:`,
+        `[Tool Registry] Using restricted tool set for ${skill?.name}:`,
         allowedTools,
       );
-      originalTools = buildSkillSpecificTools(allowedTools, sender, id);
     } else {
       console.log(
-        `[Skill Tools] Using full tool set (no restrictions for ${skill?.name || "no skill"})`,
+        `[Tool Registry] Using full tool set (no restrictions for ${skill?.name || "no skill"})`,
       );
-      originalTools = buildTools(sender, id);
     }
     const skillTools = skill?.tools ?? {};
 
@@ -494,7 +493,27 @@ const handleTaskExecution = async (
     let agentProviderMeta: Record<string, unknown> | undefined;
 
     const workspace = new LocalWorkspace(payload.workspacePath);
-    const agentTools = { ...originalTools, ...skillTools };
+
+    // ── Build the per-task ToolRegistry and merge with skill-specific tools ──
+    // Registry tools (file ops + askClarification) flow through the
+    // beforeToolCall approval hook. Skill-bundled tools (e.g. pdf-processor)
+    // are pre-built ai-sdk Tool objects and are merged in unguarded.
+    const toolRegistry = buildAgentToolRegistry({
+      sender,
+      taskId: id,
+      workspace,
+      allowedTools,
+    });
+    const beforeToolCall = buildApprovalHook({ sender, taskId: id });
+    const registryTools = toolRegistry.toAiSdkTools({
+      ctxFactory: ({ toolCallId }) => ({
+        workspace,
+        signal: controller.signal,
+        toolCallId,
+      }),
+      beforeToolCall,
+    });
+    const agentTools = { ...registryTools, ...skillTools };
 
     const agentLoop = new AgentLoop({
       workspace,
@@ -553,6 +572,14 @@ const handleTaskExecution = async (
               toolName: ev.toolName,
               args: ev.args,
             });
+            emitTaskTraceEvent(sender, {
+              taskId: id,
+              type: "tool-start",
+              timestamp: new Date().toISOString(),
+              toolCallId: ev.toolCallId,
+              toolName: ev.toolName,
+              detail: {},
+            });
             break;
           case "tool_execution_end":
             sender.send("ai:stream-tool-result", {
@@ -560,6 +587,14 @@ const handleTaskExecution = async (
               toolCallId: ev.toolCallId,
               toolName: ev.toolName,
               result: ev.result,
+            });
+            emitTaskTraceEvent(sender, {
+              taskId: id,
+              type: ev.success ? "tool-end" : "tool-error",
+              timestamp: new Date().toISOString(),
+              toolCallId: ev.toolCallId,
+              toolName: ev.toolName,
+              detail: { ok: ev.success, durationMs: ev.durationMs },
             });
             break;
           case "retry": {
