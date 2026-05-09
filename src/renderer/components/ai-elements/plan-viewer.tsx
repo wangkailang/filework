@@ -16,51 +16,28 @@ import {
   useMemo,
   useState,
 } from "react";
+import type {
+  PlanStepArtifactView,
+  PlanStepView,
+  PlanSubStepView,
+  PlanView,
+} from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
-// Types (mirrors src/main/ipc/plan-types.ts for renderer use)
+// Types — re-exported from the shared core types so the JSONL session store
+// and the renderer agree on a single source of truth. (See
+// src/main/ipc/plan-types.ts for the planner's executor view of Plan.)
 // ---------------------------------------------------------------------------
 
-export interface PlanSubStepView {
-  label: string;
-  status: "pending" | "done";
-}
-
-export interface PlanStepArtifactView {
-  toolCallId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  result?: unknown;
-  success: boolean;
-}
-
-export interface PlanStepView {
-  id: number;
-  action: string;
-  description: string;
-  skillId?: string;
-  verification?: string;
-  subSteps?: PlanSubStepView[];
-  artifacts?: PlanStepArtifactView[];
-  status: "pending" | "running" | "completed" | "failed" | "skipped";
-  error?: string;
-}
-
-export interface PlanView {
-  id: string;
-  goal: string;
-  steps: PlanStepView[];
-  status:
-    | "draft"
-    | "approved"
-    | "executing"
-    | "completed"
-    | "failed"
-    | "cancelled";
-}
+export type {
+  PlanStepArtifactView,
+  PlanStepView,
+  PlanSubStepView,
+  PlanView,
+} from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
 // Step status icon
