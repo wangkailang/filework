@@ -6,11 +6,10 @@
  */
 
 import crypto from "node:crypto";
-import { stepCountIs, streamText } from "ai";
 import { ipcMain } from "electron";
 import { compressContext } from "../ai/context-compressor";
 import { DeltaBatcher } from "../ai/delta-batcher";
-import { classifyError, withRetry } from "../ai/error-classifier";
+import { classifyError } from "../ai/error-classifier";
 import { emitMemoryEvent } from "../ai/memory-debug-store";
 import {
   convertToCoreMessages,
@@ -24,6 +23,10 @@ import {
   getTokenBudgetForModel,
   truncateToFitAsync,
 } from "../ai/token-budget";
+import { AgentLoop } from "../core/agent/agent-loop";
+import type { AgentEvent } from "../core/agent/events";
+import type { ClassifiedRetryError } from "../core/agent/retry";
+import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
   addTask,
   getDefaultLlmConfig,
@@ -463,271 +466,240 @@ const handleTaskExecution = async (
 
     // ── Build messages from history (if available) ──
     const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
-    const builtMessages: import("ai").ModelMessage[] = useMessagesMode
-      ? [
-          ...(convertedHistory ?? []),
-          { role: "user" as const, content: payload.prompt },
-        ]
-      : [];
 
-    // ── Streaming with automatic retry ──
+    // ── AgentLoop driver + IPC translator ──────────────────────────
     const providerOptions = adapter.buildProviderOptions();
 
-    const streamAndConsume = async () => {
-      const commonOptions = {
-        model,
-        tools: { ...originalTools, ...skillTools },
-        stopWhen: stepCountIs(20),
-        system: systemPrompt,
-        abortSignal: controller.signal,
-        providerOptions,
-      };
+    // Watchdog runs across the whole agent run.
+    const watchdog = new StreamWatchdog({
+      taskId: id,
+      sender,
+      abortController: controller,
+    });
+    watchdog.start();
 
-      const streamOptions = useMessagesMode
-        ? { ...commonOptions, messages: builtMessages }
-        : { ...commonOptions, prompt: payload.prompt };
-
-      const result = streamText(streamOptions);
-
-      // Start watchdog for heartbeat & stall detection
-      const watchdog = new StreamWatchdog({
-        taskId: id,
-        sender,
-        abortController: controller,
-      });
-      watchdog.start();
-
-      // Batch text-delta IPC events into 50ms windows to reduce renderer
-      // re-renders from 50+/s down to ~20/s.
-      const deltaBatcher = new DeltaBatcher({
-        flush: (text) => {
-          if (!sender.isDestroyed()) {
-            sender.send("ai:stream-delta", { id, delta: text });
-          }
-        },
-      });
-
-      try {
-        let partCount = 0;
-        for await (const part of result.fullStream) {
-          watchdog.activity();
-          partCount++;
-          console.log(
-            `[Main] Processing part ${partCount} for taskId:`,
-            id,
-            "type:",
-            part.type,
-          );
-
-          if (manualStopFlags.get(id)) {
-            console.log("[Main] Manual stop flag detected for taskId:", id);
-            break;
-          }
-
-          if (sender.isDestroyed()) break;
-
-          switch (part.type) {
-            case "text-delta":
-              fullText += part.text;
-              deltaBatcher.push(part.text);
-              break;
-            case "tool-call":
-              // Flush pending text before tool events so ordering is preserved
-              deltaBatcher.drain();
-              sender.send("ai:stream-tool-call", {
-                id,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                args: part.input,
-              });
-              break;
-            case "tool-result":
-              sender.send("ai:stream-tool-result", {
-                id,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                result: part.output,
-              });
-              break;
-            case "error":
-              // Flush pending text before surfacing the error
-              deltaBatcher.drain();
-              // AI SDK v6 wraps API errors as stream events instead of
-              // throwing.  Re-throw so withRetry / our catch block can
-              // classify and surface the error to the renderer.
-              throw part.error;
-          }
+    // Coalesce text deltas into 30ms windows to throttle renderer re-renders.
+    const deltaBatcher = new DeltaBatcher({
+      flush: (text) => {
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-delta", { id, delta: text });
         }
-      } finally {
-        // Ensure any remaining buffered text is sent before cleanup
-        deltaBatcher.drain();
-        watchdog.stop();
-      }
-
-      return result;
-    };
+      },
+    });
 
     let fullText = "";
-    console.log("[Main] Starting stream loop for taskId:", id);
+    let agentInputTokens: number | null = null;
+    let agentOutputTokens: number | null = null;
+    let agentTotalTokens: number | null = null;
+    let agentProviderMeta: Record<string, unknown> | undefined;
+
+    const workspace = new LocalWorkspace(payload.workspacePath);
+    const agentTools = { ...originalTools, ...skillTools };
+
+    const agentLoop = new AgentLoop({
+      workspace,
+      model,
+      tools: agentTools,
+      systemPrompt,
+      history: useMessagesMode ? convertedHistory : undefined,
+      providerOptions,
+      signal: controller.signal,
+      agentId: id,
+      classifyError: (err): ClassifiedRetryError => {
+        const c = classifyError(err);
+        return {
+          type: c.type,
+          retryable: c.retryable,
+          maxRetries: c.maxRetries,
+          backoffMs: c.backoffMs,
+        };
+      },
+    });
+
+    const promptForLoop = useMessagesMode ? payload.prompt : payload.prompt;
+    // When useMessagesMode is false, we still pass the user prompt — AgentLoop
+    // appends it to history (which is empty in that case), matching the
+    // pre-M1 single-shot behavior.
+
+    console.log("[Main] Starting AgentLoop for taskId:", id);
 
     try {
-      const streamResult = await withRetry(streamAndConsume, {
-        signal: controller.signal,
-        onRetry: (attempt, classified) => {
-          console.log(
-            `[Main] Retry attempt ${attempt} for taskId: ${id}, error type: ${classified.type}`,
-          );
-          fullText = "";
-          if (!sender.isDestroyed()) {
-            sender.send("ai:stream-retry", {
+      let manualStop = false;
+      for await (const ev of agentLoop.run(
+        promptForLoop,
+      ) as AsyncIterable<AgentEvent>) {
+        watchdog.activity();
+        if (manualStopFlags.get(id)) {
+          console.log("[Main] Manual stop flag detected for taskId:", id);
+          manualStop = true;
+          if (!controller.signal.aborted) controller.abort();
+          // Continue draining events so agent_end is observed.
+        }
+        if (sender.isDestroyed()) break;
+
+        switch (ev.type) {
+          case "agent_start":
+            // ai:stream-start was already emitted above (parity with pre-M1).
+            break;
+          case "message_update":
+            fullText += ev.deltaText;
+            deltaBatcher.push(ev.deltaText);
+            break;
+          case "tool_execution_start":
+            deltaBatcher.drain();
+            sender.send("ai:stream-tool-call", {
               id,
-              attempt,
-              type: classified.type,
-              maxRetries: classified.maxRetries,
+              toolCallId: ev.toolCallId,
+              toolName: ev.toolName,
+              args: ev.args,
             });
+            break;
+          case "tool_execution_end":
+            sender.send("ai:stream-tool-result", {
+              id,
+              toolCallId: ev.toolCallId,
+              toolName: ev.toolName,
+              result: ev.result,
+            });
+            break;
+          case "retry": {
+            console.log(
+              `[Main] Retry attempt ${ev.attempt} for taskId: ${id}, error type: ${ev.errorType}`,
+            );
+            fullText = "";
+            // Get the maxRetries from a fresh classification (info only).
+            const retryInfo = classifyError(new Error(ev.errorType));
+            if (!sender.isDestroyed()) {
+              sender.send("ai:stream-retry", {
+                id,
+                attempt: ev.attempt,
+                type: ev.errorType,
+                maxRetries: retryInfo.maxRetries,
+              });
+            }
+            emitTaskTraceEvent(sender, {
+              taskId: id,
+              type: "retry",
+              timestamp: new Date().toISOString(),
+              detail: {
+                attempt: ev.attempt,
+                errorType: ev.errorType,
+                maxRetries: retryInfo.maxRetries,
+              },
+            });
+            break;
           }
+          case "agent_end": {
+            deltaBatcher.drain();
+            agentInputTokens = ev.totalUsage?.inputTokens ?? null;
+            agentOutputTokens = ev.totalUsage?.outputTokens ?? null;
+            agentTotalTokens = ev.totalUsage?.totalTokens ?? null;
+            agentProviderMeta = ev.providerMetadata;
+            // Use AgentLoop's accumulated finalText if present (more accurate
+            // post-retry than our running tally).
+            if (typeof ev.finalText === "string") {
+              fullText = ev.finalText;
+            }
 
-          emitTaskTraceEvent(sender, {
-            taskId: id,
-            type: "retry",
-            timestamp: new Date().toISOString(),
-            detail: {
-              attempt,
-              errorType: classified.type,
-              maxRetries: classified.maxRetries,
-            },
-          });
-        },
-      });
+            if (ev.status === "failed") {
+              const cls = classifyError(
+                new Error(ev.error?.message ?? "Unknown error"),
+              );
+              const errorMsg =
+                cls.userMessage || ev.error?.message || "Unknown error";
+              updateTask(id, {
+                status: "failed",
+                result: errorMsg,
+                completedAt: new Date().toISOString(),
+              });
+              emitTaskTraceEvent(sender, {
+                taskId: id,
+                type: "task-failed",
+                timestamp: new Date().toISOString(),
+                detail: {
+                  status: "failed",
+                  errorType: cls.type,
+                  message: errorMsg,
+                },
+              });
+              if (!sender.isDestroyed()) {
+                sender.send("ai:stream-error", {
+                  id,
+                  error: errorMsg,
+                  type: cls.type,
+                  recoveryActions: cls.recoveryActions,
+                });
+              }
+              return { id, status: "failed", message: errorMsg };
+            }
 
-      // Track token usage (AI SDK v6: totalUsage aggregates all steps)
-      let inputTokens: number | null = null;
-      let outputTokens: number | null = null;
-      let totalTokens: number | null = null;
-      try {
-        const usage = await streamResult.totalUsage;
-        if (usage) {
-          inputTokens = usage.inputTokens ?? null;
-          outputTokens = usage.outputTokens ?? null;
-          totalTokens =
-            inputTokens != null || outputTokens != null
-              ? (inputTokens ?? 0) + (outputTokens ?? 0)
-              : null;
+            // status: "completed" or "cancelled" — both finalize as completed
+            // for IPC parity (pre-M1 path also called ai:stream-done on abort).
+            const wasCancelled = ev.status === "cancelled" || manualStop;
+            updateTask(id, {
+              status: "completed",
+              result: fullText,
+              completedAt: new Date().toISOString(),
+              modelId: llmConfig?.model ?? null,
+              provider: llmConfig?.provider ?? null,
+              inputTokens: agentInputTokens,
+              outputTokens: agentOutputTokens,
+              totalTokens: agentTotalTokens,
+            });
+            // Cache events via provider adapter
+            try {
+              const { cacheWriteTokens: cw, cacheReadTokens: cr } =
+                adapter.extractCacheMetrics(agentProviderMeta);
+              if (cw && cw > 0) {
+                emitMemoryEvent(
+                  sender,
+                  id,
+                  "cache-write",
+                  { cacheWriteTokens: cw },
+                  payload.prompt,
+                );
+              }
+              if (cr && cr > 0) {
+                emitMemoryEvent(
+                  sender,
+                  id,
+                  "cache-hit",
+                  { cacheReadTokens: cr },
+                  payload.prompt,
+                );
+              }
+            } catch {
+              // Non-critical
+            }
+            emitTaskTraceEvent(sender, {
+              taskId: id,
+              type: wasCancelled ? "task-aborted" : "task-done",
+              timestamp: new Date().toISOString(),
+              detail: {
+                status: "completed",
+                inputTokens: agentInputTokens,
+                outputTokens: agentOutputTokens,
+                totalTokens: agentTotalTokens,
+              },
+            });
+            if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+            return { id, status: "completed" };
+          }
         }
-      } catch {
-        // Usage read failure is non-critical
       }
 
-      // Track prompt-cache events via provider adapter
-      try {
-        const providerMeta = await streamResult.providerMetadata;
-        const promptSnippet = payload.prompt;
-        const { cacheWriteTokens: cacheWrite, cacheReadTokens: cacheRead } =
-          adapter.extractCacheMetrics(
-            providerMeta as Record<string, unknown> | undefined,
-          );
-
-        if (cacheWrite && cacheWrite > 0) {
-          emitMemoryEvent(
-            sender,
-            id,
-            "cache-write",
-            {
-              cacheWriteTokens: cacheWrite,
-            },
-            promptSnippet,
-          );
-        }
-        if (cacheRead && cacheRead > 0) {
-          emitMemoryEvent(
-            sender,
-            id,
-            "cache-hit",
-            {
-              cacheReadTokens: cacheRead,
-            },
-            promptSnippet,
-          );
-        }
-      } catch {
-        // Cache metadata read failure is non-critical
-      }
-
+      // Iterator exhausted without agent_end (e.g. sender destroyed) —
+      // best-effort cleanup.
       updateTask(id, {
         status: "completed",
         result: fullText,
         completedAt: new Date().toISOString(),
-        modelId: llmConfig?.model ?? null,
-        provider: llmConfig?.provider ?? null,
-        inputTokens,
-        outputTokens,
-        totalTokens,
       });
-
-      emitTaskTraceEvent(sender, {
-        taskId: id,
-        type: "task-done",
-        timestamp: new Date().toISOString(),
-        detail: {
-          status: "completed",
-          inputTokens,
-          outputTokens,
-          totalTokens,
-        },
-      });
-
       if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
       return { id, status: "completed" };
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === "AbortError") {
-        console.log("[Main] AbortError caught, cleaning up for taskId:", id);
-        updateTask(id, {
-          status: "completed",
-          result: fullText,
-          completedAt: new Date().toISOString(),
-        });
-
-        emitTaskTraceEvent(sender, {
-          taskId: id,
-          type: "task-aborted",
-          timestamp: new Date().toISOString(),
-          detail: { status: "completed" },
-        });
-        if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
-        return { id, status: "completed" };
-      }
-
-      const classified = classifyError(error);
-      const errorMsg =
-        classified.userMessage ||
-        (error instanceof Error ? error.message : "Unknown error");
-
-      updateTask(id, {
-        status: "failed",
-        result: errorMsg,
-        completedAt: new Date().toISOString(),
-      });
-
-      emitTaskTraceEvent(sender, {
-        taskId: id,
-        type: "task-failed",
-        timestamp: new Date().toISOString(),
-        detail: {
-          status: "failed",
-          errorType: classified.type,
-          message: errorMsg,
-        },
-      });
-
-      if (!sender.isDestroyed()) {
-        sender.send("ai:stream-error", {
-          id,
-          error: errorMsg,
-          type: classified.type,
-          recoveryActions: classified.recoveryActions,
-        });
-      }
-      return { id, status: "failed", message: errorMsg };
+    } finally {
+      deltaBatcher.drain();
+      watchdog.stop();
     }
   } catch (error: unknown) {
     const classified = classifyError(error);

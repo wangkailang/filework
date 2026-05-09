@@ -6,6 +6,14 @@
  * by an external Node consumer with no Electron context.
  */
 
+// AgentLoop
+export {
+  AgentLoop,
+  type AgentLoopConfig,
+  type AgentLoopHooks,
+  type TransformContextHook,
+  type TransformContextResult,
+} from "./agent/agent-loop";
 // Agent events
 export type {
   AgentEndStatus,
@@ -16,6 +24,13 @@ export type {
   TokenUsage,
   TurnEndReason,
 } from "./agent/events";
+// Retry
+export {
+  type ClassifiedRetryError,
+  type ErrorClassifier,
+  type WithRetryOptions,
+  withRetry,
+} from "./agent/retry";
 // Tool registry
 export type {
   BeforeToolCallDecision,
