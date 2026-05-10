@@ -310,3 +310,276 @@ describe("GitHubWorkspaceSCM.openPullRequest", () => {
     expect(body.base).toBe("develop");
   });
 });
+
+// ---------------------------------------------------------------------------
+// M6 PR 3 — query / comment surface
+// ---------------------------------------------------------------------------
+
+const rawPR = (
+  overrides: Partial<{
+    number: number;
+    state: "open" | "closed";
+    merged_at: string | null;
+    draft: boolean;
+  }> = {},
+) => ({
+  number: overrides.number ?? 1,
+  title: "Fix bug",
+  state: overrides.state ?? "open",
+  html_url: "https://gh/pr/1",
+  draft: overrides.draft ?? false,
+  user: { login: "octocat" },
+  head: { ref: "feature" },
+  base: { ref: "main" },
+  merged_at: overrides.merged_at ?? null,
+  created_at: "2026-05-01T00:00:00Z",
+  updated_at: "2026-05-02T00:00:00Z",
+});
+
+const rawIssue = (overrides: Partial<{ pull_request: unknown }> = {}) => ({
+  number: 7,
+  title: "Bug report",
+  state: "open" as const,
+  html_url: "https://gh/issues/7",
+  user: { login: "alice" },
+  labels: [{ name: "bug" }, "needs-triage"],
+  pull_request: overrides.pull_request,
+  created_at: "2026-05-01T00:00:00Z",
+  updated_at: "2026-05-02T00:00:00Z",
+});
+
+describe("GitHubWorkspaceSCM.listPullRequests", () => {
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    cacheDir = await mkdtemp(path.join(tmpdir(), "fw-scm-cache-"));
+  });
+
+  afterEach(async () => {
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("calls /repos/<o>/<r>/pulls with per_page=100 + filters", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify([rawPR({ number: 1 })]), { status: 200 }),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    await ws.scm.listPullRequests?.({ state: "all", base: "main" });
+    const url = (fetchMock.mock.calls[0] as unknown as [string])[0];
+    expect(url).toContain("/repos/acme/app/pulls");
+    expect(url).toContain("per_page=100");
+    expect(url).toContain("state=all");
+    expect(url).toContain("base=main");
+  });
+
+  it("derives state='merged' when merged_at != null", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([
+            rawPR({
+              number: 1,
+              state: "closed",
+              merged_at: "2026-05-03T00:00:00Z",
+            }),
+          ]),
+          { status: 200 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    const result = await ws.scm.listPullRequests?.();
+    expect(result?.[0].state).toBe("merged");
+  });
+});
+
+describe("GitHubWorkspaceSCM.getPullRequest", () => {
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    cacheDir = await mkdtemp(path.join(tmpdir(), "fw-scm-cache-"));
+  });
+
+  afterEach(async () => {
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("calls /repos/<o>/<r>/pulls/<number> and projects detail fields", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ...rawPR({ number: 42 }),
+            body: "PR body",
+            mergeable: true,
+            additions: 10,
+            deletions: 3,
+          }),
+          { status: 200 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    const result = await ws.scm.getPullRequest?.({ number: 42 });
+    const url = (fetchMock.mock.calls[0] as unknown as [string])[0];
+    expect(url).toBe("https://api.github.com/repos/acme/app/pulls/42");
+    expect(result).toMatchObject({
+      number: 42,
+      body: "PR body",
+      mergeable: true,
+      additions: 10,
+      deletions: 3,
+      mergedAt: null,
+    });
+  });
+});
+
+describe("GitHubWorkspaceSCM.listIssues", () => {
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    cacheDir = await mkdtemp(path.join(tmpdir(), "fw-scm-cache-"));
+  });
+
+  afterEach(async () => {
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("filters out PRs (rows where pull_request is set)", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([
+            rawIssue(),
+            rawIssue({ pull_request: { url: "..." } }),
+          ]),
+          { status: 200 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    const result = await ws.scm.listIssues?.();
+    expect(result?.length).toBe(1);
+    expect(result?.[0].number).toBe(7);
+    expect(result?.[0].labels).toEqual(["bug", "needs-triage"]);
+  });
+
+  it("encodes labels as comma-joined query param", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify([]), { status: 200 }),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    await ws.scm.listIssues?.({ labels: ["bug", "good first issue"] });
+    const url = (fetchMock.mock.calls[0] as unknown as [string])[0];
+    // URLSearchParams encodes ',' literally and spaces as '+'. Parse the
+    // query string back to verify the labels value structurally.
+    const labels = new URL(url).searchParams.get("labels");
+    expect(labels).toBe("bug,good first issue");
+  });
+});
+
+describe("GitHubWorkspaceSCM.commentIssue / commentPullRequest", () => {
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    cacheDir = await mkdtemp(path.join(tmpdir(), "fw-scm-cache-"));
+  });
+
+  afterEach(async () => {
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("POSTs to /issues/<n>/comments and returns commentId+url", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ id: 1234, html_url: "https://gh/comment/1234" }),
+          { status: 201 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    const result = await ws.scm.commentIssue?.({ number: 7, body: "thanks!" });
+    expect(result).toEqual({
+      commentId: 1234,
+      url: "https://gh/comment/1234",
+    });
+    const callArgs = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(callArgs[0]).toBe(
+      "https://api.github.com/repos/acme/app/issues/7/comments",
+    );
+    expect(callArgs[1].method).toBe("POST");
+    expect(JSON.parse(String(callArgs[1].body))).toEqual({ body: "thanks!" });
+  });
+
+  it("commentPullRequest aliases to the issue endpoint", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 99, html_url: "u" }), {
+          status: 201,
+        }),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    await ws.scm.commentPullRequest?.({ number: 42, body: "looks good" });
+    const callArgs = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(callArgs[0]).toBe(
+      "https://api.github.com/repos/acme/app/issues/42/comments",
+    );
+  });
+});
+
+describe("GitHubWorkspaceSCM.searchCode", () => {
+  let cacheDir: string;
+
+  beforeEach(async () => {
+    cacheDir = await mkdtemp(path.join(tmpdir(), "fw-scm-cache-"));
+  });
+
+  afterEach(async () => {
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("appends repo:owner/name and projects results", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            total_count: 1,
+            items: [
+              {
+                name: "useChatSession.ts",
+                path: "src/renderer/components/chat/useChatSession.ts",
+                html_url: "https://gh/blob/...",
+                repository: { full_name: "acme/app" },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    const result = await ws.scm.searchCode?.({ query: "useChatSession" });
+    expect(result?.totalCount).toBe(1);
+    expect(result?.items[0]).toEqual({
+      name: "useChatSession.ts",
+      path: "src/renderer/components/chat/useChatSession.ts",
+      repo: "acme/app",
+      htmlUrl: "https://gh/blob/...",
+    });
+    const callArgs = fetchMock.mock.calls[0] as unknown as [string];
+    const url = decodeURIComponent(callArgs[0]);
+    expect(url).toContain("/search/code?q=useChatSession repo:acme/app");
+    expect(url).toContain("per_page=100");
+  });
+});

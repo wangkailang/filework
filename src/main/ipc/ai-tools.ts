@@ -43,13 +43,16 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
 /**
  * Tools that always require explicit approval — even after the user has
  * approved them once in this task. Reserved for actions with broad
- * remote effects (push, PR open) where silent re-approval would be
- * surprising. Local-only destructive tools (writeFile, deleteFile, etc.)
- * follow the whitelist-after-first-ok pattern instead.
+ * remote effects (push, PR open, posting public comments) where silent
+ * re-approval would be surprising. Local-only destructive tools
+ * (writeFile, deleteFile, etc.) follow the whitelist-after-first-ok
+ * pattern instead.
  */
 const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   "gitPush",
   "openPullRequest",
+  "githubCommentIssue",
+  "githubCommentPullRequest",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -68,6 +71,10 @@ export const dangerousToolDescriptions: Record<
     args.force ? "推送 (force-with-lease) 到 origin" : "推送到 origin",
   openPullRequest: (args) =>
     `创建 PR: ${String(args.title ?? "").slice(0, 80)}`,
+  githubCommentIssue: (args) =>
+    `评论 issue #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
+  githubCommentPullRequest: (args) =>
+    `评论 PR #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

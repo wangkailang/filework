@@ -28,8 +28,13 @@ import path from "node:path";
 
 import { LocalWorkspace } from "./local-workspace";
 import type {
+  CodeSearchResult,
   ExecOptions,
   ExecResult,
+  IssueDetail,
+  IssueSummary,
+  PullRequestDetail,
+  PullRequestSummary,
   Workspace,
   WorkspaceExec,
   WorkspaceFS,
@@ -341,28 +346,142 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       );
     }
 
+    const json = await this.ghPost<{ number: number; html_url: string }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls`,
+      {
+        title: input.title,
+        body: input.body ?? "",
+        head: branch,
+        base: input.base ?? this.deps.baseBranch,
+        draft: input.draft ?? false,
+      },
+      "PR create",
+    );
+    return { url: json.html_url, number: json.number };
+  }
+
+  // ── M6 PR 3: query / comment surface ──────────────────────────────────
+
+  async listPullRequests(
+    input: {
+      state?: "open" | "closed" | "all";
+      base?: string;
+      head?: string;
+    } = {},
+  ): Promise<PullRequestSummary[]> {
+    const params = new URLSearchParams({ per_page: "100" });
+    if (input.state) params.set("state", input.state);
+    if (input.base) params.set("base", input.base);
+    if (input.head) params.set("head", input.head);
+    const rows = await this.ghJson<RawPR[]>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls?${params.toString()}`,
+    );
+    return rows.map(toPRSummary);
+  }
+
+  async getPullRequest(input: { number: number }): Promise<PullRequestDetail> {
+    const raw = await this.ghJson<RawPRDetail>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/${input.number}`,
+    );
+    return toPRDetail(raw);
+  }
+
+  async listIssues(
+    input: { state?: "open" | "closed" | "all"; labels?: string[] } = {},
+  ): Promise<IssueSummary[]> {
+    const params = new URLSearchParams({ per_page: "100" });
+    if (input.state) params.set("state", input.state);
+    if (input.labels && input.labels.length > 0) {
+      params.set("labels", input.labels.join(","));
+    }
+    const rows = await this.ghJson<RawIssue[]>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/issues?${params.toString()}`,
+    );
+    // GitHub's /issues endpoint includes PRs by default; filter them out so
+    // the model never has to.
+    return rows.filter((r) => !r.pull_request).map(toIssueSummary);
+  }
+
+  async getIssue(input: { number: number }): Promise<IssueDetail> {
+    const raw = await this.ghJson<RawIssueDetail>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/issues/${input.number}`,
+    );
+    return toIssueDetail(raw);
+  }
+
+  async commentIssue(input: {
+    number: number;
+    body: string;
+  }): Promise<{ commentId: number; url: string }> {
+    const raw = await this.ghPost<{ id: number; html_url: string }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/issues/${input.number}/comments`,
+      { body: input.body },
+      "issue comment",
+    );
+    return { commentId: raw.id, url: raw.html_url };
+  }
+
+  async commentPullRequest(input: {
+    number: number;
+    body: string;
+  }): Promise<{ commentId: number; url: string }> {
+    // GitHub treats PR conversation comments as issue comments; same endpoint.
+    return this.commentIssue(input);
+  }
+
+  async searchCode(input: { query: string }): Promise<CodeSearchResult> {
+    // Always pin to this repo so search results stay in-scope.
+    const q = `${input.query} repo:${this.deps.owner}/${this.deps.repo}`;
+    const url = `/search/code?q=${encodeURIComponent(q)}&per_page=100`;
+    const raw = await this.ghJson<{
+      total_count: number;
+      items: RawSearchHit[];
+    }>(url);
+    return {
+      totalCount: raw.total_count,
+      items: raw.items.map((item) => ({
+        name: item.name,
+        path: item.path,
+        repo: item.repository.full_name,
+        htmlUrl: item.html_url,
+      })),
+    };
+  }
+
+  // ── private fetch helpers (M6 PR 3) ───────────────────────────────────
+
+  private async ghJson<T>(pathAndQuery: string): Promise<T> {
     const token = await this.deps.resolveToken();
     const fetchImpl = this.deps.fetchFn ?? fetch;
-    const res = await fetchImpl(
-      `https://api.github.com/repos/${this.deps.owner}/${this.deps.repo}/pulls`,
-      {
-        method: "POST",
-        headers: GH_HEADERS(token),
-        body: JSON.stringify({
-          title: input.title,
-          body: input.body ?? "",
-          head: branch,
-          base: input.base ?? this.deps.baseBranch,
-          draft: input.draft ?? false,
-        }),
-      },
-    );
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      headers: GH_HEADERS(token),
+    });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`GitHub PR create ${res.status}: ${text.slice(0, 200)}`);
+      throw new Error(
+        `GitHub ${res.status} for ${pathAndQuery}: ${text.slice(0, 200)}`,
+      );
     }
-    const json = (await res.json()) as { number: number; html_url: string };
-    return { url: json.html_url, number: json.number };
+    return (await res.json()) as T;
+  }
+
+  private async ghPost<T>(
+    pathAndQuery: string,
+    body: unknown,
+    label = "POST",
+  ): Promise<T> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      method: "POST",
+      headers: GH_HEADERS(token),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return (await res.json()) as T;
   }
 
   /**
@@ -491,10 +610,120 @@ export class GitHubWorkspace implements Workspace {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Raw GitHub API shapes + projection helpers (M6 PR 3)
+//
+// `Raw*` types capture only the fields we actually project — the GitHub API
+// surface is much larger but we deliberately don't model the rest so future
+// API additions don't churn TypeScript.
+// ---------------------------------------------------------------------------
+
+interface RawUser {
+  login: string;
+}
+
+interface RawLabel {
+  name: string;
+}
+
+interface RawPR {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  html_url: string;
+  draft: boolean;
+  user: RawUser | null;
+  head: { ref: string };
+  base: { ref: string };
+  merged_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RawPRDetail extends RawPR {
+  body: string | null;
+  mergeable: boolean | null;
+  additions: number;
+  deletions: number;
+}
+
+interface RawIssue {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  html_url: string;
+  user: RawUser | null;
+  labels: Array<RawLabel | string>;
+  /** Present iff the issue is actually a PR. We filter these out. */
+  pull_request?: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RawIssueDetail extends RawIssue {
+  body: string | null;
+  closed_at: string | null;
+}
+
+interface RawSearchHit {
+  name: string;
+  path: string;
+  html_url: string;
+  repository: { full_name: string };
+}
+
+const labelName = (label: RawLabel | string): string =>
+  typeof label === "string" ? label : label.name;
+
+const toPRSummary = (raw: RawPR): PullRequestSummary => ({
+  number: raw.number,
+  title: raw.title,
+  // GitHub returns "closed" + merged_at != null for merged PRs; surface
+  // "merged" so the agent doesn't have to inspect two fields.
+  state: raw.merged_at ? "merged" : raw.state,
+  url: raw.html_url,
+  head: raw.head.ref,
+  base: raw.base.ref,
+  user: raw.user?.login ?? "",
+  draft: raw.draft,
+  createdAt: raw.created_at,
+  updatedAt: raw.updated_at,
+});
+
+const toPRDetail = (raw: RawPRDetail): PullRequestDetail => ({
+  ...toPRSummary(raw),
+  body: raw.body ?? "",
+  mergeable: raw.mergeable,
+  additions: raw.additions,
+  deletions: raw.deletions,
+  mergedAt: raw.merged_at,
+});
+
+const toIssueSummary = (raw: RawIssue): IssueSummary => ({
+  number: raw.number,
+  title: raw.title,
+  state: raw.state,
+  url: raw.html_url,
+  user: raw.user?.login ?? "",
+  labels: raw.labels.map(labelName),
+  createdAt: raw.created_at,
+  updatedAt: raw.updated_at,
+});
+
+const toIssueDetail = (raw: RawIssueDetail): IssueDetail => ({
+  ...toIssueSummary(raw),
+  body: raw.body ?? "",
+  closedAt: raw.closed_at,
+});
+
 export const __test__ = {
   looksLikeGitWrite,
   cloneDirFor,
   isFresh,
   stamp,
   fallbackSessionScope,
+  toPRSummary,
+  toPRDetail,
+  toIssueSummary,
+  toIssueDetail,
 };
