@@ -1,6 +1,6 @@
 {
   "name": "@filework/desktop",
-  "description": "Local directory AI assistant — tell it what to do and it works on your files. Organize, generate reports, manage projects, research, process data.",
+  "description": "Workspace Agent — general-purpose AI agent for your local workspace, with file ops, shell access, plan execution, and skill extensions.",
   "version": "0.1.0",
   "private": true,
   "main": "out/main/index.js",
@@ -90,7 +90,7 @@
   },
   "appStatus": {
     "port": null,
-    "description": "Local Directory AI Assistant (Electron Desktop)",
+    "description": "Workspace Agent (Electron Desktop)",
     "status": "🚧 开发中",
     "specs": {
       "prd": true,

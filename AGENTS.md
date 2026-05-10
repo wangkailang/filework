@@ -1,6 +1,6 @@
 # Coding Agent Instructions
 
-This file provides guidance to AI Coding Agents including Claude Code, GitHub Copilot, Cursor, and other coding assistants when working with the FileWork codebase.
+This file provides guidance to AI Coding Agents including Claude Code, GitHub Copilot, Cursor, and other coding assistants when working with the Workspace Agent codebase (project directory still named `filework` — see Project Overview).
 
 ## 🚨 BEFORE YOU SAY "DONE" - MANDATORY CHECKLIST
 
@@ -20,14 +20,16 @@ This file provides guidance to AI Coding Agents including Claude Code, GitHub Co
 
 ## Project Overview
 
-**FileWork** is a local directory AI assistant built with Electron + React. It helps users organize files, generate reports, manage projects, research content, and process data through natural language commands.
+**Workspace Agent** is a general-purpose AI agent built with Electron + React. It operates inside the user's workspace with read/write/list/exec capabilities and a skill-extension system; file management is one of several supported domains, not the entire identity.
+
+> Heritage note: the project directory, npm package (`@filework/desktop`), preload namespace (`window.filework.*`), data path (`~/.filework/`), and Electron `appId` (`com.filework.desktop`) intentionally retain the legacy `filework` identifier. Renaming them would break user-data continuity and macOS code-signing. See `src/renderer/config/app.ts` for the full rationale.
 
 **Key characteristics:**
 - Electron desktop application with React frontend
 - TypeScript throughout with strict type checking
-- SQLite database with Drizzle ORM for local data
-- Multi-LLM support (OpenAI, Claude, DeepSeek, Ollama)
-- Skill-based extensibility system for AI capabilities
+- SQLite database with Drizzle ORM for tasks/settings/usage; chat session storage is JSONL under `~/.filework/sessions/`
+- Multi-LLM support (OpenAI, Claude, DeepSeek, Ollama, any OpenAI-compatible endpoint)
+- Skill-based extensibility system layered on top of AgentLoop
 - Local-first approach with no cloud data transmission
 
 ## Essential Commands
@@ -100,7 +102,7 @@ filework/
 
 ### 🔒 3. Security & Privacy
 
-**FileWork is local-first with strong privacy guarantees:**
+**Workspace Agent is local-first with strong privacy guarantees:**
 
 - ✅ All data processing happens locally
 - ✅ No file data sent to external services (except optional AI APIs)

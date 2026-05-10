@@ -54,7 +54,7 @@ export const WelcomeScreen = ({ onSelectDirectory }: WelcomeScreenProps) => {
 
         <div>
           <h1 className="text-2xl font-semibold text-foreground mb-2">
-            FileWork
+            {LL.welcome_title()}
           </h1>
           <p className="text-muted-foreground">{LL.welcome_description()}</p>
         </div>
