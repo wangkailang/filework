@@ -39,6 +39,8 @@ const api = {
     workspaceRefJson?: string;
     /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
     workspacePath?: string;
+    /** Chat session id — drives github auto-branching scope. */
+    sessionId?: string;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";

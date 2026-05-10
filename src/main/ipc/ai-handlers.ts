@@ -114,6 +114,13 @@ const handleTaskExecution = async (
     workspaceRefJson?: string;
     /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
     workspacePath?: string;
+    /**
+     * Chat session id. Used as the per-session scope for github
+     * auto-branching (`claude/<sessionId.slice(0,8)>`). When absent
+     * (skills, tests, ad-hoc invocations), the workspace falls back to
+     * a ref-derived stable scope.
+     */
+    sessionId?: string;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
@@ -479,10 +486,13 @@ const handleTaskExecution = async (
     let agentTotalTokens: number | null = null;
     let agentProviderMeta: Record<string, unknown> | undefined;
 
+    const sessionScope = (payload.sessionId ?? id).slice(0, 8);
     const workspace =
       ref.kind === "local"
         ? new LocalWorkspace(ref.path)
-        : await createWorkspace(ref, requireWorkspaceFactoryDeps());
+        : await createWorkspace(ref, requireWorkspaceFactoryDeps(), {
+            sessionScope,
+          });
 
     // For GitHub workspaces, register the clone dir for sandbox checks now.
     if (ref.kind !== "local") {

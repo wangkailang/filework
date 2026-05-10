@@ -89,11 +89,43 @@ export interface WorkspaceExec {
 
 /**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
- * `LocalWorkspace` does not implement this in M1.
+ * `LocalWorkspace` does not implement this in M1. Every method is optional
+ * so backends can opt into a subset (status/diff in M6 PR 1; commit/push/PR
+ * added in M6 PR 2 for github-backed workspaces only).
  */
 export interface WorkspaceSCM {
   status?(): Promise<{ branch: string; dirty: boolean }>;
   diff?(rel?: string): Promise<string>;
+  /** Symbolic name of the currently checked-out branch. */
+  currentBranch?(): Promise<string>;
+  /**
+   * Stage `files` (or all changes when omitted) and create a commit on
+   * the current session branch. Implementations may auto-create the
+   * session branch on first commit. A clean tree returns `{sha:""}` —
+   * a friendly no-op rather than an error.
+   */
+  commit?(input: {
+    message: string;
+    /** Workspace-relative paths; if omitted, stages all changes. */
+    files?: string[];
+  }): Promise<{ sha: string; branch: string; filesChanged: number }>;
+  /**
+   * Push the current session branch to the remote. `force` maps to
+   * `--force-with-lease` only — never raw `--force`.
+   */
+  push?(input?: {
+    force?: boolean;
+  }): Promise<{ branch: string; remote: string }>;
+  /**
+   * Open a pull request from the session branch to `base` (defaults to
+   * the workspace ref). Returns the URL and number of the new PR.
+   */
+  openPullRequest?(input: {
+    title: string;
+    body?: string;
+    draft?: boolean;
+    base?: string;
+  }): Promise<{ url: string; number: number }>;
 }
 
 export interface Workspace {

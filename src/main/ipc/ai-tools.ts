@@ -40,6 +40,18 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
     return a.name.localeCompare(b.name);
   });
 
+/**
+ * Tools that always require explicit approval — even after the user has
+ * approved them once in this task. Reserved for actions with broad
+ * remote effects (push, PR open) where silent re-approval would be
+ * surprising. Local-only destructive tools (writeFile, deleteFile, etc.)
+ * follow the whitelist-after-first-ok pattern instead.
+ */
+const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
+  "gitPush",
+  "openPullRequest",
+]);
+
 /** Human-readable descriptions for dangerous operations */
 export const dangerousToolDescriptions: Record<
   string,
@@ -51,6 +63,11 @@ export const dangerousToolDescriptions: Record<
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
+  gitCommit: (args) => `提交: ${String(args.message ?? "").slice(0, 80)}`,
+  gitPush: (args) =>
+    args.force ? "推送 (force-with-lease) 到 origin" : "推送到 origin",
+  openPullRequest: (args) =>
+    `创建 PR: ${String(args.title ?? "").slice(0, 80)}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */
@@ -414,8 +431,10 @@ export const requestApproval = (
       abortSignal?.removeEventListener("abort", onAbort);
       pendingApprovals.delete(toolCallId);
       toolCallToTaskMap.delete(toolCallId);
-      // If approved, whitelist this tool type for the rest of the task
-      if (approved) {
+      // If approved, whitelist this tool type for the rest of the task —
+      // EXCEPT for tools that are too remote-affecting to silently
+      // re-approve (gitPush, openPullRequest). Those always re-prompt.
+      if (approved && !ALWAYS_PROMPT_TOOLS.has(toolName)) {
         whitelistToolForTask(taskId, toolName);
       }
       resolve(approved);

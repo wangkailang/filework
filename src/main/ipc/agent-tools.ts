@@ -25,6 +25,7 @@ import {
   type IncrementalScanResult,
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
+import { buildGitTools } from "../core/agent/tools/git-tools";
 import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
@@ -38,6 +39,9 @@ interface BuildAgentToolRegistryOptions {
   /** Restrict to this allow-list when set (skill `allowed-tools` frontmatter). */
   allowedTools?: string[];
 }
+
+/** Workspace kinds that own a `WorkspaceSCM` with commit/push/openPullRequest. */
+const SCM_WRITE_KINDS = new Set(["github"]);
 
 /**
  * Adapter — the project's IncrementalScanner returns `FileEntry`-shaped
@@ -122,6 +126,7 @@ const askClarificationTool = (
 export const buildAgentToolRegistry = ({
   sender,
   taskId,
+  workspace,
   allowedTools,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
@@ -130,6 +135,16 @@ export const buildAgentToolRegistry = ({
 
   for (const def of buildFileTools({ incrementalScanner: wrapScanner() })) {
     if (allow(def.name)) registry.register(def);
+  }
+
+  // Git write tools register only for SCM-write-capable workspaces
+  // (currently github). Local workspaces deliberately don't get them —
+  // local git workflows have separate UX considerations (which remote,
+  // which auth) handled outside this PR.
+  if (SCM_WRITE_KINDS.has(workspace.kind)) {
+    for (const def of buildGitTools()) {
+      if (allow(def.name)) registry.register(def);
+    }
   }
 
   if (allow("askClarification")) {
