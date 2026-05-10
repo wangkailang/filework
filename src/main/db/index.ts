@@ -94,7 +94,11 @@ export const initDatabase = async () => {
       label TEXT NOT NULL,
       encrypted_token TEXT NOT NULL,
       scopes TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      last_tested_at TEXT,
+      test_status TEXT,
+      last_test_error TEXT,
+      last_tested_host TEXT
     );
   `);
 
@@ -224,12 +228,19 @@ interface RecentWorkspace {
   metadata: string | null;
 }
 
+export type CredentialTestStatus = "unknown" | "ok" | "error";
+
 export interface Credential {
   id: string;
   kind: "github_pat" | "gitlab_pat";
   label: string;
   scopes: string[] | null;
   createdAt: string;
+  /** M7 — health monitor fields. NULL on credentials predating M7. */
+  lastTestedAt: string | null;
+  testStatus: CredentialTestStatus | null;
+  lastTestError: string | null;
+  lastTestedHost: string | null;
 }
 
 // ============================================================================
@@ -518,6 +529,10 @@ export const createCredential = (input: {
     label: input.label,
     scopes: input.scopes ?? null,
     createdAt,
+    lastTestedAt: null,
+    testStatus: null,
+    lastTestError: null,
+    lastTestedHost: null,
   };
 };
 
@@ -529,6 +544,10 @@ const mapCredentialRow = (
   label: row.label,
   scopes: row.scopes ? (JSON.parse(row.scopes) as string[]) : null,
   createdAt: row.createdAt,
+  lastTestedAt: row.lastTestedAt ?? null,
+  testStatus: row.testStatus ?? null,
+  lastTestError: row.lastTestError ?? null,
+  lastTestedHost: row.lastTestedHost ?? null,
 });
 
 export const listCredentials = (): Credential[] =>
@@ -556,6 +575,31 @@ export const getCredentialToken = (id: string): string => {
 
 export const deleteCredential = (id: string): void => {
   db.delete(schema.credentials).where(eq(schema.credentials.id, id)).run();
+};
+
+/**
+ * Persist the result of a credential token test (M7 health monitor).
+ * `host` is recorded only on success — it tells future batch tests
+ * which host to ping for self-hosted gitlab credentials.
+ */
+export const recordCredentialTest = (input: {
+  id: string;
+  status: CredentialTestStatus;
+  error?: string | null;
+  host?: string | null;
+}): void => {
+  const updates: Record<string, unknown> = {
+    lastTestedAt: new Date().toISOString(),
+    testStatus: input.status,
+    lastTestError: input.status === "ok" ? null : (input.error ?? null),
+  };
+  if (input.host !== undefined) {
+    updates.lastTestedHost = input.host;
+  }
+  db.update(schema.credentials)
+    .set(updates)
+    .where(eq(schema.credentials.id, input.id))
+    .run();
 };
 
 // ============================================================================

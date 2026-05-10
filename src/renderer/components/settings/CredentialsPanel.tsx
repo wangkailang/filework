@@ -10,11 +10,43 @@ import { useCallback, useEffect, useState } from "react";
 
 interface CredentialSummary {
   id: string;
-  kind: "github_pat";
+  kind: "github_pat" | "gitlab_pat";
   label: string;
   scopes: string[] | null;
   createdAt: string;
+  // M7 — health monitor fields. NULL on credentials predating M7.
+  lastTestedAt: string | null;
+  testStatus: "unknown" | "ok" | "error" | null;
+  lastTestError: string | null;
+  lastTestedHost: string | null;
 }
+
+const formatRelative = (iso: string | null): string => {
+  if (!iso) return "never";
+  const ms = Date.now() - Date.parse(iso);
+  if (Number.isNaN(ms)) return "unknown";
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+};
+
+const statusDotClass = (status: CredentialSummary["testStatus"]): string => {
+  if (status === "ok") return "bg-emerald-500";
+  if (status === "error") return "bg-destructive";
+  return "bg-muted-foreground/40";
+};
+
+const statusTooltip = (c: CredentialSummary): string => {
+  if (c.testStatus === "ok")
+    return `Healthy — tested ${formatRelative(c.lastTestedAt)}`;
+  if (c.testStatus === "error")
+    return `Error: ${c.lastTestError ?? "unknown"} (tested ${formatRelative(c.lastTestedAt)})`;
+  return "Not tested yet";
+};
 
 type TestState =
   | { state: "idle" }
@@ -209,7 +241,13 @@ export const CredentialsPanel = () => {
               >
                 <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate">{c.label}</div>
+                  <div className="flex items-center gap-1.5 text-sm">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass(c.testStatus)}`}
+                      title={statusTooltip(c)}
+                    />
+                    <span className="truncate">{c.label}</span>
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     Added {new Date(c.createdAt).toLocaleDateString()}
                     {t.state === "ok" && t.login && (

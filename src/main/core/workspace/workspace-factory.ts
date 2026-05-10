@@ -20,6 +20,12 @@ export interface WorkspaceFactoryDeps {
   githubCacheDir: string;
   /** Root for ephemeral GitLab clones. */
   gitlabCacheDir: string;
+  /**
+   * Absolute path to the GIT_ASKPASS helper. Wired by main bootstrap
+   * via `git-credentials.ts:ensureAskpassScript()`. When omitted (e.g.
+   * in tests), git invocations fall back to inheriting `process.env`.
+   */
+  askpassPath?: string;
 }
 
 export interface CreateWorkspaceOpts {
@@ -43,6 +49,7 @@ export const createWorkspace = async (
     return GitHubWorkspace.create(ref, {
       resolveToken: deps.resolveToken,
       cacheDir: deps.githubCacheDir,
+      askpassPath: deps.askpassPath,
       sessionScope: opts.sessionScope,
     });
   }
@@ -50,6 +57,7 @@ export const createWorkspace = async (
     return GitLabWorkspace.create(ref, {
       resolveToken: deps.resolveToken,
       cacheDir: deps.gitlabCacheDir,
+      askpassPath: deps.askpassPath,
       sessionScope: opts.sessionScope,
     });
   }

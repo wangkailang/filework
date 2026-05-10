@@ -26,6 +26,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
   CodeSearchResult,
@@ -57,6 +58,14 @@ export interface GitHubWorkspaceDeps {
   /** Root for ephemeral clones, e.g. `~/.filework/cache/github`. */
   cacheDir: string;
   /**
+   * Absolute path to the GIT_ASKPASS helper script. Production wires
+   * this from `git-credentials.ts:ensureAskpassScript()`. Tests can
+   * leave it undefined — `runGit` falls back to plain spawn without
+   * setting the env, which is fine because the test stub for `git`
+   * never actually authenticates.
+   */
+  askpassPath?: string;
+  /**
    * Clone freshness window in milliseconds. After this much time since
    * the last `git fetch`, GitHubWorkspace.create() refreshes before
    * returning. Defaults to 1 hour.
@@ -80,6 +89,17 @@ export interface GitHubWorkspaceDeps {
    */
   sessionScope?: string;
 }
+
+/**
+ * Build the env to pass to `runGit` for an authenticated invocation.
+ * Returns `undefined` (i.e. inherit `process.env`) when askpass isn't
+ * configured — useful in tests that mock spawn entirely.
+ */
+const authedEnv = (
+  askpassPath: string | undefined,
+  token: string,
+): NodeJS.ProcessEnv | undefined =>
+  askpassPath ? buildAskpassEnv({ askpassPath, password: token }) : undefined;
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 const LAST_FETCH_FILE = ".last-fetch";
@@ -146,18 +166,15 @@ const cloneExists = async (cloneDir: string): Promise<boolean> => {
   }
 };
 
-const buildAuthedRemote = (
-  token: string,
-  owner: string,
-  repo: string,
-): string =>
-  // `x-access-token` is GitHub's recommended username for token auth.
-  `https://x-access-token:${encodeURIComponent(token)}@github.com/${owner}/${repo}.git`;
-
 /**
  * Materialize the clone for `ref` at `cloneDir`. If the clone is
  * absent, perform a shallow clone. If present and stale, fetch + reset.
  * Returns the local clone directory once the working tree matches `ref.ref`.
+ *
+ * Auth: the remote URL is sanitized (no token), and the token is passed
+ * to git via GIT_ASKPASS env. This means `.git/config` never holds the
+ * PAT in plaintext. Refresh paths always re-write the remote URL to
+ * the sanitized form, so pre-M7 clones get scrubbed automatically.
  */
 export const ensureClone = async (
   ref: GitHubRef,
@@ -172,14 +189,15 @@ export const ensureClone = async (
   }
 
   const token = await deps.resolveToken(ref.credentialId);
-  const remote = buildAuthedRemote(token, ref.owner, ref.repo);
+  const remote = githubSanitizedRemote(ref.owner, ref.repo);
+  const env = authedEnv(deps.askpassPath, token);
 
   if (!exists) {
     await mkdir(path.dirname(cloneDir), { recursive: true });
     try {
       await runGit(
         ["clone", "--depth", "1", "--branch", ref.ref, remote, cloneDir],
-        { spawnFn: deps.spawnFn },
+        { spawnFn: deps.spawnFn, env },
       );
     } catch (err) {
       // Failed clone — clean up partial dir to avoid wedging future attempts.
@@ -187,7 +205,8 @@ export const ensureClone = async (
       throw err;
     }
   } else {
-    // Refresh: rewrite remote with current token, fetch, hard-reset.
+    // Refresh: rewrite remote to sanitized form (scrubs any pre-M7
+    // token-embedded URL), then fetch + hard-reset under askpass env.
     await runGit(["remote", "set-url", "origin", remote], {
       cwd: cloneDir,
       spawnFn: deps.spawnFn,
@@ -195,6 +214,7 @@ export const ensureClone = async (
     await runGit(["fetch", "--depth", "1", "origin", ref.ref], {
       cwd: cloneDir,
       spawnFn: deps.spawnFn,
+      env,
     });
     await runGit(["reset", "--hard", "FETCH_HEAD"], {
       cwd: cloneDir,
@@ -213,6 +233,8 @@ interface GitHubScmDeps {
   repo: string;
   resolveToken: () => Promise<string>;
   sessionScope: string;
+  /** GIT_ASKPASS helper path. Same plumbing as ensureClone. */
+  askpassPath?: string;
   spawnFn?: typeof spawn;
   fetchFn?: typeof fetch;
 }
@@ -310,20 +332,25 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     force?: boolean;
   }): Promise<{ branch: string; remote: string }> {
     const token = await this.deps.resolveToken();
-    // Re-write remote with current token (PAT may have rotated since clone).
+    // Always sanitize the remote URL — covers pre-M7 clones whose
+    // .git/config still holds an embedded token from before this PR.
     await runGit(
       [
         "remote",
         "set-url",
         "origin",
-        buildAuthedRemote(token, this.deps.owner, this.deps.repo),
+        githubSanitizedRemote(this.deps.owner, this.deps.repo),
       ],
       { cwd: this.cwd, spawnFn: this.deps.spawnFn },
     );
     const branch = this.sessionBranch();
     const args = ["push", "-u", "origin", branch];
     if (input?.force) args.push("--force-with-lease");
-    await runGit(args, { cwd: this.cwd, spawnFn: this.deps.spawnFn });
+    await runGit(args, {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+      env: authedEnv(this.deps.askpassPath, token),
+    });
     return { branch, remote: "origin" };
   }
 
@@ -595,6 +622,7 @@ export class GitHubWorkspace implements Workspace {
       repo: ref.repo,
       resolveToken: () => deps.resolveToken(ref.credentialId),
       sessionScope: deps.sessionScope ?? fallbackSessionScope(ref),
+      askpassPath: deps.askpassPath,
       spawnFn: deps.spawnFn,
       fetchFn: deps.fetchFn,
     });

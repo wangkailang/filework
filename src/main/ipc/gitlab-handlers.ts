@@ -108,12 +108,15 @@ export interface GitLabHandlerDeps {
   resolveToken: (credentialId: string) => Promise<string>;
   /** Same root passed to GitLabWorkspace.create(). */
   cacheDir: string;
+  /** GIT_ASKPASS helper script (M7). */
+  askpassPath?: string;
 }
 
 export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
   const wsDeps: GitLabWorkspaceDeps = {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
+    askpassPath: deps.askpassPath,
   };
 
   ipcMain.handle(

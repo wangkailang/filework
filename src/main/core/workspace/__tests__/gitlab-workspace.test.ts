@@ -12,14 +12,18 @@ import {
 } from "../gitlab-workspace";
 
 const buildFakeSpawn = () => {
-  const calls: Array<{ args: string[]; cwd?: string }> = [];
+  const calls: Array<{
+    args: string[];
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  }> = [];
   const fake = vi.fn(
     (
       _cmd: string,
       args: string[],
       opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
     ) => {
-      calls.push({ args, cwd: opts?.cwd });
+      calls.push({ args, cwd: opts?.cwd, env: opts?.env });
       const proc = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
         stderr: EventEmitter;
@@ -60,7 +64,7 @@ describe("ensureClone (GitLab)", () => {
     await rm(cacheDir, { recursive: true, force: true });
   });
 
-  it("clones with oauth2:<token>@<host> URL form", async () => {
+  it("clones with sanitized oauth2 URL (no token) + askpass env (M7)", async () => {
     const { fake, calls } = buildFakeSpawn();
     const expectedDir = path.join(
       cacheDir,
@@ -72,6 +76,7 @@ describe("ensureClone (GitLab)", () => {
     const result = await ensureClone(fakeRef, {
       resolveToken: async () => "glpat-TESTTOKEN",
       cacheDir,
+      askpassPath: "/tmp/askpass.js",
       // biome-ignore lint/suspicious/noExplicitAny: test stub
       spawnFn: fake as any,
     });
@@ -83,8 +88,13 @@ describe("ensureClone (GitLab)", () => {
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
     const remoteArg = cloneCall?.args[cloneCall.args.length - 2] ?? "";
-    expect(remoteArg).toMatch(/^https:\/\/oauth2:glpat-TESTTOKEN@/);
-    expect(remoteArg).toContain("@gitlab.example.com/acme/sub/app.git");
+    // M7: token MUST NOT appear in the URL.
+    expect(remoteArg).not.toContain("glpat-TESTTOKEN");
+    expect(remoteArg).toBe(
+      "https://oauth2@gitlab.example.com/acme/sub/app.git",
+    );
+    expect(cloneCall?.env?.GIT_ASKPASS).toBe("/tmp/askpass.js");
+    expect(cloneCall?.env?.FILEWORK_GIT_PASSWORD).toBe("glpat-TESTTOKEN");
 
     const stampStat = await stat(path.join(expectedDir, ".last-fetch"));
     expect(stampStat.isFile()).toBe(true);

@@ -188,7 +188,7 @@ describe("GitHubWorkspaceSCM.push", () => {
     await rm(cacheDir, { recursive: true, force: true });
   });
 
-  it("rewrites remote with current PAT and pushes -u origin <branch>", async () => {
+  it("sanitizes remote URL (no token) and pushes -u origin <branch> via askpass", async () => {
     const { fake, calls } = buildFakeSpawn();
     const ws = await buildWorkspace(cacheDir, fake);
 
@@ -198,9 +198,11 @@ describe("GitHubWorkspaceSCM.push", () => {
     const remoteCall = calls.find((c) => c.args[0] === "remote");
     expect(remoteCall?.args[0]).toBe("remote");
     expect(remoteCall?.args[1]).toBe("set-url");
-    expect(remoteCall?.args[3]).toMatch(
-      /^https:\/\/x-access-token:ghp_TESTTOKEN@github\.com\/acme\/app\.git$/,
+    // M7: no token in the URL — username only.
+    expect(remoteCall?.args[3]).toBe(
+      "https://x-access-token@github.com/acme/app.git",
     );
+    expect(remoteCall?.args[3]).not.toContain("ghp_TESTTOKEN");
     const pushCall = calls.find((c) => c.args[0] === "push");
     expect(pushCall?.args).toEqual(["push", "-u", "origin", "claude/abcd1234"]);
   });

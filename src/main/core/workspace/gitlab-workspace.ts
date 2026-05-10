@@ -25,6 +25,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildAskpassEnv, gitlabSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
   CodeSearchResult,
@@ -56,6 +57,12 @@ export interface GitLabWorkspaceDeps {
   resolveToken: (credentialId: string) => Promise<string>;
   /** Root for ephemeral clones, e.g. `~/.filework/cache/gitlab`. */
   cacheDir: string;
+  /**
+   * Absolute path to the GIT_ASKPASS helper script (M7). Production
+   * wires this from `git-credentials.ts:ensureAskpassScript()`. See
+   * `github-workspace.ts:GitHubWorkspaceDeps.askpassPath` for details.
+   */
+  askpassPath?: string;
   /** Default 1 hour. After this, GitLabWorkspace.create() refreshes. */
   freshnessTtlMs?: number;
   /** Override the spawn implementation in tests. */
@@ -65,6 +72,12 @@ export interface GitLabWorkspaceDeps {
   /** Per-session scope for auto-branching. */
   sessionScope?: string;
 }
+
+const authedEnv = (
+  askpassPath: string | undefined,
+  token: string,
+): NodeJS.ProcessEnv | undefined =>
+  askpassPath ? buildAskpassEnv({ askpassPath, password: token }) : undefined;
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 const LAST_FETCH_FILE = ".last-fetch";
@@ -135,15 +148,11 @@ const cloneExists = async (cloneDir: string): Promise<boolean> => {
   }
 };
 
-const buildAuthedRemote = (
-  token: string,
-  host: string,
-  namespace: string,
-  project: string,
-): string =>
-  // `oauth2` is GitLab's recommended username for PAT/OAuth-based git auth.
-  `https://oauth2:${encodeURIComponent(token)}@${host}/${namespace}/${project}.git`;
-
+/**
+ * Materialize the clone for `ref`. M7: the remote URL is sanitized
+ * (no token); the token is supplied via GIT_ASKPASS env. Refresh paths
+ * always re-write the remote URL to scrub pre-M7 token leaks.
+ */
 export const ensureClone = async (
   ref: GitLabRef,
   deps: GitLabWorkspaceDeps,
@@ -157,20 +166,22 @@ export const ensureClone = async (
   }
 
   const token = await deps.resolveToken(ref.credentialId);
-  const remote = buildAuthedRemote(token, ref.host, ref.namespace, ref.project);
+  const remote = gitlabSanitizedRemote(ref.host, ref.namespace, ref.project);
+  const env = authedEnv(deps.askpassPath, token);
 
   if (!exists) {
     await mkdir(path.dirname(cloneDir), { recursive: true });
     try {
       await runGit(
         ["clone", "--depth", "1", "--branch", ref.ref, remote, cloneDir],
-        { spawnFn: deps.spawnFn },
+        { spawnFn: deps.spawnFn, env },
       );
     } catch (err) {
       await rm(cloneDir, { recursive: true, force: true });
       throw err;
     }
   } else {
+    // Sanitize the remote URL on every refresh — covers pre-M7 clones.
     await runGit(["remote", "set-url", "origin", remote], {
       cwd: cloneDir,
       spawnFn: deps.spawnFn,
@@ -178,6 +189,7 @@ export const ensureClone = async (
     await runGit(["fetch", "--depth", "1", "origin", ref.ref], {
       cwd: cloneDir,
       spawnFn: deps.spawnFn,
+      env,
     });
     await runGit(["reset", "--hard", "FETCH_HEAD"], {
       cwd: cloneDir,
@@ -197,6 +209,7 @@ interface GitLabScmDeps {
   project: string;
   resolveToken: () => Promise<string>;
   sessionScope: string;
+  askpassPath?: string;
   spawnFn?: typeof spawn;
   fetchFn?: typeof fetch;
 }
@@ -304,13 +317,13 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     force?: boolean;
   }): Promise<{ branch: string; remote: string }> {
     const token = await this.deps.resolveToken();
+    // Sanitize the remote URL — covers pre-M7 clones with embedded tokens.
     await runGit(
       [
         "remote",
         "set-url",
         "origin",
-        buildAuthedRemote(
-          token,
+        gitlabSanitizedRemote(
           this.deps.host,
           this.deps.namespace,
           this.deps.project,
@@ -321,7 +334,11 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     const branch = this.sessionBranch();
     const args = ["push", "-u", "origin", branch];
     if (input?.force) args.push("--force-with-lease");
-    await runGit(args, { cwd: this.cwd, spawnFn: this.deps.spawnFn });
+    await runGit(args, {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+      env: authedEnv(this.deps.askpassPath, token),
+    });
     return { branch, remote: "origin" };
   }
 
@@ -592,6 +609,7 @@ export class GitLabWorkspace implements Workspace {
       project: ref.project,
       resolveToken: () => deps.resolveToken(ref.credentialId),
       sessionScope: deps.sessionScope ?? fallbackSessionScope(ref),
+      askpassPath: deps.askpassPath,
       spawnFn: deps.spawnFn,
       fetchFn: deps.fetchFn,
     });
