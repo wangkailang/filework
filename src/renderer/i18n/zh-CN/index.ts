@@ -1,14 +1,15 @@
 import type { Translation } from "../i18n-types";
 
 const zhCN: Translation = {
-  appName: "FileWork",
-  tagline: "你的本地文件 AI 助手",
+  appName: "Workspace Agent",
+  tagline: "你的本地 AI 工作区代理",
 
-  welcome_title: "FileWork",
+  welcome_title: "Workspace Agent",
   welcome_description:
-    "你的本地文件 AI 助手。选择一个工作目录，告诉我你想做什么。",
+    "通用的本地 AI Agent。选择一个工作目录，告诉我你想做什么。",
   welcome_selectDirectory: "选择工作目录",
-  welcome_privacy: "FileWork 只在你选择的目录中工作，数据不会离开你的电脑。",
+  welcome_privacy:
+    "Workspace Agent 只在你选择的目录中工作，数据不会离开你的电脑。",
 
   chat_placeholder: "告诉我你想做什么... (⌘+Enter 发送)",
   chat_emptyTitle: "有什么可以帮你的？",

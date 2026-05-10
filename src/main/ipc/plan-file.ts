@@ -29,7 +29,7 @@ const statusEmoji = (s: string): string => {
 /** Render a Plan object into markdown content */
 const renderPlanMarkdown = (plan: Plan): string => {
   const lines: string[] = [
-    `# FileWork Task Plan`,
+    `# Workspace Agent — Task Plan`,
     `> Generated: ${plan.createdAt}  `,
     `> Updated: ${plan.updatedAt}`,
     "",

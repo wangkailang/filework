@@ -1,11 +1,18 @@
 /**
- * FileWork Application Configuration
+ * Workspace Agent — application configuration.
+ *
+ * Note: the npm package name (`@filework/desktop`), preload namespace
+ * (`window.filework.*`), on-disk data directory (`~/.filework/`), and
+ * Electron appId (`com.filework.desktop`) intentionally retain the
+ * legacy "filework" identifier — renaming them would invalidate user
+ * data, code-signing identity, and the IPC surface. Only the display
+ * name is rebranded.
  */
 
 export const appConfig = {
-  name: "FileWork" as const,
+  name: "Workspace Agent" as const,
   version: "0.1.0" as const,
-  description: "Your Local File AI Assistant" as const,
+  description: "General-purpose AI Agent for your local workspace" as const,
 
   // AI provider defaults
   ai: {

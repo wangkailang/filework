@@ -1,6 +1,6 @@
 # IPC 处理器模块架构文档
 
-本目录包含 FileWork 应用程序的所有 IPC (Inter-Process Communication) 处理器，负责主进程和渲染进程之间的通信。
+本目录包含 Workspace Agent 应用程序的所有 IPC (Inter-Process Communication) 处理器，负责主进程和渲染进程之间的通信。
 
 ## 📋 模块概览
 

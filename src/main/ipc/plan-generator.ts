@@ -95,7 +95,7 @@ export const planTask = async (
     tools: readOnlyTools,
     stopWhen: stepCountIs(10),
     abortSignal,
-    system: `You are a task planner for FileWork, a local file management AI assistant.
+    system: `You are a task planner for a general-purpose AI Agent operating in the user's workspace.
 
 Current workspace: ${workspacePath}
 

@@ -2,16 +2,16 @@ import type { BaseTranslation } from "../i18n-types";
 
 const en: BaseTranslation = {
   // Common
-  appName: "FileWork",
-  tagline: "Your Local File AI Assistant",
+  appName: "Workspace Agent",
+  tagline: "Your Local AI Workspace Agent",
 
   // Welcome / Onboarding
-  welcome_title: "FileWork",
+  welcome_title: "Workspace Agent",
   welcome_description:
-    "Your local file AI assistant. Select a working directory and tell me what to do.",
+    "A general-purpose AI agent for your local workspace. Select a working directory and tell me what to do.",
   welcome_selectDirectory: "Select Working Directory",
   welcome_privacy:
-    "FileWork only works within your selected directory. Your data never leaves your computer.",
+    "Workspace Agent only operates inside your selected directory. Your data never leaves your computer.",
 
   // Chat
   chat_placeholder: "Tell me what you want to do... (⌘+Enter to send)",

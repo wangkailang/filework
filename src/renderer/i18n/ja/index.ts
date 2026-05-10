@@ -1,15 +1,15 @@
 import type { Translation } from "../i18n-types";
 
 const ja: Translation = {
-  appName: "FileWork",
-  tagline: "ローカルファイルAIアシスタント",
+  appName: "Workspace Agent",
+  tagline: "ローカル AI ワークスペースエージェント",
 
-  welcome_title: "FileWork",
+  welcome_title: "Workspace Agent",
   welcome_description:
-    "ローカルファイルAIアシスタント。作業ディレクトリを選択して、やりたいことを教えてください。",
+    "汎用的なローカル AI エージェント。作業ディレクトリを選択して、やりたいことを教えてください。",
   welcome_selectDirectory: "作業ディレクトリを選択",
   welcome_privacy:
-    "FileWorkは選択したディレクトリ内でのみ動作します。データはコンピュータから離れません。",
+    "Workspace Agent は選択したディレクトリ内でのみ動作します。データはコンピュータから離れません。",
 
   chat_placeholder: "やりたいことを教えてください... (⌘+Enter で送信)",
   chat_emptyTitle: "何かお手伝いできますか？",
