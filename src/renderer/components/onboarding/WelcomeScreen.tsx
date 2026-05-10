@@ -1,4 +1,11 @@
-import { AlertTriangle, Clock, FolderOpen, Github, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  FolderOpen,
+  Github,
+  Gitlab,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { decodeRef, type WorkspaceRef } from "../../types/workspace-ref";
@@ -7,13 +14,14 @@ interface RecentWorkspace {
   path: string;
   name: string;
   lastOpenedAt: string;
-  kind?: "local" | "github";
+  kind?: "local" | "github" | "gitlab";
   metadata?: string | null;
 }
 
 interface WelcomeScreenProps {
   onSelectDirectory: (path: string) => void;
   onSelectGithub?: () => void;
+  onSelectGitlab?: () => void;
   onSelectRecentRef?: (ref: WorkspaceRef) => void;
   errorMessage?: string | null;
 }
@@ -21,6 +29,7 @@ interface WelcomeScreenProps {
 export const WelcomeScreen = ({
   onSelectDirectory,
   onSelectGithub,
+  onSelectGitlab,
   onSelectRecentRef,
   errorMessage,
 }: WelcomeScreenProps) => {
@@ -89,6 +98,16 @@ export const WelcomeScreen = ({
               Connect GitHub Repo
             </button>
           )}
+          {onSelectGitlab && (
+            <button
+              type="button"
+              onClick={onSelectGitlab}
+              className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+            >
+              <Gitlab className="w-5 h-5" />
+              Connect GitLab Repo
+            </button>
+          )}
         </div>
 
         {errorMessage && (
@@ -110,10 +129,15 @@ export const WelcomeScreen = ({
             <div className="space-y-1">
               {recentList.slice(0, 5).map((ws) => {
                 const ref = decodeRef(ws.metadata);
-                const isGithub = ref?.kind === "github" || ws.kind === "github";
-                const Icon = isGithub ? Github : FolderOpen;
+                const refKind = ref?.kind ?? ws.kind ?? "local";
+                const Icon =
+                  refKind === "github"
+                    ? Github
+                    : refKind === "gitlab"
+                      ? Gitlab
+                      : FolderOpen;
                 const handleClick = () => {
-                  if (ref && ref.kind === "github" && onSelectRecentRef) {
+                  if (ref && ref.kind !== "local" && onSelectRecentRef) {
                     onSelectRecentRef(ref);
                   } else {
                     onSelectDirectory(ws.path);

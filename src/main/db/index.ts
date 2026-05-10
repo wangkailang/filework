@@ -106,6 +106,14 @@ export const initDatabase = async () => {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS credentials (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat')),
+      label TEXT NOT NULL,
+      encrypted_token TEXT NOT NULL,
+      scopes TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Migrate: add parts column if missing (for existing databases)
@@ -274,14 +282,14 @@ interface RecentWorkspace {
   path: string;
   name: string;
   lastOpenedAt: string;
-  kind: "local" | "github";
+  kind: "local" | "github" | "gitlab";
   /** JSON-encoded WorkspaceRef; NULL for legacy local rows. */
   metadata: string | null;
 }
 
 export interface Credential {
   id: string;
-  kind: "github_pat";
+  kind: "github_pat" | "gitlab_pat";
   label: string;
   scopes: string[] | null;
   createdAt: string;
@@ -523,7 +531,10 @@ export const getRecentWorkspaces = (): RecentWorkspace[] =>
 export const addRecentWorkspace = (
   path: string,
   name: string,
-  opts: { kind?: "local" | "github"; metadata?: string | null } = {},
+  opts: {
+    kind?: "local" | "github" | "gitlab";
+    metadata?: string | null;
+  } = {},
 ) => {
   const now = new Date().toISOString();
   const kind = opts.kind ?? "local";
@@ -564,7 +575,7 @@ export const removeRecentWorkspace = (path: string) => {
 // ============================================================================
 
 export const createCredential = (input: {
-  kind: "github_pat";
+  kind: "github_pat" | "gitlab_pat";
   label: string;
   token: string;
   scopes?: string[] | null;

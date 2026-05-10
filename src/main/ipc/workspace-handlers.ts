@@ -17,7 +17,10 @@ export const registerWorkspaceHandlers = () => {
       _event,
       pathOrId: string,
       name: string,
-      opts?: { kind?: "local" | "github"; metadata?: string | null },
+      opts?: {
+        kind?: "local" | "github" | "gitlab";
+        metadata?: string | null;
+      },
     ) => {
       const kind = opts?.kind ?? "local";
       addRecentWorkspace(pathOrId, name, {

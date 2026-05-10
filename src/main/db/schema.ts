@@ -66,7 +66,7 @@ export const recentWorkspaces = sqliteTable("recent_workspaces", {
   name: text("name").notNull(),
   lastOpenedAt: text("last_opened_at").notNull(),
   /** Workspace kind. Defaults to "local" for legacy rows. */
-  kind: text("kind", { enum: ["local", "github"] })
+  kind: text("kind", { enum: ["local", "github", "gitlab"] })
     .notNull()
     .default("local"),
   /** JSON-encoded WorkspaceRef. NULL for legacy rows (treat as local). */
@@ -75,7 +75,7 @@ export const recentWorkspaces = sqliteTable("recent_workspaces", {
 
 export const credentials = sqliteTable("credentials", {
   id: text("id").primaryKey(),
-  kind: text("kind", { enum: ["github_pat"] }).notNull(),
+  kind: text("kind", { enum: ["github_pat", "gitlab_pat"] }).notNull(),
   label: text("label").notNull(),
   /** AES-256-GCM encrypted token (see db/crypto.ts). */
   encryptedToken: text("encrypted_token").notNull(),

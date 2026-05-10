@@ -98,5 +98,70 @@ describe("workspace-ref", () => {
         }),
       ).toBe("acme/app@main");
     });
+
+    it("drops host from gitlab.com label, keeps it for self-hosted", () => {
+      expect(
+        workspaceRefLabel({
+          kind: "gitlab",
+          host: "gitlab.com",
+          namespace: "acme",
+          project: "app",
+          ref: "main",
+          credentialId: "x",
+        }),
+      ).toBe("acme/app@main");
+      expect(
+        workspaceRefLabel({
+          kind: "gitlab",
+          host: "gitlab.example.com",
+          namespace: "acme/sub",
+          project: "app",
+          ref: "main",
+          credentialId: "x",
+        }),
+      ).toBe("gitlab.example.com/acme/sub/app@main");
+    });
+  });
+
+  describe("gitlab encode/decode round-trip", () => {
+    it("preserves all gitlab fields", () => {
+      const ref: WorkspaceRef = {
+        kind: "gitlab",
+        host: "gitlab.example.com",
+        namespace: "acme/sub",
+        project: "app",
+        ref: "main",
+        credentialId: "abc",
+      };
+      expect(decodeRef(encodeRef(ref))).toEqual(ref);
+    });
+
+    it("workspaceRefId includes host so different instances don't collide", () => {
+      const a = workspaceRefId({
+        kind: "gitlab",
+        host: "gitlab.com",
+        namespace: "acme",
+        project: "app",
+        ref: "main",
+        credentialId: "x",
+      });
+      const b = workspaceRefId({
+        kind: "gitlab",
+        host: "gitlab.example.com",
+        namespace: "acme",
+        project: "app",
+        ref: "main",
+        credentialId: "x",
+      });
+      expect(a).not.toBe(b);
+      expect(a).toBe("gitlab:gitlab.com:acme/app@main");
+      expect(b).toBe("gitlab:gitlab.example.com:acme/app@main");
+    });
+
+    it("decode rejects gitlab refs with missing fields", () => {
+      expect(
+        decodeRef('{"kind":"gitlab","host":"x","namespace":"y","project":"z"}'),
+      ).toBeNull();
+    });
   });
 });

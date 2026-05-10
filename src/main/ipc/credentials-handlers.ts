@@ -45,6 +45,30 @@ const testGithubToken = async (token: string): Promise<TestTokenResult> => {
   }
 };
 
+const testGitlabToken = async (
+  token: string,
+  host: string,
+): Promise<TestTokenResult> => {
+  try {
+    const res = await fetch(`https://${host}/api/v4/user`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      return { ok: false, error: `GitLab responded ${res.status}` };
+    }
+    const body = (await res.json()) as { username?: string };
+    return { ok: true, login: body.username };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+};
+
 export const registerCredentialsHandlers = () => {
   ipcMain.handle("credentials:list", async () => listCredentials());
 
@@ -53,7 +77,7 @@ export const registerCredentialsHandlers = () => {
     async (
       _event,
       payload: {
-        kind: "github_pat";
+        kind: "github_pat" | "gitlab_pat";
         label: string;
         token: string;
         scopes?: string[];
@@ -86,10 +110,18 @@ export const registerCredentialsHandlers = () => {
     "credentials:test",
     async (
       _event,
-      payload: { id?: string; token?: string },
+      payload: {
+        id?: string;
+        token?: string;
+        kind?: "github_pat" | "gitlab_pat";
+        host?: string;
+      },
     ): Promise<TestTokenResult> => {
       const token = payload.id ? getCredentialToken(payload.id) : payload.token;
       if (!token) return { ok: false, error: "Missing token or credential id" };
+      if (payload.kind === "gitlab_pat") {
+        return testGitlabToken(token, payload.host ?? "gitlab.com");
+      }
       return testGithubToken(token);
     },
   );

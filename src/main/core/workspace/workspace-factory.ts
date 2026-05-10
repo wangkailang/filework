@@ -8,6 +8,7 @@
  */
 
 import { GitHubWorkspace } from "./github-workspace";
+import { GitLabWorkspace } from "./gitlab-workspace";
 import { LocalWorkspace } from "./local-workspace";
 import type { Workspace } from "./types";
 import type { WorkspaceRef } from "./workspace-ref";
@@ -17,12 +18,14 @@ export interface WorkspaceFactoryDeps {
   resolveToken: (credentialId: string) => Promise<string>;
   /** Root for ephemeral GitHub clones. */
   githubCacheDir: string;
+  /** Root for ephemeral GitLab clones. */
+  gitlabCacheDir: string;
 }
 
 export interface CreateWorkspaceOpts {
   /**
-   * Per-session scope for github-backed auto-branching. The factory
-   * forwards this to GitHubWorkspace; commits land on
+   * Per-session scope for SCM-backed auto-branching. The factory
+   * forwards this to GitHubWorkspace / GitLabWorkspace; commits land on
    * `claude/<sessionScope>`. Local refs ignore it.
    */
   sessionScope?: string;
@@ -40,6 +43,13 @@ export const createWorkspace = async (
     return GitHubWorkspace.create(ref, {
       resolveToken: deps.resolveToken,
       cacheDir: deps.githubCacheDir,
+      sessionScope: opts.sessionScope,
+    });
+  }
+  if (ref.kind === "gitlab") {
+    return GitLabWorkspace.create(ref, {
+      resolveToken: deps.resolveToken,
+      cacheDir: deps.gitlabCacheDir,
       sessionScope: opts.sessionScope,
     });
   }

@@ -3,6 +3,7 @@ import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import { Sidebar } from "./components/layout/Sidebar";
 import { GitHubConnectModal } from "./components/onboarding/GitHubConnectModal";
+import { GitLabConnectModal } from "./components/onboarding/GitLabConnectModal";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
 import TypesafeI18n from "./i18n/i18n-react";
 import type { Locales } from "./i18n/i18n-types";
@@ -11,6 +12,7 @@ import {
   decodeRef,
   encodeRef,
   type WorkspaceRef,
+  workspaceRefId,
   workspaceRefLabel,
 } from "./types/workspace-ref";
 
@@ -28,14 +30,12 @@ const getInitialLocale = (): Locales => {
 
 interface ResolvedWorkspace {
   ref: WorkspaceRef;
-  /** On-disk path the file tree / sandbox uses (clone dir for GitHub). */
+  /** On-disk path the file tree / sandbox uses (clone dir for github/gitlab). */
   localPath: string;
 }
 
 const recentKeyFor = (ref: WorkspaceRef): string =>
-  ref.kind === "local"
-    ? ref.path
-    : `github:${ref.owner}/${ref.repo}@${ref.ref}`;
+  ref.kind === "local" ? ref.path : workspaceRefId(ref);
 
 export const App = () => {
   const [workspace, setWorkspace] = useState<ResolvedWorkspace | null>(null);
@@ -43,6 +43,7 @@ export const App = () => {
   const [isRestoring, setIsRestoring] = useState(true);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
   const resolveWorkspace = useCallback(
@@ -50,10 +51,20 @@ export const App = () => {
       if (ref.kind === "local") {
         return { ref, localPath: ref.path };
       }
-      const { root } = await window.filework.github.cloneRepo({
+      if (ref.kind === "github") {
+        const { root } = await window.filework.github.cloneRepo({
+          credentialId: ref.credentialId,
+          owner: ref.owner,
+          repo: ref.repo,
+          ref: ref.ref,
+        });
+        return { ref, localPath: root };
+      }
+      const { root } = await window.filework.gitlab.cloneRepo({
         credentialId: ref.credentialId,
-        owner: ref.owner,
-        repo: ref.repo,
+        host: ref.host,
+        namespace: ref.namespace,
+        project: ref.project,
         ref: ref.ref,
       });
       return { ref, localPath: root };
@@ -99,8 +110,9 @@ export const App = () => {
     recordRecent(ref, workspaceRefLabel(ref));
   };
 
-  const handleSelectGithub = async (ref: WorkspaceRef) => {
+  const handleSelectRemote = async (ref: WorkspaceRef) => {
     setGithubModalOpen(false);
+    setGitlabModalOpen(false);
     setResolveError(null);
     setIsRestoring(true);
     try {
@@ -132,12 +144,19 @@ export const App = () => {
           <WelcomeScreen
             onSelectDirectory={handleSelectLocal}
             onSelectGithub={() => setGithubModalOpen(true)}
+            onSelectGitlab={() => setGitlabModalOpen(true)}
             errorMessage={resolveError}
           />
           {githubModalOpen && (
             <GitHubConnectModal
               onCancel={() => setGithubModalOpen(false)}
-              onConfirm={handleSelectGithub}
+              onConfirm={handleSelectRemote}
+            />
+          )}
+          {gitlabModalOpen && (
+            <GitLabConnectModal
+              onCancel={() => setGitlabModalOpen(false)}
+              onConfirm={handleSelectRemote}
             />
           )}
         </>

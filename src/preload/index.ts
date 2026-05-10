@@ -549,7 +549,10 @@ const api = {
   addRecentWorkspace: (
     pathOrId: string,
     name: string,
-    opts?: { kind?: "local" | "github"; metadata?: string | null },
+    opts?: {
+      kind?: "local" | "github" | "gitlab";
+      metadata?: string | null;
+    },
   ) => ipcRenderer.invoke("workspace:addRecent", pathOrId, name, opts),
   removeRecentWorkspace: (path: string) =>
     ipcRenderer.invoke("workspace:removeRecent", path),
@@ -558,14 +561,18 @@ const api = {
   credentials: {
     list: () => ipcRenderer.invoke("credentials:list"),
     create: (payload: {
-      kind: "github_pat";
+      kind: "github_pat" | "gitlab_pat";
       label: string;
       token: string;
       scopes?: string[];
     }) => ipcRenderer.invoke("credentials:create", payload),
     delete: (id: string) => ipcRenderer.invoke("credentials:delete", { id }),
-    test: (payload: { id?: string; token?: string }) =>
-      ipcRenderer.invoke("credentials:test", payload),
+    test: (payload: {
+      id?: string;
+      token?: string;
+      kind?: "github_pat" | "gitlab_pat";
+      host?: string;
+    }) => ipcRenderer.invoke("credentials:test", payload),
   },
 
   // GitHub
@@ -589,6 +596,32 @@ const api = {
       repo: string;
       ref: string;
     }) => ipcRenderer.invoke("github:fetchRepo", payload),
+  },
+
+  // GitLab
+  gitlab: {
+    listProjects: (payload: { credentialId: string; host: string }) =>
+      ipcRenderer.invoke("gitlab:listProjects", payload),
+    listBranches: (payload: {
+      credentialId: string;
+      host: string;
+      namespace: string;
+      project: string;
+    }) => ipcRenderer.invoke("gitlab:listBranches", payload),
+    cloneRepo: (payload: {
+      credentialId: string;
+      host: string;
+      namespace: string;
+      project: string;
+      ref: string;
+    }) => ipcRenderer.invoke("gitlab:cloneRepo", payload),
+    fetchRepo: (payload: {
+      credentialId: string;
+      host: string;
+      namespace: string;
+      project: string;
+      ref: string;
+    }) => ipcRenderer.invoke("gitlab:fetchRepo", payload),
   },
 
   // Chat sessions

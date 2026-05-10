@@ -134,4 +134,41 @@ describe("requestApproval — whitelist routing", () => {
     expect(await p).toBe(true);
     expect(isToolWhitelistedForTask(taskId, "writeFile")).toBe(true);
   });
+
+  it("gitlabCommentIssue re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gl-issue";
+    const sender = stubSender();
+    const p1 = requestApproval(sender, taskId, "tgi-1", "gitlabCommentIssue", {
+      number: 5,
+      body: "hi",
+    });
+    await settle("tgi-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabCommentIssue")).toBe(false);
+
+    const p2 = requestApproval(sender, taskId, "tgi-2", "gitlabCommentIssue", {
+      number: 6,
+      body: "again",
+    });
+    expect(pendingApprovals.has("tgi-2")).toBe(true);
+    await settle("tgi-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("gitlabCommentMergeRequest also never enters the whitelist", async () => {
+    const taskId = "t-gl-mr";
+    const sender = stubSender();
+    const p = requestApproval(
+      sender,
+      taskId,
+      "tgm-1",
+      "gitlabCommentMergeRequest",
+      { number: 42, body: "ok" },
+    );
+    await settle("tgm-1", true);
+    expect(await p).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabCommentMergeRequest")).toBe(
+      false,
+    );
+  });
 });

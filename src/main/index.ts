@@ -29,6 +29,7 @@ import {
   credentialResolver,
   registerGitHubHandlers,
 } from "./ipc/github-handlers";
+import { registerGitLabHandlers } from "./ipc/gitlab-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
@@ -134,11 +135,13 @@ app.whenReady().then(async () => {
   }
 
   // M6: workspace factory deps — used by ai-handlers to materialize
-  // GitHub workspaces (clones into ~/.filework/cache/github).
+  // GitHub / GitLab workspaces (clones into provider-specific cache dirs).
   const githubCacheDir = join(homedir(), ".filework", "cache", "github");
+  const gitlabCacheDir = join(homedir(), ".filework", "cache", "gitlab");
   setWorkspaceFactoryDeps({
     resolveToken: credentialResolver,
     githubCacheDir,
+    gitlabCacheDir,
   });
 
   // Register IPC handlers
@@ -153,6 +156,10 @@ app.whenReady().then(async () => {
   registerGitHubHandlers({
     resolveToken: credentialResolver,
     cacheDir: githubCacheDir,
+  });
+  registerGitLabHandlers({
+    resolveToken: credentialResolver,
+    cacheDir: gitlabCacheDir,
   });
 
   // Discover personal-level skills at startup (project skills are loaded on workspace open)
