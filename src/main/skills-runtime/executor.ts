@@ -3,8 +3,8 @@
  *
  * Handles skill execution in two modes:
  * - Default mode: injects preprocessed skill body into the system prompt
- * - Fork mode (subagent): creates an independent streamText call with
- *   isolated tool set and optional model override
+ * - Fork mode (subagent): delegates to the IPC-layer `runSubagent` callback
+ *   which drives an AgentLoop with the same approval gate as the main path
  *
  * Also provides:
  * - Security boundary wrapping for prompt injection mitigation
@@ -14,8 +14,7 @@
 
 import { execSync } from "node:child_process";
 import { dirname } from "node:path";
-import type { Tool, ToolExecutionOptions } from "ai";
-import { stepCountIs, streamText } from "ai";
+import type { ModelMessage } from "ai";
 
 import { runHook } from "./hooks";
 import type { UnifiedSkill } from "./types";
@@ -27,16 +26,28 @@ const DEFAULT_LAZY_THRESHOLD = 10;
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 
-/** Dependencies injected into executor functions (avoids tight coupling to ai-handlers). */
+/**
+ * Dependencies injected into executor functions.
+ *
+ * Pre-M2-PR3 this interface carried `getModel`, `allTools`, `rawExecutors`,
+ * `safeTools` so `executeSubagent` could call `streamText` directly. After
+ * the migration, the IPC layer owns model resolution, tool-set assembly,
+ * and the AgentLoop, exposed via a single `runSubagent` callback. See
+ * `src/main/ipc/fork-skill-runner.ts:createForkSkillRunner`.
+ */
 export interface ExecutorDeps {
-  /** Returns the default AI model instance. */
-  getModel: () => Parameters<typeof streamText>[0]["model"];
-  /** Full tool set with approval guards for dangerous operations. */
-  allTools: Record<string, Tool>;
-  /** Raw executors for dangerous tools (no approval). */
-  rawExecutors: Record<string, (...args: unknown[]) => Promise<unknown>>;
-  /** Safe (read-only) tools. */
-  safeTools: Record<string, Tool>;
+  runSubagent: (opts: {
+    /** System prompt — already wrapped with `wrapWithSecurityBoundary`. */
+    systemPrompt: string;
+    workspacePath: string;
+    /** User-facing prompt — fed into the AgentLoop as the new turn. */
+    prompt: string;
+    history?: ModelMessage[];
+    /** Skill frontmatter `allowed-tools` list. Empty/undefined → zero tools. */
+    allowedTools?: string[];
+    /** Skill frontmatter `model` field. Falls back to default on failure. */
+    modelOverrideId?: string;
+  }) => Promise<void>;
 }
 
 export interface ExecutionContext {
@@ -241,241 +252,35 @@ export async function executeSkill(
 /**
  * Execute a skill in an isolated subagent context (fork mode).
  *
- * Creates an independent `streamText` call where:
- * - The skill body (with security boundary) becomes the system prompt
- * - Only tools listed in `allowed-tools` are provided
- * - Allowed dangerous tools use raw executors (no approval required)
- * - The `model` frontmatter field can override the default model
- * - Results stream back through the existing event channel
+ * Delegates to the IPC-provided `deps.runSubagent` callback which:
+ *   - Resolves the model (with `frontmatter.model` override + fallback)
+ *   - Builds a per-task `ToolRegistry` filtered to `allowed-tools`
+ *   - Wires the same `beforeToolCall` approval hook as the main agent path
+ *   - Drives an `AgentLoop` and translates events to existing IPC channels
  *
- * All tool execute functions are wrapped with error handlers to ensure
- * they always return a result (never throw), preventing Bedrock/Claude
- * "Expected toolResult" API errors.
+ * Pre-M2-PR3 this function called `streamText` directly with a custom
+ * tool wrapper that **bypassed approval**. Post-PR fork-mode skills get
+ * the same approval gate as the main path — destructive tools listed in
+ * `allowed-tools` now prompt the user.
  *
  * @param ctx - The execution context
- * @param deps - Injected dependencies
+ * @param deps - Injected dependencies (provides `runSubagent`)
  */
 export async function executeSubagent(
   ctx: ExecutionContext,
   deps: ExecutorDeps,
 ): Promise<void> {
-  const { skill, processedPrompt, workspacePath, sender, taskId, abortSignal } =
-    ctx;
+  const { skill, processedPrompt, workspacePath, systemPrompt, history } = ctx;
   const fm = skill.external?.frontmatter;
-
-  // ── Build the system prompt with security boundary ──
   const source = skill.external?.sourcePath ?? skill.name;
-  const systemPrompt = wrapWithSecurityBoundary(processedPrompt, source);
-
-  // ── Resolve model ──
-  let model: Parameters<typeof streamText>[0]["model"];
-  if (fm?.model) {
-    try {
-      model = createModelOverride(fm.model, deps);
-    } catch {
-      // Fall back to default model if override fails
-      console.warn(
-        `[skills-executor] Model override "${fm.model}" failed, using default`,
-      );
-      model = deps.getModel();
-    }
-  } else {
-    model = deps.getModel();
-  }
-
-  // ── Build filtered tool set (all wrapped with error handlers) ──
-  const tools = buildSubagentTools(fm?.["allowed-tools"], deps);
-
-  // ── Execute streamText ──
-  const streamConfig = {
-    model,
-    tools,
-    maxRetries: 2,
-    stopWhen: stepCountIs(20),
-    system: `${systemPrompt}\n\nCurrent workspace: ${workspacePath}`,
-    abortSignal,
-  };
-
-  const result = ctx.history?.length
-    ? streamText({
-        ...streamConfig,
-        messages: [
-          ...ctx.history,
-          { role: "user" as const, content: ctx.systemPrompt },
-        ],
-      })
-    : streamText({
-        ...streamConfig,
-        prompt: ctx.systemPrompt,
-      });
-
-  // ── Stream results to renderer ──
-  try {
-    for await (const part of result.fullStream) {
-      if (sender.isDestroyed()) break;
-
-      switch (part.type) {
-        case "text-delta":
-          sender.send("ai:stream-delta", { id: taskId, delta: part.text });
-          break;
-        case "tool-call":
-          sender.send("ai:stream-tool-call", {
-            id: taskId,
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            args: part.input,
-          });
-          break;
-        case "tool-result":
-          sender.send("ai:stream-tool-result", {
-            id: taskId,
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            result: part.output,
-          });
-          break;
-        case "error":
-          console.error(
-            `[skills-executor] Stream error in subagent:`,
-            part.error,
-          );
-          if (!sender.isDestroyed()) {
-            sender.send("ai:stream-error", {
-              id: taskId,
-              error:
-                part.error instanceof Error
-                  ? part.error.message
-                  : String(part.error),
-            });
-          }
-          break;
-      }
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[skills-executor] Subagent stream failed: ${message}`);
-    if (!sender.isDestroyed()) {
-      sender.send("ai:stream-error", { id: taskId, error: message });
-    }
-  }
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-/**
- * Build the tool set for a subagent based on the allowed-tools list.
- *
- * - If `allowedTools` is undefined or empty, no tools are provided
- *   (fork mode is restrictive by default).
- * - For each allowed tool name:
- *   - If it matches a raw executor (writeFile, moveFile, deleteFile),
- *     create a tool using the raw executor (no approval).
- *   - If it matches a safe tool, use it directly.
- *   - Unknown tool names are silently ignored.
- */
-/**
- * Build the tool set for a subagent based on the allowed-tools list.
- *
- * - If `allowedTools` is undefined or empty, no tools are provided
- *   (fork mode is restrictive by default).
- * - For each allowed tool name:
- *   - If it matches a raw executor (writeFile, moveFile, deleteFile),
- *     create a tool using the raw executor (no approval required).
- *   - If it matches a safe tool, use it directly.
- *   - Unknown tool names are silently ignored.
- *
- * All tool execute functions are wrapped with error handling to ensure
- * a result is always returned (never throws), preventing Bedrock/Claude
- * "Expected toolResult" errors when a tool execution fails.
- */
-function buildSubagentTools(
-  allowedTools: string[] | undefined,
-  deps: ExecutorDeps,
-): Record<string, Tool> {
-  if (!allowedTools || allowedTools.length === 0) {
-    return {};
-  }
-
-  const tools: Record<string, Tool> = {};
-
-  for (const toolName of allowedTools) {
-    // Check safe tools first
-    if (toolName in deps.safeTools) {
-      tools[toolName] = wrapToolWithErrorHandler(
-        deps.safeTools[toolName],
-        toolName,
-      );
-      continue;
-    }
-
-    // Check raw executors for dangerous tools (no approval in fork mode)
-    if (toolName in deps.rawExecutors) {
-      // Use the original tool structure but with raw executor (avoid double wrapping)
-      const originalTool = deps.safeTools[toolName] || deps.allTools[toolName];
-      if (originalTool) {
-        tools[toolName] = wrapToolWithErrorHandler(
-          {
-            ...originalTool,
-            execute: deps.rawExecutors[toolName],
-          },
-          toolName,
-        );
-      }
-    }
-
-    // Unknown tool name — silently ignored per error handling spec
-  }
-
-  return tools;
-}
-
-/**
- * Wrap a tool's execute function with error handling to ensure it never throws.
- *
- * When a tool's execute function throws, the Vercel AI SDK may fail to produce
- * a `toolResult` message for the next API round-trip. Bedrock/Claude then rejects
- * the request with "Expected toolResult blocks". This wrapper catches any error
- * and returns a structured error result instead.
- */
-function wrapToolWithErrorHandler(tool: Tool, toolName: string): Tool {
-  const originalExecute = tool.execute;
-  if (!originalExecute) return tool;
-
-  return {
-    ...tool,
-    execute: async (args: unknown, options: ToolExecutionOptions) => {
-      try {
-        return await originalExecute(args, options);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(
-          `[skills-executor] Tool "${toolName}" execution failed: ${message}`,
-        );
-        return { success: false, error: message };
-      }
-    },
-  };
-}
-
-/**
- * Create a model instance from a model identifier string.
- *
- * Attempts to determine the provider from the model ID and create
- * the appropriate model. Falls back to the default model getter
- * if the provider cannot be determined.
- *
- * This is a simplified heuristic — in production, a more robust
- * model resolution strategy would be used.
- */
-function createModelOverride(
-  _modelId: string,
-  deps: ExecutorDeps,
-): Parameters<typeof streamText>[0]["model"] {
-  // For now, delegate to the default model getter.
-  // The integration task (11.x) will wire this up to the full
-  // provider resolution logic from getAIModel.
-  // This placeholder ensures the interface is correct.
-  return deps.getModel();
+  await deps.runSubagent({
+    systemPrompt: wrapWithSecurityBoundary(processedPrompt, source),
+    workspacePath,
+    prompt: systemPrompt,
+    history,
+    allowedTools: fm?.["allowed-tools"],
+    modelOverrideId: fm?.model,
+  });
 }
 
 /** Escape special XML characters in a string. */

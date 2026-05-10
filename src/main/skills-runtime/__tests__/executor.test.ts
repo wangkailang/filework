@@ -41,46 +41,8 @@ function makeExternalSkill(
 }
 
 function makeDeps(overrides: Partial<ExecutorDeps> = {}): ExecutorDeps {
-  type Tool = import("ai").Tool;
   return {
-    getModel: vi.fn(
-      () =>
-        ({}) as unknown as Parameters<
-          typeof import("ai").streamText
-        >[0]["model"],
-    ),
-    allTools: {
-      readFile: {
-        description: "Read file",
-        execute: vi.fn(),
-      } as unknown as Tool,
-      listDirectory: {
-        description: "List dir",
-        execute: vi.fn(),
-      } as unknown as Tool,
-      writeFile: {
-        description: "Write file (guarded)",
-        execute: vi.fn(),
-      } as unknown as Tool,
-      deleteFile: {
-        description: "Delete file (guarded)",
-        execute: vi.fn(),
-      } as unknown as Tool,
-    },
-    rawExecutors: {
-      writeFile: vi.fn(async () => ({ success: true })),
-      deleteFile: vi.fn(async () => ({ success: true })),
-    },
-    safeTools: {
-      readFile: {
-        description: "Read file",
-        execute: vi.fn(),
-      } as unknown as Tool,
-      listDirectory: {
-        description: "List dir",
-        execute: vi.fn(),
-      } as unknown as Tool,
-    },
+    runSubagent: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -231,16 +193,6 @@ vi.mock("../hooks", () => ({
   runHook: vi.fn(async () => ({ success: true })),
 }));
 
-// Mock streamText to avoid actual AI calls
-vi.mock("ai", () => ({
-  streamText: vi.fn(() => ({
-    fullStream: (async function* () {
-      yield { type: "text-delta", text: "Hello" };
-    })(),
-  })),
-  stepCountIs: vi.fn(() => ({})),
-}));
-
 describe("executeSkill", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -255,33 +207,48 @@ describe("executeSkill", () => {
     expect(result).toContain("--- SKILL INSTRUCTIONS BEGIN");
     expect(result).toContain("--- SKILL INSTRUCTIONS END ---");
     expect(result).toContain("You are a test skill.");
+    // Default mode does NOT delegate to runSubagent.
+    expect(deps.runSubagent).not.toHaveBeenCalled();
   });
 
-  it("calls executeSubagent for fork mode skills", async () => {
+  it("delegates fork-mode execution to deps.runSubagent and returns void", async () => {
+    const runSubagent = vi.fn(async () => {});
     const ctx = makeCtx({
       skill: makeExternalSkill({}, { context: "fork" }),
     });
-    const deps = makeDeps();
-    const result = await executeSkill(ctx, deps);
+    const result = await executeSkill(ctx, makeDeps({ runSubagent }));
 
-    // Fork mode returns void (streams directly)
     expect(result).toBeUndefined();
+    expect(runSubagent).toHaveBeenCalledTimes(1);
   });
 
-  it("passes abortSignal to fork-mode streamText", async () => {
-    const { streamText } = await import("ai");
-    const abortController = new AbortController();
+  it("forwards skill frontmatter and history to runSubagent", async () => {
+    const runSubagent = vi.fn(async () => {});
+    const history = [
+      { role: "user" as const, content: "hi" },
+      { role: "assistant" as const, content: "hello" },
+    ];
     const ctx = makeCtx({
-      skill: makeExternalSkill({}, { context: "fork" }),
-      abortSignal: abortController.signal,
+      skill: makeExternalSkill(
+        {},
+        {
+          context: "fork",
+          "allowed-tools": ["readFile", "writeFile"],
+          model: "anthropic/claude-3-5-sonnet",
+        },
+      ),
+      history,
     });
+    await executeSkill(ctx, makeDeps({ runSubagent }));
 
-    const deps = makeDeps();
-    await executeSkill(ctx, deps);
-
-    expect(streamText).toHaveBeenCalledWith(
+    expect(runSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
-        abortSignal: abortController.signal,
+        systemPrompt: expect.stringContaining("--- SKILL INSTRUCTIONS BEGIN"),
+        workspacePath: "/workspace",
+        prompt: "Help me with testing",
+        history,
+        allowedTools: ["readFile", "writeFile"],
+        modelOverrideId: "anthropic/claude-3-5-sonnet",
       }),
     );
   });
@@ -319,27 +286,21 @@ describe("executeSkill", () => {
     );
   });
 
-  it("executes post-complete hook even if execution throws", async () => {
+  it("executes post-complete hook even if subagent throws", async () => {
     const { runHook } = await import("../hooks");
-    // Create a skill that will trigger fork mode, and mock streamText to throw
-    const { streamText } = await import("ai");
-    (
-      streamText as unknown as {
-        mockImplementationOnce: (fn: () => unknown) => void;
-      }
-    ).mockImplementationOnce(() => {
+    const runSubagent = vi.fn(async () => {
       throw new Error("AI error");
     });
-
     const ctx = makeCtx({
       skill: makeExternalSkill(
         {},
         { context: "fork", hooks: { "post-complete": "./cleanup.sh" } },
       ),
     });
-    const deps = makeDeps();
 
-    await expect(executeSkill(ctx, deps)).rejects.toThrow("AI error");
+    await expect(executeSkill(ctx, makeDeps({ runSubagent }))).rejects.toThrow(
+      "AI error",
+    );
     expect(runHook).toHaveBeenCalledWith(
       "./cleanup.sh",
       expect.any(String),
