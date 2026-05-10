@@ -28,6 +28,11 @@ import path from "node:path";
 import { buildAskpassEnv, gitlabSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
+  CIJobSummary,
+  CIRunConclusion,
+  CIRunDetail,
+  CIRunStatus,
+  CIRunSummary,
   CodeSearchResult,
   ExecOptions,
   ExecResult,
@@ -451,6 +456,44 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     };
   }
 
+  // ── M8: CI / pipeline status ─────────────────────────────────────────
+
+  async listCIRuns(
+    input: {
+      ref?: string;
+      status?: "all" | "in_progress" | "completed";
+      limit?: number;
+    } = {},
+  ): Promise<CIRunSummary[]> {
+    const params = new URLSearchParams({
+      per_page: String(Math.min(input.limit ?? 100, 100)),
+    });
+    if (input.ref) params.set("ref", input.ref);
+    // GitLab has no direct "completed" filter — `success` is the most common
+    // completed state and matches the documented user contract. The GitHub
+    // backend gets the full lifecycle filter; this is a deliberate trade.
+    if (input.status === "in_progress") params.set("status", "running");
+    if (input.status === "completed") params.set("status", "success");
+    const rows = await this.glJson<RawGlPipeline[]>(
+      `/projects/${projectIdEncoded(this.deps)}/pipelines?${params.toString()}`,
+    );
+    return rows.map(toCIRunSummaryFromGL);
+  }
+
+  async getCIRun(input: { id: string }): Promise<CIRunDetail> {
+    const raw = await this.glJson<RawGlPipelineDetail>(
+      `/projects/${projectIdEncoded(this.deps)}/pipelines/${encodeURIComponent(input.id)}`,
+    );
+    return toCIRunDetailFromGL(raw);
+  }
+
+  async listCIJobs(input: { runId: string }): Promise<CIJobSummary[]> {
+    const rows = await this.glJson<RawGlJob[]>(
+      `/projects/${projectIdEncoded(this.deps)}/pipelines/${encodeURIComponent(input.runId)}/jobs?per_page=100`,
+    );
+    return rows.map(toCIJobSummaryFromGL);
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =
@@ -733,6 +776,116 @@ const toIssueDetailFromGl = (raw: RawGlIssueDetail): IssueDetail => ({
   closedAt: raw.closed_at,
 });
 
+// ── M8: CI / pipeline projections ─────────────────────────────────────
+
+interface RawGlPipeline {
+  id: number;
+  /** Optional human name; falls back to "pipeline #<id>". */
+  name?: string | null;
+  /** GitLab pipeline lifecycle. */
+  status:
+    | "created"
+    | "pending"
+    | "running"
+    | "success"
+    | "failed"
+    | "canceled"
+    | "skipped"
+    | "manual"
+    | "scheduled"
+    | "preparing";
+  ref: string;
+  sha: string;
+  web_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RawGlPipelineDetail extends RawGlPipeline {
+  /** Trigger, e.g. "push", "merge_request_event", "schedule". */
+  source?: string;
+  duration?: number | null;
+}
+
+interface RawGlJob {
+  id: number;
+  name: string;
+  status: RawGlPipeline["status"];
+  web_url: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+const mapPipelineStatus = (
+  s: RawGlPipeline["status"],
+): { status: CIRunStatus; conclusion: CIRunConclusion } => {
+  switch (s) {
+    case "created":
+    case "pending":
+    case "scheduled":
+    case "preparing":
+      return { status: "queued", conclusion: null };
+    case "running":
+      return { status: "in_progress", conclusion: null };
+    case "success":
+      return { status: "completed", conclusion: "success" };
+    case "failed":
+      return { status: "completed", conclusion: "failure" };
+    case "canceled":
+      return { status: "completed", conclusion: "cancelled" };
+    case "skipped":
+      return { status: "completed", conclusion: "skipped" };
+    case "manual":
+      return { status: "completed", conclusion: "action_required" };
+  }
+};
+
+const isCompletedStatus = (s: RawGlPipeline["status"]): boolean =>
+  s === "success" ||
+  s === "failed" ||
+  s === "canceled" ||
+  s === "skipped" ||
+  s === "manual";
+
+const toCIRunSummaryFromGL = (raw: RawGlPipeline): CIRunSummary => {
+  const mapped = mapPipelineStatus(raw.status);
+  return {
+    id: String(raw.id),
+    name: raw.name ?? `pipeline #${raw.id}`,
+    status: mapped.status,
+    conclusion: mapped.conclusion,
+    ref: raw.ref,
+    commitSha: raw.sha,
+    url: raw.web_url,
+    startedAt: raw.created_at,
+    completedAt: isCompletedStatus(raw.status) ? raw.updated_at : null,
+  };
+};
+
+const toCIRunDetailFromGL = (raw: RawGlPipelineDetail): CIRunDetail => ({
+  ...toCIRunSummaryFromGL(raw),
+  event: raw.source ?? "",
+  durationSec: raw.duration ?? null,
+  // `/pipelines/:id` doesn't include a job count; per-run jobs endpoint covers it.
+  jobsCount: 0,
+});
+
+const toCIJobSummaryFromGL = (raw: RawGlJob): CIJobSummary => {
+  const mapped = mapPipelineStatus(raw.status);
+  return {
+    id: String(raw.id),
+    name: raw.name,
+    status: mapped.status,
+    conclusion: mapped.conclusion,
+    url: raw.web_url,
+    startedAt: raw.started_at ?? "",
+    completedAt: raw.finished_at,
+    // GitLab's job-list endpoint doesn't expose step status; full traces would
+    // require log fetching, deferred. Always empty here.
+    failedSteps: [],
+  };
+};
+
 export const __test__ = {
   cloneDirFor,
   isFresh,
@@ -746,4 +899,8 @@ export const __test__ = {
   toPRDetailFromMR,
   toIssueSummaryFromGl,
   toIssueDetailFromGl,
+  mapPipelineStatus,
+  toCIRunSummaryFromGL,
+  toCIRunDetailFromGL,
+  toCIJobSummaryFromGL,
 };

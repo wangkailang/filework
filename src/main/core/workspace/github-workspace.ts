@@ -29,6 +29,11 @@ import path from "node:path";
 import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
+  CIJobSummary,
+  CIRunConclusion,
+  CIRunDetail,
+  CIRunStatus,
+  CIRunSummary,
   CodeSearchResult,
   ExecOptions,
   ExecResult,
@@ -475,6 +480,40 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     };
   }
 
+  // ── M8: CI / pipeline status ─────────────────────────────────────────
+
+  async listCIRuns(
+    input: {
+      ref?: string;
+      status?: "all" | "in_progress" | "completed";
+      limit?: number;
+    } = {},
+  ): Promise<CIRunSummary[]> {
+    const params = new URLSearchParams({
+      per_page: String(Math.min(input.limit ?? 100, 100)),
+    });
+    if (input.ref) params.set("branch", input.ref);
+    if (input.status) params.set("status", input.status);
+    const raw = await this.ghJson<{ workflow_runs: RawWorkflowRun[] }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/runs?${params.toString()}`,
+    );
+    return raw.workflow_runs.map(toCIRunSummaryFromGH);
+  }
+
+  async getCIRun(input: { id: string }): Promise<CIRunDetail> {
+    const raw = await this.ghJson<RawWorkflowRunDetail>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/runs/${input.id}`,
+    );
+    return toCIRunDetailFromGH(raw);
+  }
+
+  async listCIJobs(input: { runId: string }): Promise<CIJobSummary[]> {
+    const raw = await this.ghJson<{ jobs: RawWorkflowJob[] }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/runs/${input.runId}/jobs?per_page=100`,
+    );
+    return raw.jobs.map(toCIJobSummaryFromGH);
+  }
+
   // ── private fetch helpers (M6 PR 3) ───────────────────────────────────
 
   private async ghJson<T>(pathAndQuery: string): Promise<T> {
@@ -744,6 +783,91 @@ const toIssueDetail = (raw: RawIssueDetail): IssueDetail => ({
   closedAt: raw.closed_at,
 });
 
+// ── M8: CI / pipeline projections ─────────────────────────────────────
+
+interface RawWorkflowRun {
+  id: number;
+  name: string | null;
+  /** GitHub introduced this in 2022; older API responses fall back to `name`. */
+  workflow_name?: string | null;
+  status: CIRunStatus;
+  conclusion: CIRunConclusion;
+  head_branch: string | null;
+  head_sha: string;
+  html_url: string;
+  run_started_at: string;
+  updated_at: string;
+}
+
+interface RawWorkflowRunDetail extends RawWorkflowRun {
+  event: string;
+  /** Number of jobs; not always present, defaults to 0. */
+  jobs?: { total_count?: number };
+  /** Run-level totals from the per-run endpoint. */
+  run_attempt?: number;
+}
+
+interface RawWorkflowJobStep {
+  name: string;
+  conclusion: CIRunConclusion;
+}
+
+interface RawWorkflowJob {
+  id: number;
+  name: string;
+  status: CIRunStatus;
+  conclusion: CIRunConclusion;
+  html_url: string;
+  started_at: string;
+  completed_at: string | null;
+  steps?: RawWorkflowJobStep[];
+}
+
+const toCIRunSummaryFromGH = (raw: RawWorkflowRun): CIRunSummary => ({
+  id: String(raw.id),
+  name: raw.name ?? raw.workflow_name ?? "",
+  status: raw.status,
+  conclusion: raw.conclusion,
+  ref: raw.head_branch ?? "",
+  commitSha: raw.head_sha,
+  url: raw.html_url,
+  startedAt: raw.run_started_at,
+  completedAt: raw.status === "completed" ? raw.updated_at : null,
+});
+
+const toCIRunDetailFromGH = (raw: RawWorkflowRunDetail): CIRunDetail => {
+  const summary = toCIRunSummaryFromGH(raw);
+  const durationSec =
+    summary.completedAt && summary.startedAt
+      ? Math.max(
+          0,
+          Math.round(
+            (Date.parse(summary.completedAt) - Date.parse(summary.startedAt)) /
+              1000,
+          ),
+        )
+      : null;
+  return {
+    ...summary,
+    event: raw.event,
+    durationSec,
+    jobsCount: raw.jobs?.total_count ?? 0,
+  };
+};
+
+const toCIJobSummaryFromGH = (raw: RawWorkflowJob): CIJobSummary => ({
+  id: String(raw.id),
+  name: raw.name,
+  status: raw.status,
+  conclusion: raw.conclusion,
+  url: raw.html_url,
+  startedAt: raw.started_at,
+  completedAt: raw.completed_at,
+  failedSteps: (raw.steps ?? [])
+    .filter((s) => s.conclusion === "failure")
+    .map((s) => s.name),
+});
+
 export const __test__ = {
   looksLikeGitWrite,
   cloneDirFor,
@@ -754,4 +878,7 @@ export const __test__ = {
   toPRDetail,
   toIssueSummary,
   toIssueDetail,
+  toCIRunSummaryFromGH,
+  toCIRunDetailFromGH,
+  toCIJobSummaryFromGH,
 };

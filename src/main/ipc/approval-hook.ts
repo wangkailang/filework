@@ -73,6 +73,31 @@ export const buildApprovalHook = ({
       }
     }
 
+    // ── M8: pre-PR CI heads-up (best-effort, never blocks) ──────────
+    let extraContext: string | undefined;
+    if (call.toolName === "openPullRequest" && ctx.workspace.scm?.listCIRuns) {
+      try {
+        const branch = await ctx.workspace.scm.currentBranch?.();
+        if (branch) {
+          const runs = await ctx.workspace.scm.listCIRuns({
+            ref: branch,
+            limit: 1,
+          });
+          const latest = runs[0];
+          if (
+            latest &&
+            (latest.conclusion === "failure" ||
+              latest.conclusion === "cancelled")
+          ) {
+            extraContext = `⚠️ 最近的 CI 运行 (${latest.name}) 状态为 ${latest.conclusion}。继续打开 PR/MR 之前请确认。\n${latest.url}`;
+          }
+        }
+      } catch {
+        // Best-effort: a CI lookup failure (rate limit, no Actions, expired
+        // token) must never block the user from opening a PR.
+      }
+    }
+
     // ── User approval (whitelist short-circuit lives inside) ────────
     const approved = await requestApproval(
       sender,
@@ -81,6 +106,7 @@ export const buildApprovalHook = ({
       call.toolName,
       call.args,
       ctx.signal,
+      extraContext,
     );
     return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
   };

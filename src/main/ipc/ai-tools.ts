@@ -414,6 +414,11 @@ export const requestApproval = (
   toolName: string,
   args: unknown,
   abortSignal?: AbortSignal,
+  /**
+   * Optional contextual warning rendered above the approval card.
+   * M8 uses it to surface a failing-CI heads-up before openPullRequest.
+   */
+  extraContext?: string,
 ): Promise<boolean> => {
   // If the user already approved this tool type during the current task,
   // skip the approval prompt and auto-approve.
@@ -496,6 +501,7 @@ export const requestApproval = (
         toolName,
         args,
         description,
+        extraContext,
       });
     }
   });

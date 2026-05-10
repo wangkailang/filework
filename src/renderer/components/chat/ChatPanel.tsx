@@ -250,6 +250,16 @@ export const ChatPanel = ({
             <Confirmation state={inv.approval.state}>
               {inv.approval.state === "approval-requested" && (
                 <>
+                  {inv.approval.extraContext && (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-2">
+                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span className="whitespace-pre-line">
+                          {inv.approval.extraContext}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <ConfirmationRequest>
                     {inv.approval.description}
                   </ConfirmationRequest>

@@ -147,11 +147,72 @@ export interface CodeSearchResult {
   items: CodeSearchHit[];
 }
 
+// ---------------------------------------------------------------------------
+// CI / pipeline status (M8). Vendor-neutral projections of GitHub Actions
+// workflow runs and GitLab pipelines. Same union for both providers so the
+// agent's mental model is consistent.
+// ---------------------------------------------------------------------------
+
+export type CIRunStatus = "queued" | "in_progress" | "completed";
+
+export type CIRunConclusion =
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "skipped"
+  | "neutral"
+  | "timed_out"
+  | "action_required"
+  | null; // null while still in_progress
+
+export interface CIRunSummary {
+  /** Provider-native run id, kept as string for symmetry across providers. */
+  id: string;
+  /** Workflow / pipeline name (or short title). */
+  name: string;
+  status: CIRunStatus;
+  /** null while in_progress; populated on completed. */
+  conclusion: CIRunConclusion;
+  /** Branch the run was triggered for. */
+  ref: string;
+  /** Head commit sha. */
+  commitSha: string;
+  url: string;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface CIRunDetail extends CIRunSummary {
+  /** Trigger event ("push", "pull_request", "schedule", …). */
+  event: string;
+  /** Total runtime in seconds; null while in_progress. */
+  durationSec: number | null;
+  /** Number of jobs in the run; may be 0 if not yet expanded. */
+  jobsCount: number;
+}
+
+export interface CIJobSummary {
+  id: string;
+  name: string;
+  status: CIRunStatus;
+  conclusion: CIRunConclusion;
+  url: string;
+  startedAt: string;
+  completedAt: string | null;
+  /**
+   * Names of failing steps (empty for green runs, non-empty for red).
+   * GitLab impls leave this empty — step status isn't on the job-list
+   * endpoint; full traces would require log-fetching, deferred.
+   */
+  failedSteps: string[];
+}
+
 /**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
  * `LocalWorkspace` does not implement this in M1. Every method is optional
  * so backends can opt into a subset (status/diff in M6 PR 1; commit/push/PR
- * in M6 PR 2; query + comment in M6 PR 3 — all github-backed only today).
+ * in M6 PR 2; query + comment in M6 PR 3; CI runs in M8 — all github/gitlab
+ * backed today).
  */
 export interface WorkspaceSCM {
   status?(): Promise<{ branch: string; dirty: boolean }>;
@@ -230,6 +291,25 @@ export interface WorkspaceSCM {
    * `repo:owner/name` qualifier so results stay scoped to the workspace.
    */
   searchCode?(input: { query: string }): Promise<CodeSearchResult>;
+
+  // ── M8: CI / pipeline status ──────────────────────────────────────────
+
+  /**
+   * List CI runs for the workspace's repo. `ref` filters by branch name;
+   * `status` narrows by lifecycle phase. Hard cap is 100 results — agents
+   * asking for more re-query with narrower filters.
+   */
+  listCIRuns?(input?: {
+    ref?: string;
+    status?: "all" | "in_progress" | "completed";
+    limit?: number;
+  }): Promise<CIRunSummary[]>;
+
+  /** Fetch a single CI run by id. */
+  getCIRun?(input: { id: string }): Promise<CIRunDetail>;
+
+  /** List jobs for a CI run. */
+  listCIJobs?(input: { runId: string }): Promise<CIJobSummary[]>;
 }
 
 export interface Workspace {

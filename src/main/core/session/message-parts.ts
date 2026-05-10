@@ -32,6 +32,13 @@ export interface ToolApproval {
   toolName: string;
   description: string;
   state: ApprovalState;
+  /**
+   * Optional contextual warning the renderer shows above the approval card.
+   * Populated by `approval-hook.ts` for openPullRequest when the latest CI
+   * run on the head branch is failing/cancelled (M8). Undefined for all
+   * other tools and pre-M8 sessions.
+   */
+  extraContext?: string;
 }
 
 // ─── Plan viewer (data shape — UI lives in plan-viewer.tsx) ─────────

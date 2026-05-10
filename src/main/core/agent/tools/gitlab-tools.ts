@@ -69,6 +69,42 @@ const searchCodeSchema = z.object({
     .describe("GitLab blob search query, scoped to this project."),
 });
 
+const listPipelinesSchema = z.object({
+  ref: z
+    .string()
+    .optional()
+    .describe("Branch name to filter pipelines (e.g. 'main')."),
+  status: z
+    .enum(["all", "in_progress", "completed"])
+    .optional()
+    .describe(
+      "Lifecycle filter. 'in_progress' maps to GitLab 'running'; 'completed' maps to 'success' (deliberate simplification — re-query for failed/canceled).",
+    ),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .optional()
+    .describe("Hard cap 100; older pipelines require a narrower filter."),
+});
+
+const getPipelineSchema = z.object({
+  id: z
+    .string()
+    .min(1, "pipeline id is required")
+    .describe(
+      "Pipeline id (numeric, kept as string for symmetry with GitHub).",
+    ),
+});
+
+const listPipelineJobsSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Pipeline id whose jobs you want."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -166,6 +202,42 @@ export const gitlabSearchCodeTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "searchCode")(args),
 };
 
+export const gitlabListPipelinesTool: ToolDefinition<
+  z.infer<typeof listPipelinesSchema>,
+  unknown
+> = {
+  name: "gitlabListPipelines",
+  description:
+    "List GitLab CI pipelines for the current project. Filter by branch (`ref`) or status (in_progress/completed/all). Returns up to 100 results sorted newest-first with conclusion and head commit.",
+  safety: "safe",
+  inputSchema: listPipelinesSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCIRuns")(args),
+};
+
+export const gitlabGetPipelineTool: ToolDefinition<
+  z.infer<typeof getPipelineSchema>,
+  unknown
+> = {
+  name: "gitlabGetPipeline",
+  description:
+    "Fetch a single pipeline by id. Returns conclusion, runtime in seconds, head commit, and trigger source.",
+  safety: "safe",
+  inputSchema: getPipelineSchema,
+  execute: async (args, ctx) => requireScm(ctx, "getCIRun")(args),
+};
+
+export const gitlabListPipelineJobsTool: ToolDefinition<
+  z.infer<typeof listPipelineJobsSchema>,
+  unknown
+> = {
+  name: "gitlabListPipelineJobs",
+  description:
+    "List jobs for a GitLab pipeline. `failedSteps` is always empty (GitLab's job-list endpoint doesn't expose step status — full traces require log fetching, deferred).",
+  safety: "safe",
+  inputSchema: listPipelineJobsSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCIJobs")(args),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -175,4 +247,7 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabCommentIssueTool as ToolDefinition,
   gitlabCommentMergeRequestTool as ToolDefinition,
   gitlabSearchCodeTool as ToolDefinition,
+  gitlabListPipelinesTool as ToolDefinition,
+  gitlabGetPipelineTool as ToolDefinition,
+  gitlabListPipelineJobsTool as ToolDefinition,
 ];
