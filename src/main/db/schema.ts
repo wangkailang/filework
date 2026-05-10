@@ -84,28 +84,8 @@ export const credentials = sqliteTable("credentials", {
   createdAt: text("created_at").notNull(),
 });
 
-export const chatSessions = sqliteTable("chat_sessions", {
-  id: text("id").primaryKey(),
-  workspacePath: text("workspace_path").notNull(),
-  title: text("title").notNull(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-  /** Session this was forked from (null for root sessions) */
-  forkFromSessionId: text("fork_from_session_id"),
-  /** Message ID at the fork point (messages up to and including this are copied) */
-  forkFromMessageId: text("fork_from_message_id"),
-});
-
-export const chatMessages = sqliteTable("chat_messages", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").notNull(),
-  workspacePath: text("workspace_path").notNull(),
-  role: text("role", { enum: ["user", "assistant"] }).notNull(),
-  content: text("content").notNull(),
-  timestamp: text("timestamp").notNull(),
-  /** JSON-serialised MessagePart[] for assistant messages */
-  parts: text("parts"),
-});
+// chat_sessions / chat_messages — REMOVED in M3 PR 2.
+// See `core/session/jsonl-store.ts` for the active backend.
 
 export const llmConfigs = sqliteTable("llm_configs", {
   id: text("id").primaryKey(),

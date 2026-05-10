@@ -20,7 +20,6 @@ config({ path: join(__dirname, "../../.env") });
 
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { initDatabase } from "./db";
-import { migrateChatToJsonl } from "./db/jsonl-migration";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import { registerCredentialsHandlers } from "./ipc/credentials-handlers";
@@ -119,20 +118,13 @@ app.whenReady().then(async () => {
   // Initialize SQLite database
   await initDatabase();
 
-  // Set up JSONL session store + run one-shot migration from SQLite chat
-  // tables. Synchronous so chat IPC handlers never see a partially-migrated
-  // store.
+  // JSONL session store — sole backend for chat sessions and messages.
+  // The one-shot SQLite→JSONL migration shipped in M3 PR 1 and was
+  // dropped in M3 PR 2 once stability was proven; users on a pre-M3 PR 1
+  // install would have already been migrated on their first launch.
   const sessionStore = new JsonlSessionStore(
     join(homedir(), ".filework", "sessions"),
   );
-  try {
-    await migrateChatToJsonl(sessionStore);
-  } catch (err) {
-    console.error(
-      "[startup] Chat migration failed; sessions may be empty until restart:",
-      err instanceof Error ? err.message : err,
-    );
-  }
 
   // M6: workspace factory deps — used by ai-handlers to materialize
   // GitHub / GitLab workspaces (clones into provider-specific cache dirs).

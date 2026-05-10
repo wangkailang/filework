@@ -77,24 +77,6 @@ export const initDatabase = async () => {
       name TEXT NOT NULL,
       last_opened_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS chat_sessions (
-      id TEXT PRIMARY KEY,
-      workspace_path TEXT NOT NULL,
-      title TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_chat_sessions_workspace ON chat_sessions(workspace_path, updated_at);
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL DEFAULT '',
-      workspace_path TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('user','assistant')),
-      content TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      parts TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_chat_workspace ON chat_messages(workspace_path, timestamp);
     CREATE TABLE IF NOT EXISTS llm_configs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -115,25 +97,6 @@ export const initDatabase = async () => {
       created_at TEXT NOT NULL
     );
   `);
-
-  // Migrate: add parts column if missing (for existing databases)
-  const columns = sqlite.pragma("table_info(chat_messages)") as {
-    name: string;
-  }[];
-  if (!columns.some((c) => c.name === "parts")) {
-    sqlite.exec("ALTER TABLE chat_messages ADD COLUMN parts TEXT");
-  }
-  // Migrate: add session_id column if missing
-  if (!columns.some((c) => c.name === "session_id")) {
-    sqlite.exec(
-      "ALTER TABLE chat_messages ADD COLUMN session_id TEXT DEFAULT ''",
-    );
-  }
-
-  // Create session_id index after ensuring column exists
-  sqlite.exec(
-    "CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id, timestamp)",
-  );
 
   // Migrate: add usage tracking columns to tasks if missing
   const taskColumns = sqlite.pragma("table_info(tasks)") as {
@@ -169,39 +132,13 @@ export const initDatabase = async () => {
     );
   `);
 
-  // Migrate orphan messages (no session_id) into auto-created sessions
-  const orphans = sqlite
-    .prepare(
-      "SELECT DISTINCT workspace_path FROM chat_messages WHERE session_id = '' OR session_id IS NULL",
-    )
-    .all() as { workspace_path: string }[];
-  for (const { workspace_path } of orphans) {
-    const sessionId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    sqlite
-      .prepare(
-        "INSERT INTO chat_sessions (id, workspace_path, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      )
-      .run(sessionId, workspace_path, "历史对话", now, now);
-    sqlite
-      .prepare(
-        "UPDATE chat_messages SET session_id = ? WHERE workspace_path = ? AND (session_id = '' OR session_id IS NULL)",
-      )
-      .run(sessionId, workspace_path);
-  }
-
-  // Migrate: add fork columns to chat_sessions if missing
-  const sessionColumns = sqlite.pragma("table_info(chat_sessions)") as {
-    name: string;
-  }[];
-  if (!sessionColumns.some((c) => c.name === "fork_from_session_id")) {
-    sqlite.exec(
-      "ALTER TABLE chat_sessions ADD COLUMN fork_from_session_id TEXT",
-    );
-    sqlite.exec(
-      "ALTER TABLE chat_sessions ADD COLUMN fork_from_message_id TEXT",
-    );
-  }
+  // M3 PR 2: drop legacy chat tables. Existing users on M3 PR 1+ have
+  // already been migrated to the JSONL store at ~/.filework/sessions/.
+  // Idempotent: no-op if the tables don't exist (fresh installs).
+  sqlite.exec(`
+    DROP TABLE IF EXISTS chat_messages;
+    DROP TABLE IF EXISTS chat_sessions;
+  `);
 
   // Migrate: add kind/metadata columns to recent_workspaces if missing
   const recentCols = sqlite.pragma("table_info(recent_workspaces)") as {
@@ -293,23 +230,6 @@ export interface Credential {
   label: string;
   scopes: string[] | null;
   createdAt: string;
-}
-
-interface ChatMessage {
-  id: string;
-  sessionId: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: string;
-  parts?: unknown[];
-}
-
-interface ChatSession {
-  id: string;
-  workspacePath: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 // ============================================================================
@@ -639,196 +559,14 @@ export const deleteCredential = (id: string): void => {
 };
 
 // ============================================================================
-// Chat Sessions
-// ============================================================================
+// Chat Sessions / Messages — REMOVED in M3 PR 2.
 //
-// TODO(M3 PR 2): the eight chat-related exports below are kept only as a
-// migration source for `src/main/db/jsonl-migration.ts`. Runtime reads/writes
-// have moved to `core/session/jsonl-store.ts`. Drop these (and the
-// chat_sessions / chat_messages tables in schema.ts) after JSONL has shipped
-// for one release cycle.
-
-/**
- * Migration helper — return every chat session across every workspace,
- * ordered by createdAt ascending. Plain `getChatSessions(path)` requires
- * a workspace filter, but sessions can exist for paths that were never
- * registered in the `workspaces` table.
- */
-export const getAllChatSessionsForMigration = (): ChatSession[] =>
-  db
-    .select()
-    .from(schema.chatSessions)
-    .orderBy(schema.chatSessions.createdAt)
-    .all();
-
-export const createChatSession = (
-  workspacePath: string,
-  title = "新对话",
-): ChatSession => {
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  db.insert(schema.chatSessions)
-    .values({ id, workspacePath, title, createdAt: now, updatedAt: now })
-    .run();
-  return { id, workspacePath, title, createdAt: now, updatedAt: now };
-};
-
-export const getChatSessions = (workspacePath: string): ChatSession[] =>
-  db
-    .select()
-    .from(schema.chatSessions)
-    .where(eq(schema.chatSessions.workspacePath, workspacePath))
-    .orderBy(desc(schema.chatSessions.updatedAt))
-    .all();
-
-export const updateChatSession = (
-  sessionId: string,
-  updates: Partial<Pick<ChatSession, "title" | "updatedAt">>,
-) => {
-  const mapped: Record<string, unknown> = {};
-  if (updates.title !== undefined) mapped.title = updates.title;
-  mapped.updatedAt = updates.updatedAt ?? new Date().toISOString();
-  db.update(schema.chatSessions)
-    .set(mapped)
-    .where(eq(schema.chatSessions.id, sessionId))
-    .run();
-};
-
-/**
- * Fork a chat session from a specific message point.
- * Creates a new session and copies all messages up to (and including)
- * the specified message, preserving conversation history for branching.
- */
-export const forkChatSession = (
-  sourceSessionId: string,
-  fromMessageId: string,
-): ChatSession => {
-  const source = db
-    .select()
-    .from(schema.chatSessions)
-    .where(eq(schema.chatSessions.id, sourceSessionId))
-    .get();
-  if (!source) {
-    throw new Error("源会话不存在");
-  }
-
-  const newId = crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  // Get source messages up to the fork point
-  const allMessages = db
-    .select()
-    .from(schema.chatMessages)
-    .where(eq(schema.chatMessages.sessionId, sourceSessionId))
-    .orderBy(schema.chatMessages.timestamp)
-    .all();
-
-  // Find the fork point index
-  const forkIdx = allMessages.findIndex((m) => m.id === fromMessageId);
-  if (forkIdx === -1) {
-    throw new Error("分叉点消息不存在");
-  }
-  const messagesToCopy = allMessages.slice(0, forkIdx + 1);
-
-  db.transaction((tx) => {
-    // Create the forked session
-    tx.insert(schema.chatSessions)
-      .values({
-        id: newId,
-        workspacePath: source.workspacePath,
-        title: `${source.title} (分支)`,
-        createdAt: now,
-        updatedAt: now,
-        forkFromSessionId: sourceSessionId,
-        forkFromMessageId: fromMessageId,
-      })
-      .run();
-
-    // Copy messages with new IDs
-    for (const msg of messagesToCopy) {
-      tx.insert(schema.chatMessages)
-        .values({
-          id: crypto.randomUUID(),
-          sessionId: newId,
-          workspacePath: msg.workspacePath,
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.timestamp,
-          parts: msg.parts,
-        })
-        .run();
-    }
-  });
-
-  return {
-    id: newId,
-    workspacePath: source.workspacePath,
-    title: `${source.title} (分支)`,
-    createdAt: now,
-    updatedAt: now,
-  };
-};
-
-export const deleteChatSession = (sessionId: string) => {
-  db.transaction((tx) => {
-    tx.delete(schema.chatMessages)
-      .where(eq(schema.chatMessages.sessionId, sessionId))
-      .run();
-    tx.delete(schema.chatSessions)
-      .where(eq(schema.chatSessions.id, sessionId))
-      .run();
-  });
-};
-
+// All chat reads/writes now go through `core/session/jsonl-store.ts`.
+// The legacy SQLite tables (`chat_sessions`, `chat_messages`) and helpers
+// were dropped after JSONL stability was proven across the M5/M6 series.
+// See git history for the prior implementation; the one-shot migration
+// helper at `db/jsonl-migration.ts` was deleted alongside.
 // ============================================================================
-// Chat Messages (session-scoped)
-// ============================================================================
-
-export const getChatHistory = (sessionId: string): ChatMessage[] =>
-  db
-    .select({
-      id: schema.chatMessages.id,
-      sessionId: schema.chatMessages.sessionId,
-      role: schema.chatMessages.role,
-      content: schema.chatMessages.content,
-      timestamp: schema.chatMessages.timestamp,
-      parts: schema.chatMessages.parts,
-    })
-    .from(schema.chatMessages)
-    .where(eq(schema.chatMessages.sessionId, sessionId))
-    .orderBy(schema.chatMessages.timestamp)
-    .all()
-    .map((row) => ({
-      ...row,
-      parts: row.parts ? JSON.parse(row.parts) : undefined,
-    }));
-
-export const saveChatHistory = (
-  sessionId: string,
-  workspacePath: string,
-  messages: ChatMessage[],
-) => {
-  db.transaction((tx) => {
-    tx.delete(schema.chatMessages)
-      .where(eq(schema.chatMessages.sessionId, sessionId))
-      .run();
-    for (const msg of messages) {
-      tx.insert(schema.chatMessages)
-        .values({
-          id: msg.id,
-          sessionId,
-          workspacePath,
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.timestamp,
-          parts: msg.parts ? JSON.stringify(msg.parts) : null,
-        })
-        .run();
-    }
-  });
-  // Touch session updated_at
-  updateChatSession(sessionId, { updatedAt: new Date().toISOString() });
-};
 
 // ============================================================================
 // LLM Config Types
@@ -1019,11 +757,4 @@ export const migrateLlmConfigFromEnv = (): void => {
   });
 };
 
-export type {
-  ChatMessage,
-  ChatSession,
-  FileOperation,
-  RecentWorkspace,
-  Task,
-  Workspace,
-};
+export type { FileOperation, RecentWorkspace, Task, Workspace };
