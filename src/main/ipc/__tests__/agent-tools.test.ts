@@ -24,14 +24,19 @@ const fakeSender = {
   send: () => {},
 } as unknown as Electron.WebContents;
 
-const mkWorkspace = (kind: "local" | "github"): Workspace =>
+const mkWorkspace = (kind: "local" | "github" | "gitlab"): Workspace =>
   ({
-    id: kind === "local" ? "local:/tmp/ws" : "github:acme/app@main",
+    id:
+      kind === "local"
+        ? "local:/tmp/ws"
+        : kind === "github"
+          ? "github:acme/app@main"
+          : "gitlab:gitlab.com:acme/app@main",
     kind,
     root: "/tmp/ws",
     fs: {} as never,
     exec: {} as never,
-    scm: kind === "github" ? ({} as never) : undefined,
+    scm: kind !== "local" ? ({} as never) : undefined,
   }) as Workspace;
 
 describe("buildAgentToolRegistry — git-tool registration", () => {
@@ -119,5 +124,50 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
     ]) {
       expect(registry.has(name)).toBe(false);
     }
+  });
+
+  it("registers all 7 gitlab tools for gitlab workspaces, not on github/local", () => {
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of [
+      "gitlabListMergeRequests",
+      "gitlabGetMergeRequest",
+      "gitlabListIssues",
+      "gitlabGetIssue",
+      "gitlabCommentIssue",
+      "gitlabCommentMergeRequest",
+      "gitlabSearchCode",
+    ]) {
+      expect(gitlabRegistry.has(name)).toBe(true);
+    }
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    expect(githubRegistry.has("gitlabListMergeRequests")).toBe(false);
+    expect(githubRegistry.has("gitlabCommentIssue")).toBe(false);
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    expect(localRegistry.has("gitlabListMergeRequests")).toBe(false);
+  });
+
+  it("gitlab workspace also gets the shared gitCommit/gitPush/openPullRequest tools", () => {
+    const registry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    expect(registry.has("gitCommit")).toBe(true);
+    expect(registry.has("gitPush")).toBe(true);
+    expect(registry.has("openPullRequest")).toBe(true);
   });
 });

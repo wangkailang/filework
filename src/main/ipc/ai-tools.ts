@@ -53,6 +53,8 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   "openPullRequest",
   "githubCommentIssue",
   "githubCommentPullRequest",
+  "gitlabCommentIssue",
+  "gitlabCommentMergeRequest",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -75,6 +77,10 @@ export const dangerousToolDescriptions: Record<
     `评论 issue #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
   githubCommentPullRequest: (args) =>
     `评论 PR #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
+  gitlabCommentIssue: (args) =>
+    `评论 issue !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
+  gitlabCommentMergeRequest: (args) =>
+    `评论 MR !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

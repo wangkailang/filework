@@ -3,6 +3,7 @@ import {
   ChevronRight,
   FolderOpen,
   Github,
+  Gitlab,
   RefreshCw,
   Settings,
   X,
@@ -122,16 +123,23 @@ export const Sidebar = ({
     return () => window.removeEventListener("filework:open-settings", handler);
   }, []);
 
-  const isGithub = workspaceRef?.kind === "github";
   const dirName = workspaceRef
     ? workspaceRefLabel(workspaceRef)
     : workspacePath.split("/").pop() || workspacePath;
-  const HeaderIcon = isGithub ? Github : FolderOpen;
-  const headerTitle = workspaceRef
-    ? isGithub
-      ? `${workspaceRef.owner}/${workspaceRef.repo}@${workspaceRef.ref} · ${workspacePath}`
-      : workspaceRef.path
-    : workspacePath;
+  const HeaderIcon =
+    workspaceRef?.kind === "github"
+      ? Github
+      : workspaceRef?.kind === "gitlab"
+        ? Gitlab
+        : FolderOpen;
+  const headerTitle = (() => {
+    if (!workspaceRef) return workspacePath;
+    if (workspaceRef.kind === "local") return workspaceRef.path;
+    if (workspaceRef.kind === "github") {
+      return `${workspaceRef.owner}/${workspaceRef.repo}@${workspaceRef.ref} · ${workspacePath}`;
+    }
+    return `${workspaceRef.host}/${workspaceRef.namespace}/${workspaceRef.project}@${workspaceRef.ref} · ${workspacePath}`;
+  })();
 
   const renderEntries = (entries: FileInfo[]) =>
     entries.map((file) =>

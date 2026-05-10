@@ -14,12 +14,21 @@ export type WorkspaceRef =
       repo: string;
       ref: string;
       credentialId: string;
+    }
+  | {
+      kind: "gitlab";
+      host: string;
+      namespace: string;
+      project: string;
+      ref: string;
+      credentialId: string;
     };
 
-export const workspaceRefId = (r: WorkspaceRef): string =>
-  r.kind === "local"
-    ? `local:${r.path}`
-    : `github:${r.owner}/${r.repo}@${r.ref}`;
+export const workspaceRefId = (r: WorkspaceRef): string => {
+  if (r.kind === "local") return `local:${r.path}`;
+  if (r.kind === "github") return `github:${r.owner}/${r.repo}@${r.ref}`;
+  return `gitlab:${r.host}:${r.namespace}/${r.project}@${r.ref}`;
+};
 
 export const encodeRef = (r: WorkspaceRef): string => JSON.stringify(r);
 
@@ -49,6 +58,23 @@ export const decodeRef = (
         credentialId: obj.credentialId,
       };
     }
+    if (
+      obj.kind === "gitlab" &&
+      typeof obj.host === "string" &&
+      typeof obj.namespace === "string" &&
+      typeof obj.project === "string" &&
+      typeof obj.ref === "string" &&
+      typeof obj.credentialId === "string"
+    ) {
+      return {
+        kind: "gitlab",
+        host: obj.host,
+        namespace: obj.namespace,
+        project: obj.project,
+        ref: obj.ref,
+        credentialId: obj.credentialId,
+      };
+    }
     return null;
   } catch {
     return null;
@@ -60,5 +86,10 @@ export const workspaceRefLabel = (r: WorkspaceRef): string => {
     const segments = r.path.split("/").filter(Boolean);
     return segments[segments.length - 1] ?? r.path;
   }
-  return `${r.owner}/${r.repo}@${r.ref}`;
+  if (r.kind === "github") {
+    return `${r.owner}/${r.repo}@${r.ref}`;
+  }
+  return r.host === "gitlab.com"
+    ? `${r.namespace}/${r.project}@${r.ref}`
+    : `${r.host}/${r.namespace}/${r.project}@${r.ref}`;
 };

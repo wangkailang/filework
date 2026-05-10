@@ -188,4 +188,56 @@ describe("credentials handlers", () => {
       }),
     );
   });
+
+  it("create accepts gitlab_pat kind", async () => {
+    const create = handlers.get("credentials:create");
+    const created = (await create?.(null, {
+      kind: "gitlab_pat",
+      label: "self-hosted",
+      token: "glpat-X",
+    })) as { kind: string; label: string };
+    expect(created.kind).toBe("gitlab_pat");
+    expect(created.label).toBe("self-hosted");
+  });
+
+  it("test pings GitLab /api/v4/user when kind=gitlab_pat with custom host", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ username: "alice" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const test = handlers.get("credentials:test");
+    const result = (await test?.(null, {
+      token: "glpat-X",
+      kind: "gitlab_pat",
+      host: "gitlab.example.com",
+    })) as { ok: boolean; login?: string };
+
+    expect(result.ok).toBe(true);
+    expect(result.login).toBe("alice");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://gitlab.example.com/api/v4/user",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer glpat-X",
+        }),
+      }),
+    );
+  });
+
+  it("test defaults to gitlab.com when kind=gitlab_pat without host", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ username: "u" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const test = handlers.get("credentials:test");
+    await test?.(null, { token: "glpat-X", kind: "gitlab_pat" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://gitlab.com/api/v4/user",
+      expect.anything(),
+    );
+  });
 });
