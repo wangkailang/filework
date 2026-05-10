@@ -13,15 +13,28 @@ export const registerWorkspaceHandlers = () => {
 
   ipcMain.handle(
     "workspace:addRecent",
-    async (_event, path: string, name: string) => {
-      addRecentWorkspace(path, name);
+    async (
+      _event,
+      pathOrId: string,
+      name: string,
+      opts?: { kind?: "local" | "github"; metadata?: string | null },
+    ) => {
+      const kind = opts?.kind ?? "local";
+      addRecentWorkspace(pathOrId, name, {
+        kind,
+        metadata: opts?.metadata ?? null,
+      });
 
-      // Refresh project-level skills when the workspace changes
-      try {
-        await skillRegistry.refreshProjectSkills(path);
-        console.log(`[workspace] Refreshed project skills for: ${path}`);
-      } catch (err) {
-        console.warn("[workspace] Failed to refresh project skills:", err);
+      // Project-skill discovery walks the filesystem, so it's only
+      // meaningful for local workspaces. GitHub workspaces use the
+      // clone dir but project-skill registration is a separate concern.
+      if (kind === "local") {
+        try {
+          await skillRegistry.refreshProjectSkills(pathOrId);
+          console.log(`[workspace] Refreshed project skills for: ${pathOrId}`);
+        } catch (err) {
+          console.warn("[workspace] Failed to refresh project skills:", err);
+        }
       }
 
       return true;
