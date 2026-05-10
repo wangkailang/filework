@@ -27,10 +27,6 @@ vi.mock("../ai-models", () => ({
   isAuthError: vi.fn(() => false),
 }));
 
-vi.mock("../ai-tool-permissions", () => ({
-  buildTools: vi.fn(() => ({})),
-}));
-
 vi.mock("../ai-tools", () => ({
   safeTools: {
     listDirectory: {},
