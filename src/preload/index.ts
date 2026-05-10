@@ -281,6 +281,8 @@ const api = {
       toolName: string;
       args: unknown;
       description: string;
+      /** Optional warning banner content (M8). */
+      extraContext?: string;
     }) => void,
   ) => {
     const handler = (
@@ -291,6 +293,7 @@ const api = {
         toolName: string;
         args: unknown;
         description: string;
+        extraContext?: string;
       },
     ) => callback(data);
     ipcRenderer.on("ai:stream-tool-approval", handler);

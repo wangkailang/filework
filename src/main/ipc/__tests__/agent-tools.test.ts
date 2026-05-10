@@ -170,4 +170,54 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
     expect(registry.has("gitPush")).toBe(true);
     expect(registry.has("openPullRequest")).toBe(true);
   });
+
+  it("registers github CI tools on github only (M8)", () => {
+    const ciTools = [
+      "githubListWorkflowRuns",
+      "githubGetWorkflowRun",
+      "githubListWorkflowRunJobs",
+    ];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of ciTools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of ciTools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
+
+  it("registers gitlab CI tools on gitlab only (M8)", () => {
+    const ciTools = [
+      "gitlabListPipelines",
+      "gitlabGetPipeline",
+      "gitlabListPipelineJobs",
+    ];
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of ciTools) {
+      expect(gitlabRegistry.has(name)).toBe(true);
+    }
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of ciTools) {
+      expect(githubRegistry.has(name)).toBe(false);
+    }
+  });
 });

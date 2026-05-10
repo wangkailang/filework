@@ -71,6 +71,38 @@ const searchCodeSchema = z.object({
     ),
 });
 
+const listWorkflowRunsSchema = z.object({
+  ref: z
+    .string()
+    .optional()
+    .describe("Branch name to filter runs (e.g. 'main')."),
+  status: z
+    .enum(["all", "in_progress", "completed"])
+    .optional()
+    .describe("Filter by lifecycle phase."),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .optional()
+    .describe("Hard cap 100; older runs require a narrower filter."),
+});
+
+const getWorkflowRunSchema = z.object({
+  id: z
+    .string()
+    .min(1, "workflow run id is required")
+    .describe("Workflow run id (string; GitHub ids exceed 32-bit)."),
+});
+
+const listWorkflowRunJobsSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Workflow run id whose jobs you want."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -168,6 +200,42 @@ export const githubSearchCodeTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "searchCode")(args),
 };
 
+export const githubListWorkflowRunsTool: ToolDefinition<
+  z.infer<typeof listWorkflowRunsSchema>,
+  unknown
+> = {
+  name: "githubListWorkflowRuns",
+  description:
+    "List GitHub Actions workflow runs for the current repo. Filter by branch (`ref`) or status (in_progress/completed/all). Returns up to 100 results sorted newest-first with conclusion and head commit.",
+  safety: "safe",
+  inputSchema: listWorkflowRunsSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCIRuns")(args),
+};
+
+export const githubGetWorkflowRunTool: ToolDefinition<
+  z.infer<typeof getWorkflowRunSchema>,
+  unknown
+> = {
+  name: "githubGetWorkflowRun",
+  description:
+    "Fetch a single workflow run by id. Returns conclusion, runtime in seconds, head commit, and jobs count.",
+  safety: "safe",
+  inputSchema: getWorkflowRunSchema,
+  execute: async (args, ctx) => requireScm(ctx, "getCIRun")(args),
+};
+
+export const githubListWorkflowRunJobsTool: ToolDefinition<
+  z.infer<typeof listWorkflowRunJobsSchema>,
+  unknown
+> = {
+  name: "githubListWorkflowRunJobs",
+  description:
+    "List jobs for a workflow run. Each job exposes its conclusion and (on failure) the names of failing steps.",
+  safety: "safe",
+  inputSchema: listWorkflowRunJobsSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCIJobs")(args),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -177,4 +245,7 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubCommentIssueTool as ToolDefinition,
   githubCommentPullRequestTool as ToolDefinition,
   githubSearchCodeTool as ToolDefinition,
+  githubListWorkflowRunsTool as ToolDefinition,
+  githubGetWorkflowRunTool as ToolDefinition,
+  githubListWorkflowRunJobsTool as ToolDefinition,
 ];
