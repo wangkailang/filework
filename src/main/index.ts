@@ -19,10 +19,12 @@ config({ path: join(app.getAppPath(), ".env") });
 config({ path: join(__dirname, "../../.env") });
 
 import { JsonlSessionStore } from "./core/session/jsonl-store";
+import { ensureAskpassScript } from "./core/workspace/git-credentials";
 import { initDatabase } from "./db";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import { registerCredentialsHandlers } from "./ipc/credentials-handlers";
+import { batchTestCredentials } from "./ipc/credentials-monitor";
 import { registerFileHandlers } from "./ipc/file-handlers";
 import {
   credentialResolver,
@@ -126,6 +128,12 @@ app.whenReady().then(async () => {
     join(homedir(), ".filework", "sessions"),
   );
 
+  // M7: write the GIT_ASKPASS helper script before any git invocation.
+  // The token is supplied via env, never embedded in .git/config URLs.
+  const askpassPath = await ensureAskpassScript(
+    join(homedir(), ".filework", "internal"),
+  );
+
   // M6: workspace factory deps — used by ai-handlers to materialize
   // GitHub / GitLab workspaces (clones into provider-specific cache dirs).
   const githubCacheDir = join(homedir(), ".filework", "cache", "github");
@@ -134,6 +142,7 @@ app.whenReady().then(async () => {
     resolveToken: credentialResolver,
     githubCacheDir,
     gitlabCacheDir,
+    askpassPath,
   });
 
   // Register IPC handlers
@@ -148,11 +157,28 @@ app.whenReady().then(async () => {
   registerGitHubHandlers({
     resolveToken: credentialResolver,
     cacheDir: githubCacheDir,
+    askpassPath,
   });
   registerGitLabHandlers({
     resolveToken: credentialResolver,
     cacheDir: gitlabCacheDir,
+    askpassPath,
   });
+
+  // M7: kick off the credential health monitor after IPC is wired.
+  // Fire-and-forget — errors are logged inside batchTestCredentials.
+  batchTestCredentials()
+    .then(({ tested, skipped }) => {
+      console.log(
+        `[credentials-monitor] tested ${tested}, skipped ${skipped} (debounced)`,
+      );
+    })
+    .catch((err) => {
+      console.warn(
+        "[credentials-monitor] batch test threw:",
+        err instanceof Error ? err.message : err,
+      );
+    });
 
   // Discover personal-level skills at startup (project skills are loaded on workspace open)
   initSkillDiscovery(skillRegistry, "").catch((err) => {

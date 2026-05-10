@@ -17,14 +17,18 @@ import {
  * GitHubWorkspace without touching the network.
  */
 const buildFakeSpawn = () => {
-  const calls: Array<{ args: string[]; cwd?: string }> = [];
+  const calls: Array<{
+    args: string[];
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  }> = [];
   const fake = vi.fn(
     (
       _cmd: string,
       args: string[],
       opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
     ) => {
-      calls.push({ args, cwd: opts?.cwd });
+      calls.push({ args, cwd: opts?.cwd, env: opts?.env });
       const proc = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
         stderr: EventEmitter;
@@ -66,13 +70,14 @@ describe("ensureClone", () => {
     await rm(cacheDir, { recursive: true, force: true });
   });
 
-  it("runs git clone with --depth 1 --branch <ref> and the authed URL", async () => {
+  it("clones with sanitized URL (no token) and supplies token via askpass env (M7)", async () => {
     const { fake, calls } = buildFakeSpawn();
     const expectedDir = path.join(cacheDir, "acme", "app@main");
 
     const result = await ensureClone(fakeRef, {
       resolveToken: async () => "ghp_TESTTOKEN",
       cacheDir,
+      askpassPath: "/tmp/askpass.js",
       // biome-ignore lint/suspicious/noExplicitAny: test stub for spawn
       spawnFn: fake as any,
     });
@@ -85,8 +90,13 @@ describe("ensureClone", () => {
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
     const remoteArg = cloneCall?.args[cloneCall.args.length - 2] ?? "";
-    expect(remoteArg).toMatch(/^https:\/\/x-access-token:/);
-    expect(remoteArg).toContain("@github.com/acme/app.git");
+    // M7: token MUST NOT appear in the remote URL.
+    expect(remoteArg).not.toContain("ghp_TESTTOKEN");
+    expect(remoteArg).toBe("https://x-access-token@github.com/acme/app.git");
+    // Token is supplied via env instead.
+    expect(cloneCall?.env?.GIT_ASKPASS).toBe("/tmp/askpass.js");
+    expect(cloneCall?.env?.FILEWORK_GIT_PASSWORD).toBe("ghp_TESTTOKEN");
+    expect(cloneCall?.env?.GIT_TERMINAL_PROMPT).toBe("0");
 
     const stampStat = await stat(path.join(expectedDir, ".last-fetch"));
     expect(stampStat.isFile()).toBe(true);

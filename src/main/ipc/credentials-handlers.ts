@@ -14,6 +14,7 @@ import {
   deleteCredential,
   getCredentialToken,
   listCredentials,
+  recordCredentialTest,
 } from "../db";
 
 interface TestTokenResult {
@@ -119,10 +120,28 @@ export const registerCredentialsHandlers = () => {
     ): Promise<TestTokenResult> => {
       const token = payload.id ? getCredentialToken(payload.id) : payload.token;
       if (!token) return { ok: false, error: "Missing token or credential id" };
-      if (payload.kind === "gitlab_pat") {
-        return testGitlabToken(token, payload.host ?? "gitlab.com");
+      const result =
+        payload.kind === "gitlab_pat"
+          ? await testGitlabToken(token, payload.host ?? "gitlab.com")
+          : await testGithubToken(token);
+
+      // M7: persist the test result on every manual click so the
+      // CredentialsPanel badge stays in sync without a separate IPC.
+      // Only writes when the user tested a stored credential (has id).
+      // For gitlab_pat with an explicit host, also remember it so the
+      // batch monitor uses the right host on next launch.
+      if (payload.id) {
+        recordCredentialTest({
+          id: payload.id,
+          status: result.ok ? "ok" : "error",
+          error: result.ok ? null : (result.error ?? "Token invalid"),
+          host:
+            payload.kind === "gitlab_pat" && payload.host
+              ? payload.host
+              : undefined,
+        });
       }
-      return testGithubToken(token);
+      return result;
     },
   );
 };

@@ -82,6 +82,18 @@ export const credentials = sqliteTable("credentials", {
   /** Optional JSON array of granted scopes. */
   scopes: text("scopes"),
   createdAt: text("created_at").notNull(),
+  // M7: health monitor.
+  /** ISO 8601 timestamp of the most recent test. NULL = never tested. */
+  lastTestedAt: text("last_tested_at"),
+  testStatus: text("test_status", { enum: ["unknown", "ok", "error"] }),
+  /** Friendly error string when testStatus === "error". */
+  lastTestError: text("last_test_error"),
+  /**
+   * Host last successfully tested against — drives auto re-test for
+   * gitlab_pat self-hosted. NULL until the user runs at least one
+   * manual test (which seeds the host from the GitLab connect flow).
+   */
+  lastTestedHost: text("last_tested_host"),
 });
 
 // chat_sessions / chat_messages — REMOVED in M3 PR 2.

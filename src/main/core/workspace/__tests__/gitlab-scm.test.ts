@@ -145,15 +145,17 @@ describe("GitLabWorkspaceSCM.push", () => {
     await rm(cacheDir, { recursive: true, force: true });
   });
 
-  it("rewrites remote with oauth2 URL and pushes -u origin <branch>", async () => {
+  it("sanitizes remote URL (no token) and pushes -u origin <branch> via askpass", async () => {
     const { fake, calls } = buildFakeSpawn();
     const ws = await buildWorkspace(cacheDir, fake);
     const result = await ws.scm.push?.({});
     expect(result).toEqual({ branch: "claude/abcd1234", remote: "origin" });
     const remoteCall = calls.find((c) => c.args[0] === "remote");
-    expect(remoteCall?.args[3]).toMatch(
-      /^https:\/\/oauth2:glpat-TESTTOKEN@gitlab\.example\.com\/acme\/sub\/app\.git$/,
+    // M7: no token in the URL.
+    expect(remoteCall?.args[3]).toBe(
+      "https://oauth2@gitlab.example.com/acme/sub/app.git",
     );
+    expect(remoteCall?.args[3]).not.toContain("glpat-TESTTOKEN");
     const pushCall = calls.find((c) => c.args[0] === "push");
     expect(pushCall?.args).toEqual(["push", "-u", "origin", "claude/abcd1234"]);
   });

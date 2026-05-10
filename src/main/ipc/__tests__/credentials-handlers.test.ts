@@ -23,11 +23,14 @@ vi.mock("electron", () => ({
 const dbState = {
   credentials: [] as Array<{
     id: string;
-    kind: "github_pat";
+    kind: "github_pat" | "gitlab_pat";
     label: string;
     scopes: string[] | null;
     createdAt: string;
     token: string;
+    lastTestStatus?: "ok" | "error" | null;
+    lastTestError?: string | null;
+    lastTestedHost?: string | null;
   }>,
 };
 
@@ -63,6 +66,18 @@ vi.mock("../../db", () => ({
   },
   deleteCredential: (id: string) => {
     dbState.credentials = dbState.credentials.filter((c) => c.id !== id);
+  },
+  recordCredentialTest: (input: {
+    id: string;
+    status: "ok" | "error";
+    error?: string | null;
+    host?: string | null;
+  }) => {
+    const row = dbState.credentials.find((c) => c.id === input.id);
+    if (!row) return;
+    row.lastTestStatus = input.status;
+    row.lastTestError = input.error ?? null;
+    if (input.host !== undefined) row.lastTestedHost = input.host;
   },
 }));
 

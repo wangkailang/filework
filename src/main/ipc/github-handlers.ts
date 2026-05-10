@@ -100,12 +100,15 @@ export interface GitHubHandlerDeps {
   resolveToken: (credentialId: string) => Promise<string>;
   /** Same root passed to GitHubWorkspace.create(). */
   cacheDir: string;
+  /** GIT_ASKPASS helper script (M7). */
+  askpassPath?: string;
 }
 
 export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
   const wsDeps: GitHubWorkspaceDeps = {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
+    askpassPath: deps.askpassPath,
   };
 
   ipcMain.handle(
