@@ -10,8 +10,10 @@
  * When `allowedTools` is provided (skill frontmatter `allowed-tools`),
  * only tools with matching names are registered.
  *
- * The legacy `buildTools` in `ai-tool-permissions.ts` continues to serve
- * the fork-mode skill path until M2 PR3 unifies them.
+ * (As of M2 PR 4, this is the only tool-set builder in the codebase.
+ * The legacy `buildTools` / `buildSkillSpecificTools` in
+ * `ai-tool-permissions.ts` were deleted; fork-mode now also goes
+ * through this registry via `fork-skill-runner.ts`.)
  */
 
 import type { WebContents } from "electron";

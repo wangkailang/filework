@@ -182,37 +182,6 @@ describe("safeTools.runCommand", () => {
   });
 });
 
-describe("buildTools.runCommand guard", () => {
-  it("denies runCommand when cwd is outside workspace", async () => {
-    vi.resetModules();
-    const sender = {
-      isDestroyed: () => false,
-      send: vi.fn(),
-    } as unknown as Electron.WebContents;
-
-    const { setTaskWorkspace } = await import("../ai-task-control");
-    const { buildTools } = await import("../ai-tool-permissions");
-
-    setTaskWorkspace("task-1", "/workspace");
-
-    const tools = buildTools(sender, "task-1");
-    const res = await tools.runCommand.execute?.(
-      { command: "echo hi", cwd: "/tmp" },
-      {
-        toolCallId: "t1",
-        messages: [],
-      } as unknown as import("ai").ToolExecutionOptions,
-    );
-
-    expect(res).toEqual(
-      expect.objectContaining({
-        success: false,
-        denied: true,
-      }),
-    );
-  });
-});
-
 describe("safeTools.directoryStats", () => {
   it("respects maxEntries cap", async () => {
     vi.resetModules();
