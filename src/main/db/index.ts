@@ -195,6 +195,19 @@ export const initDatabase = async () => {
     );
   }
 
+  // Migrate: add kind/metadata columns to recent_workspaces if missing
+  const recentCols = sqlite.pragma("table_info(recent_workspaces)") as {
+    name: string;
+  }[];
+  if (!recentCols.some((c) => c.name === "kind")) {
+    sqlite.exec(
+      "ALTER TABLE recent_workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'local'",
+    );
+  }
+  if (!recentCols.some((c) => c.name === "metadata")) {
+    sqlite.exec("ALTER TABLE recent_workspaces ADD COLUMN metadata TEXT");
+  }
+
   // Migrate .env LLM config to database on first run
   migrateLlmConfigFromEnv();
 };
@@ -261,6 +274,17 @@ interface RecentWorkspace {
   path: string;
   name: string;
   lastOpenedAt: string;
+  kind: "local" | "github";
+  /** JSON-encoded WorkspaceRef; NULL for legacy local rows. */
+  metadata: string | null;
+}
+
+export interface Credential {
+  id: string;
+  kind: "github_pat";
+  label: string;
+  scopes: string[] | null;
+  createdAt: string;
 }
 
 interface ChatMessage {
@@ -496,13 +520,19 @@ export const getRecentWorkspaces = (): RecentWorkspace[] =>
     .orderBy(desc(schema.recentWorkspaces.lastOpenedAt))
     .all();
 
-export const addRecentWorkspace = (path: string, name: string) => {
+export const addRecentWorkspace = (
+  path: string,
+  name: string,
+  opts: { kind?: "local" | "github"; metadata?: string | null } = {},
+) => {
   const now = new Date().toISOString();
+  const kind = opts.kind ?? "local";
+  const metadata = opts.metadata ?? null;
   db.insert(schema.recentWorkspaces)
-    .values({ path, name, lastOpenedAt: now })
+    .values({ path, name, lastOpenedAt: now, kind, metadata })
     .onConflictDoUpdate({
       target: schema.recentWorkspaces.path,
-      set: { name, lastOpenedAt: now },
+      set: { name, lastOpenedAt: now, kind, metadata },
     })
     .run();
 
@@ -527,6 +557,74 @@ export const removeRecentWorkspace = (path: string) => {
   db.delete(schema.recentWorkspaces)
     .where(eq(schema.recentWorkspaces.path, path))
     .run();
+};
+
+// ============================================================================
+// Credentials (GitHub PATs etc.)
+// ============================================================================
+
+export const createCredential = (input: {
+  kind: "github_pat";
+  label: string;
+  token: string;
+  scopes?: string[] | null;
+}): Credential => {
+  const id = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  db.insert(schema.credentials)
+    .values({
+      id,
+      kind: input.kind,
+      label: input.label,
+      encryptedToken: encrypt(input.token),
+      scopes: input.scopes ? JSON.stringify(input.scopes) : null,
+      createdAt,
+    })
+    .run();
+  return {
+    id,
+    kind: input.kind,
+    label: input.label,
+    scopes: input.scopes ?? null,
+    createdAt,
+  };
+};
+
+const mapCredentialRow = (
+  row: typeof schema.credentials.$inferSelect,
+): Credential => ({
+  id: row.id,
+  kind: row.kind,
+  label: row.label,
+  scopes: row.scopes ? (JSON.parse(row.scopes) as string[]) : null,
+  createdAt: row.createdAt,
+});
+
+export const listCredentials = (): Credential[] =>
+  db.select().from(schema.credentials).all().map(mapCredentialRow);
+
+export const getCredential = (id: string): Credential | null => {
+  const row = db
+    .select()
+    .from(schema.credentials)
+    .where(eq(schema.credentials.id, id))
+    .get();
+  return row ? mapCredentialRow(row) : null;
+};
+
+/** Returns the decrypted token. Throws if the credential id is unknown. */
+export const getCredentialToken = (id: string): string => {
+  const row = db
+    .select()
+    .from(schema.credentials)
+    .where(eq(schema.credentials.id, id))
+    .get();
+  if (!row) throw new Error(`Credential not found: ${id}`);
+  return decrypt(row.encryptedToken);
+};
+
+export const deleteCredential = (id: string): void => {
+  db.delete(schema.credentials).where(eq(schema.credentials.id, id)).run();
 };
 
 // ============================================================================

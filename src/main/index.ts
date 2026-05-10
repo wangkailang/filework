@@ -21,9 +21,14 @@ config({ path: join(__dirname, "../../.env") });
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { initDatabase } from "./db";
 import { migrateChatToJsonl } from "./db/jsonl-migration";
-import { registerAIHandlers } from "./ipc/ai-handlers";
+import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
+import { registerCredentialsHandlers } from "./ipc/credentials-handlers";
 import { registerFileHandlers } from "./ipc/file-handlers";
+import {
+  credentialResolver,
+  registerGitHubHandlers,
+} from "./ipc/github-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
@@ -128,6 +133,14 @@ app.whenReady().then(async () => {
     );
   }
 
+  // M6: workspace factory deps — used by ai-handlers to materialize
+  // GitHub workspaces (clones into ~/.filework/cache/github).
+  const githubCacheDir = join(homedir(), ".filework", "cache", "github");
+  setWorkspaceFactoryDeps({
+    resolveToken: credentialResolver,
+    githubCacheDir,
+  });
+
   // Register IPC handlers
   registerFileHandlers();
   registerAIHandlers();
@@ -136,6 +149,11 @@ app.whenReady().then(async () => {
   registerWorkspaceHandlers();
   registerChatHandlers(sessionStore);
   registerTaskTraceHandlers();
+  registerCredentialsHandlers();
+  registerGitHubHandlers({
+    resolveToken: credentialResolver,
+    cacheDir: githubCacheDir,
+  });
 
   // Discover personal-level skills at startup (project skills are loaded on workspace open)
   initSkillDiscovery(skillRegistry, "").catch((err) => {

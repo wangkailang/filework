@@ -2,6 +2,7 @@ import {
   Blocks,
   ChevronRight,
   FolderOpen,
+  Github,
   RefreshCw,
   Settings,
   X,
@@ -9,6 +10,10 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
+import {
+  type WorkspaceRef,
+  workspaceRefLabel,
+} from "../../types/workspace-ref";
 import {
   FileTree,
   FileTreeFile,
@@ -28,6 +33,7 @@ interface FileInfo {
 
 interface SidebarProps {
   workspacePath: string;
+  workspaceRef?: WorkspaceRef;
   onChangeDirectory: (path: string) => void;
   onCloseDirectory: () => void;
   onLocaleChange: (locale: Locales) => void;
@@ -36,6 +42,7 @@ interface SidebarProps {
 
 export const Sidebar = ({
   workspacePath,
+  workspaceRef,
   onChangeDirectory: _onChangeDirectory,
   onCloseDirectory,
   onLocaleChange,
@@ -115,7 +122,16 @@ export const Sidebar = ({
     return () => window.removeEventListener("filework:open-settings", handler);
   }, []);
 
-  const dirName = workspacePath.split("/").pop() || workspacePath;
+  const isGithub = workspaceRef?.kind === "github";
+  const dirName = workspaceRef
+    ? workspaceRefLabel(workspaceRef)
+    : workspacePath.split("/").pop() || workspacePath;
+  const HeaderIcon = isGithub ? Github : FolderOpen;
+  const headerTitle = workspaceRef
+    ? isGithub
+      ? `${workspaceRef.owner}/${workspaceRef.repo}@${workspaceRef.ref} · ${workspacePath}`
+      : workspaceRef.path
+    : workspacePath;
 
   const renderEntries = (entries: FileInfo[]) =>
     entries.map((file) =>
@@ -154,9 +170,9 @@ export const Sidebar = ({
             type="button"
             onClick={openDirectory}
             className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-primary transition-colors truncate flex-1 min-w-0"
-            title={workspacePath}
+            title={headerTitle}
           >
-            <FolderOpen className="w-4 h-4 text-file-folder shrink-0" />
+            <HeaderIcon className="w-4 h-4 text-file-folder shrink-0" />
             <span className="truncate">{dirName}</span>
           </button>
           <div className="flex items-center shrink-0 ml-1">
