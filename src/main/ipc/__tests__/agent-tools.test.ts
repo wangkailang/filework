@@ -82,4 +82,42 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
     expect(registry.has("gitPush")).toBe(false);
     expect(registry.has("openPullRequest")).toBe(false);
   });
+
+  it("registers all 7 github query/comment tools for github workspaces", () => {
+    const registry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of [
+      "githubListPullRequests",
+      "githubGetPullRequest",
+      "githubListIssues",
+      "githubGetIssue",
+      "githubCommentIssue",
+      "githubCommentPullRequest",
+      "githubSearchCode",
+    ]) {
+      expect(registry.has(name)).toBe(true);
+    }
+  });
+
+  it("does NOT register github query/comment tools for local workspaces", () => {
+    const registry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of [
+      "githubListPullRequests",
+      "githubGetPullRequest",
+      "githubListIssues",
+      "githubGetIssue",
+      "githubCommentIssue",
+      "githubCommentPullRequest",
+      "githubSearchCode",
+    ]) {
+      expect(registry.has(name)).toBe(false);
+    }
+  });
 });

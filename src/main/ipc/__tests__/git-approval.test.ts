@@ -87,6 +87,43 @@ describe("requestApproval — whitelist routing", () => {
     expect(isToolWhitelistedForTask(taskId, "openPullRequest")).toBe(false);
   });
 
+  it("githubCommentIssue re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-comment-issue";
+    const sender = stubSender();
+    const p1 = requestApproval(sender, taskId, "tci-1", "githubCommentIssue", {
+      number: 5,
+      body: "thanks!",
+    });
+    await settle("tci-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubCommentIssue")).toBe(false);
+    // Second call must register a fresh approval (no auto-approve).
+    const p2 = requestApproval(sender, taskId, "tci-2", "githubCommentIssue", {
+      number: 6,
+      body: "again",
+    });
+    expect(pendingApprovals.has("tci-2")).toBe(true);
+    await settle("tci-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("githubCommentPullRequest also never enters the whitelist", async () => {
+    const taskId = "t-comment-pr";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tcp-1",
+      "githubCommentPullRequest",
+      { number: 42, body: "ok" },
+    );
+    await settle("tcp-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubCommentPullRequest")).toBe(
+      false,
+    );
+  });
+
   it("control: writeFile still whitelists (regression guard)", async () => {
     const taskId = "t-write";
     const sender = stubSender();

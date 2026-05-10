@@ -26,6 +26,7 @@ import {
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
 import { buildGitTools } from "../core/agent/tools/git-tools";
+import { buildGithubTools } from "../core/agent/tools/github-tools";
 import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
@@ -140,9 +141,14 @@ export const buildAgentToolRegistry = ({
   // Git write tools register only for SCM-write-capable workspaces
   // (currently github). Local workspaces deliberately don't get them —
   // local git workflows have separate UX considerations (which remote,
-  // which auth) handled outside this PR.
+  // which auth) handled outside this PR. M6 PR 3: github query / comment
+  // tools register in the same conditional and rely on the workspace's
+  // stored PAT for auth.
   if (SCM_WRITE_KINDS.has(workspace.kind)) {
     for (const def of buildGitTools()) {
+      if (allow(def.name)) registry.register(def);
+    }
+    for (const def of buildGithubTools()) {
       if (allow(def.name)) registry.register(def);
     }
   }

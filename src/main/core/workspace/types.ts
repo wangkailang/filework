@@ -87,11 +87,71 @@ export interface WorkspaceExec {
   run(command: string, opts?: ExecOptions): Promise<ExecResult>;
 }
 
+// ---------------------------------------------------------------------------
+// SCM result projections
+//
+// Stable, narrow projections of provider-specific shapes (GitHub REST today;
+// GitLab tomorrow). Tools and the renderer talk in these types, never the
+// raw API responses, so swapping providers doesn't ripple through the agent.
+// ---------------------------------------------------------------------------
+
+export interface PullRequestSummary {
+  number: number;
+  title: string;
+  /** "merged" is derived: GitHub returns `closed` + `merged_at != null`. */
+  state: "open" | "closed" | "merged";
+  url: string;
+  head: string;
+  base: string;
+  user: string;
+  draft: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PullRequestDetail extends PullRequestSummary {
+  body: string;
+  /** `null` while GitHub's merge check is in flight. */
+  mergeable: boolean | null;
+  additions: number;
+  deletions: number;
+  mergedAt: string | null;
+}
+
+export interface IssueSummary {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  url: string;
+  user: string;
+  labels: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IssueDetail extends IssueSummary {
+  body: string;
+  closedAt: string | null;
+}
+
+export interface CodeSearchHit {
+  name: string;
+  path: string;
+  /** "owner/name" — useful when results are cross-repo. */
+  repo: string;
+  htmlUrl: string;
+}
+
+export interface CodeSearchResult {
+  totalCount: number;
+  items: CodeSearchHit[];
+}
+
 /**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
  * `LocalWorkspace` does not implement this in M1. Every method is optional
  * so backends can opt into a subset (status/diff in M6 PR 1; commit/push/PR
- * added in M6 PR 2 for github-backed workspaces only).
+ * in M6 PR 2; query + comment in M6 PR 3 — all github-backed only today).
  */
 export interface WorkspaceSCM {
   status?(): Promise<{ branch: string; dirty: boolean }>;
@@ -126,6 +186,50 @@ export interface WorkspaceSCM {
     draft?: boolean;
     base?: string;
   }): Promise<{ url: string; number: number }>;
+
+  // ── M6 PR 3: native query / comment surface ───────────────────────────
+
+  /** List PRs on the workspace's repo. Default state is `open`. */
+  listPullRequests?(input?: {
+    state?: "open" | "closed" | "all";
+    base?: string;
+    head?: string;
+  }): Promise<PullRequestSummary[]>;
+
+  /** Fetch a single PR by number. */
+  getPullRequest?(input: { number: number }): Promise<PullRequestDetail>;
+
+  /** List issues on the workspace's repo. PRs are filtered out. */
+  listIssues?(input?: {
+    state?: "open" | "closed" | "all";
+    labels?: string[];
+  }): Promise<IssueSummary[]>;
+
+  /** Fetch a single issue by number. */
+  getIssue?(input: { number: number }): Promise<IssueDetail>;
+
+  /** Post a comment on an issue. Same endpoint as `commentPullRequest`. */
+  commentIssue?(input: {
+    number: number;
+    body: string;
+  }): Promise<{ commentId: number; url: string }>;
+
+  /**
+   * Post a conversation comment on a PR. GitHub treats PR conversation
+   * comments as issue comments; this method aliases `commentIssue` for
+   * the same repo. (Line-level review comments are a separate API not
+   * covered here.)
+   */
+  commentPullRequest?(input: {
+    number: number;
+    body: string;
+  }): Promise<{ commentId: number; url: string }>;
+
+  /**
+   * Search code within the workspace's repo. Implementations append a
+   * `repo:owner/name` qualifier so results stay scoped to the workspace.
+   */
+  searchCode?(input: { query: string }): Promise<CodeSearchResult>;
 }
 
 export interface Workspace {
