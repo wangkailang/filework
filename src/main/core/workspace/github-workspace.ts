@@ -9,8 +9,11 @@
  *
  * After the clone is materialized, fs/exec are delegated to an internal
  * `LocalWorkspace` pointing at the clone — the existing tool registry
- * works without modification. SCM ops in PR 1 only implement
- * status/diff; commit/push throw and ship in M6 PR 2.
+ * works without modification. M6 PR 1 added status/diff. M6 PR 2 adds
+ * commit/push/openPullRequest, all gated through approval-hook.ts and
+ * landing on a per-session branch (`claude/<sessionScope>`) auto-cut
+ * from the workspace ref. Raw `git push`-style runCommand calls remain
+ * refused — typed tools are the only sanctioned write path.
  *
  * Token handling: the PAT is injected into the remote URL the first
  * time we clone. Once the remote is set, we run `git fetch` without
@@ -59,6 +62,18 @@ export interface GitHubWorkspaceDeps {
    * the default `child_process.spawn`.
    */
   spawnFn?: typeof spawn;
+  /**
+   * Override the fetch implementation in tests (used for openPullRequest).
+   * Defaults to globalThis.fetch.
+   */
+  fetchFn?: typeof fetch;
+  /**
+   * Per-session scope for auto-branching. Commits land on
+   * `claude/<sessionScope>`. The factory passes `sessionId.slice(0,8)`
+   * so the same chat session keeps committing to the same branch across
+   * agent turns. If omitted, a stable token derived from the ref is used.
+   */
+  sessionScope?: string;
 }
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
@@ -186,29 +201,188 @@ export const ensureClone = async (
   return cloneDir;
 };
 
+interface GitHubScmDeps {
+  cloneDir: string;
+  baseBranch: string;
+  owner: string;
+  repo: string;
+  resolveToken: () => Promise<string>;
+  sessionScope: string;
+  spawnFn?: typeof spawn;
+  fetchFn?: typeof fetch;
+}
+
+const GH_HEADERS = (token: string): Record<string, string> => ({
+  Accept: "application/vnd.github+json",
+  Authorization: `Bearer ${token}`,
+  "X-GitHub-Api-Version": "2022-11-28",
+  "Content-Type": "application/json",
+});
+
+const COMMIT_AUTHOR = "Claude <claude@anthropic.com>";
+
 class GitHubWorkspaceSCM implements WorkspaceSCM {
-  constructor(
-    private readonly cloneDir: string,
-    private readonly branch: string,
-    private readonly spawnFn?: typeof spawn,
-  ) {}
+  constructor(private readonly deps: GitHubScmDeps) {}
+
+  private get cwd(): string {
+    return this.deps.cloneDir;
+  }
+
+  private sessionBranch(): string {
+    return `claude/${this.deps.sessionScope}`;
+  }
 
   async status(): Promise<{ branch: string; dirty: boolean }> {
     const { stdout } = await runGit(["status", "--porcelain"], {
-      cwd: this.cloneDir,
-      spawnFn: this.spawnFn,
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
     });
-    return { branch: this.branch, dirty: stdout.trim().length > 0 };
+    const branch = await this.currentBranch();
+    return { branch, dirty: stdout.trim().length > 0 };
   }
 
   async diff(rel?: string): Promise<string> {
     const args = ["diff", "--no-color"];
     if (rel) args.push("--", rel);
     const { stdout } = await runGit(args, {
-      cwd: this.cloneDir,
-      spawnFn: this.spawnFn,
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
     });
     return stdout;
+  }
+
+  async currentBranch(): Promise<string> {
+    const { stdout } = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+    });
+    return stdout.trim();
+  }
+
+  async commit(input: {
+    message: string;
+    files?: string[];
+  }): Promise<{ sha: string; branch: string; filesChanged: number }> {
+    await this.ensureSessionBranch();
+    if (input.files && input.files.length > 0) {
+      await runGit(["add", "--", ...input.files], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+      });
+    } else {
+      await runGit(["add", "-A"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+      });
+    }
+    const staged = (
+      await runGit(["diff", "--cached", "--name-only"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+      })
+    ).stdout.trim();
+    if (!staged) {
+      return { sha: "", branch: this.sessionBranch(), filesChanged: 0 };
+    }
+    await runGit(["commit", "-m", input.message, "--author", COMMIT_AUTHOR], {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+    });
+    const sha = (
+      await runGit(["rev-parse", "HEAD"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+      })
+    ).stdout.trim();
+    return {
+      sha,
+      branch: this.sessionBranch(),
+      filesChanged: staged.split("\n").filter(Boolean).length,
+    };
+  }
+
+  async push(input?: {
+    force?: boolean;
+  }): Promise<{ branch: string; remote: string }> {
+    const token = await this.deps.resolveToken();
+    // Re-write remote with current token (PAT may have rotated since clone).
+    await runGit(
+      [
+        "remote",
+        "set-url",
+        "origin",
+        buildAuthedRemote(token, this.deps.owner, this.deps.repo),
+      ],
+      { cwd: this.cwd, spawnFn: this.deps.spawnFn },
+    );
+    const branch = this.sessionBranch();
+    const args = ["push", "-u", "origin", branch];
+    if (input?.force) args.push("--force-with-lease");
+    await runGit(args, { cwd: this.cwd, spawnFn: this.deps.spawnFn });
+    return { branch, remote: "origin" };
+  }
+
+  async openPullRequest(input: {
+    title: string;
+    body?: string;
+    draft?: boolean;
+    base?: string;
+  }): Promise<{ url: string; number: number }> {
+    // Precheck: head branch must exist on the remote, otherwise PR
+    // creation fails with a confusing 422. Surface a friendlier error.
+    const branch = this.sessionBranch();
+    const lsRemote = await runGit(["ls-remote", "origin", branch], {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+    });
+    if (!lsRemote.stdout.trim()) {
+      throw new Error(
+        `Branch "${branch}" has no commits pushed to origin. Call gitPush before openPullRequest.`,
+      );
+    }
+
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(
+      `https://api.github.com/repos/${this.deps.owner}/${this.deps.repo}/pulls`,
+      {
+        method: "POST",
+        headers: GH_HEADERS(token),
+        body: JSON.stringify({
+          title: input.title,
+          body: input.body ?? "",
+          head: branch,
+          base: input.base ?? this.deps.baseBranch,
+          draft: input.draft ?? false,
+        }),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub PR create ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { number: number; html_url: string };
+    return { url: json.html_url, number: json.number };
+  }
+
+  /**
+   * Ensure the working tree is on `claude/<scope>`. First entry creates
+   * the branch off the remote-tracking ref so the agent never commits
+   * directly to the workspace's base ref.
+   */
+  private async ensureSessionBranch(): Promise<void> {
+    const current = (
+      await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+      })
+    ).stdout.trim();
+    const target = this.sessionBranch();
+    if (current === target) return;
+    await runGit(["checkout", "-B", target, `origin/${this.deps.baseBranch}`], {
+      cwd: this.cwd,
+      spawnFn: this.deps.spawnFn,
+    });
   }
 }
 
@@ -263,6 +437,20 @@ const looksLikeGitWrite = (command: string): boolean => {
   return false;
 };
 
+/**
+ * Stable per-ref fallback when no chat session id is available (e.g.
+ * skills invoked outside a chat session). Same ref → same branch, so
+ * repeated runs accumulate on a predictable target instead of churning.
+ */
+const fallbackSessionScope = (ref: GitHubRef): string => {
+  const seed = `${ref.owner}/${ref.repo}@${ref.ref}`;
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(16).padStart(8, "0").slice(0, 8);
+};
+
 export class GitHubWorkspace implements Workspace {
   readonly kind: WorkspaceKind = "github";
   readonly id: string;
@@ -275,13 +463,22 @@ export class GitHubWorkspace implements Workspace {
     ref: GitHubRef,
     cloneDir: string,
     local: LocalWorkspace,
-    spawnFn?: typeof spawn,
+    deps: GitHubWorkspaceDeps,
   ) {
     this.id = workspaceRefId(ref);
     this.root = cloneDir;
     this.fs = local.fs;
     this.exec = new GitHubWorkspaceExec(local.exec);
-    this.scm = new GitHubWorkspaceSCM(cloneDir, ref.ref, spawnFn);
+    this.scm = new GitHubWorkspaceSCM({
+      cloneDir,
+      baseBranch: ref.ref,
+      owner: ref.owner,
+      repo: ref.repo,
+      resolveToken: () => deps.resolveToken(ref.credentialId),
+      sessionScope: deps.sessionScope ?? fallbackSessionScope(ref),
+      spawnFn: deps.spawnFn,
+      fetchFn: deps.fetchFn,
+    });
   }
 
   static async create(
@@ -290,8 +487,14 @@ export class GitHubWorkspace implements Workspace {
   ): Promise<GitHubWorkspace> {
     const cloneDir = await ensureClone(ref, deps);
     const local = new LocalWorkspace(cloneDir, { id: workspaceRefId(ref) });
-    return new GitHubWorkspace(ref, cloneDir, local, deps.spawnFn);
+    return new GitHubWorkspace(ref, cloneDir, local, deps);
   }
 }
 
-export const __test__ = { looksLikeGitWrite, cloneDirFor, isFresh, stamp };
+export const __test__ = {
+  looksLikeGitWrite,
+  cloneDirFor,
+  isFresh,
+  stamp,
+  fallbackSessionScope,
+};

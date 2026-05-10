@@ -19,9 +19,19 @@ export interface WorkspaceFactoryDeps {
   githubCacheDir: string;
 }
 
+export interface CreateWorkspaceOpts {
+  /**
+   * Per-session scope for github-backed auto-branching. The factory
+   * forwards this to GitHubWorkspace; commits land on
+   * `claude/<sessionScope>`. Local refs ignore it.
+   */
+  sessionScope?: string;
+}
+
 export const createWorkspace = async (
   ref: WorkspaceRef,
   deps: WorkspaceFactoryDeps,
+  opts: CreateWorkspaceOpts = {},
 ): Promise<Workspace> => {
   if (ref.kind === "local") {
     return new LocalWorkspace(ref.path);
@@ -30,6 +40,7 @@ export const createWorkspace = async (
     return GitHubWorkspace.create(ref, {
       resolveToken: deps.resolveToken,
       cacheDir: deps.githubCacheDir,
+      sessionScope: opts.sessionScope,
     });
   }
   const _exhaustive: never = ref;

@@ -183,6 +183,7 @@ export function useChatSession(
           prompt: userMessage.content,
           workspacePath,
           workspaceRefJson,
+          sessionId,
           llmConfigId: selectedLlmConfigId || undefined,
           history,
         });
