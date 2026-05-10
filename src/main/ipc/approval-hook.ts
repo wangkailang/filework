@@ -2,9 +2,9 @@
  * Build the `beforeToolCall` hook that AgentLoop uses to gate destructive
  * tools through the existing approval IPC flow.
  *
- * Replaces the per-tool wrapping in `ai-tool-permissions.ts:buildTools`
- * for the AgentLoop path. The legacy `buildTools` / `buildSkillSpecificTools`
- * remain in place for the fork-mode skill path until M2 PR3 unifies them.
+ * Replaces the per-tool wrapping that lived in the deleted
+ * `ai-tool-permissions.ts:buildTools` (removed in M2 PR 4 after the
+ * AgentLoop migration completed for both main and fork-mode paths).
  *
  * Approval logic precedence:
  *   1. writeFile + plan-approved task + path inside workspace → auto-approve

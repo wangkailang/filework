@@ -57,9 +57,6 @@ import {
   toolCallToTaskMap,
 } from "./ai-task-control";
 import { buildApprovalHook } from "./approval-hook";
-// (buildSkillSpecificTools / buildTools no longer needed — fork mode now
-// uses createForkSkillRunner which builds its own ToolRegistry. Legacy
-// helpers stay in ai-tool-permissions.ts for now; deletion in M2 PR 4.)
 import { createForkSkillRunner } from "./fork-skill-runner";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";

@@ -1,30 +1,31 @@
 /**
  * AI Tools Definition and Management
  *
- * Contains safe and dangerous tools with their implementations,
- * approval mechanisms, and execution logic.
+ * Currently exports:
+ *   - `safeTools`: read-only tool implementations consumed by
+ *     `ai-plan-handlers` (plan-generation read-only tools) and by
+ *     `ai-tools.test.ts` for unit coverage
+ *   - `requestApproval`: IPC approval primitive used by `approval-hook.ts`
+ *   - `dangerousToolDescriptions`: localized prompt strings, consumed
+ *     internally by `requestApproval`
+ *
+ * Pre-M2 the file also exported `rawExecutors`, `statefulTools`, and
+ * `wrapToolWithAbort` — all deleted in M2 PR 4 because their only
+ * consumer (`ai-tool-permissions.ts`) was itself deleted after the
+ * AgentLoop migration replaced it with `core/agent/tools/*` +
+ * `agent-tools.ts` + `approval-hook.ts`.
  */
 
 import { spawn } from "node:child_process";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { extname, join } from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
-import { emitTaskTraceEvent } from "../ai/task-trace-store";
 import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
 import {
-  activeToolExecutions,
   isToolWhitelistedForTask,
   pendingApprovals,
   toolCallToTaskMap,
@@ -50,36 +51,6 @@ export const dangerousToolDescriptions: Record<
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
-};
-
-/** Raw execute functions for dangerous tools (without approval guard) */
-export const rawExecutors = {
-  writeFile: async ({
-    path: filePath,
-    content,
-  }: {
-    path: string;
-    content: string;
-  }) => {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, "utf-8");
-    return { success: true, path: filePath };
-  },
-  moveFile: async ({
-    source,
-    destination,
-  }: {
-    source: string;
-    destination: string;
-  }) => {
-    await mkdir(dirname(destination), { recursive: true });
-    await rename(source, destination);
-    return { success: true, source, destination };
-  },
-  deleteFile: async ({ path: targetPath }: { path: string }) => {
-    await rm(targetPath, { recursive: true });
-    return { success: true, path: targetPath };
-  },
 };
 
 /** Safe (read-only) tools — shared across all requests */
@@ -401,34 +372,6 @@ export const safeTools: Record<string, Tool> = {
 };
 
 /**
- * Stateful tools that should not be exposed by default.
- * These tools mutate in-memory/runtime state and require explicit opt-in.
- */
-export const statefulTools: Record<string, Tool> = {
-  clearDirectoryCache: {
-    description:
-      "Clear incremental scanning cache for a directory or all directories (stateful operation)",
-    inputSchema: z.object({
-      path: z
-        .string()
-        .optional()
-        .describe(
-          "Directory path to clear cache for (optional, clears all if not provided)",
-        ),
-    }),
-    execute: async ({ path: dirPath }: { path?: string }) => {
-      const scanner = getIncrementalScanner();
-      await scanner.clearCache(dirPath);
-      return {
-        success: true,
-        message: dirPath ? `Cache cleared for ${dirPath}` : "All cache cleared",
-        path: dirPath,
-      };
-    },
-  },
-};
-
-/**
  * Request approval from the renderer and wait for the response
  */
 /** Default approval timeout: 5 minutes */
@@ -526,160 +469,8 @@ export const requestApproval = (
   });
 };
 
-/**
- * Wrap a tool with task-level abort control
- */
-export const wrapToolWithAbort = (
-  originalTool: Tool,
-  taskId: string,
-): Tool => ({
-  ...originalTool,
-  execute: async (args: unknown, context: unknown) => {
-    const ctx = context as { abortSignal?: AbortSignal } & Record<
-      string,
-      unknown
-    >;
-    const toolCallId = String(
-      (ctx as Record<string, unknown>).toolCallId ?? "",
-    );
-    const toolName =
-      typeof (ctx as Record<string, unknown>).toolName === "string"
-        ? String((ctx as Record<string, unknown>).toolName)
-        : undefined;
-    const startedAt = Date.now();
-    // Create a combined AbortController that responds to both:
-    // 1. The original abortSignal from AI SDK
-    // 2. Our manual task cancellation
-    const taskAbortController = new AbortController();
-
-    // Register the controller IMMEDIATELY when tool execution starts
-    const taskControllers = activeToolExecutions.get(taskId);
-    if (taskControllers) {
-      taskControllers.add(taskAbortController);
-      console.log(
-        `[Tool] Registered abort controller for task ${taskId}, total active:`,
-        taskControllers.size,
-      );
-    } else {
-      console.warn(
-        `[Tool] No active execution tracking found for task ${taskId}`,
-      );
-    }
-
-    // Create combined abort signal (fallback for older Node.js versions)
-    let combinedSignal: AbortSignal;
-    if (typeof AbortSignal.any === "function") {
-      const signals: AbortSignal[] = [taskAbortController.signal];
-      if (ctx.abortSignal) signals.unshift(ctx.abortSignal);
-      combinedSignal = AbortSignal.any(signals);
-    } else {
-      // Fallback: create a new controller that responds to either signal
-      const combinedController = new AbortController();
-
-      const abortHandler = () => {
-        if (!combinedController.signal.aborted) {
-          combinedController.abort();
-        }
-      };
-
-      if (ctx.abortSignal?.aborted || taskAbortController.signal.aborted) {
-        combinedController.abort();
-      } else {
-        ctx.abortSignal?.addEventListener("abort", abortHandler, {
-          once: true,
-        });
-        taskAbortController.signal.addEventListener("abort", abortHandler, {
-          once: true,
-        });
-      }
-
-      combinedSignal = combinedController.signal;
-    }
-
-    try {
-      console.log(
-        `[Tool] Starting execution for task ${taskId}, tool: ${originalTool.description?.substring(0, 50) || "unknown"}`,
-      );
-      console.log(
-        `[Tool] Current active tools for task ${taskId}:`,
-        taskControllers?.size || 0,
-      );
-      console.log(`[Tool] Tool args:`, JSON.stringify(args).substring(0, 100));
-
-      emitTaskTraceEvent(null, {
-        taskId,
-        type: "tool-start",
-        timestamp: new Date().toISOString(),
-        toolCallId: toolCallId || undefined,
-        toolName,
-        detail: {
-          description: originalTool.description?.slice(0, 120) ?? null,
-        },
-      });
-
-      const result = await originalTool.execute?.(args, {
-        ...ctx,
-        abortSignal: combinedSignal,
-        toolCallId,
-        messages:
-          ((ctx as Record<string, unknown>).messages as unknown[]) ?? [],
-      } as unknown as import("ai").ToolExecutionOptions);
-
-      emitTaskTraceEvent(null, {
-        taskId,
-        type: "tool-end",
-        timestamp: new Date().toISOString(),
-        toolCallId: toolCallId || undefined,
-        toolName,
-        detail: {
-          durationMs: Date.now() - startedAt,
-          ok: true,
-        },
-      });
-
-      console.log(
-        `[Tool] Completed execution for task ${taskId}, result:`,
-        JSON.stringify(result).substring(0, 100),
-      );
-      return result;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        console.log(`[Tool] Tool execution aborted for task ${taskId}`);
-        emitTaskTraceEvent(null, {
-          taskId,
-          type: "tool-error",
-          timestamp: new Date().toISOString(),
-          toolCallId: toolCallId || undefined,
-          toolName,
-          detail: {
-            durationMs: Date.now() - startedAt,
-            cancelled: true,
-          },
-        });
-        return { success: false, cancelled: true, reason: "工具执行被取消" };
-      }
-      emitTaskTraceEvent(null, {
-        taskId,
-        type: "tool-error",
-        timestamp: new Date().toISOString(),
-        toolCallId: toolCallId || undefined,
-        toolName,
-        detail: {
-          durationMs: Date.now() - startedAt,
-          cancelled: false,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    } finally {
-      // Clean up the task controller
-      if (taskControllers) {
-        taskControllers.delete(taskAbortController);
-        console.log(
-          `[Tool] Unregistered abort controller for task ${taskId}, remaining active:`,
-          taskControllers.size,
-        );
-      }
-    }
-  },
-});
+// `wrapToolWithAbort` was deleted in M2 PR 4 along with its only callers
+// (`buildTools` / `buildSkillSpecificTools`). Per-call abort tracking now
+// lives inside the AgentLoop's tool registry (`core/agent/tool-registry.ts`)
+// and the IPC translator emits task-trace `tool-start` / `tool-end` events
+// directly (`ai-handlers.ts`).
