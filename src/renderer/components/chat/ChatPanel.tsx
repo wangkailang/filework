@@ -213,10 +213,16 @@ const ErrorBanner = ({
   </div>
 );
 
-export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
+export const ChatPanel = ({
+  workspacePath,
+  workspaceRefJson,
+}: {
+  workspacePath: string;
+  workspaceRefJson?: string;
+}) => {
   const { LL } = useI18nContext();
   const [showHistory, setShowHistory] = useState(false);
-  const chat = useChatSession(workspacePath);
+  const chat = useChatSession(workspacePath, workspaceRefJson);
 
   const ERROR_TYPE_LABELS = useMemo(() => getErrorTypeLabels(LL), [LL]);
   const RETRY_TYPE_LABELS = useMemo(() => getRetryTypeLabels(LL), [LL]);

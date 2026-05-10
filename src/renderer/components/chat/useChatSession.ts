@@ -27,7 +27,10 @@ export interface StreamErrorInfo {
   recoveryActions?: string[];
 }
 
-export function useChatSession(workspacePath: string) {
+export function useChatSession(
+  workspacePath: string,
+  workspaceRefJson?: string,
+) {
   const { LL } = useI18nContext();
   const [input, setInput] = useState("");
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(
@@ -179,6 +182,7 @@ export function useChatSession(workspacePath: string) {
         return window.filework.executeTask({
           prompt: userMessage.content,
           workspacePath,
+          workspaceRefJson,
           llmConfigId: selectedLlmConfigId || undefined,
           history,
         });

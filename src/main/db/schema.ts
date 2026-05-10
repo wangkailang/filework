@@ -65,6 +65,23 @@ export const recentWorkspaces = sqliteTable("recent_workspaces", {
   path: text("path").primaryKey(),
   name: text("name").notNull(),
   lastOpenedAt: text("last_opened_at").notNull(),
+  /** Workspace kind. Defaults to "local" for legacy rows. */
+  kind: text("kind", { enum: ["local", "github"] })
+    .notNull()
+    .default("local"),
+  /** JSON-encoded WorkspaceRef. NULL for legacy rows (treat as local). */
+  metadata: text("metadata"),
+});
+
+export const credentials = sqliteTable("credentials", {
+  id: text("id").primaryKey(),
+  kind: text("kind", { enum: ["github_pat"] }).notNull(),
+  label: text("label").notNull(),
+  /** AES-256-GCM encrypted token (see db/crypto.ts). */
+  encryptedToken: text("encrypted_token").notNull(),
+  /** Optional JSON array of granted scopes. */
+  scopes: text("scopes"),
+  createdAt: text("created_at").notNull(),
 });
 
 export const chatSessions = sqliteTable("chat_sessions", {

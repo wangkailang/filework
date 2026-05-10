@@ -35,7 +35,10 @@ const api = {
     ipcRenderer.invoke("ai:approveSkill", payload),
   executeTask: (payload: {
     prompt: string;
-    workspacePath: string;
+    /** Encoded WorkspaceRef (preferred). Falls back to workspacePath. */
+    workspaceRefJson?: string;
+    /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
+    workspacePath?: string;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";
@@ -541,10 +544,50 @@ const api = {
 
   // Workspace history
   getRecentWorkspaces: () => ipcRenderer.invoke("workspace:getRecent"),
-  addRecentWorkspace: (path: string, name: string) =>
-    ipcRenderer.invoke("workspace:addRecent", path, name),
+  addRecentWorkspace: (
+    pathOrId: string,
+    name: string,
+    opts?: { kind?: "local" | "github"; metadata?: string | null },
+  ) => ipcRenderer.invoke("workspace:addRecent", pathOrId, name, opts),
   removeRecentWorkspace: (path: string) =>
     ipcRenderer.invoke("workspace:removeRecent", path),
+
+  // Credentials
+  credentials: {
+    list: () => ipcRenderer.invoke("credentials:list"),
+    create: (payload: {
+      kind: "github_pat";
+      label: string;
+      token: string;
+      scopes?: string[];
+    }) => ipcRenderer.invoke("credentials:create", payload),
+    delete: (id: string) => ipcRenderer.invoke("credentials:delete", { id }),
+    test: (payload: { id?: string; token?: string }) =>
+      ipcRenderer.invoke("credentials:test", payload),
+  },
+
+  // GitHub
+  github: {
+    listRepos: (credentialId: string) =>
+      ipcRenderer.invoke("github:listRepos", { credentialId }),
+    listBranches: (payload: {
+      credentialId: string;
+      owner: string;
+      repo: string;
+    }) => ipcRenderer.invoke("github:listBranches", payload),
+    cloneRepo: (payload: {
+      credentialId: string;
+      owner: string;
+      repo: string;
+      ref: string;
+    }) => ipcRenderer.invoke("github:cloneRepo", payload),
+    fetchRepo: (payload: {
+      credentialId: string;
+      owner: string;
+      repo: string;
+      ref: string;
+    }) => ipcRenderer.invoke("github:fetchRepo", payload),
+  },
 
   // Chat sessions
   createChatSession: (workspacePath: string, title?: string) =>

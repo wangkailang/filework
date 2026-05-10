@@ -28,6 +28,11 @@ import type { AgentEvent } from "../core/agent/events";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
+  createWorkspace,
+  type WorkspaceFactoryDeps,
+} from "../core/workspace/workspace-factory";
+import { decodeRef, type WorkspaceRef } from "../core/workspace/workspace-ref";
+import {
   addTask,
   getDefaultLlmConfig,
   getLlmConfig,
@@ -65,17 +70,60 @@ import { registerUsageHandlers } from "./usage-handlers";
 // buildSystemPrompt extracted to ./system-prompt.ts (M2 PR 2 — domain-neutral).
 
 /**
+ * Resolve a task payload's workspace ref. Backward compat: if the
+ * renderer only sent `workspacePath` (legacy), treat it as a local ref.
+ */
+const resolveWorkspaceRef = (payload: {
+  workspaceRefJson?: string;
+  workspacePath?: string;
+}): WorkspaceRef => {
+  if (payload.workspaceRefJson) {
+    const ref = decodeRef(payload.workspaceRefJson);
+    if (ref) return ref;
+  }
+  if (payload.workspacePath) {
+    return { kind: "local", path: payload.workspacePath };
+  }
+  throw new Error("Task payload missing workspaceRefJson or workspacePath");
+};
+
+let workspaceFactoryDeps: WorkspaceFactoryDeps | null = null;
+
+/** Wire workspace factory deps once during main bootstrap. */
+export const setWorkspaceFactoryDeps = (deps: WorkspaceFactoryDeps): void => {
+  workspaceFactoryDeps = deps;
+};
+
+const requireWorkspaceFactoryDeps = (): WorkspaceFactoryDeps => {
+  if (!workspaceFactoryDeps) {
+    throw new Error(
+      "workspace factory deps not registered — call setWorkspaceFactoryDeps() during bootstrap",
+    );
+  }
+  return workspaceFactoryDeps;
+};
+
+/**
  * Main task execution handler
  */
 const handleTaskExecution = async (
   event: Electron.IpcMainInvokeEvent,
   payload: {
     prompt: string;
-    workspacePath: string;
+    /** Encoded WorkspaceRef (preferred). Falls back to workspacePath. */
+    workspaceRefJson?: string;
+    /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
+    workspacePath?: string;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
 ) => {
+  const ref = resolveWorkspaceRef(payload);
+  // For sandbox + skill discovery we need a concrete on-disk path. For
+  // local refs that's just `ref.path`; for github it's the clone dir,
+  // which we won't know until we materialize the Workspace below.
+  const legacyWorkspacePath =
+    ref.kind === "local" ? ref.path : (payload.workspacePath ?? "");
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const sender = event.sender;
@@ -100,14 +148,20 @@ const handleTaskExecution = async (
       sender.send("ai:stream-start", { id });
     }
 
-    setTaskWorkspace(id, payload.workspacePath);
+    // setTaskWorkspace is called once we know the on-disk root. For
+    // local refs that's immediate; for GitHub refs we set it after the
+    // clone is materialized below.
+    if (ref.kind === "local") {
+      setTaskWorkspace(id, ref.path);
+    }
 
     emitTaskTraceEvent(sender, {
       taskId: id,
       type: "task-start",
       timestamp: now,
       detail: {
-        workspacePath: payload.workspacePath,
+        workspaceKind: ref.kind,
+        workspacePath: legacyWorkspacePath,
         hasHistory:
           Array.isArray(payload.history) && payload.history.length > 0,
       },
@@ -325,7 +379,7 @@ const handleTaskExecution = async (
       const preprocessed = await preprocessSkill(
         skill.external?.body ?? skill.systemPrompt,
         skillArgs,
-        payload.workspacePath,
+        legacyWorkspacePath,
         {
           sourcePath: skill.external?.sourcePath,
           trustLevel,
@@ -337,7 +391,7 @@ const handleTaskExecution = async (
           sender,
           taskId: id,
           parentSignal: controller.signal,
-          workspacePath: payload.workspacePath,
+          workspacePath: legacyWorkspacePath,
           llmConfigId: payload.llmConfigId,
         });
         const deps: ExecutorDeps = { runSubagent };
@@ -347,7 +401,7 @@ const handleTaskExecution = async (
             skill,
             processedPrompt: preprocessed.systemPrompt,
             systemPrompt: payload.prompt,
-            workspacePath: payload.workspacePath,
+            workspacePath: legacyWorkspacePath,
             sender,
             taskId: id,
             abortSignal: controller.signal,
@@ -385,7 +439,7 @@ const handleTaskExecution = async (
 
     const systemPrompt =
       buildAgentSystemPrompt({
-        workspacePath: payload.workspacePath,
+        workspacePath: legacyWorkspacePath,
         skill,
         skillArgs,
         isExplicitSkillCommand,
@@ -425,7 +479,15 @@ const handleTaskExecution = async (
     let agentTotalTokens: number | null = null;
     let agentProviderMeta: Record<string, unknown> | undefined;
 
-    const workspace = new LocalWorkspace(payload.workspacePath);
+    const workspace =
+      ref.kind === "local"
+        ? new LocalWorkspace(ref.path)
+        : await createWorkspace(ref, requireWorkspaceFactoryDeps());
+
+    // For GitHub workspaces, register the clone dir for sandbox checks now.
+    if (ref.kind !== "local") {
+      setTaskWorkspace(id, workspace.root);
+    }
 
     // ── Build the per-task ToolRegistry and merge with skill-specific tools ──
     // Registry tools (file ops + askClarification) flow through the
