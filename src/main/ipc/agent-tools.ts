@@ -33,6 +33,7 @@ import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
+import { ciWatcher } from "./ci-watcher";
 
 interface BuildAgentToolRegistryOptions {
   sender: WebContents;
@@ -139,6 +140,39 @@ export const buildAgentToolRegistry = ({
     if (allow(def.name)) registry.register(def);
   }
 
+  // M12: after a rerun is approved + executed, auto-subscribe the run to
+  // the CI watcher so the user sees an inline notification when it
+  // finishes — without the agent having to poll. Wrapped at registration
+  // time because per-call sender/taskId context lives in this closure.
+  // Dispatch is NOT wrapped: GitHub `/dispatches` returns 204+empty so
+  // we don't get the new run id; deferred to a later milestone.
+  const CI_WATCH_TOOLS = new Set([
+    "githubRerunWorkflowRun",
+    "githubRerunFailedJobs",
+    "gitlabRetryPipeline",
+  ]);
+  const maybeWrapWithWatcher = (def: ToolDefinition): ToolDefinition => {
+    if (!CI_WATCH_TOOLS.has(def.name)) return def;
+    const original = def.execute;
+    return {
+      ...def,
+      execute: async (args, ctx) => {
+        const result = await original(args, ctx);
+        const r = result as { runId?: string; queued?: boolean } | undefined;
+        if (r?.queued && r.runId) {
+          ciWatcher.subscribe({
+            workspace: ctx.workspace,
+            runId: r.runId,
+            sender,
+            taskId,
+            signal: ctx.signal,
+          });
+        }
+        return result;
+      },
+    };
+  };
+
   // Git write tools register only for SCM-write-capable workspaces
   // (currently github + gitlab). Local workspaces deliberately don't
   // get them — local git workflows have separate UX considerations
@@ -151,12 +185,12 @@ export const buildAgentToolRegistry = ({
     }
     if (workspace.kind === "github") {
       for (const def of buildGithubTools()) {
-        if (allow(def.name)) registry.register(def);
+        if (allow(def.name)) registry.register(maybeWrapWithWatcher(def));
       }
     }
     if (workspace.kind === "gitlab") {
       for (const def of buildGitlabTools()) {
-        if (allow(def.name)) registry.register(def);
+        if (allow(def.name)) registry.register(maybeWrapWithWatcher(def));
       }
     }
   }

@@ -299,6 +299,54 @@ const api = {
     ipcRenderer.on("ai:stream-tool-approval", handler);
     return () => ipcRenderer.removeListener("ai:stream-tool-approval", handler);
   },
+  /** M12: CI watcher event when a tracked run completes. */
+  onCiRunDone: (
+    callback: (data: {
+      id: string;
+      runId: string;
+      workspaceId: string;
+      conclusion: string | null;
+      url: string;
+      name: string;
+      durationSec: number | null;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        runId: string;
+        workspaceId: string;
+        conclusion: string | null;
+        url: string;
+        name: string;
+        durationSec: number | null;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:ci-run-done", handler);
+    return () => ipcRenderer.removeListener("ai:ci-run-done", handler);
+  },
+  /** M12: CI watcher event when a tracked run hasn't completed within TIMEOUT_MS. */
+  onCiRunTimeout: (
+    callback: (data: {
+      id: string;
+      runId: string;
+      workspaceId: string;
+      elapsedMs: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        runId: string;
+        workspaceId: string;
+        elapsedMs: number;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:ci-run-timeout", handler);
+    return () => ipcRenderer.removeListener("ai:ci-run-timeout", handler);
+  },
   approveToolCall: (toolCallId: string, approved: boolean) =>
     ipcRenderer.invoke("ai:approveToolCall", { toolCallId, approved }),
   onStreamRetry: (

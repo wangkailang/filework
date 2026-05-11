@@ -351,6 +351,36 @@ export function useStreamSubscription({
       },
     );
 
+    // M12: CI watcher events — surface inline in the chat as text parts.
+    // Match by streamTaskIdRef so events for a stale task drop silently.
+    const offCiRunDone = window.filework.onCiRunDone(
+      ({ id, runId, conclusion, url, name }) => {
+        if (id !== streamTaskIdRef.current) return;
+        const verdict = conclusion ?? "未知";
+        updateParts((parts) => {
+          parts.push({
+            type: "text",
+            text: `🔔 CI 运行 ${name} (#${runId}) 已完成,结果: ${verdict} — ${url}`,
+          });
+          return parts;
+        });
+      },
+    );
+
+    const offCiRunTimeout = window.filework.onCiRunTimeout(
+      ({ id, runId, elapsedMs }) => {
+        if (id !== streamTaskIdRef.current) return;
+        const minutes = Math.round(elapsedMs / 60_000);
+        updateParts((parts) => {
+          parts.push({
+            type: "text",
+            text: `⏱ CI 运行 #${runId} 在 ${minutes} 分钟内未完成,已停止跟踪。可调用 listCIRuns 手动查询。`,
+          });
+          return parts;
+        });
+      },
+    );
+
     return () => {
       offStart();
       offSkillActivated();
@@ -363,6 +393,8 @@ export function useStreamSubscription({
       offError();
       offClarification();
       offSkillApprovalRequest();
+      offCiRunDone();
+      offCiRunTimeout();
     };
   }, [
     debouncedSave,
