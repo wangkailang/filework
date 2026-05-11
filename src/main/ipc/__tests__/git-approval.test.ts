@@ -359,4 +359,34 @@ describe("requestApproval — whitelist routing", () => {
     expect(pendingApprovals.has("tgc-2")).toBe(false);
     expect(await p2).toBe(true);
   });
+
+  // ── M14: gitlabCreatePipeline always prompts ───────────────────────
+
+  it("gitlabCreatePipeline re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gl-create";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tgcp-1",
+      "gitlabCreatePipeline",
+      { ref: "main" },
+    );
+    await settle("tgcp-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabCreatePipeline")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tgcp-2",
+      "gitlabCreatePipeline",
+      { ref: "main", variables: { ENV: "staging" } },
+    );
+    expect(pendingApprovals.has("tgcp-2")).toBe(true);
+    await settle("tgcp-2", true);
+    expect(await p2).toBe(true);
+  });
 });

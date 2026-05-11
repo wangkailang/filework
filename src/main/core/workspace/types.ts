@@ -460,14 +460,30 @@ export interface WorkspaceSCM {
   /**
    * Manually trigger a workflow with optional inputs. `workflowFile` is
    * either the workflow filename ("ci.yml") or its numeric id as string.
-   * GitHub-only today; GitLab `POST /pipeline?ref=…` is "create new
-   * pipeline on ref" (different semantics, deferred).
+   * GitHub-only today; GitLab uses `createCIPipeline` instead — see below
+   * for the semantics-difference reason.
    */
   dispatchWorkflow?(input: {
     workflowFile: string;
     ref: string;
     inputs?: Record<string, string>;
   }): Promise<{ workflowFile: string; ref: string; queued: boolean }>;
+
+  /**
+   * Create a fresh CI pipeline / run on a ref with optional variables (M14).
+   * GitLab analog of GitHub's workflow_dispatch — but the GitLab API
+   * returns the new pipeline JSON synchronously (including id), so the
+   * agent gets a usable runId immediately and the watcher can subscribe
+   * without M13's resolve-retry dance. GitHub-side equivalent is
+   * `dispatchWorkflow` (M11), which doesn't return the runId.
+   *
+   * GitLab-only today; GitHub doesn't expose a generic "create pipeline
+   * on ref" — the closest is `dispatchWorkflow` keyed by workflow file.
+   */
+  createCIPipeline?(input: {
+    ref: string;
+    variables?: Record<string, string>;
+  }): Promise<{ runId: string; queued: boolean; ref: string }>;
 }
 
 export interface Workspace {

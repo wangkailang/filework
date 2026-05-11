@@ -158,6 +158,17 @@ const cancelPipelineSchema = z.object({
     .describe("Pipeline id to cancel."),
 });
 
+const createPipelineSchema = z.object({
+  ref: z
+    .string()
+    .min(1, "ref is required")
+    .describe("Branch or tag the new pipeline runs on."),
+  variables: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe("CI variables, env_var type (e.g. {ENV: 'staging'})."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -352,6 +363,18 @@ export const gitlabCancelPipelineTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "cancelCI")(args),
 };
 
+export const gitlabCreatePipelineTool: ToolDefinition<
+  z.infer<typeof createPipelineSchema>,
+  unknown
+> = {
+  name: "gitlabCreatePipeline",
+  description:
+    "Create a new GitLab CI pipeline on a ref with optional variables — analog to GitHub's workflow_dispatch but always synchronously returns the new pipeline id. Note: GitLab pipelines run all jobs whose rules match the ref (no per-workflow filter). Always requires explicit user approval. After approval the pipeline is auto-watched; you'll see a 🔔 message in chat when it finishes.",
+  safety: "destructive",
+  inputSchema: createPipelineSchema,
+  execute: async (args, ctx) => requireScm(ctx, "createCIPipeline")(args),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -369,4 +392,5 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabReviewMergeRequestTool as ToolDefinition,
   gitlabListCommitStatusesTool as ToolDefinition,
   gitlabCancelPipelineTool as ToolDefinition,
+  gitlabCreatePipelineTool as ToolDefinition,
 ];
