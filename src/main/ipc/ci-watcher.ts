@@ -22,10 +22,23 @@ import type { Workspace } from "../core/workspace/types";
 
 export const TICK_MS = 30_000;
 export const TIMEOUT_MS = 5 * 60_000;
+/** M13: how long between listCIRuns retries when resolving a dispatched run. */
+export const RESOLVE_RETRY_MS = 2_000;
+/** M13: max attempts to resolve a dispatched run's id (~6s budget). */
+export const RESOLVE_MAX_ATTEMPTS = 3;
 
 export interface SubscribeInput {
   workspace: Workspace;
   runId: string;
+  sender: WebContents;
+  taskId: string;
+  signal: AbortSignal;
+}
+
+export interface DispatchSubscribeInput {
+  workspace: Workspace;
+  ref: string;
+  workflowFile: string;
   sender: WebContents;
   taskId: string;
   signal: AbortSignal;
@@ -129,11 +142,82 @@ class CiWatcher {
     this.entries.delete(watchKey);
   }
 
+  /**
+   * M13: resolve a runId for a just-dispatched workflow (GitHub `/dispatches`
+   * returns 204+empty so we don't have one) by polling `listCIRuns({ref,
+   * status:"in_progress", limit:1})` up to RESOLVE_MAX_ATTEMPTS times with
+   * RESOLVE_RETRY_MS between attempts. On first hit, falls through to
+   * subscribe(). On exhaustion, emits ai:ci-dispatch-resolve-failed.
+   *
+   * Fire-and-forget by callers — don't await this from inside a tool's
+   * execute() or you'll block the tool's return for the full retry budget.
+   */
+  async subscribeAfterDispatch(
+    input: DispatchSubscribeInput,
+  ): Promise<string | null> {
+    const listCIRuns = input.workspace.scm?.listCIRuns;
+    if (!listCIRuns) return null;
+
+    for (let attempt = 0; attempt < RESOLVE_MAX_ATTEMPTS; attempt++) {
+      if (input.signal.aborted) return null;
+      if (attempt > 0) {
+        await delay(RESOLVE_RETRY_MS, input.signal);
+        if (input.signal.aborted) return null;
+      }
+      try {
+        const runs = await listCIRuns.call(input.workspace.scm, {
+          ref: input.ref,
+          status: "in_progress",
+          limit: 1,
+        });
+        if (runs.length > 0) {
+          const runId = runs[0].id;
+          return this.subscribe({
+            workspace: input.workspace,
+            runId,
+            sender: input.sender,
+            taskId: input.taskId,
+            signal: input.signal,
+          });
+        }
+      } catch (err) {
+        console.warn(
+          `[ci-watcher] dispatch resolve attempt ${attempt + 1} failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    if (!input.sender.isDestroyed()) {
+      input.sender.send("ai:ci-dispatch-resolve-failed", {
+        id: input.taskId,
+        workspaceId: input.workspace.id,
+        ref: input.ref,
+        workflowFile: input.workflowFile,
+      });
+    }
+    return null;
+  }
+
   /** Test seam — count of active subscriptions. */
   size(): number {
     return this.entries.size;
   }
 }
+
+/** Abort-aware sleep — resolves on either timeout or abort. */
+const delay = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    const id = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(id);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 
 export const ciWatcher = new CiWatcher();
 

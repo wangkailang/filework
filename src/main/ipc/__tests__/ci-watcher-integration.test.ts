@@ -137,7 +137,7 @@ describe("agent-tools × ci-watcher integration", () => {
     expect(subscribeSpy.mock.calls[0]?.[0]).toMatchObject({ runId: "7" });
   });
 
-  it("githubDispatchWorkflow does NOT subscribe (deferred)", async () => {
+  it("githubDispatchWorkflow calls subscribeAfterDispatch (M13)", async () => {
     const sender = fakeSender();
     const dispatchWorkflow = vi.fn(async () => ({
       workflowFile: "ci.yml",
@@ -150,6 +150,12 @@ describe("agent-tools × ci-watcher integration", () => {
       taskId: "t-4",
       workspace: ws,
     });
+    // Spy on subscribeAfterDispatch instead — dispatch goes through the
+    // resolve-then-subscribe path, not the direct subscribe path.
+    const afterDispatchSpy = vi
+      .spyOn(ciWatcher, "subscribeAfterDispatch")
+      .mockResolvedValue("github:acme/app@main:resolved");
+
     const tools = registry.toAiSdkTools({
       ctxFactory: ({ toolCallId }) => ({
         workspace: ws,
@@ -164,8 +170,17 @@ describe("agent-tools × ci-watcher integration", () => {
       { toolCallId: "tc-1", messages: [], abortSignal: undefined as never },
     );
     expect(dispatchWorkflow).toHaveBeenCalled();
-    // Dispatch returns no runId — wrapper guard skips subscribe.
+    // The direct subscribe path is NOT used for dispatch.
     expect(subscribeSpy).not.toHaveBeenCalled();
+    // The resolve-then-subscribe path IS used.
+    expect(afterDispatchSpy).toHaveBeenCalledTimes(1);
+    expect(afterDispatchSpy.mock.calls[0]?.[0]).toMatchObject({
+      ref: "main",
+      workflowFile: "ci.yml",
+      sender,
+      taskId: "t-4",
+    });
+    afterDispatchSpy.mockRestore();
   });
 
   it("safe tools (listWorkflowRuns) do NOT subscribe", async () => {

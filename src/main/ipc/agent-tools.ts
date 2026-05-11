@@ -144,33 +144,63 @@ export const buildAgentToolRegistry = ({
   // the CI watcher so the user sees an inline notification when it
   // finishes — without the agent having to poll. Wrapped at registration
   // time because per-call sender/taskId context lives in this closure.
-  // Dispatch is NOT wrapped: GitHub `/dispatches` returns 204+empty so
-  // we don't get the new run id; deferred to a later milestone.
-  const CI_WATCH_TOOLS = new Set([
+  //
+  // M13: dispatch is also wrapped — GitHub `/dispatches` returns 204+empty
+  // so we don't have a runId, but `subscribeAfterDispatch` resolves it via
+  // a short retry loop on listCIRuns and then falls through to subscribe.
+  const CI_WATCH_RERUN_TOOLS = new Set([
     "githubRerunWorkflowRun",
     "githubRerunFailedJobs",
     "gitlabRetryPipeline",
   ]);
+  const CI_WATCH_DISPATCH_TOOLS = new Set(["githubDispatchWorkflow"]);
   const maybeWrapWithWatcher = (def: ToolDefinition): ToolDefinition => {
-    if (!CI_WATCH_TOOLS.has(def.name)) return def;
-    const original = def.execute;
-    return {
-      ...def,
-      execute: async (args, ctx) => {
-        const result = await original(args, ctx);
-        const r = result as { runId?: string; queued?: boolean } | undefined;
-        if (r?.queued && r.runId) {
-          ciWatcher.subscribe({
-            workspace: ctx.workspace,
-            runId: r.runId,
-            sender,
-            taskId,
-            signal: ctx.signal,
-          });
-        }
-        return result;
-      },
-    };
+    if (CI_WATCH_RERUN_TOOLS.has(def.name)) {
+      const original = def.execute;
+      return {
+        ...def,
+        execute: async (args, ctx) => {
+          const result = await original(args, ctx);
+          const r = result as { runId?: string; queued?: boolean } | undefined;
+          if (r?.queued && r.runId) {
+            ciWatcher.subscribe({
+              workspace: ctx.workspace,
+              runId: r.runId,
+              sender,
+              taskId,
+              signal: ctx.signal,
+            });
+          }
+          return result;
+        },
+      };
+    }
+    if (CI_WATCH_DISPATCH_TOOLS.has(def.name)) {
+      const original = def.execute;
+      return {
+        ...def,
+        execute: async (args, ctx) => {
+          const result = await original(args, ctx);
+          const r = result as
+            | { workflowFile?: string; ref?: string; queued?: boolean }
+            | undefined;
+          if (r?.queued && r.ref && r.workflowFile) {
+            // Fire and forget — the resolve loop runs up to ~6s; blocking
+            // here would stall the tool's return.
+            void ciWatcher.subscribeAfterDispatch({
+              workspace: ctx.workspace,
+              ref: r.ref,
+              workflowFile: r.workflowFile,
+              sender,
+              taskId,
+              signal: ctx.signal,
+            });
+          }
+          return result;
+        },
+      };
+    }
+    return def;
   };
 
   // Git write tools register only for SCM-write-capable workspaces

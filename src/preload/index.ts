@@ -347,6 +347,32 @@ const api = {
     ipcRenderer.on("ai:ci-run-timeout", handler);
     return () => ipcRenderer.removeListener("ai:ci-run-timeout", handler);
   },
+  /**
+   * M13: CI watcher event when subscribeAfterDispatch couldn't find the new
+   * runId after a workflow_dispatch (3 retries × 2s). Surfaces a friendly
+   * "manually run listCIRuns" hint in the chat.
+   */
+  onCiDispatchResolveFailed: (
+    callback: (data: {
+      id: string;
+      workspaceId: string;
+      ref: string;
+      workflowFile: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        workspaceId: string;
+        ref: string;
+        workflowFile: string;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:ci-dispatch-resolve-failed", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:ci-dispatch-resolve-failed", handler);
+  },
   approveToolCall: (toolCallId: string, approved: boolean) =>
     ipcRenderer.invoke("ai:approveToolCall", { toolCallId, approved }),
   onStreamRetry: (
