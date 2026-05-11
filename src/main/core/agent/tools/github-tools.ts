@@ -103,6 +103,29 @@ const listWorkflowRunJobsSchema = z.object({
     .describe("Workflow run id whose jobs you want."),
 });
 
+const getWorkflowJobLogSchema = z.object({
+  jobId: z
+    .string()
+    .min(1, "jobId is required")
+    .describe("Workflow job id whose log you want."),
+  lastLines: z
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .optional()
+    .describe(
+      "Trailing line count. 0 = unbounded (still capped at 5000). Default 500.",
+    ),
+});
+
+const rerunRunSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Workflow run id to re-run."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -236,6 +259,44 @@ export const githubListWorkflowRunJobsTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "listCIJobs")(args),
 };
 
+export const githubGetWorkflowJobLogTool: ToolDefinition<
+  z.infer<typeof getWorkflowJobLogSchema>,
+  unknown
+> = {
+  name: "githubGetWorkflowJobLog",
+  description:
+    "Fetch the raw log of a GitHub Actions job. Returns the last 500 lines by default; pass lastLines=0 for unbounded (capped at 5000) or a positive integer to override. Includes totalLines + truncated flag so you know if you're seeing the tail.",
+  safety: "safe",
+  inputSchema: getWorkflowJobLogSchema,
+  execute: async (args, ctx) => requireScm(ctx, "getCIJobLog")(args),
+};
+
+export const githubRerunWorkflowRunTool: ToolDefinition<
+  z.infer<typeof rerunRunSchema>,
+  unknown
+> = {
+  name: "githubRerunWorkflowRun",
+  description:
+    "Re-run an entire GitHub Actions workflow run (all jobs, including ones that previously succeeded). Always requires explicit user approval. For the cheaper 'failed jobs only' variant, use githubRerunFailedJobs.",
+  safety: "destructive",
+  inputSchema: rerunRunSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "rerunCI")({ runId: args.runId, failedOnly: false }),
+};
+
+export const githubRerunFailedJobsTool: ToolDefinition<
+  z.infer<typeof rerunRunSchema>,
+  unknown
+> = {
+  name: "githubRerunFailedJobs",
+  description:
+    "Re-run only the failed jobs of a workflow run. Cheaper than re-running the full run. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: rerunRunSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "rerunCI")({ runId: args.runId, failedOnly: true }),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -248,4 +309,7 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubListWorkflowRunsTool as ToolDefinition,
   githubGetWorkflowRunTool as ToolDefinition,
   githubListWorkflowRunJobsTool as ToolDefinition,
+  githubGetWorkflowJobLogTool as ToolDefinition,
+  githubRerunWorkflowRunTool as ToolDefinition,
+  githubRerunFailedJobsTool as ToolDefinition,
 ];

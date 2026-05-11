@@ -29,6 +29,7 @@ import path from "node:path";
 import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
+  CIJobLog,
   CIJobSummary,
   CIRunConclusion,
   CIRunDetail,
@@ -514,6 +515,32 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     return raw.jobs.map(toCIJobSummaryFromGH);
   }
 
+  // ── M9: CI logs + re-run ─────────────────────────────────────────────
+
+  async getCIJobLog(input: {
+    jobId: string;
+    lastLines?: number;
+  }): Promise<CIJobLog> {
+    const raw = await this.ghText(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/jobs/${input.jobId}/logs`,
+    );
+    return projectLogTail(input.jobId, raw, input.lastLines ?? 500);
+  }
+
+  async rerunCI(input: {
+    runId: string;
+    failedOnly?: boolean;
+  }): Promise<{ runId: string; queued: boolean }> {
+    const failedOnly = input.failedOnly ?? true;
+    const path = failedOnly ? "rerun-failed-jobs" : "rerun";
+    // GitHub returns 201 with no body for /rerun*, so we skip JSON parsing.
+    await this.ghPostNoBody(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/runs/${input.runId}/${path}`,
+      `rerun (${failedOnly ? "failed" : "all"})`,
+    );
+    return { runId: input.runId, queued: true };
+  }
+
   // ── private fetch helpers (M6 PR 3) ───────────────────────────────────
 
   private async ghJson<T>(pathAndQuery: string): Promise<T> {
@@ -548,6 +575,42 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
     }
     return (await res.json()) as T;
+  }
+
+  /**
+   * POST that doesn't expect a JSON response body. Used by `/actions/runs/.../rerun`
+   * which returns 201 + empty body — calling `.json()` on that would throw.
+   */
+  private async ghPostNoBody(
+    pathAndQuery: string,
+    label = "POST",
+  ): Promise<void> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      method: "POST",
+      headers: GH_HEADERS(token),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  /** GET that returns the raw text body — used by job log endpoints. */
+  private async ghText(pathAndQuery: string): Promise<string> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      headers: GH_HEADERS(token),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(
+        `GitHub ${res.status} for ${pathAndQuery}: ${text.slice(0, 200)}`,
+      );
+    }
+    return res.text();
   }
 
   /**
@@ -855,6 +918,34 @@ const toCIRunDetailFromGH = (raw: RawWorkflowRunDetail): CIRunDetail => {
   };
 };
 
+/**
+ * Slice the trailing `lastLines` lines off a raw log string and report
+ * whether truncation happened. Shared by both providers (M9).
+ *
+ * `lastLines: 0` → unbounded, but still capped at MAX_LAST_LINES so a
+ * runaway 100 MB log can't blow the agent's context budget.
+ */
+const MAX_LAST_LINES = 5000;
+
+export const projectLogTail = (
+  jobId: string,
+  raw: string,
+  lastLines: number,
+): CIJobLog => {
+  const lines = raw.split("\n");
+  const totalLines = lines.length;
+  const cap =
+    lastLines === 0 ? MAX_LAST_LINES : Math.min(lastLines, MAX_LAST_LINES);
+  const truncated = totalLines > cap;
+  const slice = truncated ? lines.slice(totalLines - cap) : lines;
+  return {
+    jobId,
+    content: slice.join("\n"),
+    totalLines,
+    truncated,
+  };
+};
+
 const toCIJobSummaryFromGH = (raw: RawWorkflowJob): CIJobSummary => ({
   id: String(raw.id),
   name: raw.name,
@@ -881,4 +972,5 @@ export const __test__ = {
   toCIRunSummaryFromGH,
   toCIRunDetailFromGH,
   toCIJobSummaryFromGH,
+  projectLogTail,
 };

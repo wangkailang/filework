@@ -220,4 +220,50 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
       expect(githubRegistry.has(name)).toBe(false);
     }
   });
+
+  it("registers github log + rerun tools on github only (M9)", () => {
+    const m9Tools = [
+      "githubGetWorkflowJobLog",
+      "githubRerunWorkflowRun",
+      "githubRerunFailedJobs",
+    ];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m9Tools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m9Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
+
+  it("registers gitlab log + retry tools on gitlab only (M9)", () => {
+    const m9Tools = ["gitlabGetJobLog", "gitlabRetryPipeline"];
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of m9Tools) {
+      expect(gitlabRegistry.has(name)).toBe(true);
+    }
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m9Tools) {
+      expect(githubRegistry.has(name)).toBe(false);
+    }
+  });
 });

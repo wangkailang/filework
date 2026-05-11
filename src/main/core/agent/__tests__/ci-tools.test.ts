@@ -11,15 +11,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { Workspace, WorkspaceSCM } from "../../workspace/types";
 import {
   buildGithubTools,
+  githubGetWorkflowJobLogTool,
   githubGetWorkflowRunTool,
   githubListWorkflowRunJobsTool,
   githubListWorkflowRunsTool,
+  githubRerunFailedJobsTool,
+  githubRerunWorkflowRunTool,
 } from "../tools/github-tools";
 import {
   buildGitlabTools,
+  gitlabGetJobLogTool,
   gitlabGetPipelineTool,
   gitlabListPipelineJobsTool,
   gitlabListPipelinesTool,
+  gitlabRetryPipelineTool,
 } from "../tools/gitlab-tools";
 
 const fakeWorkspace = (scm?: Partial<WorkspaceSCM>): Workspace =>
@@ -150,6 +155,98 @@ describe("CI tool input schemas", () => {
   it("listPipelineJobs requires non-empty runId", () => {
     expect(() =>
       gitlabListPipelineJobsTool.inputSchema.parse({ runId: "" }),
+    ).toThrow();
+  });
+});
+
+describe("M9 CI log + rerun tools — registration + safety", () => {
+  it("buildGithubTools includes the log + rerun tools", () => {
+    const names = buildGithubTools().map((t) => t.name);
+    expect(names).toContain("githubGetWorkflowJobLog");
+    expect(names).toContain("githubRerunWorkflowRun");
+    expect(names).toContain("githubRerunFailedJobs");
+  });
+
+  it("buildGitlabTools includes the log + retry tools", () => {
+    const names = buildGitlabTools().map((t) => t.name);
+    expect(names).toContain("gitlabGetJobLog");
+    expect(names).toContain("gitlabRetryPipeline");
+  });
+
+  it("log tools are safe; rerun tools are destructive", () => {
+    expect(githubGetWorkflowJobLogTool.safety).toBe("safe");
+    expect(gitlabGetJobLogTool.safety).toBe("safe");
+    expect(githubRerunWorkflowRunTool.safety).toBe("destructive");
+    expect(githubRerunFailedJobsTool.safety).toBe("destructive");
+    expect(gitlabRetryPipelineTool.safety).toBe("destructive");
+  });
+});
+
+describe("M9 CI log + rerun tools — delegation", () => {
+  it("githubGetWorkflowJobLog forwards args to scm.getCIJobLog", async () => {
+    const getCIJobLog = vi.fn(async () => ({}) as never);
+    const ws = fakeWorkspace({ getCIJobLog });
+    await githubGetWorkflowJobLogTool.execute(
+      { jobId: "j-1", lastLines: 200 },
+      fakeCtx(ws),
+    );
+    expect(getCIJobLog).toHaveBeenCalledWith({ jobId: "j-1", lastLines: 200 });
+  });
+
+  it("githubRerunWorkflowRun delegates with failedOnly:false", async () => {
+    const rerunCI = vi.fn(async () => ({ runId: "1", queued: true }) as never);
+    const ws = fakeWorkspace({ rerunCI });
+    await githubRerunWorkflowRunTool.execute({ runId: "1" }, fakeCtx(ws));
+    expect(rerunCI).toHaveBeenCalledWith({ runId: "1", failedOnly: false });
+  });
+
+  it("githubRerunFailedJobs delegates with failedOnly:true", async () => {
+    const rerunCI = vi.fn(async () => ({ runId: "1", queued: true }) as never);
+    const ws = fakeWorkspace({ rerunCI });
+    await githubRerunFailedJobsTool.execute({ runId: "1" }, fakeCtx(ws));
+    expect(rerunCI).toHaveBeenCalledWith({ runId: "1", failedOnly: true });
+  });
+
+  it("gitlabGetJobLog forwards args to scm.getCIJobLog", async () => {
+    const getCIJobLog = vi.fn(async () => ({}) as never);
+    const ws = fakeWorkspace({ getCIJobLog });
+    await gitlabGetJobLogTool.execute({ jobId: "9001" }, fakeCtx(ws));
+    expect(getCIJobLog).toHaveBeenCalledWith({ jobId: "9001" });
+  });
+
+  it("gitlabRetryPipeline always delegates with failedOnly:true", async () => {
+    const rerunCI = vi.fn(async () => ({ runId: "42", queued: true }) as never);
+    const ws = fakeWorkspace({ rerunCI });
+    await gitlabRetryPipelineTool.execute({ runId: "42" }, fakeCtx(ws));
+    expect(rerunCI).toHaveBeenCalledWith({ runId: "42", failedOnly: true });
+  });
+});
+
+describe("M9 CI log + rerun tools — schema bounds", () => {
+  it("getJobLog rejects lastLines > 5000", () => {
+    expect(() =>
+      githubGetWorkflowJobLogTool.inputSchema.parse({
+        jobId: "j",
+        lastLines: 10_000,
+      }),
+    ).toThrow();
+  });
+
+  it("getJobLog accepts lastLines: 0 (unbounded marker)", () => {
+    expect(
+      githubGetWorkflowJobLogTool.inputSchema.parse({
+        jobId: "j",
+        lastLines: 0,
+      }),
+    ).toEqual({ jobId: "j", lastLines: 0 });
+  });
+
+  it("rerun tools require non-empty runId", () => {
+    expect(() =>
+      githubRerunWorkflowRunTool.inputSchema.parse({ runId: "" }),
+    ).toThrow();
+    expect(() =>
+      gitlabRetryPipelineTool.inputSchema.parse({ runId: "" }),
     ).toThrow();
   });
 });

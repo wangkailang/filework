@@ -26,8 +26,10 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildAskpassEnv, gitlabSanitizedRemote } from "./git-credentials";
+import { projectLogTail } from "./github-workspace";
 import { LocalWorkspace } from "./local-workspace";
 import type {
+  CIJobLog,
   CIJobSummary,
   CIRunConclusion,
   CIRunDetail,
@@ -494,6 +496,36 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     return rows.map(toCIJobSummaryFromGL);
   }
 
+  // ── M9: CI logs + re-run ─────────────────────────────────────────────
+
+  async getCIJobLog(input: {
+    jobId: string;
+    lastLines?: number;
+  }): Promise<CIJobLog> {
+    const raw = await this.glText(
+      `/projects/${projectIdEncoded(this.deps)}/jobs/${encodeURIComponent(input.jobId)}/trace`,
+    );
+    return projectLogTail(input.jobId, raw, input.lastLines ?? 500);
+  }
+
+  async rerunCI(input: {
+    runId: string;
+    failedOnly?: boolean;
+  }): Promise<{ runId: string; queued: boolean }> {
+    const failedOnly = input.failedOnly ?? true;
+    if (!failedOnly) {
+      throw new Error(
+        "GitLab does not support full pipeline re-run via /retry — create a new pipeline on the same ref via the GitLab UI instead.",
+      );
+    }
+    await this.glPost<unknown>(
+      `/projects/${projectIdEncoded(this.deps)}/pipelines/${encodeURIComponent(input.runId)}/retry`,
+      {},
+      "pipeline retry",
+    );
+    return { runId: input.runId, queued: true };
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =
@@ -556,6 +588,22 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
       throw new Error(`GitLab ${label} ${res.status}: ${text.slice(0, 200)}`);
     }
     return (await res.json()) as T;
+  }
+
+  /** GET that returns the raw text body — used by job trace (M9). */
+  private async glText(pathAndQuery: string): Promise<string> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`${this.apiBase()}${pathAndQuery}`, {
+      headers: GL_HEADERS(token),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(
+        `GitLab ${res.status} for ${pathAndQuery}: ${text.slice(0, 200)}`,
+      );
+    }
+    return res.text();
   }
 
   private async ensureSessionBranch(): Promise<void> {
