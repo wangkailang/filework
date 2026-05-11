@@ -126,27 +126,58 @@ const rerunRunSchema = z.object({
     .describe("Workflow run id to re-run."),
 });
 
+const reviewCommentSchema = z
+  .object({
+    path: z.string().min(1).describe("Workspace-relative file path"),
+    line: z
+      .number()
+      .int()
+      .min(1)
+      .describe("1-based line on the right side of the diff"),
+    startLine: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        "Optional 1-based start line for a multi-line range comment (M15). When set, must be < line.",
+      ),
+    body: z.string().min(1).describe("Markdown body of the inline comment"),
+  })
+  .refine((c) => c.startLine === undefined || c.startLine < c.line, {
+    message: "startLine must be < line",
+    path: ["startLine"],
+  });
+
 const reviewPullRequestSchema = z.object({
   number: z.number().int().positive().describe("PR number"),
   body: z.string().optional().describe("Optional review-level summary body"),
   comments: z
-    .array(
-      z.object({
-        path: z.string().min(1).describe("Workspace-relative file path"),
-        line: z
-          .number()
-          .int()
-          .min(1)
-          .describe("1-based line on the right side of the diff"),
-        body: z.string().min(1).describe("Markdown body of the inline comment"),
-      }),
-    )
+    .array(reviewCommentSchema)
     .optional()
     .describe("Inline line comments. Empty array allowed."),
   event: z
     .enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"])
     .optional()
     .describe("Review verdict. Omit to leave the review pending."),
+});
+
+const dismissReviewSchema = z.object({
+  number: z.number().int().positive().describe("PR number"),
+  reviewId: z.string().min(1).describe("The review id (string id from GitHub)"),
+  message: z
+    .string()
+    .min(1, "dismissal message is required")
+    .describe("Reason shown to the PR author (required by GitHub)"),
+});
+
+const editReviewBodySchema = z.object({
+  number: z.number().int().positive().describe("PR number"),
+  reviewId: z.string().min(1).describe("The review id"),
+  body: z
+    .string()
+    .min(1, "new body is required")
+    .describe("Replacement Markdown body for the review summary"),
 });
 
 const listCommitChecksSchema = z.object({
@@ -411,6 +442,32 @@ export const githubDispatchWorkflowTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "dispatchWorkflow")(args),
 };
 
+export const githubDismissReviewTool: ToolDefinition<
+  z.infer<typeof dismissReviewSchema>,
+  unknown
+> = {
+  name: "githubDismissReview",
+  description:
+    "Dismiss an existing PR review with a message visible to the PR author. Use when a review verdict was filed in error or no longer applies. Inline comments are not removed. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: dismissReviewSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "dismissPullRequestReview")(args),
+};
+
+export const githubEditReviewBodyTool: ToolDefinition<
+  z.infer<typeof editReviewBodySchema>,
+  unknown
+> = {
+  name: "githubEditReviewBody",
+  description:
+    "Edit the summary body of an existing PR review. Inline comments are not modified — only the top-level review body. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: editReviewBodySchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "editPullRequestReviewBody")(args),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -431,4 +488,6 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubCancelWorkflowRunTool as ToolDefinition,
   githubListWorkflowsTool as ToolDefinition,
   githubDispatchWorkflowTool as ToolDefinition,
+  githubDismissReviewTool as ToolDefinition,
+  githubEditReviewBodyTool as ToolDefinition,
 ];

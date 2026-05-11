@@ -551,12 +551,20 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     input: PullRequestReviewInput,
   ): Promise<PullRequestReviewResult> {
     const body: Record<string, unknown> = {
-      comments: (input.comments ?? []).map((c) => ({
-        path: c.path,
-        line: c.line,
-        body: c.body,
-        side: "RIGHT",
-      })),
+      comments: (input.comments ?? []).map((c) => {
+        const entry: Record<string, unknown> = {
+          path: c.path,
+          line: c.line,
+          body: c.body,
+          side: "RIGHT",
+        };
+        // M15: multi-line range comment.
+        if (c.startLine !== undefined) {
+          entry.start_line = c.startLine;
+          entry.start_side = "RIGHT";
+        }
+        return entry;
+      }),
     };
     if (input.body !== undefined) body.body = input.body;
     if (input.event !== undefined) body.event = input.event;
@@ -567,6 +575,34 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       "PR review",
     );
     return { reviewId: String(res.id), url: res.html_url };
+  }
+
+  // ── M15: PR review lifecycle — dismiss + edit body ────────────────────
+
+  async dismissPullRequestReview(input: {
+    number: number;
+    reviewId: string;
+    message: string;
+  }): Promise<{ reviewId: string; dismissed: boolean }> {
+    await this.ghPut<{ id: number }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/${input.number}/reviews/${input.reviewId}/dismissals`,
+      { message: input.message, event: "DISMISS" },
+      "review dismiss",
+    );
+    return { reviewId: input.reviewId, dismissed: true };
+  }
+
+  async editPullRequestReviewBody(input: {
+    number: number;
+    reviewId: string;
+    body: string;
+  }): Promise<{ reviewId: string; url: string }> {
+    const res = await this.ghPut<{ html_url: string }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/${input.number}/reviews/${input.reviewId}`,
+      { body: input.body },
+      "review edit body",
+    );
+    return { reviewId: input.reviewId, url: res.html_url };
   }
 
   async listCommitChecks(input: { sha: string }): Promise<CommitCheck[]> {
@@ -639,6 +675,30 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     const fetchImpl = this.deps.fetchFn ?? fetch;
     const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
       method: "POST",
+      headers: GH_HEADERS(token),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  /**
+   * PUT with JSON body — used by review-lifecycle endpoints (M15).
+   * Mirror of ghPost but with method:"PUT". Both endpoints (dismiss +
+   * edit-body) require a non-empty body, so no `ghPutNoBody` analog.
+   */
+  private async ghPut<T>(
+    pathAndQuery: string,
+    body: unknown,
+    label = "PUT",
+  ): Promise<T> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      method: "PUT",
       headers: GH_HEADERS(token),
       body: JSON.stringify(body),
     });

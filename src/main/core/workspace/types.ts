@@ -238,6 +238,13 @@ export interface PullRequestReviewComment {
   line: number;
   /** Markdown body of the inline comment. */
   body: string;
+  /**
+   * Optional 1-based start line for a multi-line range comment (M15).
+   * When present, must satisfy `1 <= startLine < line`. GitHub maps this
+   * to `start_line` + `start_side:"RIGHT"`. GitLab implementations
+   * silently ignore this (schema-level not exposed).
+   */
+  startLine?: number;
 }
 
 export interface PullRequestReviewInput {
@@ -431,6 +438,31 @@ export interface WorkspaceSCM {
   reviewPullRequest?(
     input: PullRequestReviewInput,
   ): Promise<PullRequestReviewResult>;
+
+  /**
+   * Dismiss an existing review on a PR (M15). GitHub: PUT
+   * /repos/.../pulls/:n/reviews/:reviewId/dismissals with
+   * `{message, event:"DISMISS"}`. GitLab review semantics don't map
+   * (M10 sequenced individual discussions, not a single review object) —
+   * GitLab impl absent today.
+   */
+  dismissPullRequestReview?(input: {
+    number: number;
+    reviewId: string;
+    message: string;
+  }): Promise<{ reviewId: string; dismissed: boolean }>;
+
+  /**
+   * Edit the body of an existing review (M15). GitHub: PUT
+   * /repos/.../pulls/:n/reviews/:reviewId with `{body}`. Inline comments
+   * are not modified — only the top-level review body. GitLab-only —
+   * see dismissPullRequestReview note.
+   */
+  editPullRequestReviewBody?(input: {
+    number: number;
+    reviewId: string;
+    body: string;
+  }): Promise<{ reviewId: string; url: string }>;
 
   /**
    * List all checks for a commit sha. On GitHub this hits the combined

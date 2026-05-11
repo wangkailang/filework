@@ -372,4 +372,34 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
     });
     expect(localRegistry.has("gitlabCreatePipeline")).toBe(false);
   });
+
+  it("registers github review lifecycle tools on github only (M15)", () => {
+    const m15Tools = ["githubDismissReview", "githubEditReviewBody"];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m15Tools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of m15Tools) {
+      expect(gitlabRegistry.has(name)).toBe(false);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m15Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
 });
