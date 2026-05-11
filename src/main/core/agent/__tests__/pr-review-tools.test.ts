@@ -12,6 +12,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Workspace, WorkspaceSCM } from "../../workspace/types";
 import {
   buildGithubTools,
+  githubDismissReviewTool,
+  githubEditReviewBodyTool,
   githubListCommitChecksTool,
   githubReviewPullRequestTool,
 } from "../tools/github-tools";
@@ -172,5 +174,128 @@ describe("M10 schema bounds", () => {
     expect(() =>
       gitlabListCommitStatusesTool.inputSchema.parse({ sha: "" }),
     ).toThrow();
+  });
+});
+
+describe("M15 review lifecycle tools — registration", () => {
+  it("buildGithubTools exposes dismissReview + editReviewBody", () => {
+    const names = buildGithubTools().map((t) => t.name);
+    expect(names).toContain("githubDismissReview");
+    expect(names).toContain("githubEditReviewBody");
+  });
+
+  it("both lifecycle tools are destructive", () => {
+    expect(githubDismissReviewTool.safety).toBe("destructive");
+    expect(githubEditReviewBodyTool.safety).toBe("destructive");
+  });
+});
+
+describe("M15 review lifecycle tools — delegation", () => {
+  it("githubDismissReview forwards full payload to scm.dismissPullRequestReview", async () => {
+    const dismissPullRequestReview = vi.fn(
+      async () => ({ reviewId: "999", dismissed: true }) as never,
+    );
+    const ws = fakeWorkspace({ dismissPullRequestReview });
+    await githubDismissReviewTool.execute(
+      { number: 7, reviewId: "999", message: "hasty" },
+      fakeCtx(ws),
+    );
+    expect(dismissPullRequestReview).toHaveBeenCalledWith({
+      number: 7,
+      reviewId: "999",
+      message: "hasty",
+    });
+  });
+
+  it("githubEditReviewBody forwards full payload to scm.editPullRequestReviewBody", async () => {
+    const editPullRequestReviewBody = vi.fn(
+      async () => ({ reviewId: "42", url: "https://gh/r/42" }) as never,
+    );
+    const ws = fakeWorkspace({ editPullRequestReviewBody });
+    await githubEditReviewBodyTool.execute(
+      { number: 7, reviewId: "42", body: "final review" },
+      fakeCtx(ws),
+    );
+    expect(editPullRequestReviewBody).toHaveBeenCalledWith({
+      number: 7,
+      reviewId: "42",
+      body: "final review",
+    });
+  });
+
+  it("throws when scm.dismissPullRequestReview is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      githubDismissReviewTool.execute(
+        { number: 7, reviewId: "1", message: "x" },
+        fakeCtx(ws),
+      ),
+    ).rejects.toThrow(/dismissPullRequestReview/);
+  });
+});
+
+describe("M15 schema bounds", () => {
+  it("dismiss/edit require non-empty reviewId / message / body", () => {
+    expect(() =>
+      githubDismissReviewTool.inputSchema.parse({
+        number: 7,
+        reviewId: "",
+        message: "x",
+      }),
+    ).toThrow();
+    expect(() =>
+      githubDismissReviewTool.inputSchema.parse({
+        number: 7,
+        reviewId: "1",
+        message: "",
+      }),
+    ).toThrow();
+    expect(() =>
+      githubEditReviewBodyTool.inputSchema.parse({
+        number: 7,
+        reviewId: "",
+        body: "x",
+      }),
+    ).toThrow();
+    expect(() =>
+      githubEditReviewBodyTool.inputSchema.parse({
+        number: 7,
+        reviewId: "1",
+        body: "",
+      }),
+    ).toThrow();
+  });
+
+  it("review schema rejects startLine: 0 (must be >= 1)", () => {
+    expect(() =>
+      githubReviewPullRequestTool.inputSchema.parse({
+        number: 1,
+        comments: [{ path: "a.ts", startLine: 0, line: 5, body: "x" }],
+      }),
+    ).toThrow();
+  });
+
+  it("review schema rejects startLine >= line", () => {
+    expect(() =>
+      githubReviewPullRequestTool.inputSchema.parse({
+        number: 1,
+        comments: [{ path: "a.ts", startLine: 5, line: 5, body: "x" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      githubReviewPullRequestTool.inputSchema.parse({
+        number: 1,
+        comments: [{ path: "a.ts", startLine: 8, line: 5, body: "x" }],
+      }),
+    ).toThrow();
+  });
+
+  it("review schema accepts valid multi-line range", () => {
+    expect(() =>
+      githubReviewPullRequestTool.inputSchema.parse({
+        number: 1,
+        comments: [{ path: "a.ts", startLine: 5, line: 8, body: "rename" }],
+      }),
+    ).not.toThrow();
   });
 });

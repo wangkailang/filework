@@ -389,4 +389,56 @@ describe("requestApproval — whitelist routing", () => {
     await settle("tgcp-2", true);
     expect(await p2).toBe(true);
   });
+
+  // ── M15: review lifecycle tools always prompt ──────────────────────
+
+  it("githubDismissReview re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-dismiss";
+    const sender = stubSender();
+    const p1 = requestApproval(sender, taskId, "tgd-1", "githubDismissReview", {
+      number: 7,
+      reviewId: "999",
+      message: "hasty",
+    });
+    await settle("tgd-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubDismissReview")).toBe(false);
+
+    const p2 = requestApproval(sender, taskId, "tgd-2", "githubDismissReview", {
+      number: 7,
+      reviewId: "1000",
+      message: "again",
+    });
+    expect(pendingApprovals.has("tgd-2")).toBe(true);
+    await settle("tgd-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("githubEditReviewBody re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-edit";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tge-1",
+      "githubEditReviewBody",
+      { number: 7, reviewId: "42", body: "final" },
+    );
+    await settle("tge-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubEditReviewBody")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tge-2",
+      "githubEditReviewBody",
+      { number: 7, reviewId: "42", body: "final v2" },
+    );
+    expect(pendingApprovals.has("tge-2")).toBe(true);
+    await settle("tge-2", true);
+    expect(await p2).toBe(true);
+  });
 });

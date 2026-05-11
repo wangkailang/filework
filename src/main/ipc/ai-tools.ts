@@ -70,6 +70,9 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   // M14: gitlab createPipeline starts a fresh CI run with arbitrary
   // variables and may deploy — same posture as dispatch / rerun.
   "gitlabCreatePipeline",
+  // M15: PR review lifecycle ops mutate / dismiss already-public content.
+  "githubDismissReview",
+  "githubEditReviewBody",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -121,6 +124,8 @@ export const dangerousToolDescriptions: Record<
     const varsHint = n > 0 ? ` (${n} 个变量)` : "";
     return `在 ${args.ref} 上创建 pipeline${varsHint}`;
   },
+  githubDismissReview: (args) => `撤回 PR #${args.number} 的 review`,
+  githubEditReviewBody: (args) => `编辑 PR #${args.number} 的 review summary`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

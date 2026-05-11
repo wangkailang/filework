@@ -119,6 +119,43 @@ describe("GitHubWorkspaceSCM.reviewPullRequest", () => {
     expect(out).toEqual({ reviewId: "999", url: "https://gh/r/999" });
   });
 
+  it("forwards startLine as start_line + start_side='RIGHT' for multi-line ranges (M15)", async () => {
+    const { fake } = buildFakeSpawn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ id: 555, html_url: "https://gh/r/555" }),
+          { status: 200 },
+        ),
+    );
+    const ws = await buildWorkspace(cacheDir, fake, fetchMock);
+    await ws.scm.reviewPullRequest?.({
+      number: 7,
+      comments: [
+        {
+          path: "src/foo.ts",
+          startLine: 5,
+          line: 8,
+          body: "rename this whole block",
+        },
+      ],
+    });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    const sent = JSON.parse(init.body as string);
+    expect(sent.comments).toHaveLength(1);
+    expect(sent.comments[0]).toEqual({
+      path: "src/foo.ts",
+      line: 8,
+      body: "rename this whole block",
+      side: "RIGHT",
+      start_line: 5,
+      start_side: "RIGHT",
+    });
+  });
+
   it("omits event when not provided and sends empty comments array", async () => {
     const { fake } = buildFakeSpawn();
     const fetchMock = vi.fn(
