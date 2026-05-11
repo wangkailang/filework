@@ -62,6 +62,11 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   // M10: PR/MR reviews post public, hard-to-undo content.
   "githubReviewPullRequest",
   "gitlabReviewMergeRequest",
+  // M11: dispatch starts a fresh CI run with arbitrary inputs and may deploy.
+  // Cancel tools are deliberately NOT here — they're idempotent and only
+  // ever reduce CI activity, so they follow the whitelist-after-first-OK
+  // pattern (see git-approval.test.ts for the regression guard).
+  "githubDispatchWorkflow",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -103,6 +108,10 @@ export const dangerousToolDescriptions: Record<
     const n = Array.isArray(comments) ? comments.length : 0;
     return `提交 MR !${args.number} review (${n} 条行级评论)`;
   },
+  githubCancelWorkflowRun: (args) => `取消 workflow run #${args.runId}`,
+  githubDispatchWorkflow: (args) =>
+    `手动触发 workflow ${args.workflowFile} on ${args.ref}`,
+  gitlabCancelPipeline: (args) => `取消 pipeline #${args.runId}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

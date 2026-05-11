@@ -153,6 +153,30 @@ const listCommitChecksSchema = z.object({
   sha: z.string().min(1, "commit sha is required").describe("Full commit sha"),
 });
 
+const cancelRunSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Workflow run id to cancel."),
+});
+
+const dispatchWorkflowSchema = z.object({
+  workflowFile: z
+    .string()
+    .min(1, "workflowFile is required")
+    .describe("Workflow filename like 'ci.yml' or its numeric id."),
+  ref: z
+    .string()
+    .min(1, "ref is required")
+    .describe("Branch or tag the workflow runs on."),
+  inputs: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe("Workflow inputs declared by `workflow_dispatch.inputs`."),
+});
+
+const listWorkflowsSchema = z.object({});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -348,6 +372,45 @@ export const githubListCommitChecksTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "listCommitChecks")(args),
 };
 
+export const githubCancelWorkflowRunTool: ToolDefinition<
+  z.infer<typeof cancelRunSchema>,
+  unknown
+> = {
+  name: "githubCancelWorkflowRun",
+  description:
+    "Cancel an in-progress GitHub Actions workflow run. Idempotent — calling on an already-terminal run surfaces a friendly error. Requires explicit user approval the first time per task; auto-approved on repeat.",
+  safety: "destructive",
+  inputSchema: cancelRunSchema,
+  execute: async (args, ctx) => requireScm(ctx, "cancelCI")(args),
+};
+
+export const githubListWorkflowsTool: ToolDefinition<
+  z.infer<typeof listWorkflowsSchema>,
+  unknown
+> = {
+  name: "githubListWorkflows",
+  description:
+    "List the workflows defined in this repo (.github/workflows/*.yml). Returns name, path, state, and id — useful before calling githubDispatchWorkflow.",
+  safety: "safe",
+  inputSchema: listWorkflowsSchema,
+  execute: async (_args, ctx) => {
+    const fn = requireScm(ctx, "listWorkflows");
+    return fn();
+  },
+};
+
+export const githubDispatchWorkflowTool: ToolDefinition<
+  z.infer<typeof dispatchWorkflowSchema>,
+  unknown
+> = {
+  name: "githubDispatchWorkflow",
+  description:
+    "Manually trigger a workflow_dispatch-enabled workflow on a given ref with optional inputs. Starts a fresh CI run and may consume CI minutes / trigger deploys. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: dispatchWorkflowSchema,
+  execute: async (args, ctx) => requireScm(ctx, "dispatchWorkflow")(args),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -365,4 +428,7 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubRerunFailedJobsTool as ToolDefinition,
   githubReviewPullRequestTool as ToolDefinition,
   githubListCommitChecksTool as ToolDefinition,
+  githubCancelWorkflowRunTool as ToolDefinition,
+  githubListWorkflowsTool as ToolDefinition,
+  githubDispatchWorkflowTool as ToolDefinition,
 ];

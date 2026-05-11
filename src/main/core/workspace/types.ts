@@ -280,6 +280,22 @@ export interface CommitCheck {
 }
 
 /**
+ * Lightweight workflow descriptor (M11). Agents call `listWorkflows` to
+ * learn what `workflowFile` value to pass to `dispatchWorkflow` without
+ * having to scrape `.github/workflows/`.
+ */
+export interface WorkflowSummary {
+  /** Provider-native id (kept as string for symmetry with other M8+ ids). */
+  id: string;
+  /** Human-readable workflow name (from the `name:` field in the YAML). */
+  name: string;
+  /** Repo-relative path, e.g. ".github/workflows/ci.yml". */
+  path: string;
+  /** "active" / "disabled_inactivity" / "disabled_manually". */
+  state: string;
+}
+
+/**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
  * `LocalWorkspace` does not implement this in M1. Every method is optional
  * so backends can opt into a subset (status/diff in M6 PR 1; commit/push/PR
@@ -423,6 +439,35 @@ export interface WorkspaceSCM {
    * Both project to the same vendor-neutral `CommitCheck` shape.
    */
   listCommitChecks?(input: { sha: string }): Promise<CommitCheck[]>;
+
+  // ── M11: CI write — cancel + workflow_dispatch ───────────────────────
+
+  /**
+   * Cancel an in-progress CI run / pipeline. Idempotent — calling on an
+   * already-terminal run surfaces the provider's friendly error
+   * (HTTP 409 on GitHub) verbatim so the agent can re-check status.
+   */
+  cancelCI?(input: {
+    runId: string;
+  }): Promise<{ runId: string; cancelled: boolean }>;
+
+  /**
+   * List workflows declared in the repo's CI config. GitHub-only today —
+   * `WorkflowSummary` is the lightweight descriptor of `.github/workflows/*.yml`.
+   */
+  listWorkflows?(): Promise<WorkflowSummary[]>;
+
+  /**
+   * Manually trigger a workflow with optional inputs. `workflowFile` is
+   * either the workflow filename ("ci.yml") or its numeric id as string.
+   * GitHub-only today; GitLab `POST /pipeline?ref=…` is "create new
+   * pipeline on ref" (different semantics, deferred).
+   */
+  dispatchWorkflow?(input: {
+    workflowFile: string;
+    ref: string;
+    inputs?: Record<string, string>;
+  }): Promise<{ workflowFile: string; ref: string; queued: boolean }>;
 }
 
 export interface Workspace {

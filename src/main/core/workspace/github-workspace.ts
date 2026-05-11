@@ -45,6 +45,7 @@ import type {
   PullRequestReviewInput,
   PullRequestReviewResult,
   PullRequestSummary,
+  WorkflowSummary,
   Workspace,
   WorkspaceExec,
   WorkspaceFS,
@@ -575,6 +576,43 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     return raw.check_runs.map(toCommitCheckFromGH);
   }
 
+  // ── M11: CI write — cancel + workflow_dispatch ──────────────────────
+
+  async cancelCI(input: {
+    runId: string;
+  }): Promise<{ runId: string; cancelled: boolean }> {
+    await this.ghPostNoBody(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/runs/${input.runId}/cancel`,
+      "cancel run",
+    );
+    return { runId: input.runId, cancelled: true };
+  }
+
+  async listWorkflows(): Promise<WorkflowSummary[]> {
+    const raw = await this.ghJson<{ workflows: RawWorkflow[] }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/workflows?per_page=100`,
+    );
+    return raw.workflows.map(toWorkflowSummary);
+  }
+
+  async dispatchWorkflow(input: {
+    workflowFile: string;
+    ref: string;
+    inputs?: Record<string, string>;
+  }): Promise<{ workflowFile: string; ref: string; queued: boolean }> {
+    // GitHub accepts either a workflow filename ("ci.yml") or numeric id
+    // in the URL. We pass through whatever the agent provided.
+    const id = encodeURIComponent(input.workflowFile);
+    const body: Record<string, unknown> = { ref: input.ref };
+    if (input.inputs !== undefined) body.inputs = input.inputs;
+    await this.ghPostNoBody(
+      `/repos/${this.deps.owner}/${this.deps.repo}/actions/workflows/${id}/dispatches`,
+      "dispatch workflow",
+      body,
+    );
+    return { workflowFile: input.workflowFile, ref: input.ref, queued: true };
+  }
+
   // ── private fetch helpers (M6 PR 3) ───────────────────────────────────
 
   private async ghJson<T>(pathAndQuery: string): Promise<T> {
@@ -612,19 +650,30 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
   }
 
   /**
-   * POST that doesn't expect a JSON response body. Used by `/actions/runs/.../rerun`
-   * which returns 201 + empty body — calling `.json()` on that would throw.
+   * POST that doesn't expect a JSON response body. Used by:
+   *   - `/actions/runs/.../rerun*` (201 + empty)   — body omitted
+   *   - `/actions/runs/.../cancel`  (202 + empty)  — body omitted
+   *   - `/actions/workflows/.../dispatches` (204 + empty) — body required
+   *
+   * When `body` is undefined we send no request body (NOT
+   * `JSON.stringify(undefined)` which becomes the literal string
+   * `"undefined"`). When provided, body is JSON-serialized.
    */
   private async ghPostNoBody(
     pathAndQuery: string,
     label = "POST",
+    body?: unknown,
   ): Promise<void> {
     const token = await this.deps.resolveToken();
     const fetchImpl = this.deps.fetchFn ?? fetch;
-    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+    const init: RequestInit = {
       method: "POST",
       headers: GH_HEADERS(token),
-    });
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, init);
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
@@ -989,6 +1038,20 @@ interface RawCheckRun {
   app?: { slug?: string | null } | null;
 }
 
+interface RawWorkflow {
+  id: number;
+  name: string;
+  path: string;
+  state: string;
+}
+
+const toWorkflowSummary = (raw: RawWorkflow): WorkflowSummary => ({
+  id: String(raw.id),
+  name: raw.name,
+  path: raw.path,
+  state: raw.state,
+});
+
 const toCommitCheckFromGH = (raw: RawCheckRun): CommitCheck => ({
   name: raw.name,
   status: raw.status,
@@ -1025,4 +1088,5 @@ export const __test__ = {
   toCIJobSummaryFromGH,
   projectLogTail,
   toCommitCheckFromGH,
+  toWorkflowSummary,
 };
