@@ -441,4 +441,62 @@ describe("requestApproval — whitelist routing", () => {
     await settle("tge-2", true);
     expect(await p2).toBe(true);
   });
+
+  // ── M16: GitLab MR Approve / Unapprove always prompt ───────────────
+
+  it("gitlabApproveMergeRequest re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gl-approve";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tga-1",
+      "gitlabApproveMergeRequest",
+      { number: 7 },
+    );
+    await settle("tga-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabApproveMergeRequest")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tga-2",
+      "gitlabApproveMergeRequest",
+      { number: 7 },
+    );
+    expect(pendingApprovals.has("tga-2")).toBe(true);
+    await settle("tga-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("gitlabUnapproveMergeRequest re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gl-unapprove";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tgu-1",
+      "gitlabUnapproveMergeRequest",
+      { number: 9 },
+    );
+    await settle("tgu-1", true);
+    expect(await p1).toBe(true);
+    expect(
+      isToolWhitelistedForTask(taskId, "gitlabUnapproveMergeRequest"),
+    ).toBe(false);
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tgu-2",
+      "gitlabUnapproveMergeRequest",
+      { number: 9 },
+    );
+    expect(pendingApprovals.has("tgu-2")).toBe(true);
+    await settle("tgu-2", true);
+    expect(await p2).toBe(true);
+  });
 });

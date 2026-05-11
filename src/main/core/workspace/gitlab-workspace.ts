@@ -41,6 +41,7 @@ import type {
   ExecResult,
   IssueDetail,
   IssueSummary,
+  MergeRequestApprovalRule,
   PullRequestDetail,
   PullRequestReviewInput,
   PullRequestReviewResult,
@@ -635,6 +636,39 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     return { runId: String(raw.id), queued: true, ref: input.ref };
   }
 
+  // ── M16: GitLab MR Approve / Unapprove + Approval rules ──────────────
+
+  async approveMergeRequest(input: {
+    number: number;
+  }): Promise<{ number: number; approved: true }> {
+    await this.glPostNoBody(
+      `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}/approve`,
+      {},
+      "MR approve",
+    );
+    return { number: input.number, approved: true };
+  }
+
+  async unapproveMergeRequest(input: {
+    number: number;
+  }): Promise<{ number: number; approved: false }> {
+    await this.glPostNoBody(
+      `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}/unapprove`,
+      {},
+      "MR unapprove",
+    );
+    return { number: input.number, approved: false };
+  }
+
+  async listMergeRequestApprovalRules(input: {
+    number: number;
+  }): Promise<MergeRequestApprovalRule[]> {
+    const raw = await this.glJson<RawGlApprovalRule[]>(
+      `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}/approval_rules`,
+    );
+    return raw.map(toApprovalRule);
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =
@@ -701,6 +735,29 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
       throw new Error(`GitLab ${label} ${res.status}: ${text.slice(0, 200)}`);
     }
     return (await res.json()) as T;
+  }
+
+  /**
+   * POST that doesn't expect a JSON response body. Used by M16
+   * `/merge_requests/:iid/unapprove` which returns 201 / 204 with
+   * an empty body — `glPost` would crash on the empty body.
+   */
+  private async glPostNoBody(
+    pathAndQuery: string,
+    body: unknown,
+    label = "POST",
+  ): Promise<void> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`${this.apiBase()}${pathAndQuery}`, {
+      method: "POST",
+      headers: GL_HEADERS(token),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitLab ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
   }
 
   /** GET that returns the raw text body — used by job trace (M9). */
@@ -999,6 +1056,24 @@ interface RawGlStatus {
   target_url: string | null;
 }
 
+// ── M16: GitLab MR approval rules ────────────────────────────────────
+
+interface RawGlApprovalRule {
+  id: number;
+  name: string;
+  rule_type: string;
+  approvals_required: number;
+  eligible_approvers?: { username: string }[];
+}
+
+const toApprovalRule = (raw: RawGlApprovalRule): MergeRequestApprovalRule => ({
+  id: String(raw.id),
+  name: raw.name,
+  ruleType: raw.rule_type,
+  approvalsRequired: raw.approvals_required,
+  eligibleApprovers: (raw.eligible_approvers ?? []).map((u) => u.username),
+});
+
 const toCommitCheckFromGL = (raw: RawGlStatus): CommitCheck => {
   const mapped = mapPipelineStatus(raw.status);
   return {
@@ -1098,4 +1173,5 @@ export const __test__ = {
   toCIRunDetailFromGL,
   toCIJobSummaryFromGL,
   toCommitCheckFromGL,
+  toApprovalRule,
 };

@@ -73,6 +73,9 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   // M15: PR review lifecycle ops mutate / dismiss already-public content.
   "githubDismissReview",
   "githubEditReviewBody",
+  // M16: GitLab MR Approve / Unapprove are public vote signals on the MR.
+  "gitlabApproveMergeRequest",
+  "gitlabUnapproveMergeRequest",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -126,6 +129,9 @@ export const dangerousToolDescriptions: Record<
   },
   githubDismissReview: (args) => `撤回 PR #${args.number} 的 review`,
   githubEditReviewBody: (args) => `编辑 PR #${args.number} 的 review summary`,
+  gitlabApproveMergeRequest: (args) => `批准 (approve) MR !${args.number}`,
+  gitlabUnapproveMergeRequest: (args) =>
+    `撤回批准 (unapprove) MR !${args.number}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

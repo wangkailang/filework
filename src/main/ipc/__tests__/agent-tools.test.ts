@@ -402,4 +402,38 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
       expect(localRegistry.has(name)).toBe(false);
     }
   });
+
+  it("registers gitlab MR approve / unapprove / listApprovalRules on gitlab only (M16)", () => {
+    const m16Tools = [
+      "gitlabApproveMergeRequest",
+      "gitlabUnapproveMergeRequest",
+      "gitlabListMergeRequestApprovalRules",
+    ];
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of m16Tools) {
+      expect(gitlabRegistry.has(name)).toBe(true);
+    }
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m16Tools) {
+      expect(githubRegistry.has(name)).toBe(false);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m16Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
 });

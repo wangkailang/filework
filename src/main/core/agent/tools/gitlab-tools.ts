@@ -375,6 +375,49 @@ export const gitlabCreatePipelineTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "createCIPipeline")(args),
 };
 
+// ── M16: GitLab MR Approve / Unapprove + Approval rules ──────────────
+
+const mrApproveSchema = z.object({
+  number: z.number().int().positive().describe("MR iid"),
+});
+
+export const gitlabApproveMergeRequestTool: ToolDefinition<
+  z.infer<typeof mrApproveSchema>,
+  unknown
+> = {
+  name: "gitlabApproveMergeRequest",
+  description:
+    "Vote to approve a GitLab merge request. Required when the project has approval rules — leaving a comment is not the same as approving. Use `gitlabListMergeRequestApprovalRules` first if unsure how many approvers are needed. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: mrApproveSchema,
+  execute: async (args, ctx) => requireScm(ctx, "approveMergeRequest")(args),
+};
+
+export const gitlabUnapproveMergeRequestTool: ToolDefinition<
+  z.infer<typeof mrApproveSchema>,
+  unknown
+> = {
+  name: "gitlabUnapproveMergeRequest",
+  description:
+    "Retract a prior approval vote on a GitLab merge request. Use when an earlier approval no longer applies (e.g., new commits invalidate the review). Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: mrApproveSchema,
+  execute: async (args, ctx) => requireScm(ctx, "unapproveMergeRequest")(args),
+};
+
+export const gitlabListMergeRequestApprovalRulesTool: ToolDefinition<
+  z.infer<typeof mrApproveSchema>,
+  unknown
+> = {
+  name: "gitlabListMergeRequestApprovalRules",
+  description:
+    "List the approval rules for a GitLab merge request — name, rule type, how many approvers required, and which users are eligible. Read-only; useful before voting.",
+  safety: "safe",
+  inputSchema: mrApproveSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "listMergeRequestApprovalRules")(args),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -393,4 +436,7 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListCommitStatusesTool as ToolDefinition,
   gitlabCancelPipelineTool as ToolDefinition,
   gitlabCreatePipelineTool as ToolDefinition,
+  gitlabApproveMergeRequestTool as ToolDefinition,
+  gitlabUnapproveMergeRequestTool as ToolDefinition,
+  gitlabListMergeRequestApprovalRulesTool as ToolDefinition,
 ];
