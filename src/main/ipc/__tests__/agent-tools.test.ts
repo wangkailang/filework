@@ -308,4 +308,45 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
       expect(githubRegistry.has(name)).toBe(false);
     }
   });
+
+  it("registers github cancel + listWorkflows + dispatch on github only (M11)", () => {
+    const m11Tools = [
+      "githubCancelWorkflowRun",
+      "githubListWorkflows",
+      "githubDispatchWorkflow",
+    ];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m11Tools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m11Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
+
+  it("registers gitlab cancel on gitlab only (M11)", () => {
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    expect(gitlabRegistry.has("gitlabCancelPipeline")).toBe(true);
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    expect(githubRegistry.has("gitlabCancelPipeline")).toBe(false);
+  });
 });

@@ -599,6 +599,20 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     return raw.map(toCommitCheckFromGL);
   }
 
+  // ── M11: CI write — cancel ───────────────────────────────────────────
+
+  async cancelCI(input: {
+    runId: string;
+  }): Promise<{ runId: string; cancelled: boolean }> {
+    // GitLab returns 200 + the pipeline JSON; we discard it.
+    await this.glPost<unknown>(
+      `/projects/${projectIdEncoded(this.deps)}/pipelines/${encodeURIComponent(input.runId)}/cancel`,
+      {},
+      "pipeline cancel",
+    );
+    return { runId: input.runId, cancelled: true };
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =

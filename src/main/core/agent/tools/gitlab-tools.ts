@@ -151,6 +151,13 @@ const listCommitStatusesSchema = z.object({
   sha: z.string().min(1, "commit sha is required").describe("Full commit sha"),
 });
 
+const cancelPipelineSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Pipeline id to cancel."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -333,6 +340,18 @@ export const gitlabListCommitStatusesTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "listCommitChecks")(args),
 };
 
+export const gitlabCancelPipelineTool: ToolDefinition<
+  z.infer<typeof cancelPipelineSchema>,
+  unknown
+> = {
+  name: "gitlabCancelPipeline",
+  description:
+    "Cancel a GitLab CI pipeline that is still running. Idempotent — calling on an already-finished pipeline surfaces the GitLab error verbatim. Requires explicit user approval the first time per task; auto-approved on repeat.",
+  safety: "destructive",
+  inputSchema: cancelPipelineSchema,
+  execute: async (args, ctx) => requireScm(ctx, "cancelCI")(args),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -349,4 +368,5 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabRetryPipelineTool as ToolDefinition,
   gitlabReviewMergeRequestTool as ToolDefinition,
   gitlabListCommitStatusesTool as ToolDefinition,
+  gitlabCancelPipelineTool as ToolDefinition,
 ];

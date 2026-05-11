@@ -276,4 +276,87 @@ describe("requestApproval — whitelist routing", () => {
       false,
     );
   });
+
+  // ── M11: dispatch ALWAYS prompts; cancel whitelists after first OK ──
+
+  it("githubDispatchWorkflow re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-dispatch";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tdsp-1",
+      "githubDispatchWorkflow",
+      { workflowFile: "ci.yml", ref: "main" },
+    );
+    await settle("tdsp-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubDispatchWorkflow")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tdsp-2",
+      "githubDispatchWorkflow",
+      { workflowFile: "ci.yml", ref: "main" },
+    );
+    expect(pendingApprovals.has("tdsp-2")).toBe(true);
+    await settle("tdsp-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("githubCancelWorkflowRun whitelists after first OK (auto-approves second call)", async () => {
+    const taskId = "t-gh-cancel";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tcc-1",
+      "githubCancelWorkflowRun",
+      { runId: "1" },
+    );
+    await settle("tcc-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubCancelWorkflowRun")).toBe(
+      true,
+    );
+
+    // Second call: short-circuited; no pendingApprovals entry created.
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tcc-2",
+      "githubCancelWorkflowRun",
+      { runId: "2" },
+    );
+    expect(pendingApprovals.has("tcc-2")).toBe(false);
+    expect(await p2).toBe(true);
+  });
+
+  it("gitlabCancelPipeline also whitelists after first OK", async () => {
+    const taskId = "t-gl-cancel";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tgc-1",
+      "gitlabCancelPipeline",
+      { runId: "1" },
+    );
+    await settle("tgc-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabCancelPipeline")).toBe(true);
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tgc-2",
+      "gitlabCancelPipeline",
+      { runId: "2" },
+    );
+    expect(pendingApprovals.has("tgc-2")).toBe(false);
+    expect(await p2).toBe(true);
+  });
 });
