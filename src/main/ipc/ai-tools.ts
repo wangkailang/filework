@@ -55,6 +55,10 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   "githubCommentPullRequest",
   "gitlabCommentIssue",
   "gitlabCommentMergeRequest",
+  // M9: re-runs consume CI minutes and may re-trigger deploys.
+  "githubRerunWorkflowRun",
+  "githubRerunFailedJobs",
+  "gitlabRetryPipeline",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -81,6 +85,10 @@ export const dangerousToolDescriptions: Record<
     `评论 issue !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
   gitlabCommentMergeRequest: (args) =>
     `评论 MR !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
+  githubRerunWorkflowRun: (args) => `重新运行整个 workflow run #${args.runId}`,
+  githubRerunFailedJobs: (args) =>
+    `仅重新运行 workflow run #${args.runId} 的失败 jobs`,
+  gitlabRetryPipeline: (args) => `重试 pipeline #${args.runId} 的失败 jobs`,
 };
 
 /** Safe (read-only) tools — shared across all requests */

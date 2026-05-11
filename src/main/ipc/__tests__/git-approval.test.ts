@@ -171,4 +171,62 @@ describe("requestApproval — whitelist routing", () => {
       false,
     );
   });
+
+  // ── M9: re-run tools never enter the whitelist ──────────────────────
+
+  it("githubRerunWorkflowRun re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-rerun";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "trr-1",
+      "githubRerunWorkflowRun",
+      { runId: "1" },
+    );
+    await settle("trr-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubRerunWorkflowRun")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "trr-2",
+      "githubRerunWorkflowRun",
+      { runId: "1" },
+    );
+    expect(pendingApprovals.has("trr-2")).toBe(true);
+    await settle("trr-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("githubRerunFailedJobs also never enters the whitelist", async () => {
+    const taskId = "t-gh-rerun-failed";
+    const sender = stubSender();
+    const p = requestApproval(
+      sender,
+      taskId,
+      "trf-1",
+      "githubRerunFailedJobs",
+      { runId: "1" },
+    );
+    await settle("trf-1", true);
+    expect(await p).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubRerunFailedJobs")).toBe(
+      false,
+    );
+  });
+
+  it("gitlabRetryPipeline also never enters the whitelist", async () => {
+    const taskId = "t-gl-retry";
+    const sender = stubSender();
+    const p = requestApproval(sender, taskId, "tgr-1", "gitlabRetryPipeline", {
+      runId: "1",
+    });
+    await settle("tgr-1", true);
+    expect(await p).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabRetryPipeline")).toBe(false);
+  });
 });

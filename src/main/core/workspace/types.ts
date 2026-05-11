@@ -208,6 +208,21 @@ export interface CIJobSummary {
 }
 
 /**
+ * Raw log text for a single CI job (M9). Both providers return text/plain
+ * from their respective log endpoints; we slice client-side because
+ * neither API supports server-side line-range queries.
+ */
+export interface CIJobLog {
+  jobId: string;
+  /** Full log or the last `lastLines` lines if a tail was requested. */
+  content: string;
+  /** Total line count of the original log, regardless of slicing. */
+  totalLines: number;
+  /** True when content is a tail slice rather than the full log. */
+  truncated: boolean;
+}
+
+/**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
  * `LocalWorkspace` does not implement this in M1. Every method is optional
  * so backends can opt into a subset (status/diff in M6 PR 1; commit/push/PR
@@ -310,6 +325,27 @@ export interface WorkspaceSCM {
 
   /** List jobs for a CI run. */
   listCIJobs?(input: { runId: string }): Promise<CIJobSummary[]>;
+
+  // ── M9: CI logs + re-run ─────────────────────────────────────────────
+
+  /**
+   * Fetch the raw log of a single CI job. Both providers return text/plain;
+   * implementations slice client-side. `lastLines: 0` means unbounded
+   * (still capped at 5000 to protect the agent's context budget); a
+   * positive integer requests that many trailing lines. Default 500.
+   */
+  getCIJobLog?(input: { jobId: string; lastLines?: number }): Promise<CIJobLog>;
+
+  /**
+   * Re-trigger a CI run. `failedOnly: true` (default) re-runs only the
+   * failed jobs of the run (cheaper). `failedOnly: false` re-runs the
+   * entire run; on GitLab this throws — GitLab's `/retry` endpoint is
+   * failed-only by API design.
+   */
+  rerunCI?(input: {
+    runId: string;
+    failedOnly?: boolean;
+  }): Promise<{ runId: string; queued: boolean }>;
 }
 
 export interface Workspace {

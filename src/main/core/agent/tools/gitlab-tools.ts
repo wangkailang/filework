@@ -105,6 +105,29 @@ const listPipelineJobsSchema = z.object({
     .describe("Pipeline id whose jobs you want."),
 });
 
+const getJobLogSchema = z.object({
+  jobId: z
+    .string()
+    .min(1, "jobId is required")
+    .describe("Job id whose trace you want."),
+  lastLines: z
+    .number()
+    .int()
+    .min(0)
+    .max(5000)
+    .optional()
+    .describe(
+      "Trailing line count. 0 = unbounded (still capped at 5000). Default 500.",
+    ),
+});
+
+const retryPipelineSchema = z.object({
+  runId: z
+    .string()
+    .min(1, "runId is required")
+    .describe("Pipeline id to retry (failed jobs only)."),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -238,6 +261,31 @@ export const gitlabListPipelineJobsTool: ToolDefinition<
   execute: async (args, ctx) => requireScm(ctx, "listCIJobs")(args),
 };
 
+export const gitlabGetJobLogTool: ToolDefinition<
+  z.infer<typeof getJobLogSchema>,
+  unknown
+> = {
+  name: "gitlabGetJobLog",
+  description:
+    "Fetch the trace (log output) of a GitLab CI job. Returns the last 500 lines by default; pass lastLines=0 for unbounded (capped at 5000). Includes totalLines + truncated flag.",
+  safety: "safe",
+  inputSchema: getJobLogSchema,
+  execute: async (args, ctx) => requireScm(ctx, "getCIJobLog")(args),
+};
+
+export const gitlabRetryPipelineTool: ToolDefinition<
+  z.infer<typeof retryPipelineSchema>,
+  unknown
+> = {
+  name: "gitlabRetryPipeline",
+  description:
+    "Retry a GitLab pipeline (re-runs only failed jobs). GitLab does not expose a 'full re-run' API — for that, create a new pipeline on the same ref via the GitLab UI. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: retryPipelineSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "rerunCI")({ runId: args.runId, failedOnly: true }),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -250,4 +298,6 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListPipelinesTool as ToolDefinition,
   gitlabGetPipelineTool as ToolDefinition,
   gitlabListPipelineJobsTool as ToolDefinition,
+  gitlabGetJobLogTool as ToolDefinition,
+  gitlabRetryPipelineTool as ToolDefinition,
 ];

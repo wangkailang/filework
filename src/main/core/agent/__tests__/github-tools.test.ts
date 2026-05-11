@@ -29,7 +29,7 @@ const fakeCtx = (workspace: Workspace) => ({
 });
 
 describe("github tools — registration", () => {
-  it("buildGithubTools yields all 10 tools in order", () => {
+  it("buildGithubTools yields all 13 tools in order", () => {
     const tools = buildGithubTools();
     expect(tools.map((t) => t.name)).toEqual([
       "githubListPullRequests",
@@ -42,6 +42,9 @@ describe("github tools — registration", () => {
       "githubListWorkflowRuns",
       "githubGetWorkflowRun",
       "githubListWorkflowRunJobs",
+      "githubGetWorkflowJobLog",
+      "githubRerunWorkflowRun",
+      "githubRerunFailedJobs",
     ]);
   });
 
