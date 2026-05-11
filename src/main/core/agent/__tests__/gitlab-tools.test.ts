@@ -29,7 +29,7 @@ const fakeCtx = (workspace: Workspace) => ({
 });
 
 describe("gitlab tools — registration", () => {
-  it("buildGitlabTools yields all 12 tools in order", () => {
+  it("buildGitlabTools yields all 14 tools in order", () => {
     expect(buildGitlabTools().map((t) => t.name)).toEqual([
       "gitlabListMergeRequests",
       "gitlabGetMergeRequest",
@@ -43,6 +43,8 @@ describe("gitlab tools — registration", () => {
       "gitlabListPipelineJobs",
       "gitlabGetJobLog",
       "gitlabRetryPipeline",
+      "gitlabReviewMergeRequest",
+      "gitlabListCommitStatuses",
     ]);
   });
 

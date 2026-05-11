@@ -36,11 +36,14 @@ import type {
   CIRunStatus,
   CIRunSummary,
   CodeSearchResult,
+  CommitCheck,
   ExecOptions,
   ExecResult,
   IssueDetail,
   IssueSummary,
   PullRequestDetail,
+  PullRequestReviewInput,
+  PullRequestReviewResult,
   PullRequestSummary,
   Workspace,
   WorkspaceExec,
@@ -541,6 +544,37 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     return { runId: input.runId, queued: true };
   }
 
+  // ── M10: PR review + combined commit checks ──────────────────────────
+
+  async reviewPullRequest(
+    input: PullRequestReviewInput,
+  ): Promise<PullRequestReviewResult> {
+    const body: Record<string, unknown> = {
+      comments: (input.comments ?? []).map((c) => ({
+        path: c.path,
+        line: c.line,
+        body: c.body,
+        side: "RIGHT",
+      })),
+    };
+    if (input.body !== undefined) body.body = input.body;
+    if (input.event !== undefined) body.event = input.event;
+
+    const res = await this.ghPost<{ id: number; html_url: string }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/${input.number}/reviews`,
+      body,
+      "PR review",
+    );
+    return { reviewId: String(res.id), url: res.html_url };
+  }
+
+  async listCommitChecks(input: { sha: string }): Promise<CommitCheck[]> {
+    const raw = await this.ghJson<{ check_runs: RawCheckRun[] }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/commits/${input.sha}/check-runs?per_page=100`,
+    );
+    return raw.check_runs.map(toCommitCheckFromGH);
+  }
+
   // ── private fetch helpers (M6 PR 3) ───────────────────────────────────
 
   private async ghJson<T>(pathAndQuery: string): Promise<T> {
@@ -946,6 +980,23 @@ export const projectLogTail = (
   };
 };
 
+interface RawCheckRun {
+  name: string;
+  status: CIRunStatus;
+  conclusion: CIRunConclusion;
+  html_url: string;
+  /** App that created the check (omitted only on legacy responses). */
+  app?: { slug?: string | null } | null;
+}
+
+const toCommitCheckFromGH = (raw: RawCheckRun): CommitCheck => ({
+  name: raw.name,
+  status: raw.status,
+  conclusion: raw.conclusion,
+  url: raw.html_url,
+  source: raw.app?.slug ?? "unknown",
+});
+
 const toCIJobSummaryFromGH = (raw: RawWorkflowJob): CIJobSummary => ({
   id: String(raw.id),
   name: raw.name,
@@ -973,4 +1024,5 @@ export const __test__ = {
   toCIRunDetailFromGH,
   toCIJobSummaryFromGH,
   projectLogTail,
+  toCommitCheckFromGH,
 };

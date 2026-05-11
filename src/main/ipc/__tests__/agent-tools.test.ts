@@ -266,4 +266,46 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
       expect(githubRegistry.has(name)).toBe(false);
     }
   });
+
+  it("registers github review + check-runs tools on github only (M10)", () => {
+    const m10Tools = ["githubReviewPullRequest", "githubListCommitChecks"];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m10Tools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m10Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
+
+  it("registers gitlab review + statuses tools on gitlab only (M10)", () => {
+    const m10Tools = ["gitlabReviewMergeRequest", "gitlabListCommitStatuses"];
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of m10Tools) {
+      expect(gitlabRegistry.has(name)).toBe(true);
+    }
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m10Tools) {
+      expect(githubRegistry.has(name)).toBe(false);
+    }
+  });
 });

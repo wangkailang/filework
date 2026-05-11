@@ -36,11 +36,14 @@ import type {
   CIRunStatus,
   CIRunSummary,
   CodeSearchResult,
+  CommitCheck,
   ExecOptions,
   ExecResult,
   IssueDetail,
   IssueSummary,
   PullRequestDetail,
+  PullRequestReviewInput,
+  PullRequestReviewResult,
   PullRequestSummary,
   Workspace,
   WorkspaceExec,
@@ -526,6 +529,76 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     return { runId: input.runId, queued: true };
   }
 
+  // ── M10: PR review + combined commit checks ──────────────────────────
+
+  async reviewPullRequest(
+    input: PullRequestReviewInput,
+  ): Promise<PullRequestReviewResult> {
+    // GitLab anchors line comments by SHAs; fetch the MR detail first.
+    const mr = await this.glJson<RawMRDetail>(
+      `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}`,
+    );
+    const refs = mr.diff_refs;
+    const comments = input.comments ?? [];
+
+    let firstId: string | null = null;
+    let firstUrl: string = mr.web_url;
+
+    for (const c of comments) {
+      if (!refs) {
+        throw new Error(
+          "GitLab MR has no diff_refs — cannot anchor inline comments",
+        );
+      }
+      const d = await this.glPost<RawGlDiscussion>(
+        `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}/discussions`,
+        {
+          body: c.body,
+          position: {
+            base_sha: refs.base_sha,
+            head_sha: refs.head_sha,
+            start_sha: refs.start_sha,
+            position_type: "text",
+            new_path: c.path,
+            new_line: c.line,
+          },
+        },
+        "MR discussion",
+      );
+      if (firstId === null) {
+        firstId = d.id;
+        firstUrl = this.discussionUrl(input.number, d.id);
+      }
+    }
+
+    if (input.body) {
+      const note = await this.glPost<RawGlNote>(
+        `/projects/${projectIdEncoded(this.deps)}/merge_requests/${input.number}/notes`,
+        { body: input.body },
+        "MR review note",
+      );
+      if (firstId === null) {
+        firstId = String(note.id);
+        firstUrl = this.commentUrl("merge_requests", input.number, note.id);
+      }
+    }
+
+    if (firstId === null) {
+      throw new Error(
+        "reviewMergeRequest needs at least one comment or a body",
+      );
+    }
+    // input.event is intentionally ignored on GitLab — see tool description.
+    return { reviewId: firstId, url: firstUrl };
+  }
+
+  async listCommitChecks(input: { sha: string }): Promise<CommitCheck[]> {
+    const raw = await this.glJson<RawGlStatus[]>(
+      `/projects/${projectIdEncoded(this.deps)}/repository/commits/${encodeURIComponent(input.sha)}/statuses?per_page=100`,
+    );
+    return raw.map(toCommitCheckFromGL);
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =
@@ -554,6 +627,10 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     noteId: number,
   ): string {
     return `https://${this.deps.host}/${this.deps.namespace}/${this.deps.project}/-/${kind}/${iid}#note_${noteId}`;
+  }
+
+  private discussionUrl(iid: number, discussionId: string): string {
+    return `https://${this.deps.host}/${this.deps.namespace}/${this.deps.project}/-/merge_requests/${iid}#note_${discussionId}`;
   }
 
   private async glJson<T>(pathAndQuery: string): Promise<T> {
@@ -746,6 +823,16 @@ interface RawMRDetail extends RawMR {
   diff_stats?: { additions: number; deletions: number };
   upvotes?: number;
   downvotes?: number;
+  /**
+   * SHAs needed to anchor positional review discussions (M10).
+   * Present on all standard GitLab MR detail responses; missing only on
+   * exotic states (e.g. squashed-and-merged historical MRs).
+   */
+  diff_refs?: {
+    base_sha: string;
+    head_sha: string;
+    start_sha: string;
+  };
 }
 
 interface RawGlIssue {
@@ -864,6 +951,29 @@ interface RawGlJob {
   finished_at: string | null;
 }
 
+interface RawGlDiscussion {
+  /** GitLab discussion ids are SHA-like strings, not numbers. */
+  id: string;
+}
+
+interface RawGlStatus {
+  name: string;
+  status: RawGlPipeline["status"];
+  /** GitLab uses `target_url` for the per-status link. */
+  target_url: string | null;
+}
+
+const toCommitCheckFromGL = (raw: RawGlStatus): CommitCheck => {
+  const mapped = mapPipelineStatus(raw.status);
+  return {
+    name: raw.name,
+    status: mapped.status,
+    conclusion: mapped.conclusion,
+    url: raw.target_url ?? "",
+    source: "gitlab_ci",
+  };
+};
+
 const mapPipelineStatus = (
   s: RawGlPipeline["status"],
 ): { status: CIRunStatus; conclusion: CIRunConclusion } => {
@@ -951,4 +1061,5 @@ export const __test__ = {
   toCIRunSummaryFromGL,
   toCIRunDetailFromGL,
   toCIJobSummaryFromGL,
+  toCommitCheckFromGL,
 };

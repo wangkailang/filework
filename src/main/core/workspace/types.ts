@@ -222,6 +222,63 @@ export interface CIJobLog {
   truncated: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// PR / MR review (M10) + combined commit checks. Review semantics differ
+// across providers — verdict is GitHub-native; GitLab implementations
+// ignore it. CommitCheck unifies GitHub Actions + 3rd-party check-runs and
+// GitLab build statuses behind one shape.
+// ---------------------------------------------------------------------------
+
+export type ReviewVerdict = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+
+export interface PullRequestReviewComment {
+  /** Workspace-relative file path. */
+  path: string;
+  /** 1-based line number on the right side of the diff (the "new" file). */
+  line: number;
+  /** Markdown body of the inline comment. */
+  body: string;
+}
+
+export interface PullRequestReviewInput {
+  number: number;
+  /** Optional review-level body posted alongside line comments. */
+  body?: string;
+  /** Inline line comments. Empty array allowed. */
+  comments?: PullRequestReviewComment[];
+  /**
+   * Verdict — GitHub only. GitLab implementations ignore this field;
+   * GitLab MRs have a separate Approve API that we don't expose here.
+   */
+  event?: ReviewVerdict;
+}
+
+export interface PullRequestReviewResult {
+  /**
+   * Provider-native review id. On GitHub this is the review's id. On
+   * GitLab there is no aggregating "review" object — implementations
+   * return the first discussion's id (or the body note's id when no
+   * comments were posted).
+   */
+  reviewId: string;
+  url: string;
+}
+
+/** Combined commit-level check status across all reporting providers. */
+export interface CommitCheck {
+  /** Combined check / status name (e.g. "ci/circleci: build", "build"). */
+  name: string;
+  status: CIRunStatus;
+  conclusion: CIRunConclusion;
+  url: string;
+  /**
+   * Reporting source: GitHub `app.slug` ("github-actions", "circleci"…).
+   * GitLab returns "gitlab_ci" since the statuses endpoint doesn't tag
+   * a per-status source app.
+   */
+  source: string;
+}
+
 /**
  * Source-control surface. Optional: only Git-backed workspaces implement it.
  * `LocalWorkspace` does not implement this in M1. Every method is optional
@@ -346,6 +403,26 @@ export interface WorkspaceSCM {
     runId: string;
     failedOnly?: boolean;
   }): Promise<{ runId: string; queued: boolean }>;
+
+  // ── M10: PR review + commit checks ───────────────────────────────────
+
+  /**
+   * Submit a review on a PR/MR. One call posts N inline line-level
+   * comments + an optional summary body + an optional verdict (GitHub
+   * only). GitLab implementations sequence per-comment discussions and
+   * ignore `event`.
+   */
+  reviewPullRequest?(
+    input: PullRequestReviewInput,
+  ): Promise<PullRequestReviewResult>;
+
+  /**
+   * List all checks for a commit sha. On GitHub this hits the combined
+   * `/check-runs` endpoint (covers GitHub Actions + third-party providers
+   * like CircleCI). On GitLab this hits the commit `statuses` endpoint.
+   * Both project to the same vendor-neutral `CommitCheck` shape.
+   */
+  listCommitChecks?(input: { sha: string }): Promise<CommitCheck[]>;
 }
 
 export interface Workspace {
