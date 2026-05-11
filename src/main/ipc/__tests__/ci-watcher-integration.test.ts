@@ -183,6 +183,44 @@ describe("agent-tools × ci-watcher integration", () => {
     afterDispatchSpy.mockRestore();
   });
 
+  it("gitlabCreatePipeline subscribes via the direct path (M14)", async () => {
+    const sender = fakeSender();
+    const createCIPipeline = vi.fn(async () => ({
+      runId: "55",
+      queued: true,
+      ref: "main",
+    }));
+    const ws = buildWs({ createCIPipeline }, "gitlab");
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "t-create",
+      workspace: ws,
+    });
+    const tools = registry.toAiSdkTools({
+      ctxFactory: ({ toolCallId }) => ({
+        workspace: ws,
+        signal: new AbortController().signal,
+        toolCallId,
+      }),
+    });
+    const tool = tools.gitlabCreatePipeline;
+    if (!tool?.execute) throw new Error("tool not registered");
+    await tool.execute(
+      { ref: "main", variables: { ENV: "staging" } },
+      { toolCallId: "tc-1", messages: [], abortSignal: undefined as never },
+    );
+    expect(createCIPipeline).toHaveBeenCalledWith({
+      ref: "main",
+      variables: { ENV: "staging" },
+    });
+    expect(subscribeSpy).toHaveBeenCalledTimes(1);
+    expect(subscribeSpy.mock.calls[0]?.[0]).toMatchObject({
+      runId: "55",
+      sender,
+      taskId: "t-create",
+    });
+  });
+
   it("safe tools (listWorkflowRuns) do NOT subscribe", async () => {
     const sender = fakeSender();
     const listCIRuns = vi.fn(async () => []);

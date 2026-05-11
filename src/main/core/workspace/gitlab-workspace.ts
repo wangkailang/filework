@@ -613,6 +613,28 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     return { runId: input.runId, cancelled: true };
   }
 
+  // ── M14: CI write — createPipeline (GitLab analog of dispatchWorkflow) ─
+
+  async createCIPipeline(input: {
+    ref: string;
+    variables?: Record<string, string>;
+  }): Promise<{ runId: string; queued: boolean; ref: string }> {
+    const body: Record<string, unknown> = { ref: input.ref };
+    if (input.variables) {
+      body.variables = Object.entries(input.variables).map(([key, value]) => ({
+        key,
+        value,
+        variable_type: "env_var",
+      }));
+    }
+    const raw = await this.glPost<{ id: number }>(
+      `/projects/${projectIdEncoded(this.deps)}/pipeline`,
+      body,
+      "create pipeline",
+    );
+    return { runId: String(raw.id), queued: true, ref: input.ref };
+  }
+
   async searchCode(input: { query: string }): Promise<CodeSearchResult> {
     // GitLab's project-scoped blob search.
     const url =

@@ -17,6 +17,7 @@ import {
 import {
   buildGitlabTools,
   gitlabCancelPipelineTool,
+  gitlabCreatePipelineTool,
 } from "../tools/gitlab-tools";
 
 const fakeWorkspace = (scm?: Partial<WorkspaceSCM>): Workspace =>
@@ -43,15 +44,17 @@ describe("M11 CI write tools — registration", () => {
     expect(names).toContain("githubDispatchWorkflow");
   });
 
-  it("buildGitlabTools exposes cancelPipeline", () => {
+  it("buildGitlabTools exposes cancelPipeline + createPipeline", () => {
     const names = buildGitlabTools().map((t) => t.name);
     expect(names).toContain("gitlabCancelPipeline");
+    expect(names).toContain("gitlabCreatePipeline");
   });
 
   it("safety classifications", () => {
     expect(githubCancelWorkflowRunTool.safety).toBe("destructive");
     expect(githubDispatchWorkflowTool.safety).toBe("destructive");
     expect(gitlabCancelPipelineTool.safety).toBe("destructive");
+    expect(gitlabCreatePipelineTool.safety).toBe("destructive");
     expect(githubListWorkflowsTool.safety).toBe("safe");
   });
 });
@@ -155,5 +158,44 @@ describe("M11 CI write tools — schema bounds", () => {
 
   it("listWorkflows takes an empty object", () => {
     expect(githubListWorkflowsTool.inputSchema.parse({})).toEqual({});
+  });
+
+  it("createPipeline requires non-empty ref", () => {
+    expect(() =>
+      gitlabCreatePipelineTool.inputSchema.parse({ ref: "" }),
+    ).toThrow();
+  });
+
+  it("createPipeline accepts string-valued variables record", () => {
+    expect(() =>
+      gitlabCreatePipelineTool.inputSchema.parse({
+        ref: "main",
+        variables: { ENV: "staging" },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("M14 createPipeline tool — delegation", () => {
+  it("gitlabCreatePipeline forwards full payload to scm.createCIPipeline", async () => {
+    const createCIPipeline = vi.fn(
+      async () => ({ runId: "42", queued: true, ref: "main" }) as never,
+    );
+    const ws = fakeWorkspace({ createCIPipeline });
+    await gitlabCreatePipelineTool.execute(
+      { ref: "main", variables: { ENV: "staging" } },
+      fakeCtx(ws),
+    );
+    expect(createCIPipeline).toHaveBeenCalledWith({
+      ref: "main",
+      variables: { ENV: "staging" },
+    });
+  });
+
+  it("throws when scm.createCIPipeline is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      gitlabCreatePipelineTool.execute({ ref: "main" }, fakeCtx(ws)),
+    ).rejects.toThrow(/createCIPipeline/);
   });
 });

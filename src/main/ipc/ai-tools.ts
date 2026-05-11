@@ -67,6 +67,9 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   // ever reduce CI activity, so they follow the whitelist-after-first-OK
   // pattern (see git-approval.test.ts for the regression guard).
   "githubDispatchWorkflow",
+  // M14: gitlab createPipeline starts a fresh CI run with arbitrary
+  // variables and may deploy — same posture as dispatch / rerun.
+  "gitlabCreatePipeline",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -112,6 +115,12 @@ export const dangerousToolDescriptions: Record<
   githubDispatchWorkflow: (args) =>
     `手动触发 workflow ${args.workflowFile} on ${args.ref}`,
   gitlabCancelPipeline: (args) => `取消 pipeline #${args.runId}`,
+  gitlabCreatePipeline: (args) => {
+    const vars = args.variables;
+    const n = vars && typeof vars === "object" ? Object.keys(vars).length : 0;
+    const varsHint = n > 0 ? ` (${n} 个变量)` : "";
+    return `在 ${args.ref} 上创建 pipeline${varsHint}`;
+  },
 };
 
 /** Safe (read-only) tools — shared across all requests */

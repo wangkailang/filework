@@ -148,14 +148,20 @@ export const buildAgentToolRegistry = ({
   // M13: dispatch is also wrapped — GitHub `/dispatches` returns 204+empty
   // so we don't have a runId, but `subscribeAfterDispatch` resolves it via
   // a short retry loop on listCIRuns and then falls through to subscribe.
-  const CI_WATCH_RERUN_TOOLS = new Set([
+  //
+  // M14: gitlabCreatePipeline joins the "direct" set — GitLab `POST
+  // /pipeline` returns the pipeline JSON synchronously (with id), so the
+  // tool returns {runId, queued} the same shape as rerun and the wrapper
+  // subscribes immediately without M13's resolve-retry dance.
+  const CI_WATCH_DIRECT_TOOLS = new Set([
     "githubRerunWorkflowRun",
     "githubRerunFailedJobs",
     "gitlabRetryPipeline",
+    "gitlabCreatePipeline",
   ]);
   const CI_WATCH_DISPATCH_TOOLS = new Set(["githubDispatchWorkflow"]);
   const maybeWrapWithWatcher = (def: ToolDefinition): ToolDefinition => {
-    if (CI_WATCH_RERUN_TOOLS.has(def.name)) {
+    if (CI_WATCH_DIRECT_TOOLS.has(def.name)) {
       const original = def.execute;
       return {
         ...def,

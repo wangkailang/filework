@@ -349,4 +349,27 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
     });
     expect(githubRegistry.has("gitlabCancelPipeline")).toBe(false);
   });
+
+  it("registers gitlab createPipeline on gitlab only (M14)", () => {
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    expect(gitlabRegistry.has("gitlabCreatePipeline")).toBe(true);
+
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    expect(githubRegistry.has("gitlabCreatePipeline")).toBe(false);
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    expect(localRegistry.has("gitlabCreatePipeline")).toBe(false);
+  });
 });
