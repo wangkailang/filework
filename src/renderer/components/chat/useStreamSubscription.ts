@@ -381,6 +381,21 @@ export function useStreamSubscription({
       },
     );
 
+    // M13: subscribeAfterDispatch couldn't resolve a runId for a manual
+    // workflow_dispatch within the 6s retry budget — tell the user to fall
+    // back to manual listing.
+    const offCiDispatchResolveFailed =
+      window.filework.onCiDispatchResolveFailed(({ id, ref, workflowFile }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          parts.push({
+            type: "text",
+            text: `⚠️ 已 dispatch ${workflowFile} on ${ref},但未能识别新 run id (GitHub 可能尚未创建);可调用 githubListWorkflowRuns 手动查询。`,
+          });
+          return parts;
+        });
+      });
+
     return () => {
       offStart();
       offSkillActivated();
@@ -395,6 +410,7 @@ export function useStreamSubscription({
       offSkillApprovalRequest();
       offCiRunDone();
       offCiRunTimeout();
+      offCiDispatchResolveFailed();
     };
   }, [
     debouncedSave,
