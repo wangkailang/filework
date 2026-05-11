@@ -19,8 +19,11 @@ import {
 } from "../tools/github-tools";
 import {
   buildGitlabTools,
+  gitlabApproveMergeRequestTool,
   gitlabListCommitStatusesTool,
+  gitlabListMergeRequestApprovalRulesTool,
   gitlabReviewMergeRequestTool,
+  gitlabUnapproveMergeRequestTool,
 } from "../tools/gitlab-tools";
 
 const fakeWorkspace = (scm?: Partial<WorkspaceSCM>): Workspace =>
@@ -296,6 +299,98 @@ describe("M15 schema bounds", () => {
         number: 1,
         comments: [{ path: "a.ts", startLine: 5, line: 8, body: "rename" }],
       }),
+    ).not.toThrow();
+  });
+});
+
+describe("M16 MR approve tools — registration", () => {
+  it("buildGitlabTools exposes approve, unapprove, listApprovalRules", () => {
+    const names = buildGitlabTools().map((t) => t.name);
+    expect(names).toContain("gitlabApproveMergeRequest");
+    expect(names).toContain("gitlabUnapproveMergeRequest");
+    expect(names).toContain("gitlabListMergeRequestApprovalRules");
+  });
+
+  it("approve and unapprove are destructive; listApprovalRules is safe", () => {
+    expect(gitlabApproveMergeRequestTool.safety).toBe("destructive");
+    expect(gitlabUnapproveMergeRequestTool.safety).toBe("destructive");
+    expect(gitlabListMergeRequestApprovalRulesTool.safety).toBe("safe");
+  });
+});
+
+describe("M16 MR approve tools — delegation", () => {
+  it("approve forwards {number} to scm.approveMergeRequest", async () => {
+    const approveMergeRequest = vi.fn(
+      async () => ({ number: 7, approved: true }) as never,
+    );
+    const ws = fakeWorkspace({ approveMergeRequest });
+    await gitlabApproveMergeRequestTool.execute({ number: 7 }, fakeCtx(ws));
+    expect(approveMergeRequest).toHaveBeenCalledWith({ number: 7 });
+  });
+
+  it("unapprove forwards {number} to scm.unapproveMergeRequest", async () => {
+    const unapproveMergeRequest = vi.fn(
+      async () => ({ number: 9, approved: false }) as never,
+    );
+    const ws = fakeWorkspace({ unapproveMergeRequest });
+    await gitlabUnapproveMergeRequestTool.execute({ number: 9 }, fakeCtx(ws));
+    expect(unapproveMergeRequest).toHaveBeenCalledWith({ number: 9 });
+  });
+
+  it("listApprovalRules forwards {number} to scm.listMergeRequestApprovalRules", async () => {
+    const listMergeRequestApprovalRules = vi.fn(async () => [] as never);
+    const ws = fakeWorkspace({ listMergeRequestApprovalRules });
+    await gitlabListMergeRequestApprovalRulesTool.execute(
+      { number: 11 },
+      fakeCtx(ws),
+    );
+    expect(listMergeRequestApprovalRules).toHaveBeenCalledWith({ number: 11 });
+  });
+
+  it("throws when scm.approveMergeRequest is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      gitlabApproveMergeRequestTool.execute({ number: 7 }, fakeCtx(ws)),
+    ).rejects.toThrow(/approveMergeRequest/);
+  });
+
+  it("throws when scm.unapproveMergeRequest is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      gitlabUnapproveMergeRequestTool.execute({ number: 7 }, fakeCtx(ws)),
+    ).rejects.toThrow(/unapproveMergeRequest/);
+  });
+
+  it("throws when scm.listMergeRequestApprovalRules is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      gitlabListMergeRequestApprovalRulesTool.execute(
+        { number: 7 },
+        fakeCtx(ws),
+      ),
+    ).rejects.toThrow(/listMergeRequestApprovalRules/);
+  });
+});
+
+describe("M16 MR approve schema bounds", () => {
+  it("approve schema rejects non-positive number", () => {
+    expect(() =>
+      gitlabApproveMergeRequestTool.inputSchema.parse({ number: 0 }),
+    ).toThrow();
+    expect(() =>
+      gitlabApproveMergeRequestTool.inputSchema.parse({ number: -1 }),
+    ).toThrow();
+  });
+
+  it("unapprove schema rejects non-integer", () => {
+    expect(() =>
+      gitlabUnapproveMergeRequestTool.inputSchema.parse({ number: 1.5 }),
+    ).toThrow();
+  });
+
+  it("listApprovalRules schema accepts a positive int", () => {
+    expect(() =>
+      gitlabListMergeRequestApprovalRulesTool.inputSchema.parse({ number: 1 }),
     ).not.toThrow();
   });
 });

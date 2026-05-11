@@ -271,6 +271,23 @@ export interface PullRequestReviewResult {
   url: string;
 }
 
+/**
+ * Lightweight projection of a GitLab merge_request approval rule (M16).
+ * Used by `listMergeRequestApprovalRules` to let the agent decide whether
+ * its approval would actually unblock the MR.
+ */
+export interface MergeRequestApprovalRule {
+  id: string;
+  /** Rule name (e.g. "Default", "QA Reviewers"). */
+  name: string;
+  /** "regular" / "code_owner" / "any_approver" / "report_approver". */
+  ruleType: string;
+  /** How many approvals this rule requires. */
+  approvalsRequired: number;
+  /** Usernames of users who can satisfy this rule. */
+  eligibleApprovers: string[];
+}
+
 /** Combined commit-level check status across all reporting providers. */
 export interface CommitCheck {
   /** Combined check / status name (e.g. "ci/circleci: build", "build"). */
@@ -463,6 +480,34 @@ export interface WorkspaceSCM {
     reviewId: string;
     body: string;
   }): Promise<{ reviewId: string; url: string }>;
+
+  // ── M16: GitLab MR Approve / Unapprove + Approval rules ──────────────
+
+  /**
+   * Vote to approve a merge request (M16). GitLab-only — GitHub's analog
+   * is `reviewPullRequest({event:"APPROVE"})` from M10. Repeated approval
+   * by the same user is rejected by GitLab with 401 "already approved" —
+   * surface verbatim so the agent reads the situation.
+   */
+  approveMergeRequest?(input: {
+    number: number;
+  }): Promise<{ number: number; approved: true }>;
+
+  /**
+   * Retract a prior approval vote (M16). GitLab-only.
+   */
+  unapproveMergeRequest?(input: {
+    number: number;
+  }): Promise<{ number: number; approved: false }>;
+
+  /**
+   * List the approval rules for a merge request (M16). Lets the agent
+   * decide whether voting would actually unblock the merge button.
+   * GitLab-only.
+   */
+  listMergeRequestApprovalRules?(input: {
+    number: number;
+  }): Promise<MergeRequestApprovalRule[]>;
 
   /**
    * List all checks for a commit sha. On GitHub this hits the combined
