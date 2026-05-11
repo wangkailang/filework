@@ -229,4 +229,51 @@ describe("requestApproval — whitelist routing", () => {
     expect(await p).toBe(true);
     expect(isToolWhitelistedForTask(taskId, "gitlabRetryPipeline")).toBe(false);
   });
+
+  // ── M10: PR/MR review tools never enter the whitelist ───────────────
+
+  it("githubReviewPullRequest re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-review";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "trv-1",
+      "githubReviewPullRequest",
+      { number: 7, body: "ok" },
+    );
+    await settle("trv-1", true);
+    expect(await p1).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "githubReviewPullRequest")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "trv-2",
+      "githubReviewPullRequest",
+      { number: 7, body: "more thoughts" },
+    );
+    expect(pendingApprovals.has("trv-2")).toBe(true);
+    await settle("trv-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("gitlabReviewMergeRequest also never enters the whitelist", async () => {
+    const taskId = "t-gl-review";
+    const sender = stubSender();
+    const p = requestApproval(
+      sender,
+      taskId,
+      "tglr-1",
+      "gitlabReviewMergeRequest",
+      { number: 7, body: "ok" },
+    );
+    await settle("tglr-1", true);
+    expect(await p).toBe(true);
+    expect(isToolWhitelistedForTask(taskId, "gitlabReviewMergeRequest")).toBe(
+      false,
+    );
+  });
 });

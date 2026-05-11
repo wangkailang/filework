@@ -128,6 +128,29 @@ const retryPipelineSchema = z.object({
     .describe("Pipeline id to retry (failed jobs only)."),
 });
 
+const reviewMergeRequestSchema = z.object({
+  number: z.number().int().positive().describe("MR iid"),
+  body: z.string().optional().describe("Optional review-level summary note"),
+  comments: z
+    .array(
+      z.object({
+        path: z.string().min(1).describe("Workspace-relative file path"),
+        line: z
+          .number()
+          .int()
+          .min(1)
+          .describe("1-based new-file line for the inline comment"),
+        body: z.string().min(1).describe("Markdown body of the inline comment"),
+      }),
+    )
+    .optional()
+    .describe("Inline positional discussions. Empty array allowed."),
+});
+
+const listCommitStatusesSchema = z.object({
+  sha: z.string().min(1, "commit sha is required").describe("Full commit sha"),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -286,6 +309,30 @@ export const gitlabRetryPipelineTool: ToolDefinition<
     requireScm(ctx, "rerunCI")({ runId: args.runId, failedOnly: true }),
 };
 
+export const gitlabReviewMergeRequestTool: ToolDefinition<
+  z.infer<typeof reviewMergeRequestSchema>,
+  unknown
+> = {
+  name: "gitlabReviewMergeRequest",
+  description:
+    "Submit a review on a merge request. Posts inline positional discussions for each comment + optional summary note. GitLab has no APPROVE/REQUEST_CHANGES verdict at this layer — use the dedicated approve API separately. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: reviewMergeRequestSchema,
+  execute: async (args, ctx) => requireScm(ctx, "reviewPullRequest")(args),
+};
+
+export const gitlabListCommitStatusesTool: ToolDefinition<
+  z.infer<typeof listCommitStatusesSchema>,
+  unknown
+> = {
+  name: "gitlabListCommitStatuses",
+  description:
+    "List all build statuses for a commit sha — equivalent to GitHub's check-runs API. Returns name, status, conclusion, and url for each status reporter.",
+  safety: "safe",
+  inputSchema: listCommitStatusesSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCommitChecks")(args),
+};
+
 /** All gitlab tools, in registration order. */
 export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListMergeRequestsTool as ToolDefinition,
@@ -300,4 +347,6 @@ export const buildGitlabTools = (): ToolDefinition[] => [
   gitlabListPipelineJobsTool as ToolDefinition,
   gitlabGetJobLogTool as ToolDefinition,
   gitlabRetryPipelineTool as ToolDefinition,
+  gitlabReviewMergeRequestTool as ToolDefinition,
+  gitlabListCommitStatusesTool as ToolDefinition,
 ];

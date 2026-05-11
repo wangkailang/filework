@@ -126,6 +126,33 @@ const rerunRunSchema = z.object({
     .describe("Workflow run id to re-run."),
 });
 
+const reviewPullRequestSchema = z.object({
+  number: z.number().int().positive().describe("PR number"),
+  body: z.string().optional().describe("Optional review-level summary body"),
+  comments: z
+    .array(
+      z.object({
+        path: z.string().min(1).describe("Workspace-relative file path"),
+        line: z
+          .number()
+          .int()
+          .min(1)
+          .describe("1-based line on the right side of the diff"),
+        body: z.string().min(1).describe("Markdown body of the inline comment"),
+      }),
+    )
+    .optional()
+    .describe("Inline line comments. Empty array allowed."),
+  event: z
+    .enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"])
+    .optional()
+    .describe("Review verdict. Omit to leave the review pending."),
+});
+
+const listCommitChecksSchema = z.object({
+  sha: z.string().min(1, "commit sha is required").describe("Full commit sha"),
+});
+
 const requireScm = <K extends keyof WorkspaceSCM>(
   ctx: ToolContext,
   method: K,
@@ -297,6 +324,30 @@ export const githubRerunFailedJobsTool: ToolDefinition<
     requireScm(ctx, "rerunCI")({ runId: args.runId, failedOnly: true }),
 };
 
+export const githubReviewPullRequestTool: ToolDefinition<
+  z.infer<typeof reviewPullRequestSchema>,
+  unknown
+> = {
+  name: "githubReviewPullRequest",
+  description:
+    "Submit a review on a PR. One call posts inline line-level comments + optional summary body + optional verdict (APPROVE / REQUEST_CHANGES / COMMENT). Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: reviewPullRequestSchema,
+  execute: async (args, ctx) => requireScm(ctx, "reviewPullRequest")(args),
+};
+
+export const githubListCommitChecksTool: ToolDefinition<
+  z.infer<typeof listCommitChecksSchema>,
+  unknown
+> = {
+  name: "githubListCommitChecks",
+  description:
+    "List all check-runs for a commit sha — covers GitHub Actions plus third-party providers like CircleCI that report via the Checks API. Use this for a complete view of CI / status before merging.",
+  safety: "safe",
+  inputSchema: listCommitChecksSchema,
+  execute: async (args, ctx) => requireScm(ctx, "listCommitChecks")(args),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -312,4 +363,6 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubGetWorkflowJobLogTool as ToolDefinition,
   githubRerunWorkflowRunTool as ToolDefinition,
   githubRerunFailedJobsTool as ToolDefinition,
+  githubReviewPullRequestTool as ToolDefinition,
+  githubListCommitChecksTool as ToolDefinition,
 ];

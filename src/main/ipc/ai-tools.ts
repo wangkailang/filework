@@ -59,6 +59,9 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   "githubRerunWorkflowRun",
   "githubRerunFailedJobs",
   "gitlabRetryPipeline",
+  // M10: PR/MR reviews post public, hard-to-undo content.
+  "githubReviewPullRequest",
+  "gitlabReviewMergeRequest",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -89,6 +92,17 @@ export const dangerousToolDescriptions: Record<
   githubRerunFailedJobs: (args) =>
     `仅重新运行 workflow run #${args.runId} 的失败 jobs`,
   gitlabRetryPipeline: (args) => `重试 pipeline #${args.runId} 的失败 jobs`,
+  githubReviewPullRequest: (args) => {
+    const verdict = args.event ? ` (${args.event})` : "";
+    const comments = args.comments;
+    const n = Array.isArray(comments) ? comments.length : 0;
+    return `提交 PR #${args.number} review${verdict} (${n} 条行级评论)`;
+  },
+  gitlabReviewMergeRequest: (args) => {
+    const comments = args.comments;
+    const n = Array.isArray(comments) ? comments.length : 0;
+    return `提交 MR !${args.number} review (${n} 条行级评论)`;
+  },
 };
 
 /** Safe (read-only) tools — shared across all requests */
