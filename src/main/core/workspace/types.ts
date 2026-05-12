@@ -272,6 +272,26 @@ export interface PullRequestReviewResult {
 }
 
 /**
+ * Lightweight projection of a GitHub PR review (inline) comment (M17).
+ * Returned by `listPullRequestReviewComments` so the agent can locate
+ * the right `commentId` before editing or deleting.
+ */
+export interface PullRequestReviewCommentSummary {
+  /** Comment id (numeric, stringified — primary key for edit/delete). */
+  id: string;
+  /** Parent review id, or null for diff-attached comments not tied to a review. */
+  reviewId: string | null;
+  author: string;
+  path: string;
+  /** Current diff line; null if the comment is outdated. */
+  line: number | null;
+  body: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
  * Lightweight projection of a GitLab merge_request approval rule (M16).
  * Used by `listMergeRequestApprovalRules` to let the agent decide whether
  * its approval would actually unblock the MR.
@@ -480,6 +500,36 @@ export interface WorkspaceSCM {
     reviewId: string;
     body: string;
   }): Promise<{ reviewId: string; url: string }>;
+
+  // ── M17: PR inline-comment edit / delete (GitHub-only) ────────────────
+
+  /**
+   * List the inline (review) comments on a PR (M17). Returns every
+   * inline review comment regardless of which review created it, so
+   * the agent can locate `id` for edit/delete. GitHub-only.
+   */
+  listPullRequestReviewComments?(input: {
+    number: number;
+  }): Promise<PullRequestReviewCommentSummary[]>;
+
+  /**
+   * Edit the body of a single inline review comment (M17). GitHub-only.
+   * Independent of the parent review id — `commentId` alone identifies it.
+   * GitHub returns 403 if the user isn't the comment's author or a repo
+   * admin; surface verbatim.
+   */
+  editPullRequestReviewComment?(input: {
+    commentId: string;
+    body: string;
+  }): Promise<{ commentId: string; url: string }>;
+
+  /**
+   * Delete a single inline review comment (M17). GitHub-only. Same 403
+   * authorship gate as edit.
+   */
+  deletePullRequestReviewComment?(input: {
+    commentId: string;
+  }): Promise<{ commentId: string; deleted: true }>;
 
   // ── M16: GitLab MR Approve / Unapprove + Approval rules ──────────────
 

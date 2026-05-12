@@ -12,9 +12,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { Workspace, WorkspaceSCM } from "../../workspace/types";
 import {
   buildGithubTools,
+  githubDeletePullRequestReviewCommentTool,
   githubDismissReviewTool,
+  githubEditPullRequestReviewCommentTool,
   githubEditReviewBodyTool,
   githubListCommitChecksTool,
+  githubListPullRequestReviewCommentsTool,
   githubReviewPullRequestTool,
 } from "../tools/github-tools";
 import {
@@ -392,5 +395,122 @@ describe("M16 MR approve schema bounds", () => {
     expect(() =>
       gitlabListMergeRequestApprovalRulesTool.inputSchema.parse({ number: 1 }),
     ).not.toThrow();
+  });
+});
+
+describe("M17 inline-comment edit/delete tools — registration", () => {
+  it("buildGithubTools exposes list / edit / delete review-comment tools", () => {
+    const names = buildGithubTools().map((t) => t.name);
+    expect(names).toContain("githubListPullRequestReviewComments");
+    expect(names).toContain("githubEditPullRequestReviewComment");
+    expect(names).toContain("githubDeletePullRequestReviewComment");
+  });
+
+  it("list is safe; edit + delete are destructive", () => {
+    expect(githubListPullRequestReviewCommentsTool.safety).toBe("safe");
+    expect(githubEditPullRequestReviewCommentTool.safety).toBe("destructive");
+    expect(githubDeletePullRequestReviewCommentTool.safety).toBe("destructive");
+  });
+});
+
+describe("M17 inline-comment edit/delete tools — delegation", () => {
+  it("list forwards {number} to scm.listPullRequestReviewComments", async () => {
+    const listPullRequestReviewComments = vi.fn(async () => [] as never);
+    const ws = fakeWorkspace({ listPullRequestReviewComments });
+    await githubListPullRequestReviewCommentsTool.execute(
+      { number: 7 },
+      fakeCtx(ws),
+    );
+    expect(listPullRequestReviewComments).toHaveBeenCalledWith({ number: 7 });
+  });
+
+  it("edit forwards {commentId, body} to scm.editPullRequestReviewComment", async () => {
+    const editPullRequestReviewComment = vi.fn(
+      async () => ({ commentId: "12345", url: "https://gh/c/12345" }) as never,
+    );
+    const ws = fakeWorkspace({ editPullRequestReviewComment });
+    await githubEditPullRequestReviewCommentTool.execute(
+      { commentId: "12345", body: "fix" },
+      fakeCtx(ws),
+    );
+    expect(editPullRequestReviewComment).toHaveBeenCalledWith({
+      commentId: "12345",
+      body: "fix",
+    });
+  });
+
+  it("delete forwards {commentId} to scm.deletePullRequestReviewComment", async () => {
+    const deletePullRequestReviewComment = vi.fn(
+      async () => ({ commentId: "12346", deleted: true }) as never,
+    );
+    const ws = fakeWorkspace({ deletePullRequestReviewComment });
+    await githubDeletePullRequestReviewCommentTool.execute(
+      { commentId: "12346" },
+      fakeCtx(ws),
+    );
+    expect(deletePullRequestReviewComment).toHaveBeenCalledWith({
+      commentId: "12346",
+    });
+  });
+
+  it("throws when scm.listPullRequestReviewComments is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      githubListPullRequestReviewCommentsTool.execute(
+        { number: 7 },
+        fakeCtx(ws),
+      ),
+    ).rejects.toThrow(/listPullRequestReviewComments/);
+  });
+
+  it("throws when scm.editPullRequestReviewComment is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      githubEditPullRequestReviewCommentTool.execute(
+        { commentId: "1", body: "x" },
+        fakeCtx(ws),
+      ),
+    ).rejects.toThrow(/editPullRequestReviewComment/);
+  });
+
+  it("throws when scm.deletePullRequestReviewComment is missing", async () => {
+    const ws = fakeWorkspace({});
+    await expect(
+      githubDeletePullRequestReviewCommentTool.execute(
+        { commentId: "1" },
+        fakeCtx(ws),
+      ),
+    ).rejects.toThrow(/deletePullRequestReviewComment/);
+  });
+});
+
+describe("M17 inline-comment schema bounds", () => {
+  it("list schema rejects non-positive number", () => {
+    expect(() =>
+      githubListPullRequestReviewCommentsTool.inputSchema.parse({ number: 0 }),
+    ).toThrow();
+  });
+
+  it("edit schema rejects empty commentId / body", () => {
+    expect(() =>
+      githubEditPullRequestReviewCommentTool.inputSchema.parse({
+        commentId: "",
+        body: "x",
+      }),
+    ).toThrow();
+    expect(() =>
+      githubEditPullRequestReviewCommentTool.inputSchema.parse({
+        commentId: "1",
+        body: "",
+      }),
+    ).toThrow();
+  });
+
+  it("delete schema rejects empty commentId", () => {
+    expect(() =>
+      githubDeletePullRequestReviewCommentTool.inputSchema.parse({
+        commentId: "",
+      }),
+    ).toThrow();
   });
 });

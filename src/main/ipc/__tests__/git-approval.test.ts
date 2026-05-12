@@ -499,4 +499,62 @@ describe("requestApproval — whitelist routing", () => {
     await settle("tgu-2", true);
     expect(await p2).toBe(true);
   });
+
+  // ── M17: PR inline-comment edit / delete always prompt ─────────────
+
+  it("githubEditPullRequestReviewComment re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-edit-com";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tgec-1",
+      "githubEditPullRequestReviewComment",
+      { commentId: "12345", body: "fix" },
+    );
+    await settle("tgec-1", true);
+    expect(await p1).toBe(true);
+    expect(
+      isToolWhitelistedForTask(taskId, "githubEditPullRequestReviewComment"),
+    ).toBe(false);
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tgec-2",
+      "githubEditPullRequestReviewComment",
+      { commentId: "12345", body: "fix v2" },
+    );
+    expect(pendingApprovals.has("tgec-2")).toBe(true);
+    await settle("tgec-2", true);
+    expect(await p2).toBe(true);
+  });
+
+  it("githubDeletePullRequestReviewComment re-prompts every time (never whitelisted)", async () => {
+    const taskId = "t-gh-del-com";
+    const sender = stubSender();
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tgdc-1",
+      "githubDeletePullRequestReviewComment",
+      { commentId: "12346" },
+    );
+    await settle("tgdc-1", true);
+    expect(await p1).toBe(true);
+    expect(
+      isToolWhitelistedForTask(taskId, "githubDeletePullRequestReviewComment"),
+    ).toBe(false);
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tgdc-2",
+      "githubDeletePullRequestReviewComment",
+      { commentId: "12347" },
+    );
+    expect(pendingApprovals.has("tgdc-2")).toBe(true);
+    await settle("tgdc-2", true);
+    expect(await p2).toBe(true);
+  });
 });

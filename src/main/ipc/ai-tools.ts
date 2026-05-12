@@ -76,6 +76,9 @@ const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
   // M16: GitLab MR Approve / Unapprove are public vote signals on the MR.
   "gitlabApproveMergeRequest",
   "gitlabUnapproveMergeRequest",
+  // M17: PR inline-comment edit / delete are public mutations on the PR.
+  "githubEditPullRequestReviewComment",
+  "githubDeletePullRequestReviewComment",
 ]);
 
 /** Human-readable descriptions for dangerous operations */
@@ -132,6 +135,10 @@ export const dangerousToolDescriptions: Record<
   gitlabApproveMergeRequest: (args) => `批准 (approve) MR !${args.number}`,
   gitlabUnapproveMergeRequest: (args) =>
     `撤回批准 (unapprove) MR !${args.number}`,
+  githubEditPullRequestReviewComment: (args) =>
+    `编辑 PR 行评论 #${args.commentId}: ${String(args.body ?? "").slice(0, 60)}`,
+  githubDeletePullRequestReviewComment: (args) =>
+    `删除 PR 行评论 #${args.commentId}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */
