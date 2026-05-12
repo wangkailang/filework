@@ -436,4 +436,38 @@ describe("buildAgentToolRegistry — git-tool registration", () => {
       expect(localRegistry.has(name)).toBe(false);
     }
   });
+
+  it("registers github PR inline-comment list / edit / delete on github only (M17)", () => {
+    const m17Tools = [
+      "githubListPullRequestReviewComments",
+      "githubEditPullRequestReviewComment",
+      "githubDeletePullRequestReviewComment",
+    ];
+    const githubRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("github"),
+    });
+    for (const name of m17Tools) {
+      expect(githubRegistry.has(name)).toBe(true);
+    }
+
+    const gitlabRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("gitlab"),
+    });
+    for (const name of m17Tools) {
+      expect(gitlabRegistry.has(name)).toBe(false);
+    }
+
+    const localRegistry = buildAgentToolRegistry({
+      sender: fakeSender,
+      taskId: "t-1",
+      workspace: mkWorkspace("local"),
+    });
+    for (const name of m17Tools) {
+      expect(localRegistry.has(name)).toBe(false);
+    }
+  });
 });

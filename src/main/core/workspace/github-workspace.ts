@@ -42,6 +42,7 @@ import type {
   IssueDetail,
   IssueSummary,
   PullRequestDetail,
+  PullRequestReviewCommentSummary,
   PullRequestReviewInput,
   PullRequestReviewResult,
   PullRequestSummary,
@@ -605,6 +606,39 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     return { reviewId: input.reviewId, url: res.html_url };
   }
 
+  // ── M17: PR inline-comment edit / delete ─────────────────────────────
+
+  async listPullRequestReviewComments(input: {
+    number: number;
+  }): Promise<PullRequestReviewCommentSummary[]> {
+    const raw = await this.ghJson<RawPullReviewComment[]>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/${input.number}/comments?per_page=100`,
+    );
+    return raw.map(toPullRequestReviewCommentSummary);
+  }
+
+  async editPullRequestReviewComment(input: {
+    commentId: string;
+    body: string;
+  }): Promise<{ commentId: string; url: string }> {
+    const res = await this.ghPatch<{ html_url: string }>(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/comments/${input.commentId}`,
+      { body: input.body },
+      "review-comment edit",
+    );
+    return { commentId: input.commentId, url: res.html_url };
+  }
+
+  async deletePullRequestReviewComment(input: {
+    commentId: string;
+  }): Promise<{ commentId: string; deleted: true }> {
+    await this.ghDeleteNoBody(
+      `/repos/${this.deps.owner}/${this.deps.repo}/pulls/comments/${input.commentId}`,
+      "review-comment delete",
+    );
+    return { commentId: input.commentId, deleted: true };
+  }
+
   async listCommitChecks(input: { sha: string }): Promise<CommitCheck[]> {
     const raw = await this.ghJson<{ check_runs: RawCheckRun[] }>(
       `/repos/${this.deps.owner}/${this.deps.repo}/commits/${input.sha}/check-runs?per_page=100`,
@@ -734,6 +768,43 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       init.body = JSON.stringify(body);
     }
     const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, init);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  /** PATCH with a JSON body — used by M17 review-comment edit. */
+  private async ghPatch<T>(
+    pathAndQuery: string,
+    body: unknown,
+    label = "PATCH",
+  ): Promise<T> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      method: "PATCH",
+      headers: GH_HEADERS(token),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  /** DELETE that returns 204 + empty body — used by M17 review-comment delete. */
+  private async ghDeleteNoBody(
+    pathAndQuery: string,
+    label = "DELETE",
+  ): Promise<void> {
+    const token = await this.deps.resolveToken();
+    const fetchImpl = this.deps.fetchFn ?? fetch;
+    const res = await fetchImpl(`https://api.github.com${pathAndQuery}`, {
+      method: "DELETE",
+      headers: GH_HEADERS(token),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`GitHub ${label} ${res.status}: ${text.slice(0, 200)}`);
@@ -1133,6 +1204,37 @@ const toCIJobSummaryFromGH = (raw: RawWorkflowJob): CIJobSummary => ({
     .map((s) => s.name),
 });
 
+// ── M17: PR review (inline) comment projection ──────────────────────
+
+interface RawPullReviewComment {
+  id: number;
+  pull_request_review_id: number | null;
+  user: { login: string } | null;
+  path: string;
+  line: number | null;
+  body: string;
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const toPullRequestReviewCommentSummary = (
+  raw: RawPullReviewComment,
+): PullRequestReviewCommentSummary => ({
+  id: String(raw.id),
+  reviewId:
+    raw.pull_request_review_id === null
+      ? null
+      : String(raw.pull_request_review_id),
+  author: raw.user?.login ?? "(unknown)",
+  path: raw.path,
+  line: raw.line,
+  body: raw.body,
+  url: raw.html_url,
+  createdAt: raw.created_at,
+  updatedAt: raw.updated_at,
+});
+
 export const __test__ = {
   looksLikeGitWrite,
   cloneDirFor,
@@ -1149,4 +1251,5 @@ export const __test__ = {
   projectLogTail,
   toCommitCheckFromGH,
   toWorkflowSummary,
+  toPullRequestReviewCommentSummary,
 };

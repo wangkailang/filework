@@ -468,6 +468,60 @@ export const githubEditReviewBodyTool: ToolDefinition<
     requireScm(ctx, "editPullRequestReviewBody")(args),
 };
 
+// ── M17: PR inline-comment edit / delete (GitHub-only) ─────────────────
+
+const listReviewCommentsSchema = z.object({
+  number: z.number().int().positive().describe("PR number"),
+});
+
+const editReviewCommentSchema = z.object({
+  commentId: z.string().min(1).describe("PR review comment id"),
+  body: z.string().min(1),
+});
+
+const deleteReviewCommentSchema = z.object({
+  commentId: z.string().min(1).describe("PR review comment id"),
+});
+
+export const githubListPullRequestReviewCommentsTool: ToolDefinition<
+  z.infer<typeof listReviewCommentsSchema>,
+  unknown
+> = {
+  name: "githubListPullRequestReviewComments",
+  description:
+    "List all inline (review) comments on a GitHub pull request, returning each comment's `id`, `reviewId`, `author`, `path`, `line`, and current body. Use this to find the `commentId` you need before calling `githubEditPullRequestReviewComment` or `githubDeletePullRequestReviewComment`.",
+  safety: "safe",
+  inputSchema: listReviewCommentsSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "listPullRequestReviewComments")(args),
+};
+
+export const githubEditPullRequestReviewCommentTool: ToolDefinition<
+  z.infer<typeof editReviewCommentSchema>,
+  unknown
+> = {
+  name: "githubEditPullRequestReviewComment",
+  description:
+    "Edit the body of a single inline (review) comment on a GitHub pull request. Identified by `commentId` alone — independent of which review created it. Use `githubListPullRequestReviewComments` first to find the id. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: editReviewCommentSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "editPullRequestReviewComment")(args),
+};
+
+export const githubDeletePullRequestReviewCommentTool: ToolDefinition<
+  z.infer<typeof deleteReviewCommentSchema>,
+  unknown
+> = {
+  name: "githubDeletePullRequestReviewComment",
+  description:
+    "Delete a single inline (review) comment on a GitHub pull request. Identified by `commentId` alone. Irreversible. Always requires explicit user approval.",
+  safety: "destructive",
+  inputSchema: deleteReviewCommentSchema,
+  execute: async (args, ctx) =>
+    requireScm(ctx, "deletePullRequestReviewComment")(args),
+};
+
 /** All github tools, in registration order. */
 export const buildGithubTools = (): ToolDefinition[] => [
   githubListPullRequestsTool as ToolDefinition,
@@ -490,4 +544,7 @@ export const buildGithubTools = (): ToolDefinition[] => [
   githubDispatchWorkflowTool as ToolDefinition,
   githubDismissReviewTool as ToolDefinition,
   githubEditReviewBodyTool as ToolDefinition,
+  githubListPullRequestReviewCommentsTool as ToolDefinition,
+  githubEditPullRequestReviewCommentTool as ToolDefinition,
+  githubDeletePullRequestReviewCommentTool as ToolDefinition,
 ];
