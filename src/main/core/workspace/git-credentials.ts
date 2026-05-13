@@ -95,4 +95,19 @@ export const gitlabSanitizedRemote = (
   project: string,
 ): string => `https://oauth2@${host}/${namespace}/${project}.git`;
 
+/**
+ * Strip the protocol prefix and any trailing slash from a user-supplied
+ * GitLab host. Users often paste `https://gitlab.example.com` from a
+ * browser URL bar; without this normalization the clone URL becomes
+ * `https://https://gitlab.example.com/...` and the cache dir layout
+ * becomes `<cacheDir>/https:/gitlab.example.com/...`. Apply at every
+ * boundary that accepts a host string: the IPC handler (fresh input) and
+ * `GitLabWorkspace.create` (replayed persisted refs from older versions).
+ */
+export const normalizeGitLabHost = (host: string): string =>
+  host
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+
 export const __test__ = { ASKPASS_SCRIPT };

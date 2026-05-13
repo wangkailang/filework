@@ -196,6 +196,42 @@ describe("GitLabWorkspace.create", () => {
     expect(readme).toContain("hi");
   });
 
+  it("normalizes a persisted https://-prefixed host (replayed pre-fix ref)", async () => {
+    // Simulates a workspace ref persisted before the host-normalize fix
+    // landed: `host` was the literal `https://gitlab.example.com/` from
+    // the modal's text input. The factory replays it via .create() and
+    // we must heal it before building clone dir / remote URL.
+    const dirtyRef: GitLabRef = {
+      ...fakeRef,
+      host: "https://gitlab.example.com/",
+    };
+    const expectedCloneDir = path.join(
+      cacheDir,
+      "gitlab.example.com",
+      "acme/sub",
+      "app@main",
+    );
+
+    const { fake, calls } = buildFakeSpawn();
+    const ws = await GitLabWorkspace.create(dirtyRef, {
+      resolveToken: async () => "glpat-T",
+      cacheDir,
+      askpassPath: "/tmp/askpass.js",
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      spawnFn: fake as any,
+    });
+
+    expect(ws.root).toBe(expectedCloneDir);
+    expect(ws.id).toBe("gitlab:gitlab.example.com:acme/sub/app@main");
+
+    const cloneCall = calls.find((c) => c.args[0] === "clone");
+    expect(cloneCall).toBeDefined();
+    const remoteUrl = cloneCall?.args.find((a) => a.startsWith("https://"));
+    expect(remoteUrl).toBe(
+      "https://oauth2@gitlab.example.com/acme/sub/app.git",
+    );
+  });
+
   it("blocks `git push`-style commands via exec", async () => {
     const cloneDir = path.join(
       cacheDir,

@@ -174,6 +174,53 @@ describe("gitlab handlers", () => {
     );
   });
 
+  it("strips https:// scheme and trailing slash from host before calling the API or cloning", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("[]", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ name: "main", protected: true }]), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const list = handlers.get("gitlab:listProjects");
+    await list?.(null, {
+      credentialId: "cred-1",
+      host: "  https://gitlab.example.com/  ",
+    });
+    expect(
+      (fetchMock.mock.calls[0] as unknown as [string])[0].startsWith(
+        "https://gitlab.example.com/api/v4/projects",
+      ),
+    ).toBe(true);
+
+    const listBranches = handlers.get("gitlab:listBranches");
+    await listBranches?.(null, {
+      credentialId: "cred-1",
+      host: "HTTPS://gitlab.example.com",
+      namespace: "acme",
+      project: "app",
+    });
+    expect((fetchMock.mock.calls[1] as unknown as [string])[0]).toBe(
+      "https://gitlab.example.com/api/v4/projects/acme%2Fapp/repository/branches?per_page=100",
+    );
+
+    const clone = handlers.get("gitlab:cloneRepo");
+    await clone?.(null, {
+      credentialId: "cred-1",
+      host: "https://gitlab.example.com/",
+      namespace: "acme",
+      project: "app",
+      ref: "main",
+    });
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "gitlab.example.com" }),
+      expect.anything(),
+    );
+  });
+
   it("propagates GitLab error payloads as readable errors", async () => {
     vi.stubGlobal(
       "fetch",
