@@ -25,7 +25,11 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildAskpassEnv, gitlabSanitizedRemote } from "./git-credentials";
+import {
+  buildAskpassEnv,
+  gitlabSanitizedRemote,
+  normalizeGitLabHost,
+} from "./git-credentials";
 import { projectLogTail } from "./github-workspace";
 import { LocalWorkspace } from "./local-workspace";
 import type {
@@ -880,9 +884,17 @@ export class GitLabWorkspace implements Workspace {
     ref: GitLabRef,
     deps: GitLabWorkspaceDeps,
   ): Promise<GitLabWorkspace> {
-    const cloneDir = await ensureClone(ref, deps);
-    const local = new LocalWorkspace(cloneDir, { id: workspaceRefId(ref) });
-    return new GitLabWorkspace(ref, cloneDir, local, deps);
+    // Defensive normalize: pre-fix builds persisted host with `https://`
+    // baked in, and the workspace-factory replays those refs verbatim.
+    const cleanRef: GitLabRef = {
+      ...ref,
+      host: normalizeGitLabHost(ref.host),
+    };
+    const cloneDir = await ensureClone(cleanRef, deps);
+    const local = new LocalWorkspace(cloneDir, {
+      id: workspaceRefId(cleanRef),
+    });
+    return new GitLabWorkspace(cleanRef, cloneDir, local, deps);
   }
 }
 

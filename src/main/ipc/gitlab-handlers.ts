@@ -11,6 +11,7 @@
 
 import { ipcMain } from "electron";
 
+import { normalizeGitLabHost } from "../core/workspace/git-credentials";
 import {
   type GitLabRef,
   GitLabWorkspace,
@@ -123,7 +124,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     "gitlab:listProjects",
     async (_event, payload: { credentialId: string; host: string }) => {
       const token = await deps.resolveToken(payload.credentialId);
-      return listAllProjects(payload.host, token);
+      return listAllProjects(normalizeGitLabHost(payload.host), token);
     },
   );
 
@@ -140,7 +141,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     ) => {
       const token = await deps.resolveToken(payload.credentialId);
       return listBranches(
-        payload.host,
+        normalizeGitLabHost(payload.host),
         payload.namespace,
         payload.project,
         token,
@@ -162,7 +163,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     ) => {
       const ref: GitLabRef = {
         kind: "gitlab",
-        host: payload.host,
+        host: normalizeGitLabHost(payload.host),
         namespace: payload.namespace,
         project: payload.project,
         ref: payload.ref,
@@ -187,7 +188,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     ) => {
       const ref: GitLabRef = {
         kind: "gitlab",
-        host: payload.host,
+        host: normalizeGitLabHost(payload.host),
         namespace: payload.namespace,
         project: payload.project,
         ref: payload.ref,
