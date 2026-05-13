@@ -35,6 +35,7 @@ import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
+import { bootstrapProxy } from "./proxy-bootstrap";
 import { skillRegistry } from "./skills";
 import { initSkillDiscovery } from "./skills-runtime";
 
@@ -89,6 +90,13 @@ const createWindow = () => {
 };
 
 app.whenReady().then(async () => {
+  // Route main-process fetch + spawned git children through the user's
+  // proxy (system or env). Must run before any IPC handler registration
+  // or workspace clone, so every later network call inherits it.
+  await bootstrapProxy({
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+  });
+
   // Register local-file:// protocol to serve local files (for PDF preview etc.)
   protocol.handle("local-file", async (request) => {
     // URL format: local-file://open?path=/absolute/path/to/file.pdf
