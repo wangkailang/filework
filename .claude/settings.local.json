@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit -m \"$(cat <<''EOF''\nsecurity: Use read-only tools for AI plan generation\n\nFixed a critical security issue where plan generation was using the full\ntoolset including dangerous operations (writeFile, deleteFile, moveFile).\nThis could lead to:\n- Unexpected approval prompts during planning phase\n- Potential side effects from dangerous tools being available\n- User experience inconsistencies\n\nChanges:\n- Created buildReadOnlyTools() function for plan generation\n- Only includes safe tools: listDirectory, readFile, directoryStats\n- Excludes runCommand as it can have side effects\n- Removed shared \"temp-plan-id\" which could cause state leaks\n\nPlan generation is now strictly read-only as intended, improving both\nsecurity and user experience.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(grep -n \"ensureClone\\\\|cloneDirFor\\\\|cacheDir\\\\|repoPath\\\\|@\\\\${\" /Users/kailang/develop/2026/filework/src/main/core/workspace/github-workspace.ts)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm exec *)",
+      "Bash(timeout 30 pnpm build)"
     ],
     "deny": [],
     "ask": []

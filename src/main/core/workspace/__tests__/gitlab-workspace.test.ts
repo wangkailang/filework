@@ -70,7 +70,7 @@ describe("ensureClone (GitLab)", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
 
     const result = await ensureClone(fakeRef, {
@@ -83,12 +83,14 @@ describe("ensureClone (GitLab)", () => {
 
     expect(result).toBe(expectedDir);
     const cloneCall = calls.find((c) => c.args[0] === "clone");
-    expect(cloneCall?.args).toContain("--depth");
-    expect(cloneCall?.args).toContain("1");
+    // New layout: partial clone (no --depth, no --single-branch). The
+    // branch is still pinned via --branch so the initial checkout
+    // matches ref.ref; subsequent switches go through SCM.checkoutBranch.
+    expect(cloneCall?.args).toContain("--filter=blob:none");
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
+    expect(cloneCall?.args).not.toContain("--depth");
     const remoteArg = cloneCall?.args[cloneCall.args.length - 2] ?? "";
-    // M7: token MUST NOT appear in the URL.
     expect(remoteArg).not.toContain("glpat-TESTTOKEN");
     expect(remoteArg).toBe(
       "https://oauth2@gitlab.example.com/acme/sub/app.git",
@@ -96,7 +98,9 @@ describe("ensureClone (GitLab)", () => {
     expect(cloneCall?.env?.GIT_ASKPASS).toBe("/tmp/askpass.js");
     expect(cloneCall?.env?.FILEWORK_GIT_PASSWORD).toBe("glpat-TESTTOKEN");
 
-    const stampStat = await stat(path.join(expectedDir, ".last-fetch"));
+    const stampStat = await stat(
+      path.join(expectedDir, ".git/filework-last-fetch"),
+    );
     expect(stampStat.isFile()).toBe(true);
   });
 
@@ -105,9 +109,9 @@ describe("ensureClone (GitLab)", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
-    const stampPath = path.join(cloneDir, ".last-fetch");
+    const stampPath = path.join(cloneDir, ".git/filework-last-fetch");
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(stampPath, "2000-01-01T00:00:00.000Z", "utf8");
     const past = new Date("2000-01-01T00:00:00.000Z");
@@ -125,7 +129,9 @@ describe("ensureClone (GitLab)", () => {
     const subs = calls.map((c) => c.args[0]);
     expect(subs).toContain("remote");
     expect(subs).toContain("fetch");
-    expect(subs).toContain("reset");
+    // No more reset --hard — the working tree may carry session-branch
+    // commits we must not clobber on refresh.
+    expect(subs).not.toContain("reset");
   });
 
   it("skips git when fresh", async () => {
@@ -133,11 +139,11 @@ describe("ensureClone (GitLab)", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );
@@ -170,11 +176,11 @@ describe("GitLabWorkspace.create", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );
@@ -209,7 +215,7 @@ describe("GitLabWorkspace.create", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
 
     const { fake, calls } = buildFakeSpawn();
@@ -237,11 +243,11 @@ describe("GitLabWorkspace.create", () => {
       cacheDir,
       "gitlab.example.com",
       "acme/sub",
-      "app@main",
+      "app",
     );
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );

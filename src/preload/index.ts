@@ -673,6 +673,13 @@ const api = {
       repo: string;
       ref: string;
     }) => ipcRenderer.invoke("github:fetchRepo", payload),
+    checkoutBranch: (payload: {
+      credentialId: string;
+      owner: string;
+      repo: string;
+      ref: string;
+      branch: string;
+    }) => ipcRenderer.invoke("github:checkoutBranch", payload),
   },
 
   // GitLab
@@ -699,6 +706,14 @@ const api = {
       project: string;
       ref: string;
     }) => ipcRenderer.invoke("gitlab:fetchRepo", payload),
+    checkoutBranch: (payload: {
+      credentialId: string;
+      host: string;
+      namespace: string;
+      project: string;
+      ref: string;
+      branch: string;
+    }) => ipcRenderer.invoke("gitlab:checkoutBranch", payload),
   },
 
   // Chat sessions

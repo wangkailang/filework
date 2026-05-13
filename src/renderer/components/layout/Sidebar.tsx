@@ -21,6 +21,7 @@ import {
   FileTreeFolder,
 } from "../ai-elements/file-tree";
 import { SkillsModal } from "../skills/SkillsModal";
+import { BranchSwitcher } from "./BranchSwitcher";
 import { SettingsModal } from "./SettingsModal";
 
 interface FileInfo {
@@ -39,6 +40,12 @@ interface SidebarProps {
   onCloseDirectory: () => void;
   onLocaleChange: (locale: Locales) => void;
   onSelectFile: (path: string) => void;
+  /**
+   * Called after a successful branch switch. Lets the parent update
+   * the persisted WorkspaceRef so subsequent tasks operate against
+   * the new branch. Receives the new branch name.
+   */
+  onBranchSwitched?: (newBranch: string) => void;
 }
 
 export const Sidebar = ({
@@ -48,6 +55,7 @@ export const Sidebar = ({
   onCloseDirectory,
   onLocaleChange,
   onSelectFile,
+  onBranchSwitched,
 }: SidebarProps) => {
   const { LL } = useI18nContext();
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -173,34 +181,47 @@ export const Sidebar = ({
     <>
       <aside className="w-64 h-full bg-muted/30 border-r border-border flex flex-col pt-12">
         {/* Workspace header */}
-        <div className="titlebar-no-drag flex items-center justify-between px-3 py-2 border-b border-border">
-          <button
-            type="button"
-            onClick={openDirectory}
-            className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-primary transition-colors truncate flex-1 min-w-0"
-            title={headerTitle}
-          >
-            <HeaderIcon className="w-4 h-4 text-file-folder shrink-0" />
-            <span className="truncate">{dirName}</span>
-          </button>
-          <div className="flex items-center shrink-0 ml-1">
+        <div className="titlebar-no-drag flex flex-col px-3 py-2 border-b border-border gap-1">
+          <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={handleRefresh}
-              className="p-1 rounded hover:bg-accent transition-colors"
-              title={LL.sidebar_refresh()}
+              onClick={openDirectory}
+              className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-primary transition-colors truncate flex-1 min-w-0"
+              title={headerTitle}
             >
-              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+              <HeaderIcon className="w-4 h-4 text-file-folder shrink-0" />
+              <span className="truncate">{dirName}</span>
             </button>
-            <button
-              type="button"
-              onClick={onCloseDirectory}
-              className="p-1 rounded hover:bg-accent transition-colors"
-              title={LL.sidebar_closeDir()}
-            >
-              <X className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
+            <div className="flex items-center shrink-0 ml-1">
+              <button
+                type="button"
+                onClick={handleRefresh}
+                className="p-1 rounded hover:bg-accent transition-colors"
+                title={LL.sidebar_refresh()}
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={onCloseDirectory}
+                className="p-1 rounded hover:bg-accent transition-colors"
+                title={LL.sidebar_closeDir()}
+              >
+                <X className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+            </div>
           </div>
+          {workspaceRef && workspaceRef.kind !== "local" && (
+            <div className="flex items-center pl-6">
+              <BranchSwitcher
+                workspaceRef={workspaceRef}
+                onSwitched={async (newBranch) => {
+                  onBranchSwitched?.(newBranch);
+                  await handleRefresh();
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* File tree */}

@@ -170,6 +170,18 @@ export const App = () => {
             onCloseDirectory={() => setWorkspace(null)}
             onLocaleChange={setLocale}
             onSelectFile={setSelectedFilePath}
+            onBranchSwitched={(branch) => {
+              // After a successful switch the cloneDir's HEAD is on the
+              // new branch. Persist that as the workspace's ref so
+              // subsequent agent tasks treat it as the base / PR target.
+              if (workspace.ref.kind === "local") return;
+              const updatedRef: WorkspaceRef = {
+                ...workspace.ref,
+                ref: branch,
+              };
+              setWorkspace({ ...workspace, ref: updatedRef });
+              recordRecent(updatedRef, workspaceRefLabel(updatedRef));
+            }}
           />
           <main className="flex-1 flex pt-12 overflow-hidden">
             {selectedFilePath && (

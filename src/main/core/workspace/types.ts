@@ -352,6 +352,17 @@ export interface WorkspaceSCM {
   /** Symbolic name of the currently checked-out branch. */
   currentBranch?(): Promise<string>;
   /**
+   * Switch the working tree to `branch`, like `git checkout` in a
+   * local project. Fetches from origin first, then either checks out
+   * the existing local branch or creates one tracking `origin/<branch>`.
+   * Refuses to operate on a dirty tree — the caller must commit, push,
+   * or discard outstanding changes first. Returns the prior branch
+   * name so the UI can offer "switch back" affordances.
+   */
+  checkoutBranch?(input: {
+    branch: string;
+  }): Promise<{ branch: string; previousBranch: string }>;
+  /**
    * Stage `files` (or all changes when omitted) and create a commit on
    * the current session branch. Implementations may auto-create the
    * session branch on first commit. A clean tree returns `{sha:""}` —

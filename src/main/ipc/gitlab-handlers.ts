@@ -39,8 +39,12 @@ const glHeaders = (token: string): Record<string, string> => ({
   Authorization: `Bearer ${token}`,
 });
 
-const fetchJson = async <T>(url: string, token: string): Promise<T> => {
-  const res = await fetch(url, { headers: glHeaders(token) });
+const fetchJson = async <T>(
+  url: string,
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<T> => {
+  const res = await fetchImpl(url, { headers: glHeaders(token) });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GitLab ${res.status} for ${url}: ${text.slice(0, 200)}`);
@@ -68,6 +72,7 @@ const apiBase = (host: string): string => `https://${host}/api/v4`;
 const listAllProjects = async (
   host: string,
   token: string,
+  fetchImpl: typeof fetch,
 ): Promise<GitLabProjectSummary[]> => {
   // 200 projects covers the vast majority of users; later PRs paginate fully.
   const out: GitLabProjectSummary[] = [];
@@ -75,7 +80,7 @@ const listAllProjects = async (
     const url =
       `${apiBase(host)}/projects?membership=true&per_page=100` +
       `&order_by=last_activity_at&sort=desc&page=${page}`;
-    const projects = await fetchJson<RawProject[]>(url, token);
+    const projects = await fetchJson<RawProject[]>(url, token, fetchImpl);
     for (const p of projects) {
       out.push({
         fullPath: p.path_with_namespace,
@@ -97,10 +102,11 @@ const listBranches = async (
   namespace: string,
   project: string,
   token: string,
+  fetchImpl: typeof fetch,
 ): Promise<GitLabBranchSummary[]> => {
   const projectId = encodeURIComponent(`${namespace}/${project}`);
   const url = `${apiBase(host)}/projects/${projectId}/repository/branches?per_page=100`;
-  const branches = await fetchJson<RawBranch[]>(url, token);
+  const branches = await fetchJson<RawBranch[]>(url, token, fetchImpl);
   return branches.map((b) => ({ name: b.name, protected: b.protected }));
 };
 
@@ -111,20 +117,38 @@ export interface GitLabHandlerDeps {
   cacheDir: string;
   /** GIT_ASKPASS helper script (M7). */
   askpassPath?: string;
+  /**
+   * Optional per-request proxy-aware fetch. Defaults to global `fetch`,
+   * which routes through the EnvHttpProxyAgent installed by
+   * `proxy-bootstrap.ts`. Production wires this to `proxy-fetch.ts` so
+   * each request consults `session.resolveProxy(url)` and bypasses the
+   * proxy for hosts the user's PAC rules route DIRECT.
+   */
+  fetchFn?: typeof fetch;
 }
 
 export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
+  // Resolve fetch on each call so test harnesses can `vi.stubGlobal("fetch", …)`
+  // after this handler is registered. Capturing at registration time would
+  // snapshot the original global before the stub lands.
+  const fetchImpl: typeof fetch = (input, init) =>
+    (deps.fetchFn ?? fetch)(input, init);
   const wsDeps: GitLabWorkspaceDeps = {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
+    fetchFn: fetchImpl,
   };
 
   ipcMain.handle(
     "gitlab:listProjects",
     async (_event, payload: { credentialId: string; host: string }) => {
       const token = await deps.resolveToken(payload.credentialId);
-      return listAllProjects(normalizeGitLabHost(payload.host), token);
+      return listAllProjects(
+        normalizeGitLabHost(payload.host),
+        token,
+        fetchImpl,
+      );
     },
   );
 
@@ -145,6 +169,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
         payload.namespace,
         payload.project,
         token,
+        fetchImpl,
       );
     },
   );
@@ -171,6 +196,42 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
       };
       const ws = await GitLabWorkspace.create(ref, wsDeps);
       return { root: ws.root, id: ws.id };
+    },
+  );
+
+  ipcMain.handle(
+    "gitlab:checkoutBranch",
+    async (
+      _event,
+      payload: {
+        credentialId: string;
+        host: string;
+        namespace: string;
+        project: string;
+        /** Branch the workspace was opened at — used to build the ref. */
+        ref: string;
+        /** Target branch to switch to. */
+        branch: string;
+      },
+    ) => {
+      const ref: GitLabRef = {
+        kind: "gitlab",
+        host: normalizeGitLabHost(payload.host),
+        namespace: payload.namespace,
+        project: payload.project,
+        ref: payload.ref,
+        credentialId: payload.credentialId,
+      };
+      const ws = await GitLabWorkspace.create(ref, wsDeps);
+      if (!ws.scm?.checkoutBranch) {
+        throw new Error("checkoutBranch unsupported on this workspace");
+      }
+      const result = await ws.scm.checkoutBranch({ branch: payload.branch });
+      return {
+        ...result,
+        root: ws.root,
+        id: ws.id,
+      };
     },
   );
 

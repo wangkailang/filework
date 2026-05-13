@@ -72,7 +72,7 @@ describe("ensureClone", () => {
 
   it("clones with sanitized URL (no token) and supplies token via askpass env (M7)", async () => {
     const { fake, calls } = buildFakeSpawn();
-    const expectedDir = path.join(cacheDir, "acme", "app@main");
+    const expectedDir = path.join(cacheDir, "acme", "app");
 
     const result = await ensureClone(fakeRef, {
       resolveToken: async () => "ghp_TESTTOKEN",
@@ -85,10 +85,13 @@ describe("ensureClone", () => {
     expect(result).toBe(expectedDir);
     const cloneCall = calls.find((c) => c.args[0] === "clone");
     expect(cloneCall).toBeDefined();
-    expect(cloneCall?.args).toContain("--depth");
-    expect(cloneCall?.args).toContain("1");
+    // New layout: partial clone (no --depth/--single-branch). The
+    // branch is still pinned via --branch so the initial checkout
+    // matches ref.ref; subsequent switches go through SCM.checkoutBranch.
+    expect(cloneCall?.args).toContain("--filter=blob:none");
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
+    expect(cloneCall?.args).not.toContain("--depth");
     const remoteArg = cloneCall?.args[cloneCall.args.length - 2] ?? "";
     // M7: token MUST NOT appear in the remote URL.
     expect(remoteArg).not.toContain("ghp_TESTTOKEN");
@@ -98,15 +101,17 @@ describe("ensureClone", () => {
     expect(cloneCall?.env?.FILEWORK_GIT_PASSWORD).toBe("ghp_TESTTOKEN");
     expect(cloneCall?.env?.GIT_TERMINAL_PROMPT).toBe("0");
 
-    const stampStat = await stat(path.join(expectedDir, ".last-fetch"));
+    const stampStat = await stat(
+      path.join(expectedDir, ".git/filework-last-fetch"),
+    );
     expect(stampStat.isFile()).toBe(true);
   });
 
   it("skips git when the existing clone is fresh", async () => {
-    const cloneDir = path.join(cacheDir, "acme", "app@main");
+    const cloneDir = path.join(cacheDir, "acme", "app");
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );
@@ -125,8 +130,8 @@ describe("ensureClone", () => {
   });
 
   it("re-fetches when the clone is stale", async () => {
-    const cloneDir = path.join(cacheDir, "acme", "app@main");
-    const stampPath = path.join(cloneDir, ".last-fetch");
+    const cloneDir = path.join(cacheDir, "acme", "app");
+    const stampPath = path.join(cloneDir, ".git/filework-last-fetch");
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(stampPath, "2000-01-01T00:00:00.000Z", "utf8");
     // Force the stamp's mtime into the past — relying on `freshnessTtlMs:0`
@@ -147,7 +152,8 @@ describe("ensureClone", () => {
     const subs = calls.map((c) => c.args[0]);
     expect(subs).toContain("remote");
     expect(subs).toContain("fetch");
-    expect(subs).toContain("reset");
+    // No reset --hard on refresh — preserves session-branch commits.
+    expect(subs).not.toContain("reset");
   });
 });
 
@@ -163,11 +169,11 @@ describe("GitHubWorkspace.create", () => {
   });
 
   it("constructs a Workspace with id derived from the ref and root = clone dir", async () => {
-    const cloneDir = path.join(cacheDir, "acme", "app@main");
+    const cloneDir = path.join(cacheDir, "acme", "app");
     await mkdir(cloneDir, { recursive: true });
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );
@@ -190,10 +196,10 @@ describe("GitHubWorkspace.create", () => {
   });
 
   it("blocks `git push`-style commands via exec", async () => {
-    const cloneDir = path.join(cacheDir, "acme", "app@main");
+    const cloneDir = path.join(cacheDir, "acme", "app");
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(
-      path.join(cloneDir, ".last-fetch"),
+      path.join(cloneDir, ".git/filework-last-fetch"),
       new Date().toISOString(),
       "utf8",
     );
