@@ -19,6 +19,7 @@ config({ path: join(app.getAppPath(), ".env") });
 config({ path: join(__dirname, "../../.env") });
 
 import { JsonlSessionStore } from "./core/session/jsonl-store";
+import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
 import { initDatabase } from "./db";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
@@ -36,6 +37,7 @@ import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
 import { bootstrapProxy } from "./proxy-bootstrap";
+import { createProxyAwareFetch } from "./proxy-fetch";
 import { skillRegistry } from "./skills";
 import { initSkillDiscovery } from "./skills-runtime";
 
@@ -97,6 +99,16 @@ app.whenReady().then(async () => {
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
   });
 
+  // Per-request proxy-aware fetch. `bootstrapProxy`'s global
+  // EnvHttpProxyAgent applies the same proxy to every host based on
+  // one startup probe — that breaks split-routing setups (Mihomo /
+  // Clash) where some hosts route DIRECT and others via proxy. This
+  // wrapper consults `session.resolveProxy(url)` per request and
+  // overrides the global dispatcher with the right one for that URL.
+  const proxyAwareFetch = createProxyAwareFetch({
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+  });
+
   // Register local-file:// protocol to serve local files (for PDF preview etc.)
   protocol.handle("local-file", async (request) => {
     // URL format: local-file://open?path=/absolute/path/to/file.pdf
@@ -146,11 +158,32 @@ app.whenReady().then(async () => {
   // GitHub / GitLab workspaces (clones into provider-specific cache dirs).
   const githubCacheDir = join(homedir(), ".filework", "cache", "github");
   const gitlabCacheDir = join(homedir(), ".filework", "cache", "gitlab");
+
+  // One-time migration to the per-repo clone layout. Pre-existing
+  // `<project>@<ref>` directories from earlier milestones are now dead
+  // weight (the new layout is one clone per repo with branches as
+  // working-tree state). Sweep them before any workspace materializes.
+  try {
+    const { removed } = await cleanupLegacyAtRefCache([
+      githubCacheDir,
+      gitlabCacheDir,
+    ]);
+    if (removed > 0) {
+      console.log(`[clone-cache] removed ${removed} legacy @ref clone(s)`);
+    }
+  } catch (err) {
+    console.warn(
+      "[clone-cache] legacy cleanup failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   setWorkspaceFactoryDeps({
     resolveToken: credentialResolver,
     githubCacheDir,
     gitlabCacheDir,
     askpassPath,
+    fetchFn: proxyAwareFetch,
   });
 
   // Register IPC handlers
@@ -166,11 +199,13 @@ app.whenReady().then(async () => {
     resolveToken: credentialResolver,
     cacheDir: githubCacheDir,
     askpassPath,
+    fetchFn: proxyAwareFetch,
   });
   registerGitLabHandlers({
     resolveToken: credentialResolver,
     cacheDir: gitlabCacheDir,
     askpassPath,
+    fetchFn: proxyAwareFetch,
   });
 
   // M7: kick off the credential health monitor after IPC is wired.

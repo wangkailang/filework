@@ -25,6 +25,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { checkoutBranchTo, withCloneLock } from "./clone-cache";
 import {
   buildAskpassEnv,
   gitlabSanitizedRemote,
@@ -95,7 +96,15 @@ const authedEnv = (
   askpassPath ? buildAskpassEnv({ askpassPath, password: token }) : undefined;
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
-const LAST_FETCH_FILE = ".last-fetch";
+/**
+ * Stamp file path *relative to the clone root*. Lives inside `.git/` so
+ * it never appears in `git status --porcelain` — otherwise the clean-tree
+ * check used by `WorkspaceSCM.checkoutBranch` would always reject a
+ * just-cloned workspace as "dirty". Mirrors `github-workspace.ts`.
+ */
+const LAST_FETCH_FILE = ".git/filework-last-fetch";
+/** Pre-fix location at the working-tree root; removed on first encounter. */
+const LEGACY_LAST_FETCH_FILE = ".last-fetch";
 
 const runGit = async (
   args: string[],
@@ -130,12 +139,15 @@ const runGit = async (
 };
 
 /**
- * Clone dir layout: `<cacheDir>/<host>/<namespace>/<project>@<ref>/`.
- * The host is included so the same `<namespace>/<project>` on different
- * GitLab instances doesn't collide.
+ * Clone dir layout: `<cacheDir>/<host>/<namespace>/<project>/`. One
+ * clone per project — switching branches mutates this same directory,
+ * the same mental model as a local git project. Host is included so
+ * the same `<namespace>/<project>` on different GitLab instances
+ * doesn't collide. The pre-existing `<project>@<ref>` layout is
+ * cleaned up at app startup; see `migrate-clone-cache.ts`.
  */
 const cloneDirFor = (cacheDir: string, ref: GitLabRef): string =>
-  path.join(cacheDir, ref.host, ref.namespace, `${ref.project}@${ref.ref}`);
+  path.join(cacheDir, ref.host, ref.namespace, ref.project);
 
 const isFresh = async (cloneDir: string, ttlMs: number): Promise<boolean> => {
   try {
@@ -164,56 +176,68 @@ const cloneExists = async (cloneDir: string): Promise<boolean> => {
 };
 
 /**
- * Materialize the clone for `ref`. M7: the remote URL is sanitized
- * (no token); the token is supplied via GIT_ASKPASS env. Refresh paths
- * always re-write the remote URL to scrub pre-M7 token leaks.
+ * Materialize the clone for `ref`. One clone per project — `ref.ref`
+ * is the initial branch (passed to `git clone -b`), not part of the
+ * directory path. Mirrors `github-workspace.ts:ensureClone`; see that
+ * file for the design rationale. M7: remote URL sanitized; token via
+ * GIT_ASKPASS.
  */
 export const ensureClone = async (
   ref: GitLabRef,
   deps: GitLabWorkspaceDeps,
 ): Promise<string> => {
   const cloneDir = cloneDirFor(deps.cacheDir, ref);
-  const ttlMs = deps.freshnessTtlMs ?? DEFAULT_TTL_MS;
-  const exists = await cloneExists(cloneDir);
+  return withCloneLock(cloneDir, async () => {
+    const ttlMs = deps.freshnessTtlMs ?? DEFAULT_TTL_MS;
+    const exists = await cloneExists(cloneDir);
 
-  if (exists && (await isFresh(cloneDir, ttlMs))) {
-    return cloneDir;
-  }
-
-  const token = await deps.resolveToken(ref.credentialId);
-  const remote = gitlabSanitizedRemote(ref.host, ref.namespace, ref.project);
-  const env = authedEnv(deps.askpassPath, token);
-
-  if (!exists) {
-    await mkdir(path.dirname(cloneDir), { recursive: true });
-    try {
-      await runGit(
-        ["clone", "--depth", "1", "--branch", ref.ref, remote, cloneDir],
-        { spawnFn: deps.spawnFn, env },
-      );
-    } catch (err) {
-      await rm(cloneDir, { recursive: true, force: true });
-      throw err;
+    if (exists && (await isFresh(cloneDir, ttlMs))) {
+      return cloneDir;
     }
-  } else {
-    // Sanitize the remote URL on every refresh — covers pre-M7 clones.
-    await runGit(["remote", "set-url", "origin", remote], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-    });
-    await runGit(["fetch", "--depth", "1", "origin", ref.ref], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-      env,
-    });
-    await runGit(["reset", "--hard", "FETCH_HEAD"], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-    });
-  }
 
-  await stamp(cloneDir);
-  return cloneDir;
+    const token = await deps.resolveToken(ref.credentialId);
+    const remote = gitlabSanitizedRemote(ref.host, ref.namespace, ref.project);
+    const env = authedEnv(deps.askpassPath, token);
+
+    if (!exists) {
+      await mkdir(path.dirname(cloneDir), { recursive: true });
+      try {
+        await runGit(
+          [
+            "clone",
+            "--filter=blob:none",
+            "--branch",
+            ref.ref,
+            remote,
+            cloneDir,
+          ],
+          { spawnFn: deps.spawnFn, env },
+        );
+      } catch (err) {
+        await rm(cloneDir, { recursive: true, force: true });
+        throw err;
+      }
+    } else {
+      // Stale refresh: re-sanitize remote URL, fetch all refs. No
+      // `reset --hard` — preserves session branches' uncommitted work.
+      await runGit(["remote", "set-url", "origin", remote], {
+        cwd: cloneDir,
+        spawnFn: deps.spawnFn,
+      });
+      await runGit(["fetch", "origin"], {
+        cwd: cloneDir,
+        spawnFn: deps.spawnFn,
+        env,
+      });
+    }
+
+    // Drop any legacy root-level stamp file from before it moved into
+    // `.git/`. See github-workspace.ts:ensureClone for the rationale.
+    await rm(path.join(cloneDir, LEGACY_LAST_FETCH_FILE), { force: true });
+
+    await stamp(cloneDir);
+    return cloneDir;
+  });
 };
 
 interface GitLabScmDeps {
@@ -284,6 +308,38 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
       spawnFn: this.deps.spawnFn,
     });
     return stdout.trim();
+  }
+
+  async checkoutBranch(input: {
+    branch: string;
+  }): Promise<{ branch: string; previousBranch: string }> {
+    return withCloneLock(this.cwd, async () => {
+      const previousBranch = await this.currentBranch();
+      if (previousBranch === input.branch) {
+        return { branch: input.branch, previousBranch };
+      }
+      const token = await this.deps.resolveToken();
+      await runGit(
+        [
+          "remote",
+          "set-url",
+          "origin",
+          gitlabSanitizedRemote(
+            this.deps.host,
+            this.deps.namespace,
+            this.deps.project,
+          ),
+        ],
+        { cwd: this.cwd, spawnFn: this.deps.spawnFn },
+      );
+      await runGit(["fetch", "origin"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+        env: authedEnv(this.deps.askpassPath, token),
+      });
+      await checkoutBranchTo(this.cwd, input.branch, this.deps.spawnFn);
+      return { branch: input.branch, previousBranch };
+    });
   }
 
   async commit(input: {

@@ -39,8 +39,12 @@ const ghHeaders = (token: string): Record<string, string> => ({
   "X-GitHub-Api-Version": "2022-11-28",
 });
 
-const fetchJson = async <T>(url: string, token: string): Promise<T> => {
-  const res = await fetch(url, { headers: ghHeaders(token) });
+const fetchJson = async <T>(
+  url: string,
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<T> => {
+  const res = await fetchImpl(url, { headers: ghHeaders(token) });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GitHub ${res.status} for ${url}: ${text.slice(0, 200)}`);
@@ -63,12 +67,15 @@ interface RawBranch {
   protected: boolean;
 }
 
-const listAllRepos = async (token: string): Promise<GitHubRepoSummary[]> => {
+const listAllRepos = async (
+  token: string,
+  fetchImpl: typeof fetch,
+): Promise<GitHubRepoSummary[]> => {
   // 200 repos covers the vast majority of users; later PRs will paginate fully.
   const out: GitHubRepoSummary[] = [];
   for (let page = 1; page <= 2; page++) {
     const url = `https://api.github.com/user/repos?per_page=100&sort=pushed&page=${page}`;
-    const repos = await fetchJson<RawRepo[]>(url, token);
+    const repos = await fetchJson<RawRepo[]>(url, token, fetchImpl);
     for (const r of repos) {
       out.push({
         fullName: r.full_name,
@@ -89,9 +96,10 @@ const listBranches = async (
   owner: string,
   repo: string,
   token: string,
+  fetchImpl: typeof fetch,
 ): Promise<GitHubBranchSummary[]> => {
   const url = `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`;
-  const branches = await fetchJson<RawBranch[]>(url, token);
+  const branches = await fetchJson<RawBranch[]>(url, token, fetchImpl);
   return branches.map((b) => ({ name: b.name, protected: b.protected }));
 };
 
@@ -102,20 +110,33 @@ export interface GitHubHandlerDeps {
   cacheDir: string;
   /** GIT_ASKPASS helper script (M7). */
   askpassPath?: string;
+  /**
+   * Optional per-request proxy-aware fetch. Defaults to global `fetch`.
+   * Production wires this to `proxy-fetch.ts` so each request consults
+   * `session.resolveProxy(url)` instead of inheriting the one-shot
+   * `EnvHttpProxyAgent` from `proxy-bootstrap.ts`.
+   */
+  fetchFn?: typeof fetch;
 }
 
 export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
+  // Resolve fetch on each call so test harnesses can `vi.stubGlobal("fetch", …)`
+  // after this handler is registered. Capturing at registration time would
+  // snapshot the original global before the stub lands.
+  const fetchImpl: typeof fetch = (input, init) =>
+    (deps.fetchFn ?? fetch)(input, init);
   const wsDeps: GitHubWorkspaceDeps = {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
+    fetchFn: fetchImpl,
   };
 
   ipcMain.handle(
     "github:listRepos",
     async (_event, payload: { credentialId: string }) => {
       const token = await deps.resolveToken(payload.credentialId);
-      return listAllRepos(token);
+      return listAllRepos(token, fetchImpl);
     },
   );
 
@@ -126,7 +147,7 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
       payload: { credentialId: string; owner: string; repo: string },
     ) => {
       const token = await deps.resolveToken(payload.credentialId);
-      return listBranches(payload.owner, payload.repo, token);
+      return listBranches(payload.owner, payload.repo, token, fetchImpl);
     },
   );
 
@@ -150,6 +171,40 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
       };
       const ws = await GitHubWorkspace.create(ref, wsDeps);
       return { root: ws.root, id: ws.id };
+    },
+  );
+
+  ipcMain.handle(
+    "github:checkoutBranch",
+    async (
+      _event,
+      payload: {
+        credentialId: string;
+        owner: string;
+        repo: string;
+        /** Branch the workspace was opened at — used to build the ref. */
+        ref: string;
+        /** Target branch to switch to. */
+        branch: string;
+      },
+    ) => {
+      const ref: GitHubRef = {
+        kind: "github",
+        owner: payload.owner,
+        repo: payload.repo,
+        ref: payload.ref,
+        credentialId: payload.credentialId,
+      };
+      const ws = await GitHubWorkspace.create(ref, wsDeps);
+      if (!ws.scm?.checkoutBranch) {
+        throw new Error("checkoutBranch unsupported on this workspace");
+      }
+      const result = await ws.scm.checkoutBranch({ branch: payload.branch });
+      return {
+        ...result,
+        root: ws.root,
+        id: ws.id,
+      };
     },
   );
 

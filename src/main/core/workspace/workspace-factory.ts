@@ -26,6 +26,13 @@ export interface WorkspaceFactoryDeps {
    * in tests), git invocations fall back to inheriting `process.env`.
    */
   askpassPath?: string;
+  /**
+   * Per-request proxy-aware fetch (see `proxy-fetch.ts`). Forwarded to
+   * the GitHub/GitLab workspace REST calls so they honor split-routing
+   * PAC rules instead of inheriting the bootstrap's one-shot proxy.
+   * Optional — undefined falls back to global `fetch`.
+   */
+  fetchFn?: typeof fetch;
 }
 
 export interface CreateWorkspaceOpts {
@@ -50,6 +57,7 @@ export const createWorkspace = async (
       resolveToken: deps.resolveToken,
       cacheDir: deps.githubCacheDir,
       askpassPath: deps.askpassPath,
+      fetchFn: deps.fetchFn,
       sessionScope: opts.sessionScope,
     });
   }
@@ -58,6 +66,7 @@ export const createWorkspace = async (
       resolveToken: deps.resolveToken,
       cacheDir: deps.gitlabCacheDir,
       askpassPath: deps.askpassPath,
+      fetchFn: deps.fetchFn,
       sessionScope: opts.sessionScope,
     });
   }

@@ -2,10 +2,12 @@
  * GitHubWorkspace — Workspace backed by an ephemeral local clone of a
  * GitHub repository.
  *
- * Layout: `<cacheDir>/<owner>/<repo>@<ref>/` holds a shallow clone of
- * `https://github.com/<owner>/<repo>` checked out at `<ref>`. A sibling
- * `.last-fetch` file timestamps the most recent `git fetch` so freshness
- * checks don't re-walk the working tree.
+ * Layout: `<cacheDir>/<owner>/<repo>/` holds a single partial clone of
+ * `https://github.com/<owner>/<repo>` (`--filter=blob:none` — all refs
+ * available, blobs fetched on demand). Switching branches mutates this
+ * same directory via `git checkout`, the same mental model as a local
+ * git project. A sibling `.last-fetch` file timestamps the most recent
+ * `git fetch` so freshness checks don't re-walk the working tree.
  *
  * After the clone is materialized, fs/exec are delegated to an internal
  * `LocalWorkspace` pointing at the clone — the existing tool registry
@@ -26,6 +28,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { checkoutBranchTo, withCloneLock } from "./clone-cache";
 import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
 import { LocalWorkspace } from "./local-workspace";
 import type {
@@ -113,7 +116,15 @@ const authedEnv = (
   askpassPath ? buildAskpassEnv({ askpassPath, password: token }) : undefined;
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
-const LAST_FETCH_FILE = ".last-fetch";
+/**
+ * Stamp file path *relative to the clone root*. Lives inside `.git/` so
+ * it never appears in `git status --porcelain` — otherwise the clean-tree
+ * check used by `WorkspaceSCM.checkoutBranch` would always reject a
+ * just-cloned workspace as "dirty".
+ */
+const LAST_FETCH_FILE = ".git/filework-last-fetch";
+/** Pre-fix location at the working-tree root; removed on first encounter. */
+const LEGACY_LAST_FETCH_FILE = ".last-fetch";
 
 /** Run a git subprocess and capture stdout/stderr. Throws on non-zero exit. */
 const runGit = async (
@@ -148,8 +159,13 @@ const runGit = async (
   });
 };
 
+/**
+ * One clone per `(owner, repo)` — branch is working-tree state, not a
+ * path component. The `<repo>@<ref>` layout from earlier milestones is
+ * cleaned up at app startup; see `migrate-clone-cache.ts`.
+ */
 const cloneDirFor = (cacheDir: string, ref: GitHubRef): string =>
-  path.join(cacheDir, ref.owner, `${ref.repo}@${ref.ref}`);
+  path.join(cacheDir, ref.owner, ref.repo);
 
 const isFresh = async (cloneDir: string, ttlMs: number): Promise<boolean> => {
   try {
@@ -178,63 +194,88 @@ const cloneExists = async (cloneDir: string): Promise<boolean> => {
 };
 
 /**
- * Materialize the clone for `ref` at `cloneDir`. If the clone is
- * absent, perform a shallow clone. If present and stale, fetch + reset.
- * Returns the local clone directory once the working tree matches `ref.ref`.
+ * Materialize the clone for `ref` at `cloneDir`. One clone per repo —
+ * `ref.ref` is the *initial branch* (used by `git clone -b`), not
+ * part of the directory path.
  *
- * Auth: the remote URL is sanitized (no token), and the token is passed
- * to git via GIT_ASKPASS env. This means `.git/config` never holds the
- * PAT in plaintext. Refresh paths always re-write the remote URL to
- * the sanitized form, so pre-M7 clones get scrubbed automatically.
+ *   - No clone yet → `git clone -b <ref.ref> --filter=blob:none`.
+ *     Partial clone: all refs visible (no `--single-branch`), blobs
+ *     fetched on demand. Working tree lands on `ref.ref`.
+ *   - Clone exists + stale → `git fetch origin` (updates all
+ *     remote-tracking refs; does *not* touch the working tree, so
+ *     uncommitted agent work or non-default branches survive).
+ *   - Clone exists + fresh → no-op.
+ *
+ * Branch switching after initial clone is an explicit user action —
+ * see `WorkspaceSCM.checkoutBranch`. ensureClone never auto-switches.
+ *
+ * Concurrency: wrapped in `withCloneLock(cloneDir)` so concurrent
+ * creators of the same workspace queue rather than racing on
+ * filesystem state.
+ *
+ * Auth: the remote URL is sanitized (no token), and the token is
+ * passed via GIT_ASKPASS env. Refresh paths re-write the remote URL
+ * to scrub any pre-M7 token leak.
  */
 export const ensureClone = async (
   ref: GitHubRef,
   deps: GitHubWorkspaceDeps,
 ): Promise<string> => {
   const cloneDir = cloneDirFor(deps.cacheDir, ref);
-  const ttlMs = deps.freshnessTtlMs ?? DEFAULT_TTL_MS;
-  const exists = await cloneExists(cloneDir);
+  return withCloneLock(cloneDir, async () => {
+    const ttlMs = deps.freshnessTtlMs ?? DEFAULT_TTL_MS;
+    const exists = await cloneExists(cloneDir);
 
-  if (exists && (await isFresh(cloneDir, ttlMs))) {
-    return cloneDir;
-  }
-
-  const token = await deps.resolveToken(ref.credentialId);
-  const remote = githubSanitizedRemote(ref.owner, ref.repo);
-  const env = authedEnv(deps.askpassPath, token);
-
-  if (!exists) {
-    await mkdir(path.dirname(cloneDir), { recursive: true });
-    try {
-      await runGit(
-        ["clone", "--depth", "1", "--branch", ref.ref, remote, cloneDir],
-        { spawnFn: deps.spawnFn, env },
-      );
-    } catch (err) {
-      // Failed clone — clean up partial dir to avoid wedging future attempts.
-      await rm(cloneDir, { recursive: true, force: true });
-      throw err;
+    if (exists && (await isFresh(cloneDir, ttlMs))) {
+      return cloneDir;
     }
-  } else {
-    // Refresh: rewrite remote to sanitized form (scrubs any pre-M7
-    // token-embedded URL), then fetch + hard-reset under askpass env.
-    await runGit(["remote", "set-url", "origin", remote], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-    });
-    await runGit(["fetch", "--depth", "1", "origin", ref.ref], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-      env,
-    });
-    await runGit(["reset", "--hard", "FETCH_HEAD"], {
-      cwd: cloneDir,
-      spawnFn: deps.spawnFn,
-    });
-  }
 
-  await stamp(cloneDir);
-  return cloneDir;
+    const token = await deps.resolveToken(ref.credentialId);
+    const remote = githubSanitizedRemote(ref.owner, ref.repo);
+    const env = authedEnv(deps.askpassPath, token);
+
+    if (!exists) {
+      await mkdir(path.dirname(cloneDir), { recursive: true });
+      try {
+        await runGit(
+          [
+            "clone",
+            "--filter=blob:none",
+            "--branch",
+            ref.ref,
+            remote,
+            cloneDir,
+          ],
+          { spawnFn: deps.spawnFn, env },
+        );
+      } catch (err) {
+        await rm(cloneDir, { recursive: true, force: true });
+        throw err;
+      }
+    } else {
+      // Stale refresh: re-sanitize remote (covers pre-M7 clones whose
+      // .git/config still has an embedded token), then fetch every
+      // ref. No `reset --hard` — the working tree carries session
+      // branches we must not clobber.
+      await runGit(["remote", "set-url", "origin", remote], {
+        cwd: cloneDir,
+        spawnFn: deps.spawnFn,
+      });
+      await runGit(["fetch", "origin"], {
+        cwd: cloneDir,
+        spawnFn: deps.spawnFn,
+        env,
+      });
+    }
+
+    // Drop any legacy root-level stamp file from before it moved into
+    // `.git/`. Otherwise `git status --porcelain` reports it as `??` and
+    // every clone looks "dirty" to `checkoutBranch`.
+    await rm(path.join(cloneDir, LEGACY_LAST_FETCH_FILE), { force: true });
+
+    await stamp(cloneDir);
+    return cloneDir;
+  });
 };
 
 interface GitHubScmDeps {
@@ -295,6 +336,34 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       spawnFn: this.deps.spawnFn,
     });
     return stdout.trim();
+  }
+
+  async checkoutBranch(input: {
+    branch: string;
+  }): Promise<{ branch: string; previousBranch: string }> {
+    return withCloneLock(this.cwd, async () => {
+      const previousBranch = await this.currentBranch();
+      if (previousBranch === input.branch) {
+        return { branch: input.branch, previousBranch };
+      }
+      const token = await this.deps.resolveToken();
+      await runGit(
+        [
+          "remote",
+          "set-url",
+          "origin",
+          githubSanitizedRemote(this.deps.owner, this.deps.repo),
+        ],
+        { cwd: this.cwd, spawnFn: this.deps.spawnFn },
+      );
+      await runGit(["fetch", "origin"], {
+        cwd: this.cwd,
+        spawnFn: this.deps.spawnFn,
+        env: authedEnv(this.deps.askpassPath, token),
+      });
+      await checkoutBranchTo(this.cwd, input.branch, this.deps.spawnFn);
+      return { branch: input.branch, previousBranch };
+    });
   }
 
   async commit(input: {
