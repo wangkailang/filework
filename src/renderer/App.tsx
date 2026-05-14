@@ -49,6 +49,14 @@ export const App = () => {
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
       if (ref.kind === "local") {
+        // Defense against corrupted recent_workspaces rows that wrapped a
+        // remote workspace URI inside a fake "local" ref. Treat as an error
+        // rather than handing the URI to fs:listDirectory.
+        if (ref.path.startsWith("gitlab:") || ref.path.startsWith("github:")) {
+          throw new Error(
+            "Recent workspace metadata is corrupted; please reconnect the remote repo.",
+          );
+        }
         return { ref, localPath: ref.path };
       }
       if (ref.kind === "github") {
@@ -104,6 +112,12 @@ export const App = () => {
   };
 
   const handleSelectLocal = (path: string) => {
+    if (path.startsWith("gitlab:") || path.startsWith("github:")) {
+      setResolveError(
+        "Recent workspace metadata is corrupted; please reconnect the remote repo.",
+      );
+      return;
+    }
     const ref: WorkspaceRef = { kind: "local", path };
     setSelectedFilePath(null);
     setWorkspace({ ref, localPath: path });
@@ -145,6 +159,7 @@ export const App = () => {
             onSelectDirectory={handleSelectLocal}
             onSelectGithub={() => setGithubModalOpen(true)}
             onSelectGitlab={() => setGitlabModalOpen(true)}
+            onSelectRecentRef={handleSelectRemote}
             errorMessage={resolveError}
           />
           {githubModalOpen && (

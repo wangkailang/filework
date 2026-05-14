@@ -30,6 +30,7 @@ import path from "node:path";
 
 import { checkoutBranchTo, withCloneLock } from "./clone-cache";
 import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
+import { buildGitProxyEnv, type ProxyResolver } from "./git-proxy-env";
 import { LocalWorkspace } from "./local-workspace";
 import type {
   CIJobLog,
@@ -95,6 +96,15 @@ export interface GitHubWorkspaceDeps {
    * Defaults to globalThis.fetch.
    */
   fetchFn?: typeof fetch;
+  /**
+   * Per-host proxy resolver (Chromium PAC output: "DIRECT" / "PROXY h:p").
+   * Wired by `index.ts` to `session.defaultSession.resolveProxy`. When set,
+   * every network-touching git subprocess gets a freshly-built env where
+   * HTTPS_PROXY matches the PAC verdict for the actual remote URL —
+   * fixes split-routing setups where the global env proxy is wrong for
+   * some hosts. Undefined falls back to inherited `process.env`.
+   */
+  resolveProxy?: ProxyResolver;
   /**
    * Per-session scope for auto-branching. Commits land on
    * `claude/<sessionScope>`. The factory passes `sessionId.slice(0,8)`
@@ -232,7 +242,11 @@ export const ensureClone = async (
 
     const token = await deps.resolveToken(ref.credentialId);
     const remote = githubSanitizedRemote(ref.owner, ref.repo);
-    const env = authedEnv(deps.askpassPath, token);
+    const env = await buildGitProxyEnv(
+      authedEnv(deps.askpassPath, token) ?? process.env,
+      remote,
+      deps.resolveProxy,
+    );
 
     if (!exists) {
       await mkdir(path.dirname(cloneDir), { recursive: true });
@@ -289,6 +303,8 @@ interface GitHubScmDeps {
   askpassPath?: string;
   spawnFn?: typeof spawn;
   fetchFn?: typeof fetch;
+  /** See `GitHubWorkspaceDeps.resolveProxy`. */
+  resolveProxy?: ProxyResolver;
 }
 
 const GH_HEADERS = (token: string): Record<string, string> => ({
@@ -359,7 +375,11 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
       await runGit(["fetch", "origin"], {
         cwd: this.cwd,
         spawnFn: this.deps.spawnFn,
-        env: authedEnv(this.deps.askpassPath, token),
+        env: await buildGitProxyEnv(
+          authedEnv(this.deps.askpassPath, token) ?? process.env,
+          githubSanitizedRemote(this.deps.owner, this.deps.repo),
+          this.deps.resolveProxy,
+        ),
       });
       await checkoutBranchTo(this.cwd, input.branch, this.deps.spawnFn);
       return { branch: input.branch, previousBranch };
@@ -429,7 +449,11 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     await runGit(args, {
       cwd: this.cwd,
       spawnFn: this.deps.spawnFn,
-      env: authedEnv(this.deps.askpassPath, token),
+      env: await buildGitProxyEnv(
+        authedEnv(this.deps.askpassPath, token) ?? process.env,
+        githubSanitizedRemote(this.deps.owner, this.deps.repo),
+        this.deps.resolveProxy,
+      ),
     });
     return { branch, remote: "origin" };
   }
@@ -446,6 +470,11 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     const lsRemote = await runGit(["ls-remote", "origin", branch], {
       cwd: this.cwd,
       spawnFn: this.deps.spawnFn,
+      env: await buildGitProxyEnv(
+        process.env,
+        githubSanitizedRemote(this.deps.owner, this.deps.repo),
+        this.deps.resolveProxy,
+      ),
     });
     if (!lsRemote.stdout.trim()) {
       throw new Error(
@@ -1010,6 +1039,7 @@ export class GitHubWorkspace implements Workspace {
       askpassPath: deps.askpassPath,
       spawnFn: deps.spawnFn,
       fetchFn: deps.fetchFn,
+      resolveProxy: deps.resolveProxy,
     });
   }
 

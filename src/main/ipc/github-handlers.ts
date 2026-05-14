@@ -11,6 +11,7 @@
 
 import { ipcMain } from "electron";
 
+import type { ProxyResolver } from "../core/workspace/git-proxy-env";
 import {
   type GitHubRef,
   GitHubWorkspace,
@@ -117,6 +118,12 @@ export interface GitHubHandlerDeps {
    * `EnvHttpProxyAgent` from `proxy-bootstrap.ts`.
    */
   fetchFn?: typeof fetch;
+  /**
+   * Per-host proxy resolver for spawned `git` children (see
+   * `core/workspace/git-proxy-env.ts`). Production wires this to
+   * `session.defaultSession.resolveProxy`; tests can leave it undefined.
+   */
+  resolveProxy?: ProxyResolver;
 }
 
 export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
@@ -130,6 +137,7 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
     fetchFn: fetchImpl,
+    resolveProxy: deps.resolveProxy,
   };
 
   ipcMain.handle(
