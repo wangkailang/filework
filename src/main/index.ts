@@ -109,6 +109,14 @@ app.whenReady().then(async () => {
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
   });
 
+  // Same per-host PAC source, exposed as a raw resolver for spawned
+  // `git` children. `git-proxy-env.ts` consumes Chromium's PAC output
+  // verbatim. The git subprocess inherits `process.env.HTTPS_PROXY`
+  // seeded by `bootstrapProxy`, which is wrong for split-routing —
+  // each git call rebuilds env from this resolver instead.
+  const resolveProxy = (url: string): Promise<string> =>
+    session.defaultSession.resolveProxy(url);
+
   // Register local-file:// protocol to serve local files (for PDF preview etc.)
   protocol.handle("local-file", async (request) => {
     // URL format: local-file://open?path=/absolute/path/to/file.pdf
@@ -184,6 +192,7 @@ app.whenReady().then(async () => {
     gitlabCacheDir,
     askpassPath,
     fetchFn: proxyAwareFetch,
+    resolveProxy,
   });
 
   // Register IPC handlers
@@ -200,12 +209,14 @@ app.whenReady().then(async () => {
     cacheDir: githubCacheDir,
     askpassPath,
     fetchFn: proxyAwareFetch,
+    resolveProxy,
   });
   registerGitLabHandlers({
     resolveToken: credentialResolver,
     cacheDir: gitlabCacheDir,
     askpassPath,
     fetchFn: proxyAwareFetch,
+    resolveProxy,
   });
 
   // M7: kick off the credential health monitor after IPC is wired.

@@ -7,6 +7,7 @@
  * clone freshness on every entry point without a cache-invalidation dance.
  */
 
+import type { ProxyResolver } from "./git-proxy-env";
 import { GitHubWorkspace } from "./github-workspace";
 import { GitLabWorkspace } from "./gitlab-workspace";
 import { LocalWorkspace } from "./local-workspace";
@@ -33,6 +34,12 @@ export interface WorkspaceFactoryDeps {
    * Optional — undefined falls back to global `fetch`.
    */
   fetchFn?: typeof fetch;
+  /**
+   * Per-host proxy resolver for spawned `git` children (see
+   * `git-proxy-env.ts`). Same PAC source as `fetchFn` — wired by
+   * `index.ts` to `session.defaultSession.resolveProxy`.
+   */
+  resolveProxy?: ProxyResolver;
 }
 
 export interface CreateWorkspaceOpts {
@@ -58,6 +65,7 @@ export const createWorkspace = async (
       cacheDir: deps.githubCacheDir,
       askpassPath: deps.askpassPath,
       fetchFn: deps.fetchFn,
+      resolveProxy: deps.resolveProxy,
       sessionScope: opts.sessionScope,
     });
   }
@@ -67,6 +75,7 @@ export const createWorkspace = async (
       cacheDir: deps.gitlabCacheDir,
       askpassPath: deps.askpassPath,
       fetchFn: deps.fetchFn,
+      resolveProxy: deps.resolveProxy,
       sessionScope: opts.sessionScope,
     });
   }

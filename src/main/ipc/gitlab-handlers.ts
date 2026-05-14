@@ -12,6 +12,7 @@
 import { ipcMain } from "electron";
 
 import { normalizeGitLabHost } from "../core/workspace/git-credentials";
+import type { ProxyResolver } from "../core/workspace/git-proxy-env";
 import {
   type GitLabRef,
   GitLabWorkspace,
@@ -125,6 +126,12 @@ export interface GitLabHandlerDeps {
    * proxy for hosts the user's PAC rules route DIRECT.
    */
   fetchFn?: typeof fetch;
+  /**
+   * Per-host proxy resolver for spawned `git` children (see
+   * `core/workspace/git-proxy-env.ts`). Production wires this to
+   * `session.defaultSession.resolveProxy`; tests can leave it undefined.
+   */
+  resolveProxy?: ProxyResolver;
 }
 
 export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
@@ -138,6 +145,7 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
     fetchFn: fetchImpl,
+    resolveProxy: deps.resolveProxy,
   };
 
   ipcMain.handle(
