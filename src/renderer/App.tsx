@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -79,6 +79,39 @@ export const App = () => {
     },
     [],
   );
+
+  // HEAD-watcher sync: main process broadcasts `workspace:branch-changed`
+  // whenever `.git/HEAD` changes (chat-driven `git checkout`, external
+  // terminal, BranchSwitcher itself, etc.). We patch `workspace.ref.ref`
+  // so the BranchSwitcher chip and downstream consumers stay in sync
+  // with on-disk reality. Match by `cloneDir` (== `workspace.localPath`)
+  // because `workspaceRefId` embeds the ref and would change on switch.
+  // Read via a ref so the listener is mounted once and addRecentWorkspace
+  // doesn't run inside a setState updater (StrictMode would double-fire it).
+  const workspaceRef = useRef<ResolvedWorkspace | null>(workspace);
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+  useEffect(() => {
+    const unsubscribe = window.filework.onWorkspaceBranchChanged(
+      ({ cloneDir, branch }) => {
+        const curr = workspaceRef.current;
+        if (!curr || curr.ref.kind === "local") return;
+        if (cloneDir !== curr.localPath) return;
+        if (curr.ref.ref === branch) return;
+        const updatedRef: WorkspaceRef = { ...curr.ref, ref: branch };
+        setWorkspace({ ...curr, ref: updatedRef });
+        window.filework.addRecentWorkspace(
+          recentKeyFor(updatedRef),
+          workspaceRefLabel(updatedRef),
+          { kind: updatedRef.kind, metadata: encodeRef(updatedRef) },
+        );
+      },
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // On launch: restore the most recent workspace
   useEffect(() => {

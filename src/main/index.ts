@@ -21,6 +21,7 @@ config({ path: join(__dirname, "../../.env") });
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
+import { stopAllHeadWatchers } from "./core/workspace/head-watcher";
 import { initDatabase } from "./db";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
@@ -283,4 +284,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  stopAllHeadWatchers();
 });

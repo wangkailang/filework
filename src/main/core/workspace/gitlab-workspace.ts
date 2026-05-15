@@ -33,6 +33,7 @@ import {
 } from "./git-credentials";
 import { buildGitProxyEnv, type ProxyResolver } from "./git-proxy-env";
 import { projectLogTail } from "./github-workspace";
+import { startHeadWatcher } from "./head-watcher";
 import { LocalWorkspace } from "./local-workspace";
 import type {
   CIJobLog,
@@ -989,6 +990,9 @@ export class GitLabWorkspace implements Workspace {
       host: normalizeGitLabHost(ref.host),
     };
     const cloneDir = await ensureClone(cleanRef, deps);
+    // Idempotent — first call per cloneDir installs the watcher;
+    // subsequent calls are no-ops. Errors are swallowed inside.
+    void startHeadWatcher(cloneDir);
     const local = new LocalWorkspace(cloneDir, {
       id: workspaceRefId(cleanRef),
     });

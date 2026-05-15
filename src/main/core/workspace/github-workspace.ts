@@ -31,6 +31,7 @@ import path from "node:path";
 import { checkoutBranchTo, withCloneLock } from "./clone-cache";
 import { buildAskpassEnv, githubSanitizedRemote } from "./git-credentials";
 import { buildGitProxyEnv, type ProxyResolver } from "./git-proxy-env";
+import { startHeadWatcher } from "./head-watcher";
 import { LocalWorkspace } from "./local-workspace";
 import type {
   CIJobLog,
@@ -1048,6 +1049,9 @@ export class GitHubWorkspace implements Workspace {
     deps: GitHubWorkspaceDeps,
   ): Promise<GitHubWorkspace> {
     const cloneDir = await ensureClone(ref, deps);
+    // Idempotent — first call per cloneDir installs the watcher;
+    // subsequent calls are no-ops. Errors are swallowed inside.
+    void startHeadWatcher(cloneDir);
     const local = new LocalWorkspace(cloneDir, { id: workspaceRefId(ref) });
     return new GitHubWorkspace(ref, cloneDir, local, deps);
   }
