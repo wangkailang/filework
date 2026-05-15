@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+import type { CredentialKind } from "../shared/credentials";
+
 /**
  * Expose safe IPC methods to the renderer process via contextBridge.
  * This is the ONLY bridge between main and renderer.
@@ -661,7 +663,7 @@ const api = {
   credentials: {
     list: () => ipcRenderer.invoke("credentials:list"),
     create: (payload: {
-      kind: "github_pat" | "gitlab_pat";
+      kind: CredentialKind;
       label: string;
       token: string;
       scopes?: string[];
@@ -670,7 +672,7 @@ const api = {
     test: (payload: {
       id?: string;
       token?: string;
-      kind?: "github_pat" | "gitlab_pat";
+      kind?: CredentialKind;
       host?: string;
     }) => ipcRenderer.invoke("credentials:test", payload),
   },

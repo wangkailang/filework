@@ -75,7 +75,9 @@ export const recentWorkspaces = sqliteTable("recent_workspaces", {
 
 export const credentials = sqliteTable("credentials", {
   id: text("id").primaryKey(),
-  kind: text("kind", { enum: ["github_pat", "gitlab_pat"] }).notNull(),
+  kind: text("kind", {
+    enum: ["github_pat", "gitlab_pat", "tavily_pat", "firecrawl_pat"],
+  }).notNull(),
   label: text("label").notNull(),
   /** AES-256-GCM encrypted token (see db/crypto.ts). */
   encryptedToken: text("encrypted_token").notNull(),

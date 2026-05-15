@@ -10,9 +10,11 @@
 import { ipcMain } from "electron";
 
 import {
+  type CredentialKind,
   createCredential,
   deleteCredential,
   getCredentialToken,
+  getLatestCredentialToken,
   listCredentials,
   recordCredentialTest,
 } from "../db";
@@ -78,7 +80,7 @@ export const registerCredentialsHandlers = () => {
     async (
       _event,
       payload: {
-        kind: "github_pat" | "gitlab_pat";
+        kind: CredentialKind;
         label: string;
         token: string;
         scopes?: string[];
@@ -114,12 +116,17 @@ export const registerCredentialsHandlers = () => {
       payload: {
         id?: string;
         token?: string;
-        kind?: "github_pat" | "gitlab_pat";
+        kind?: CredentialKind;
         host?: string;
       },
     ): Promise<TestTokenResult> => {
       const token = payload.id ? getCredentialToken(payload.id) : payload.token;
       if (!token) return { ok: false, error: "Missing token or credential id" };
+      // Tavily and Firecrawl charge per request — skip the test round-trip
+      // and trust the user-entered key. Accept any non-empty string.
+      if (payload.kind === "tavily_pat" || payload.kind === "firecrawl_pat") {
+        return { ok: true };
+      }
       const result =
         payload.kind === "gitlab_pat"
           ? await testGitlabToken(token, payload.host ?? "gitlab.com")
@@ -145,3 +152,15 @@ export const registerCredentialsHandlers = () => {
     },
   );
 };
+
+/**
+ * Returns the most recently created token of the given kind, or null.
+ * Used by the agent's web tools (Tavily / Firecrawl) to resolve API
+ * keys without per-tool wiring. Delegates to `getLatestCredentialToken`
+ * — the SQL-side ORDER BY + LIMIT 1 is cheaper than listAll + sort.
+ */
+export const tavilyCredentialResolver = async (): Promise<string | null> =>
+  getLatestCredentialToken("tavily_pat");
+
+export const firecrawlCredentialResolver = async (): Promise<string | null> =>
+  getLatestCredentialToken("firecrawl_pat");

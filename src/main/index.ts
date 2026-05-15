@@ -23,9 +23,14 @@ import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
 import { stopAllHeadWatchers } from "./core/workspace/head-watcher";
 import { initDatabase } from "./db";
+import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
-import { registerCredentialsHandlers } from "./ipc/credentials-handlers";
+import {
+  firecrawlCredentialResolver,
+  registerCredentialsHandlers,
+  tavilyCredentialResolver,
+} from "./ipc/credentials-handlers";
 import { batchTestCredentials } from "./ipc/credentials-monitor";
 import { registerFileHandlers } from "./ipc/file-handlers";
 import {
@@ -195,6 +200,18 @@ app.whenReady().then(async () => {
     askpassPath,
     fetchFn: proxyAwareFetch,
     resolveProxy,
+  });
+
+  // The agent's web tools (webFetch / webFetchRendered / webSearch /
+  // webScrape) use the same proxy-aware fetch so they honor split-
+  // routing PAC rules (Mihomo/Clash CN-DIRECT etc.). Tavily / Firecrawl
+  // resolvers are gates — when null, the corresponding tool isn't
+  // registered and the model gets a structured "configure credentials"
+  // error if it tries.
+  setAgentRegistryDeps({
+    fetchFn: proxyAwareFetch,
+    resolveTavilyToken: tavilyCredentialResolver,
+    resolveFirecrawlToken: firecrawlCredentialResolver,
   });
 
   // Register IPC handlers

@@ -8,9 +8,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  CREDENTIAL_KIND_OPTIONS,
+  type CredentialKind,
+  credentialKindLabel,
+} from "../../../shared/credentials";
+
 interface CredentialSummary {
   id: string;
-  kind: "github_pat" | "gitlab_pat";
+  kind: CredentialKind;
   label: string;
   scopes: string[] | null;
   createdAt: string;
@@ -58,6 +64,7 @@ export const CredentialsPanel = () => {
   const [list, setList] = useState<CredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [newKind, setNewKind] = useState<CredentialKind>("github_pat");
   const [newLabel, setNewLabel] = useState("");
   const [newToken, setNewToken] = useState("");
   const [creating, setCreating] = useState(false);
@@ -86,10 +93,11 @@ export const CredentialsPanel = () => {
     setError(null);
     try {
       await window.filework.credentials.create({
-        kind: "github_pat",
+        kind: newKind,
         label: newLabel.trim(),
         token: newToken.trim(),
       });
+      setNewKind("github_pat");
       setNewLabel("");
       setNewToken("");
       setShowAdd(false);
@@ -114,7 +122,12 @@ export const CredentialsPanel = () => {
   const handleTest = async (id: string) => {
     setTests((prev) => ({ ...prev, [id]: { state: "testing" } }));
     try {
-      const res = await window.filework.credentials.test({ id });
+      const cred = list.find((c) => c.id === id);
+      const res = await window.filework.credentials.test({
+        id,
+        kind: cred?.kind,
+        host: cred?.lastTestedHost ?? undefined,
+      });
       setTests((prev) => ({
         ...prev,
         [id]: res.ok
@@ -136,10 +149,11 @@ export const CredentialsPanel = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold">GitHub Tokens</h3>
+          <h3 className="text-sm font-semibold">Credentials</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Personal access tokens for cloning private repos. Encrypted at rest
-            with the same key as your LLM API keys.
+            API keys / PATs for GitHub, GitLab, Tavily (web search), and
+            Firecrawl (web scrape). Encrypted at rest with the same key as your
+            LLM API keys.
           </p>
         </div>
         {!showAdd && (
@@ -164,6 +178,26 @@ export const CredentialsPanel = () => {
 
       {showAdd && (
         <div className="rounded-lg border border-border p-3 space-y-2">
+          <div>
+            <label
+              htmlFor="add-kind"
+              className="block text-xs font-medium mb-1"
+            >
+              Kind
+            </label>
+            <select
+              id="add-kind"
+              value={newKind}
+              onChange={(e) => setNewKind(e.target.value as CredentialKind)}
+              className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
+            >
+              {CREDENTIAL_KIND_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label
               htmlFor="add-label"
@@ -192,7 +226,10 @@ export const CredentialsPanel = () => {
               type="password"
               value={newToken}
               onChange={(e) => setNewToken(e.target.value)}
-              placeholder="ghp_… or github_pat_…"
+              placeholder={
+                CREDENTIAL_KIND_OPTIONS.find((o) => o.value === newKind)
+                  ?.placeholder ?? ""
+              }
               className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background font-mono"
             />
           </div>
@@ -210,6 +247,7 @@ export const CredentialsPanel = () => {
               type="button"
               onClick={() => {
                 setShowAdd(false);
+                setNewKind("github_pat");
                 setNewLabel("");
                 setNewToken("");
               }}
@@ -247,6 +285,9 @@ export const CredentialsPanel = () => {
                       title={statusTooltip(c)}
                     />
                     <span className="truncate">{c.label}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1.5 py-0.5 rounded bg-muted shrink-0">
+                      {credentialKindLabel(c.kind)}
+                    </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     Added {new Date(c.createdAt).toLocaleDateString()}
