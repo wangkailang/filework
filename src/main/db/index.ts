@@ -90,7 +90,7 @@ export const initDatabase = async () => {
     );
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat')),
+      kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
       label TEXT NOT NULL,
       encrypted_token TEXT NOT NULL,
       scopes TEXT,
@@ -101,6 +101,45 @@ export const initDatabase = async () => {
       last_tested_host TEXT
     );
   `);
+
+  // Migrate: pre-Tavily DBs have a CHECK constraint limited to
+  // github_pat/gitlab_pat. SQLite can't ALTER a CHECK constraint —
+  // rebuild the table in place if the old constraint is still there.
+  const credentialsSql = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='credentials'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (
+    credentialsSql &&
+    !credentialsSql.includes("tavily_pat") &&
+    credentialsSql.includes("github_pat")
+  ) {
+    sqlite.exec(`
+      BEGIN TRANSACTION;
+      CREATE TABLE credentials_new (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
+        label TEXT NOT NULL,
+        encrypted_token TEXT NOT NULL,
+        scopes TEXT,
+        created_at TEXT NOT NULL,
+        last_tested_at TEXT,
+        test_status TEXT,
+        last_test_error TEXT,
+        last_tested_host TEXT
+      );
+      INSERT INTO credentials_new SELECT * FROM credentials;
+      DROP TABLE credentials;
+      ALTER TABLE credentials_new RENAME TO credentials;
+      COMMIT;
+    `);
+    console.log(
+      "[db] widened credentials.kind CHECK to include tavily_pat / firecrawl_pat",
+    );
+  }
 
   // Migrate: add usage tracking columns to tasks if missing
   const taskColumns = sqlite.pragma("table_info(tasks)") as {
@@ -230,9 +269,15 @@ interface RecentWorkspace {
 
 export type CredentialTestStatus = "unknown" | "ok" | "error";
 
+export type CredentialKind =
+  | "github_pat"
+  | "gitlab_pat"
+  | "tavily_pat"
+  | "firecrawl_pat";
+
 export interface Credential {
   id: string;
-  kind: "github_pat" | "gitlab_pat";
+  kind: CredentialKind;
   label: string;
   scopes: string[] | null;
   createdAt: string;
@@ -506,7 +551,7 @@ export const removeRecentWorkspace = (path: string) => {
 // ============================================================================
 
 export const createCredential = (input: {
-  kind: "github_pat" | "gitlab_pat";
+  kind: CredentialKind;
   label: string;
   token: string;
   scopes?: string[] | null;

@@ -661,7 +661,7 @@ const api = {
   credentials: {
     list: () => ipcRenderer.invoke("credentials:list"),
     create: (payload: {
-      kind: "github_pat" | "gitlab_pat";
+      kind: "github_pat" | "gitlab_pat" | "tavily_pat" | "firecrawl_pat";
       label: string;
       token: string;
       scopes?: string[];
@@ -670,7 +670,7 @@ const api = {
     test: (payload: {
       id?: string;
       token?: string;
-      kind?: "github_pat" | "gitlab_pat";
+      kind?: "github_pat" | "gitlab_pat" | "tavily_pat" | "firecrawl_pat";
       host?: string;
     }) => ipcRenderer.invoke("credentials:test", payload),
   },

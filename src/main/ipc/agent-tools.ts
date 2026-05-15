@@ -28,6 +28,10 @@ import {
 import { buildGitTools } from "../core/agent/tools/git-tools";
 import { buildGithubTools } from "../core/agent/tools/github-tools";
 import { buildGitlabTools } from "../core/agent/tools/gitlab-tools";
+import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
+import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
+import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
+import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
@@ -42,6 +46,24 @@ interface BuildAgentToolRegistryOptions {
   /** Restrict to this allow-list when set (skill `allowed-tools` frontmatter). */
   allowedTools?: string[];
 }
+
+/**
+ * Module-level deps injected once at app startup (mirrors
+ * `setWorkspaceFactoryDeps` in `ai-handlers.ts`). The agent registry
+ * builder is called per-task from multiple call sites; keeping the
+ * proxy-aware fetch here avoids threading it through every option bag.
+ */
+interface AgentRegistryDeps {
+  fetchFn?: typeof fetch;
+  /** Returns the most recent Tavily API key or null. Gates `webSearch`. */
+  resolveTavilyToken?: () => Promise<string | null>;
+  /** Returns the most recent Firecrawl API key or null. Gates `webScrape`. */
+  resolveFirecrawlToken?: () => Promise<string | null>;
+}
+let agentRegistryDeps: AgentRegistryDeps = {};
+export const setAgentRegistryDeps = (deps: AgentRegistryDeps): void => {
+  agentRegistryDeps = deps;
+};
 
 /** Workspace kinds that own a `WorkspaceSCM` with commit/push/openPullRequest. */
 const SCM_WRITE_KINDS = new Set(["github", "gitlab"]);
@@ -233,6 +255,36 @@ export const buildAgentToolRegistry = ({
 
   if (allow("askClarification")) {
     registry.register(askClarificationTool(sender, taskId));
+  }
+
+  // Web tools (Layer 0 search + Layer 1/2'/4 extraction). Registered
+  // only when a fetch implementation is injected — production wires
+  // `proxyAwareFetch`; tests typically omit and so omit the tools.
+  // Search/scrape additionally require their resolvers since they need
+  // a stored API key; render-fetch needs nothing besides Electron.
+  if (agentRegistryDeps.fetchFn) {
+    {
+      const def = buildWebFetchTool({ fetchImpl: agentRegistryDeps.fetchFn });
+      if (allow(def.name)) registry.register(def);
+    }
+    {
+      const def = buildWebFetchRenderedTool();
+      if (allow(def.name)) registry.register(def);
+    }
+    if (agentRegistryDeps.resolveTavilyToken) {
+      const def = buildWebSearchTool({
+        fetchImpl: agentRegistryDeps.fetchFn,
+        resolveTavilyToken: agentRegistryDeps.resolveTavilyToken,
+      });
+      if (allow(def.name)) registry.register(def);
+    }
+    if (agentRegistryDeps.resolveFirecrawlToken) {
+      const def = buildWebScrapeTool({
+        fetchImpl: agentRegistryDeps.fetchFn,
+        resolveFirecrawlToken: agentRegistryDeps.resolveFirecrawlToken,
+      });
+      if (allow(def.name)) registry.register(def);
+    }
   }
 
   return registry;
