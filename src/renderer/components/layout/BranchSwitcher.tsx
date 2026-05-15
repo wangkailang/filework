@@ -14,6 +14,8 @@ import type { WorkspaceRef } from "../../types/workspace-ref";
  */
 interface BranchSwitcherProps {
   workspaceRef: WorkspaceRef;
+  /** Current branch name. null = no chip (detached / non-git). */
+  currentBranch: string | null;
   /** Called after a successful checkout. Receives the new branch name. */
   onSwitched: (newBranch: string) => void;
 }
@@ -25,6 +27,7 @@ interface BranchOption {
 
 export const BranchSwitcher = ({
   workspaceRef,
+  currentBranch,
   onSwitched,
 }: BranchSwitcherProps) => {
   const [open, setOpen] = useState(false);
@@ -34,27 +37,28 @@ export const BranchSwitcher = ({
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const remoteRef = workspaceRef.kind === "local" ? null : workspaceRef;
-  const currentBranch = remoteRef?.ref ?? null;
-
   const loadBranches = useCallback(async () => {
-    if (!remoteRef) return;
     setLoading(true);
     setError(null);
     try {
-      if (remoteRef.kind === "github") {
+      if (workspaceRef.kind === "github") {
         const list = await window.filework.github.listBranches({
-          credentialId: remoteRef.credentialId,
-          owner: remoteRef.owner,
-          repo: remoteRef.repo,
+          credentialId: workspaceRef.credentialId,
+          owner: workspaceRef.owner,
+          repo: workspaceRef.repo,
+        });
+        setBranches(list);
+      } else if (workspaceRef.kind === "gitlab") {
+        const list = await window.filework.gitlab.listBranches({
+          credentialId: workspaceRef.credentialId,
+          host: workspaceRef.host,
+          namespace: workspaceRef.namespace,
+          project: workspaceRef.project,
         });
         setBranches(list);
       } else {
-        const list = await window.filework.gitlab.listBranches({
-          credentialId: remoteRef.credentialId,
-          host: remoteRef.host,
-          namespace: remoteRef.namespace,
-          project: remoteRef.project,
+        const list = await window.filework.local.listBranches({
+          path: workspaceRef.path,
         });
         setBranches(list);
       }
@@ -63,7 +67,7 @@ export const BranchSwitcher = ({
     } finally {
       setLoading(false);
     }
-  }, [remoteRef]);
+  }, [workspaceRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,28 +93,33 @@ export const BranchSwitcher = ({
   };
 
   const handleSelect = async (branch: string) => {
-    if (!remoteRef || branch === currentBranch) {
+    if (branch === currentBranch) {
       setOpen(false);
       return;
     }
     setSwitching(true);
     setError(null);
     try {
-      if (remoteRef.kind === "github") {
+      if (workspaceRef.kind === "github") {
         await window.filework.github.checkoutBranch({
-          credentialId: remoteRef.credentialId,
-          owner: remoteRef.owner,
-          repo: remoteRef.repo,
-          ref: remoteRef.ref,
+          credentialId: workspaceRef.credentialId,
+          owner: workspaceRef.owner,
+          repo: workspaceRef.repo,
+          ref: workspaceRef.ref,
+          branch,
+        });
+      } else if (workspaceRef.kind === "gitlab") {
+        await window.filework.gitlab.checkoutBranch({
+          credentialId: workspaceRef.credentialId,
+          host: workspaceRef.host,
+          namespace: workspaceRef.namespace,
+          project: workspaceRef.project,
+          ref: workspaceRef.ref,
           branch,
         });
       } else {
-        await window.filework.gitlab.checkoutBranch({
-          credentialId: remoteRef.credentialId,
-          host: remoteRef.host,
-          namespace: remoteRef.namespace,
-          project: remoteRef.project,
-          ref: remoteRef.ref,
+        await window.filework.local.checkoutBranch({
+          path: workspaceRef.path,
           branch,
         });
       }
@@ -126,7 +135,7 @@ export const BranchSwitcher = ({
     }
   };
 
-  if (!remoteRef) return null;
+  if (currentBranch === null) return null;
 
   return (
     <div ref={containerRef} className="relative">

@@ -34,6 +34,7 @@ import {
 } from "./ipc/github-handlers";
 import { registerGitLabHandlers } from "./ipc/gitlab-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
+import { registerLocalGitHandlers } from "./ipc/local-git-handlers";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
@@ -202,6 +203,7 @@ app.whenReady().then(async () => {
   registerSettingsHandlers();
   registerLlmConfigHandlers();
   registerWorkspaceHandlers();
+  registerLocalGitHandlers();
   registerChatHandlers(sessionStore);
   registerTaskTraceHandlers();
   registerCredentialsHandlers();

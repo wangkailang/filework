@@ -32,6 +32,12 @@ interface ResolvedWorkspace {
   ref: WorkspaceRef;
   /** On-disk path the file tree / sandbox uses (clone dir for github/gitlab). */
   localPath: string;
+  /**
+   * Current branch for local workspaces. null = detached HEAD or not a
+   * git repo; undefined = not yet probed. Remote workspaces leave this
+   * undefined and read the branch from `ref.ref` instead.
+   */
+  currentBranch?: string | null;
 }
 
 const recentKeyFor = (ref: WorkspaceRef): string =>
@@ -57,7 +63,12 @@ export const App = () => {
             "Recent workspace metadata is corrupted; please reconnect the remote repo.",
           );
         }
-        return { ref, localPath: ref.path };
+        const probe = await window.filework.local.probeGit({ path: ref.path });
+        return {
+          ref,
+          localPath: ref.path,
+          currentBranch: probe.isGitRepo ? probe.currentBranch : null,
+        };
       }
       if (ref.kind === "github") {
         const { root } = await window.filework.github.cloneRepo({
@@ -96,8 +107,13 @@ export const App = () => {
     const unsubscribe = window.filework.onWorkspaceBranchChanged(
       ({ cloneDir, branch }) => {
         const curr = workspaceRef.current;
-        if (!curr || curr.ref.kind === "local") return;
+        if (!curr) return;
         if (cloneDir !== curr.localPath) return;
+        if (curr.ref.kind === "local") {
+          if (curr.currentBranch === branch) return;
+          setWorkspace({ ...curr, currentBranch: branch });
+          return;
+        }
         if (curr.ref.ref === branch) return;
         const updatedRef: WorkspaceRef = { ...curr.ref, ref: branch };
         setWorkspace({ ...curr, ref: updatedRef });
@@ -144,7 +160,7 @@ export const App = () => {
     });
   };
 
-  const handleSelectLocal = (path: string) => {
+  const handleSelectLocal = async (path: string) => {
     if (path.startsWith("gitlab:") || path.startsWith("github:")) {
       setResolveError(
         "Recent workspace metadata is corrupted; please reconnect the remote repo.",
@@ -153,8 +169,13 @@ export const App = () => {
     }
     const ref: WorkspaceRef = { kind: "local", path };
     setSelectedFilePath(null);
-    setWorkspace({ ref, localPath: path });
-    recordRecent(ref, workspaceRefLabel(ref));
+    try {
+      const resolved = await resolveWorkspace(ref);
+      setWorkspace(resolved);
+      recordRecent(ref, workspaceRefLabel(ref));
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleSelectRemote = async (ref: WorkspaceRef) => {
@@ -214,15 +235,21 @@ export const App = () => {
           <Sidebar
             workspacePath={workspace.localPath}
             workspaceRef={workspace.ref}
+            currentBranch={workspace.currentBranch}
             onChangeDirectory={handleSelectLocal}
             onCloseDirectory={() => setWorkspace(null)}
             onLocaleChange={setLocale}
             onSelectFile={setSelectedFilePath}
             onBranchSwitched={(branch) => {
-              // After a successful switch the cloneDir's HEAD is on the
-              // new branch. Persist that as the workspace's ref so
-              // subsequent agent tasks treat it as the base / PR target.
-              if (workspace.ref.kind === "local") return;
+              if (workspace.ref.kind === "local") {
+                // Local: just patch the live chip state. No persist —
+                // local refs don't carry a branch, and next launch
+                // re-probes from disk.
+                setWorkspace({ ...workspace, currentBranch: branch });
+                return;
+              }
+              // Remote: persist the new ref so subsequent agent tasks
+              // treat it as the base / PR target.
               const updatedRef: WorkspaceRef = {
                 ...workspace.ref,
                 ref: branch,
