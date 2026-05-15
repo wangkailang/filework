@@ -38,10 +38,18 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     throw new Error(`API Key 未配置，请在设置中填写 ${provider} 的 API Key`);
   }
 
+  // MiniMax exposes an OpenAI-compatible endpoint at the regional default
+  // when no baseUrl is set. Mainland China is the default; users can override
+  // (e.g. to api.minimax.io) in the LLM config form.
+  const resolvedBaseUrl =
+    provider === "minimax" && !baseUrl
+      ? "https://api.minimaxi.com/v1"
+      : baseUrl;
+
   return createModelWithAdapter({
     provider,
     apiKey: apiKey || "",
-    baseUrl,
+    baseUrl: resolvedBaseUrl,
     model: modelId,
   });
 };

@@ -13,6 +13,7 @@ import type {
 export type {
   ClarificationPart,
   ErrorPart,
+  ImagePart,
   MessagePart,
   PlanMessagePart,
   RecoveryAction,
@@ -20,6 +21,7 @@ export type {
   ToolApproval,
   ToolPart,
   UsagePart,
+  VideoJobPart,
 } from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------

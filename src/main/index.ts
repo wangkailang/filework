@@ -40,6 +40,8 @@ import {
 import { registerGitLabHandlers } from "./ipc/gitlab-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerLocalGitHandlers } from "./ipc/local-git-handlers";
+import { registerMediaHandlers } from "./ipc/media-handlers";
+import { mediaJobWatcher } from "./ipc/media-job-watcher";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
@@ -142,6 +144,11 @@ app.whenReady().then(async () => {
         ogg: "video/ogg",
         mov: "video/quicktime",
         m4v: "video/x-m4v",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
       };
       const contentType = (ext && mimeMap[ext]) || "application/octet-stream";
       return new Response(buffer, {
@@ -219,6 +226,8 @@ app.whenReady().then(async () => {
   registerAIHandlers();
   registerSettingsHandlers();
   registerLlmConfigHandlers();
+  mediaJobWatcher.configure({ fetchFn: proxyAwareFetch });
+  registerMediaHandlers({ fetchFn: proxyAwareFetch });
   registerWorkspaceHandlers();
   registerLocalGitHandlers();
   registerChatHandlers(sessionStore);
@@ -283,7 +292,7 @@ app.whenReady().then(async () => {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src local-file:; frame-src local-file:",
+            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-file:; media-src local-file:; frame-src local-file:",
           ],
         },
       });

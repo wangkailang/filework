@@ -101,15 +101,55 @@ export const credentials = sqliteTable("credentials", {
 // chat_sessions / chat_messages — REMOVED in M3 PR 2.
 // See `core/session/jsonl-store.ts` for the active backend.
 
+/**
+ * Persisted record for an in-flight or completed media-generation job.
+ *
+ * Phase 3 introduces this table for video generation: MiniMax video
+ * requests run 1–5 minutes asynchronously (submit -> task_id -> poll
+ * /v1/query/video_generation -> file_id -> download). Storing the job
+ * survives renderer reloads and surfaces "unfinished from last run"
+ * after an app restart. Image generation is synchronous in Phase 2 and
+ * does NOT write here — kind="image" is reserved for future async
+ * image flows (or batch generation) without another schema bump.
+ */
+export const mediaJobs = sqliteTable("media_jobs", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  configId: text("config_id").notNull(),
+  kind: text("kind", { enum: ["image", "video"] }).notNull(),
+  /** Upstream task id (MiniMax /v1/video_generation response). */
+  providerJobId: text("provider_job_id"),
+  prompt: text("prompt").notNull(),
+  status: text("status", {
+    enum: ["queued", "running", "succeeded", "failed", "canceled"],
+  }).notNull(),
+  /** 0–100 if provider returns one. Often null until completion. */
+  progressPct: integer("progress_pct"),
+  /** Absolute filesystem path once the artifact is downloaded. */
+  resultPath: text("result_path"),
+  errorMessage: text("error_message"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  completedAt: text("completed_at"),
+});
+
 export const llmConfigs = sqliteTable("llm_configs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   provider: text("provider", {
-    enum: ["openai", "anthropic", "deepseek", "ollama", "custom"],
+    enum: ["openai", "anthropic", "deepseek", "ollama", "custom", "minimax"],
   }).notNull(),
   apiKey: text("api_key"),
   baseUrl: text("base_url"),
   model: text("model").notNull(),
+  /**
+   * What this config produces. Default "chat" for legacy rows. Image/video
+   * modalities bypass the agent loop and route through dedicated clients
+   * (see src/main/ai/minimax/*).
+   */
+  modality: text("modality", { enum: ["chat", "image", "video"] })
+    .notNull()
+    .default("chat"),
   isDefault: integer("is_default", { mode: "boolean" })
     .notNull()
     .default(false),
