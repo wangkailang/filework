@@ -621,6 +621,19 @@ const api = {
     },
   },
 
+  // Workspace-level events
+  onWorkspaceBranchChanged: (
+    callback: (data: { cloneDir: string; branch: string }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { cloneDir: string; branch: string },
+    ) => callback(data);
+    ipcRenderer.on("workspace:branch-changed", handler);
+    return () =>
+      ipcRenderer.removeListener("workspace:branch-changed", handler);
+  },
+
   // Workspace history
   getRecentWorkspaces: () => ipcRenderer.invoke("workspace:getRecent"),
   addRecentWorkspace: (
