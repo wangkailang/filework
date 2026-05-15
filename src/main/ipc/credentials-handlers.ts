@@ -14,6 +14,7 @@ import {
   createCredential,
   deleteCredential,
   getCredentialToken,
+  getLatestCredentialToken,
   listCredentials,
   recordCredentialTest,
 } from "../db";
@@ -153,21 +154,13 @@ export const registerCredentialsHandlers = () => {
 };
 
 /**
- * Returns the most recently created token of the given kind, or null
- * when no matching credential exists. Used by the agent's web tools
- * (Tavily / Firecrawl) to resolve API keys without per-tool wiring.
+ * Returns the most recently created token of the given kind, or null.
+ * Used by the agent's web tools (Tavily / Firecrawl) to resolve API
+ * keys without per-tool wiring. Delegates to `getLatestCredentialToken`
+ * — the SQL-side ORDER BY + LIMIT 1 is cheaper than listAll + sort.
  */
-const resolveLatestToken = (kind: CredentialKind): string | null => {
-  const list = listCredentials().filter((c) => c.kind === kind);
-  if (list.length === 0) return null;
-  // Most recently created wins. listCredentials() may or may not be
-  // sorted — sort defensively by createdAt desc.
-  list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  return getCredentialToken(list[0].id);
-};
-
 export const tavilyCredentialResolver = async (): Promise<string | null> =>
-  resolveLatestToken("tavily_pat");
+  getLatestCredentialToken("tavily_pat");
 
 export const firecrawlCredentialResolver = async (): Promise<string | null> =>
-  resolveLatestToken("firecrawl_pat");
+  getLatestCredentialToken("firecrawl_pat");

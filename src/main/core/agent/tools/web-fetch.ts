@@ -32,6 +32,10 @@ const inputSchema = z.object({
 });
 
 const DEFAULT_MAX_BYTES = 200_000;
+// Hard ceiling — we refuse to read responses bigger than this even when
+// the caller passes a larger `maxBytes`. Prevents an OOM from a server
+// that streams 100MB of HTML before we'd otherwise get to truncate.
+const ABSOLUTE_MAX_BYTES = 10_000_000;
 
 // Looks like a real Chrome on Mac — improves yield on sites that lightly
 // gate by UA. The "filework-agent" suffix is preserved so logs identify us.
@@ -63,9 +67,27 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
       redirect: "follow",
       signal: ctx.signal,
     });
+    const contentType = res.headers.get("content-type") ?? "";
+    // Refuse early when the server advertises a body that's too big to
+    // hold in memory safely. res.text() below otherwise buffers the
+    // entire body before maxBytes truncation can kick in.
+    const advertised = Number(res.headers.get("content-length"));
+    if (Number.isFinite(advertised) && advertised > ABSOLUTE_MAX_BYTES) {
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        url: res.url,
+        contentType,
+        title: null,
+        excerpt: null,
+        markdown: "",
+        raw: "",
+        truncated: true,
+        error: `Response too large (${advertised} bytes > ${ABSOLUTE_MAX_BYTES} byte cap). Use webFetchRendered or webScrape with format:'markdown' to get extraction without raw HTML.`,
+      };
+    }
     const raw = await res.text();
     const truncated = raw.length > maxBytes;
-    const contentType = res.headers.get("content-type") ?? "";
     const readable = isHtml(contentType)
       ? extractReadable(raw, res.url)
       : { title: null, excerpt: null, markdown: "" };

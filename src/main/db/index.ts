@@ -5,8 +5,11 @@ import Database from "better-sqlite3";
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { app } from "electron";
+import type { CredentialKind } from "../../shared/credentials";
 import { decrypt, encrypt } from "./crypto";
 import * as schema from "./schema";
+
+export type { CredentialKind };
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -117,28 +120,42 @@ export const initDatabase = async () => {
     !credentialsSql.includes("tavily_pat") &&
     credentialsSql.includes("github_pat")
   ) {
-    sqlite.exec(`
-      BEGIN TRANSACTION;
-      CREATE TABLE credentials_new (
-        id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
-        label TEXT NOT NULL,
-        encrypted_token TEXT NOT NULL,
-        scopes TEXT,
-        created_at TEXT NOT NULL,
-        last_tested_at TEXT,
-        test_status TEXT,
-        last_test_error TEXT,
-        last_tested_host TEXT
+    // better-sqlite3's transaction() wraps the body in BEGIN/COMMIT and
+    // auto-rolls back on any thrown error — safer than raw `BEGIN ... COMMIT`
+    // in an exec() call, which would leak a half-applied state if INSERT
+    // failed a constraint check and the COMMIT never ran.
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE credentials_new (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
+            label TEXT NOT NULL,
+            encrypted_token TEXT NOT NULL,
+            scopes TEXT,
+            created_at TEXT NOT NULL,
+            last_tested_at TEXT,
+            test_status TEXT,
+            last_test_error TEXT,
+            last_tested_host TEXT
+          );
+          INSERT INTO credentials_new SELECT * FROM credentials;
+          DROP TABLE credentials;
+          ALTER TABLE credentials_new RENAME TO credentials;
+        `);
+      })();
+      console.log(
+        "[db] widened credentials.kind CHECK to include tavily_pat / firecrawl_pat",
       );
-      INSERT INTO credentials_new SELECT * FROM credentials;
-      DROP TABLE credentials;
-      ALTER TABLE credentials_new RENAME TO credentials;
-      COMMIT;
-    `);
-    console.log(
-      "[db] widened credentials.kind CHECK to include tavily_pat / firecrawl_pat",
-    );
+    } catch (err) {
+      // Don't kill app startup — keep the old constraint in place. New
+      // tavily/firecrawl credential rows will fail at insert time with
+      // a clear CHECK violation, which is at least observable.
+      console.error(
+        "[db] failed to widen credentials.kind CHECK; existing creds remain usable, new tavily/firecrawl kinds will fail:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   // Migrate: add usage tracking columns to tasks if missing
@@ -268,12 +285,6 @@ interface RecentWorkspace {
 }
 
 export type CredentialTestStatus = "unknown" | "ok" | "error";
-
-export type CredentialKind =
-  | "github_pat"
-  | "gitlab_pat"
-  | "tavily_pat"
-  | "firecrawl_pat";
 
 export interface Credential {
   id: string;
@@ -616,6 +627,23 @@ export const getCredentialToken = (id: string): string => {
     .get();
   if (!row) throw new Error(`Credential not found: ${id}`);
   return decrypt(row.encryptedToken);
+};
+
+/**
+ * Returns the decrypted token of the most-recently-created credential
+ * for `kind`, or null when none exist. Used by agent tools that want
+ * "the user's <provider> key" without exposing credential ids.
+ */
+export const getLatestCredentialToken = (
+  kind: CredentialKind,
+): string | null => {
+  const row = db
+    .select()
+    .from(schema.credentials)
+    .where(eq(schema.credentials.kind, kind))
+    .orderBy(desc(schema.credentials.createdAt))
+    .get();
+  return row ? decrypt(row.encryptedToken) : null;
 };
 
 export const deleteCredential = (id: string): void => {

@@ -34,30 +34,59 @@ interface RenderOpts {
   timeoutMs?: number;
   /** Settle delay AFTER did-finish-load for SPA hydration. Default 1500ms. */
   settleMs?: number;
+  /**
+   * Optional cancellation. Honored both while queued (rejects without
+   * spawning a window) and during load (the loadURL race already loses
+   * to its own timeout, so the window gets closed in finally).
+   */
+  signal?: AbortSignal;
 }
 
 const MAX_CONCURRENT = 2;
 
-let inFlight = 0;
-const waitQueue: Array<() => void> = [];
+interface QueueEntry {
+  grant: () => void;
+  reject: (err: Error) => void;
+}
 
-const acquire = (): Promise<void> =>
-  new Promise((resolve) => {
+let inFlight = 0;
+const waitQueue: QueueEntry[] = [];
+
+const acquire = (signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("aborted", "AbortError"));
+      return;
+    }
     if (inFlight < MAX_CONCURRENT) {
       inFlight++;
       resolve();
-    } else {
-      waitQueue.push(() => {
+      return;
+    }
+    const onAbort = () => {
+      const i = waitQueue.indexOf(entry);
+      if (i >= 0) waitQueue.splice(i, 1);
+      entry.reject(new DOMException("aborted", "AbortError"));
+    };
+    const entry: QueueEntry = {
+      grant: () => {
+        signal?.removeEventListener("abort", onAbort);
         inFlight++;
         resolve();
-      });
-    }
+      },
+      reject: (err) => {
+        signal?.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    waitQueue.push(entry);
   });
 
 const release = (): void => {
   inFlight--;
   const next = waitQueue.shift();
-  if (next) next();
+  if (next) next.grant();
 };
 
 export const fetchRenderedHtml = async (
@@ -67,7 +96,7 @@ export const fetchRenderedHtml = async (
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const settleMs = opts.settleMs ?? 1_500;
 
-  await acquire();
+  await acquire(opts.signal);
   const partition = `headless-${randomUUID()}`;
   let win: BrowserWindow | null = null;
   try {

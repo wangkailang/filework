@@ -8,11 +8,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type CredentialKind =
-  | "github_pat"
-  | "gitlab_pat"
-  | "tavily_pat"
-  | "firecrawl_pat";
+import {
+  CREDENTIAL_KIND_OPTIONS,
+  type CredentialKind,
+  credentialKindLabel,
+} from "../../../shared/credentials";
 
 interface CredentialSummary {
   id: string;
@@ -26,24 +26,6 @@ interface CredentialSummary {
   lastTestError: string | null;
   lastTestedHost: string | null;
 }
-
-const KIND_OPTIONS: Array<{
-  value: CredentialKind;
-  label: string;
-  placeholder: string;
-}> = [
-  {
-    value: "github_pat",
-    label: "GitHub",
-    placeholder: "ghp_… or github_pat_…",
-  },
-  { value: "gitlab_pat", label: "GitLab", placeholder: "glpat-…" },
-  { value: "tavily_pat", label: "Tavily", placeholder: "tvly-…" },
-  { value: "firecrawl_pat", label: "Firecrawl", placeholder: "fc-…" },
-];
-
-const kindLabel = (kind: CredentialKind): string =>
-  KIND_OPTIONS.find((o) => o.value === kind)?.label ?? kind;
 
 const formatRelative = (iso: string | null): string => {
   if (!iso) return "never";
@@ -209,7 +191,7 @@ export const CredentialsPanel = () => {
               onChange={(e) => setNewKind(e.target.value as CredentialKind)}
               className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
             >
-              {KIND_OPTIONS.map((o) => (
+              {CREDENTIAL_KIND_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -245,7 +227,8 @@ export const CredentialsPanel = () => {
               value={newToken}
               onChange={(e) => setNewToken(e.target.value)}
               placeholder={
-                KIND_OPTIONS.find((o) => o.value === newKind)?.placeholder ?? ""
+                CREDENTIAL_KIND_OPTIONS.find((o) => o.value === newKind)
+                  ?.placeholder ?? ""
               }
               className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background font-mono"
             />
@@ -303,7 +286,7 @@ export const CredentialsPanel = () => {
                     />
                     <span className="truncate">{c.label}</span>
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1.5 py-0.5 rounded bg-muted shrink-0">
-                      {kindLabel(c.kind)}
+                      {credentialKindLabel(c.kind)}
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">

@@ -49,7 +49,7 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
     "If this also returns empty markdown, escalate to `webScrape` (Firecrawl).",
   safety: "safe",
   inputSchema,
-  execute: async (args, _ctx) => {
+  execute: async (args, ctx) => {
     const {
       url,
       timeoutMs,
@@ -59,6 +59,7 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
     const { html, finalUrl, status } = await fetchRenderedHtml(url, {
       timeoutMs,
       settleMs,
+      signal: ctx.signal,
     });
     const readable = extractReadable(html, finalUrl);
     const truncated = html.length > maxBytes;
