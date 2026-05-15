@@ -62,11 +62,12 @@ export const withCloneLock = async <T>(
 };
 
 // ---------------------------------------------------------------------------
-// runGit (mirror of the providers' helper, private to keep this module
-// dependency-free of the workspace classes)
+// runGit (mirror of the providers' helper, exported for sibling modules
+// like `local-git.ts` that need to invoke git without pulling in a whole
+// Workspace class)
 // ---------------------------------------------------------------------------
 
-const runGit = async (
+export const runGit = async (
   args: string[],
   opts: {
     cwd?: string;

@@ -621,6 +621,16 @@ const api = {
     },
   },
 
+  // Local (non-clone) git operations
+  local: {
+    probeGit: (payload: { path: string }) =>
+      ipcRenderer.invoke("local-git:probe", payload),
+    listBranches: (payload: { path: string }) =>
+      ipcRenderer.invoke("local-git:listBranches", payload),
+    checkoutBranch: (payload: { path: string; branch: string }) =>
+      ipcRenderer.invoke("local-git:checkoutBranch", payload),
+  },
+
   // Workspace-level events
   onWorkspaceBranchChanged: (
     callback: (data: { cloneDir: string; branch: string }) => void,

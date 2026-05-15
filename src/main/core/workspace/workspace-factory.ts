@@ -10,6 +10,7 @@
 import type { ProxyResolver } from "./git-proxy-env";
 import { GitHubWorkspace } from "./github-workspace";
 import { GitLabWorkspace } from "./gitlab-workspace";
+import { startHeadWatcher } from "./head-watcher";
 import { LocalWorkspace } from "./local-workspace";
 import type { Workspace } from "./types";
 import type { WorkspaceRef } from "./workspace-ref";
@@ -57,6 +58,10 @@ export const createWorkspace = async (
   opts: CreateWorkspaceOpts = {},
 ): Promise<Workspace> => {
   if (ref.kind === "local") {
+    // Idempotent — no-op for non-git directories (startHeadWatcher
+    // returns early when .git/HEAD can't be read). Gives local repos
+    // the same chat-driven-checkout sync as remote workspaces.
+    void startHeadWatcher(ref.path);
     return new LocalWorkspace(ref.path);
   }
   if (ref.kind === "github") {

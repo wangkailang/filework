@@ -36,6 +36,12 @@ interface FileInfo {
 interface SidebarProps {
   workspacePath: string;
   workspaceRef?: WorkspaceRef;
+  /**
+   * Live branch for local workspaces. Remote workspaces ignore this
+   * (BranchSwitcher reads `workspaceRef.ref`). null = not a git repo
+   * or detached HEAD → no chip rendered.
+   */
+  currentBranch?: string | null;
   onChangeDirectory: (path: string) => void;
   onCloseDirectory: () => void;
   onLocaleChange: (locale: Locales) => void;
@@ -51,6 +57,7 @@ interface SidebarProps {
 export const Sidebar = ({
   workspacePath,
   workspaceRef,
+  currentBranch,
   onChangeDirectory: _onChangeDirectory,
   onCloseDirectory,
   onLocaleChange,
@@ -211,17 +218,35 @@ export const Sidebar = ({
               </button>
             </div>
           </div>
-          {workspaceRef && workspaceRef.kind !== "local" && (
-            <div className="flex items-center pl-6">
-              <BranchSwitcher
-                workspaceRef={workspaceRef}
-                onSwitched={async (newBranch) => {
-                  onBranchSwitched?.(newBranch);
-                  await handleRefresh();
-                }}
-              />
-            </div>
-          )}
+          {workspaceRef &&
+            (() => {
+              const branchForChip =
+                workspaceRef.kind === "local"
+                  ? (currentBranch ?? null)
+                  : workspaceRef.ref;
+              if (branchForChip === null) return null;
+              const kindBadge =
+                workspaceRef.kind === "local"
+                  ? "Local"
+                  : workspaceRef.kind === "github"
+                    ? "GitHub"
+                    : "GitLab";
+              return (
+                <div className="flex items-center gap-1.5 pl-6">
+                  <BranchSwitcher
+                    workspaceRef={workspaceRef}
+                    currentBranch={branchForChip}
+                    onSwitched={async (newBranch) => {
+                      onBranchSwitched?.(newBranch);
+                      await handleRefresh();
+                    }}
+                  />
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1.5 py-0.5 rounded bg-muted">
+                    {kindBadge}
+                  </span>
+                </div>
+              );
+            })()}
         </div>
 
         {/* File tree */}
