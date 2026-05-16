@@ -1,0 +1,131 @@
+/* highlight.js token colors — GitHub Light / Dark
+ * Imported by main.tsx after global.css.
+ * Light = default; .dark on <html> activates dark overrides.
+ */
+
+.hljs {
+  color: var(--color-foreground);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link,
+.hljs-doctag {
+  color: #cf222e;
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-function .hljs-title {
+  color: #8250df;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition,
+.hljs-regexp {
+  color: #0a3069;
+}
+
+.hljs-number,
+.hljs-meta,
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #0550ae;
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #116329;
+}
+
+.hljs-params {
+  color: var(--color-foreground);
+}
+
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: #953800;
+}
+
+.hljs-deletion {
+  color: #82071e;
+  background: #ffebe9;
+}
+
+.hljs-meta .hljs-string {
+  color: #0a3069;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* === Dark mode (GitHub Dark) === */
+html.dark .hljs-comment,
+html.dark .hljs-quote {
+  color: #8b949e;
+}
+html.dark .hljs-keyword,
+html.dark .hljs-selector-tag,
+html.dark .hljs-literal,
+html.dark .hljs-section,
+html.dark .hljs-link,
+html.dark .hljs-doctag {
+  color: #ff7b72;
+}
+html.dark .hljs-title,
+html.dark .hljs-title.function_,
+html.dark .hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+html.dark .hljs-string,
+html.dark .hljs-attr,
+html.dark .hljs-symbol,
+html.dark .hljs-bullet,
+html.dark .hljs-addition,
+html.dark .hljs-regexp {
+  color: #a5d6ff;
+}
+html.dark .hljs-number,
+html.dark .hljs-meta,
+html.dark .hljs-built_in,
+html.dark .hljs-builtin-name {
+  color: #79c0ff;
+}
+html.dark .hljs-variable,
+html.dark .hljs-template-variable,
+html.dark .hljs-tag,
+html.dark .hljs-name,
+html.dark .hljs-selector-id,
+html.dark .hljs-selector-class {
+  color: #7ee787;
+}
+html.dark .hljs-type,
+html.dark .hljs-class .hljs-title,
+html.dark .hljs-title.class_ {
+  color: #ffa657;
+}
+html.dark .hljs-deletion {
+  color: #ffdcd7;
+  background: #67060c;
+}
