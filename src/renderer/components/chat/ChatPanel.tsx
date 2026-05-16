@@ -315,7 +315,7 @@ export const ChatPanel = ({
 
   const renderAssistantParts = (parts: MessagePart[]) => {
     const textKeyCounts = new Map<string, number>();
-    return parts.map((part, idx) => {
+    return parts.map((part) => {
       if (part.type === "text" && part.text) {
         const baseKey = `text-${part.text}`;
         const keyCount = (textKeyCounts.get(baseKey) ?? 0) + 1;
@@ -395,9 +395,10 @@ export const ChatPanel = ({
       }
       if (part.type === "image-gallery") {
         const gp = part as ImageGalleryPart;
+        const firstUrl = gp.images[0]?.url ?? "empty";
         return (
           <ImageGallery
-            key={`gallery-${gp.source}-${idx}-${gp.images[0]?.url ?? ""}`}
+            key={`gallery-${gp.source}-${gp.images.length}-${firstUrl}`}
             part={gp}
           />
         );
