@@ -129,10 +129,57 @@ export interface ClarificationPart {
   options?: string[];
 }
 
+/**
+ * Inline generated image. Written by `media-handlers.ts` after a
+ * MiniMax image_generation call succeeds; rendered via `MediaImageCard`
+ * using the `local-file://` custom protocol.
+ *
+ * Persisted to the JSONL session store so the image survives reloads.
+ * The file at `path` lives under `~/.filework/generated/{sessionId}/`.
+ */
+export interface ImagePart {
+  type: "image";
+  /** Absolute filesystem path to the saved image. */
+  path: string;
+  /** Original user prompt — shown under the image. */
+  prompt: string;
+  /** LLM config id that produced this — supports re-generate later. */
+  configId: string;
+  /** Short hex id from the generation call; useful as a React key. */
+  imageId: string;
+  /** Model identifier (e.g. "image-01"). Optional for back-compat. */
+  modelId?: string;
+}
+
+/**
+ * In-flight or completed video-generation job. Phase 3 — MiniMax videos
+ * take 1–5 minutes, so the main process runs a watcher that updates this
+ * part's `status` / `progressPct` / `resultPath` via the
+ * `ai:media-job-update` IPC event.
+ *
+ * Persisted to JSONL like other parts, so a renderer reload still shows
+ * the latest known state. The watcher writes to the DB even when the
+ * renderer is gone; on next load the renderer re-subscribes by `jobId`.
+ */
+export interface VideoJobPart {
+  type: "video-job";
+  jobId: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  progressPct?: number | null;
+  /** Absolute filesystem path once the video is downloaded. */
+  resultPath?: string | null;
+  errorMessage?: string | null;
+  prompt: string;
+  configId: string;
+  modelId?: string;
+}
+
 export type MessagePart =
   | TextPart
   | ToolPart
   | PlanMessagePart
   | ErrorPart
   | UsagePart
-  | ClarificationPart;
+  | ClarificationPart
+  | ImagePart
+  | VideoJobPart;

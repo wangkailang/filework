@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import type { LlmConfig } from "../db";
+import type { LlmConfig, LlmModality } from "../db";
 import {
   createLlmConfig,
   deleteLlmConfig,
@@ -17,6 +17,7 @@ interface CreatePayload {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  modality?: LlmModality;
   isDefault?: boolean;
 }
 
@@ -27,6 +28,7 @@ interface UpdatePayload {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  modality?: LlmModality;
   isDefault?: boolean;
 }
 
@@ -51,13 +53,15 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     "deepseek",
     "ollama",
     "custom",
+    "minimax",
   ];
   if (!validProviders.includes(data.provider)) {
     return `Invalid provider: ${data.provider}`;
   }
 
-  // openai/anthropic/deepseek require apiKey
-  if (["openai", "anthropic", "deepseek"].includes(data.provider)) {
+  // Hosted providers all require apiKey. MiniMax always needs one
+  // regardless of modality (chat / image / video share the same key).
+  if (["openai", "anthropic", "deepseek", "minimax"].includes(data.provider)) {
     if (!data.apiKey || data.apiKey.trim() === "") {
       return "apiKey is required for this provider";
     }
@@ -68,6 +72,10 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     if (!data.baseUrl || data.baseUrl.trim() === "") {
       return "baseUrl is required for this provider";
     }
+  }
+
+  if (data.modality && !["chat", "image", "video"].includes(data.modality)) {
+    return `Invalid modality: ${data.modality}`;
   }
 
   return null;
@@ -112,6 +120,7 @@ export const registerLlmConfigHandlers = () => {
         apiKey: data.apiKey ?? null,
         baseUrl: data.baseUrl ?? null,
         model,
+        modality: data.modality ?? "chat",
         isDefault: data.isDefault ?? false,
       });
     } catch (err) {

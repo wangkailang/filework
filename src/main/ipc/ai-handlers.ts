@@ -177,6 +177,21 @@ const handleTaskExecution = async (
     const llmConfig = payload.llmConfigId
       ? getLlmConfig(payload.llmConfigId)
       : getDefaultLlmConfig();
+
+    // Phase 1 guard: only "chat" modality runs through the agent loop.
+    // Image/video configs have a different provider API (e.g. MiniMax
+    // /v1/image_generation, /v1/video_generation) and will be wired up in
+    // Phase 2/3. Without this check, image/video model names get forwarded
+    // to /v1/chat/completions and the upstream returns a confusing
+    // "unknown model" error.
+    if (llmConfig?.modality && llmConfig.modality !== "chat") {
+      throw new Error(
+        `此 LLM 配置的 modality 是 "${llmConfig.modality}"，聊天路径只支持 "chat"。${
+          llmConfig.modality === "image" ? "图像生成" : "视频生成"
+        }尚未接入（Phase 2/3 待实现）。请改用 chat 模型，或等待后续版本。`,
+      );
+    }
+
     const { model, adapter } = getModelAndAdapterByConfigId(
       payload.llmConfigId,
     );

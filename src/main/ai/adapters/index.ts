@@ -24,9 +24,12 @@ const adapters: Record<string, ProviderAdapter> = {
   anthropic: new AnthropicAdapter(),
   deepseek: new DeepSeekAdapter(),
   openai: openaiAdapter,
-  // "custom" and "ollama" share the OpenAI adapter (OpenAI-compatible endpoints)
+  // "custom", "ollama", and "minimax" share the OpenAI adapter — all expose
+  // OpenAI-compatible /v1/chat/completions endpoints. baseUrl resolution
+  // (e.g. MiniMax default region) is handled upstream in ai-models.ts.
   custom: openaiAdapter,
   ollama: openaiAdapter,
+  minimax: openaiAdapter,
 };
 
 /**

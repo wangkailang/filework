@@ -516,24 +516,78 @@ const api = {
     get: (id: string) => ipcRenderer.invoke("llm-config:get", { id }),
     create: (data: {
       name: string;
-      provider: "openai" | "anthropic" | "deepseek" | "ollama" | "custom";
+      provider:
+        | "openai"
+        | "anthropic"
+        | "deepseek"
+        | "ollama"
+        | "custom"
+        | "minimax";
       apiKey?: string;
       baseUrl?: string;
       model: string;
+      modality?: "chat" | "image" | "video";
       isDefault?: boolean;
     }) => ipcRenderer.invoke("llm-config:create", data),
     update: (
       id: string,
       data: {
         name?: string;
-        provider?: "openai" | "anthropic" | "deepseek" | "ollama" | "custom";
+        provider?:
+          | "openai"
+          | "anthropic"
+          | "deepseek"
+          | "ollama"
+          | "custom"
+          | "minimax";
         apiKey?: string;
         baseUrl?: string;
         model?: string;
+        modality?: "chat" | "image" | "video";
         isDefault?: boolean;
       },
     ) => ipcRenderer.invoke("llm-config:update", { id, ...data }),
     delete: (id: string) => ipcRenderer.invoke("llm-config:delete", { id }),
+  },
+
+  // Media (image / video generation)
+  media: {
+    generateImage: (data: {
+      llmConfigId: string;
+      sessionId: string;
+      prompt: string;
+      aspectRatio?: string;
+    }) => ipcRenderer.invoke("media:generate-image", data),
+    createVideoJob: (data: {
+      llmConfigId: string;
+      sessionId: string;
+      prompt: string;
+    }) => ipcRenderer.invoke("media:create-video-job", data),
+    cancelJob: (jobId: string) =>
+      ipcRenderer.invoke("media:cancel-job", { jobId }),
+    listActiveJobs: () => ipcRenderer.invoke("media:list-active-jobs"),
+    onJobUpdate: (
+      callback: (event: {
+        jobId: string;
+        status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+        progressPct?: number | null;
+        resultPath?: string | null;
+        errorMessage?: string | null;
+      }) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          jobId: string;
+          status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+          progressPct?: number | null;
+          resultPath?: string | null;
+          errorMessage?: string | null;
+        },
+      ) => callback(data);
+      ipcRenderer.on("ai:media-job-update", handler);
+      return () => ipcRenderer.removeListener("ai:media-job-update", handler);
+    },
   },
 
   // Usage tracking

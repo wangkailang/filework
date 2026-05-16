@@ -2,7 +2,15 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 
-type Provider = "openai" | "anthropic" | "deepseek" | "ollama" | "custom";
+type Provider =
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "ollama"
+  | "custom"
+  | "minimax";
+
+export type Modality = "chat" | "image" | "video";
 
 export interface LlmConfig {
   id: string;
@@ -11,6 +19,7 @@ export interface LlmConfig {
   apiKey: string | null;
   baseUrl: string | null;
   model: string;
+  modality: Modality;
 }
 
 interface FormData {
@@ -19,6 +28,7 @@ interface FormData {
   apiKey: string;
   baseUrl: string;
   model: string;
+  modality: Modality;
 }
 
 const EMPTY_FORM: FormData = {
@@ -27,21 +37,33 @@ const EMPTY_FORM: FormData = {
   apiKey: "",
   baseUrl: "",
   model: "",
+  modality: "chat",
 };
 
 const PROVIDERS: { value: Provider; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "minimax", label: "MiniMax" },
   { value: "ollama", label: "Ollama" },
   { value: "custom", label: "Custom (OpenAI Compatible)" },
 ];
 
+const MODALITIES: { value: Modality; label: string }[] = [
+  { value: "chat", label: "Chat" },
+  { value: "image", label: "Image" },
+  { value: "video", label: "Video" },
+];
+
 function needsApiKey(p: Provider) {
-  return ["openai", "anthropic", "deepseek"].includes(p);
+  return ["openai", "anthropic", "deepseek", "minimax"].includes(p);
 }
 function needsBaseUrl(p: Provider) {
   return ["ollama", "custom"].includes(p);
+}
+/** Whether this provider exposes more than one modality in the picker. */
+function supportsImageVideo(p: Provider) {
+  return p === "minimax";
 }
 
 interface LlmConfigEditModalProps {
@@ -72,6 +94,7 @@ export const LlmConfigEditModal = ({
         apiKey: editing.apiKey || "",
         baseUrl: editing.baseUrl || "",
         model: editing.model,
+        modality: editing.modality ?? "chat",
       });
     } else {
       setForm(EMPTY_FORM);
@@ -113,6 +136,7 @@ export const LlmConfigEditModal = ({
       apiKey: form.apiKey || undefined,
       baseUrl: form.baseUrl || undefined,
       model: form.model,
+      modality: form.modality,
     };
     if (editing) {
       await window.filework.llmConfig.update(editing.id, payload);
@@ -127,6 +151,7 @@ export const LlmConfigEditModal = ({
     "w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none";
   const nameInputId = "llm-config-name";
   const providerInputId = "llm-config-provider";
+  const modalityInputId = "llm-config-modality";
   const apiKeyInputId = "llm-config-api-key";
   const baseUrlInputId = "llm-config-base-url";
   const modelInputId = "llm-config-model";
@@ -135,7 +160,15 @@ export const LlmConfigEditModal = ({
     needsBaseUrl(form.provider) ||
     form.provider === "openai" ||
     form.provider === "anthropic" ||
-    form.provider === "deepseek";
+    form.provider === "deepseek" ||
+    form.provider === "minimax";
+
+  const baseUrlPlaceholder =
+    form.provider === "ollama"
+      ? "http://localhost:11434"
+      : form.provider === "minimax"
+        ? "https://api.minimaxi.com/v1"
+        : "";
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">
@@ -189,14 +222,17 @@ export const LlmConfigEditModal = ({
             <select
               id={providerInputId}
               value={form.provider}
-              onChange={(e) =>
+              onChange={(e) => {
+                const next = e.target.value as Provider;
                 setForm({
                   ...form,
-                  provider: e.target.value as Provider,
+                  provider: next,
                   apiKey: "",
                   baseUrl: "",
-                })
-              }
+                  // Reset modality whenever the new provider can't do image/video.
+                  modality: supportsImageVideo(next) ? form.modality : "chat",
+                });
+              }}
               className={inputCls}
             >
               {PROVIDERS.map((p) => (
@@ -206,6 +242,31 @@ export const LlmConfigEditModal = ({
               ))}
             </select>
           </div>
+
+          {supportsImageVideo(form.provider) && (
+            <div>
+              <label
+                htmlFor={modalityInputId}
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                Modality
+              </label>
+              <select
+                id={modalityInputId}
+                value={form.modality}
+                onChange={(e) =>
+                  setForm({ ...form, modality: e.target.value as Modality })
+                }
+                className={inputCls}
+              >
+                {MODALITIES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {needsApiKey(form.provider) && (
             <div>
@@ -243,9 +304,7 @@ export const LlmConfigEditModal = ({
                 id={baseUrlInputId}
                 value={form.baseUrl}
                 onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-                placeholder={
-                  form.provider === "ollama" ? "http://localhost:11434" : ""
-                }
+                placeholder={baseUrlPlaceholder}
                 className={inputCls}
               />
               {errors.baseUrl && (

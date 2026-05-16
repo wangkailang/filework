@@ -83,14 +83,32 @@ export const initDatabase = async () => {
     CREATE TABLE IF NOT EXISTS llm_configs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom')),
+      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax')),
       api_key TEXT,
       base_url TEXT,
       model TEXT NOT NULL,
+      modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
       is_default INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS media_jobs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      config_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('image','video')),
+      provider_job_id TEXT,
+      prompt TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','canceled')),
+      progress_pct INTEGER,
+      result_path TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_media_jobs_session ON media_jobs(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_jobs(status);
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
@@ -199,6 +217,61 @@ export const initDatabase = async () => {
     DROP TABLE IF EXISTS chat_messages;
     DROP TABLE IF EXISTS chat_sessions;
   `);
+
+  // Migrate llm_configs: (1) add `modality` column for Phase 1 of the
+  // image/video work — defaults to 'chat' so legacy rows stay routed to
+  // the agent loop. (2) Widen the provider CHECK constraint to include
+  // 'minimax'. SQLite can't ALTER a CHECK in place, so rebuild the table
+  // when the existing one still has the old constraint (mirrors the
+  // credentials.kind dance above).
+  const llmCols = sqlite.pragma("table_info(llm_configs)") as {
+    name: string;
+  }[];
+  if (!llmCols.some((c) => c.name === "modality")) {
+    sqlite.exec(
+      "ALTER TABLE llm_configs ADD COLUMN modality TEXT NOT NULL DEFAULT 'chat'",
+    );
+  }
+  const llmConfigsSql = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='llm_configs'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (llmConfigsSql && !llmConfigsSql.includes("minimax")) {
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE llm_configs_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax')),
+            api_key TEXT,
+            base_url TEXT,
+            model TEXT NOT NULL,
+            modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, model, modality, is_default, created_at, updated_at)
+            SELECT id, name, provider, api_key, base_url, model,
+                   COALESCE(modality, 'chat'),
+                   is_default, created_at, updated_at
+              FROM llm_configs;
+          DROP TABLE llm_configs;
+          ALTER TABLE llm_configs_new RENAME TO llm_configs;
+        `);
+      })();
+      console.log("[db] widened llm_configs.provider CHECK to include minimax");
+    } catch (err) {
+      console.error(
+        "[db] failed to widen llm_configs.provider CHECK; existing configs remain usable, new minimax provider rows will fail:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 
   // Migrate: add kind/metadata columns to recent_workspaces if missing
   const recentCols = sqlite.pragma("table_info(recent_workspaces)") as {
@@ -689,13 +762,25 @@ export const recordCredentialTest = (input: {
 // LLM Config Types
 // ============================================================================
 
+export type LlmProvider =
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "ollama"
+  | "custom"
+  | "minimax";
+
+export type LlmModality = "chat" | "image" | "video";
+
 export interface LlmConfig {
   id: string;
   name: string;
-  provider: "openai" | "anthropic" | "deepseek" | "ollama" | "custom";
+  provider: LlmProvider;
   apiKey: string | null;
   baseUrl: string | null;
   model: string;
+  /** What this config produces. Defaults to "chat" for back-compat. */
+  modality: LlmModality;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -715,6 +800,7 @@ function mapRowToLlmConfig(
     apiKey: row.apiKey ? decrypt(row.apiKey) : null,
     baseUrl: row.baseUrl,
     model: row.model,
+    modality: row.modality,
     isDefault: row.isDefault,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -722,12 +808,15 @@ function mapRowToLlmConfig(
 }
 
 export const createLlmConfig = (
-  config: Omit<LlmConfig, "id" | "createdAt" | "updatedAt">,
+  config: Omit<LlmConfig, "id" | "createdAt" | "updatedAt" | "modality"> & {
+    modality?: LlmModality;
+  },
 ): LlmConfig => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const encryptedApiKey = config.apiKey ? encrypt(config.apiKey) : null;
 
+  const modality: LlmModality = config.modality ?? "chat";
   db.insert(schema.llmConfigs)
     .values({
       id,
@@ -736,6 +825,7 @@ export const createLlmConfig = (
       apiKey: encryptedApiKey,
       baseUrl: config.baseUrl ?? null,
       model: config.model,
+      modality,
       isDefault: config.isDefault,
       createdAt: now,
       updatedAt: now,
@@ -749,6 +839,7 @@ export const createLlmConfig = (
     apiKey: config.apiKey,
     baseUrl: config.baseUrl ?? null,
     model: config.model,
+    modality,
     isDefault: config.isDefault,
     createdAt: now,
     updatedAt: now,
@@ -778,6 +869,7 @@ export const updateLlmConfig = (
     mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
   if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
   if (updates.model !== undefined) mapped.model = updates.model;
+  if (updates.modality !== undefined) mapped.modality = updates.modality;
   if (updates.isDefault !== undefined) mapped.isDefault = updates.isDefault;
   mapped.updatedAt = new Date().toISOString();
 
@@ -872,6 +964,159 @@ export const migrateLlmConfigFromEnv = (): void => {
     model: hasEnvConfig ? resolvedModel : "gpt-4o-mini",
     isDefault: true,
   });
+};
+
+// ============================================================================
+// Media Jobs (Phase 3 — video generation + future async media)
+// ============================================================================
+
+export type MediaJobKind = "image" | "video";
+export type MediaJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+
+export interface MediaJob {
+  id: string;
+  sessionId: string;
+  configId: string;
+  kind: MediaJobKind;
+  providerJobId: string | null;
+  prompt: string;
+  status: MediaJobStatus;
+  progressPct: number | null;
+  resultPath: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+function mapRowToMediaJob(row: typeof schema.mediaJobs.$inferSelect): MediaJob {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    configId: row.configId,
+    kind: row.kind,
+    providerJobId: row.providerJobId,
+    prompt: row.prompt,
+    status: row.status,
+    progressPct: row.progressPct,
+    resultPath: row.resultPath,
+    errorMessage: row.errorMessage,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    completedAt: row.completedAt,
+  };
+}
+
+export const createMediaJob = (
+  job: Omit<
+    MediaJob,
+    | "id"
+    | "createdAt"
+    | "updatedAt"
+    | "completedAt"
+    | "progressPct"
+    | "resultPath"
+    | "errorMessage"
+    | "providerJobId"
+  > & {
+    id?: string;
+    providerJobId?: string | null;
+    progressPct?: number | null;
+    resultPath?: string | null;
+    errorMessage?: string | null;
+  },
+): MediaJob => {
+  const id = job.id ?? crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.mediaJobs)
+    .values({
+      id,
+      sessionId: job.sessionId,
+      configId: job.configId,
+      kind: job.kind,
+      providerJobId: job.providerJobId ?? null,
+      prompt: job.prompt,
+      status: job.status,
+      progressPct: job.progressPct ?? null,
+      resultPath: job.resultPath ?? null,
+      errorMessage: job.errorMessage ?? null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    })
+    .run();
+  return {
+    id,
+    sessionId: job.sessionId,
+    configId: job.configId,
+    kind: job.kind,
+    providerJobId: job.providerJobId ?? null,
+    prompt: job.prompt,
+    status: job.status,
+    progressPct: job.progressPct ?? null,
+    resultPath: job.resultPath ?? null,
+    errorMessage: job.errorMessage ?? null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  };
+};
+
+export const getMediaJob = (id: string): MediaJob | null => {
+  const row = db
+    .select()
+    .from(schema.mediaJobs)
+    .where(eq(schema.mediaJobs.id, id))
+    .get();
+  return row ? mapRowToMediaJob(row) : null;
+};
+
+export const updateMediaJob = (
+  id: string,
+  updates: Partial<
+    Omit<MediaJob, "id" | "sessionId" | "configId" | "kind" | "createdAt">
+  >,
+): void => {
+  const mapped: Record<string, unknown> = {};
+  if (updates.providerJobId !== undefined)
+    mapped.providerJobId = updates.providerJobId;
+  if (updates.status !== undefined) mapped.status = updates.status;
+  if (updates.progressPct !== undefined)
+    mapped.progressPct = updates.progressPct;
+  if (updates.resultPath !== undefined) mapped.resultPath = updates.resultPath;
+  if (updates.errorMessage !== undefined)
+    mapped.errorMessage = updates.errorMessage;
+  if (updates.completedAt !== undefined)
+    mapped.completedAt = updates.completedAt;
+  mapped.updatedAt = new Date().toISOString();
+  db.update(schema.mediaJobs)
+    .set(mapped)
+    .where(eq(schema.mediaJobs.id, id))
+    .run();
+};
+
+/** Jobs that may still be running. Used on app startup to surface stragglers. */
+export const listActiveMediaJobs = (): MediaJob[] => {
+  return db
+    .select()
+    .from(schema.mediaJobs)
+    .all()
+    .map(mapRowToMediaJob)
+    .filter((j) => j.status === "queued" || j.status === "running");
+};
+
+export const listMediaJobsBySession = (sessionId: string): MediaJob[] => {
+  return db
+    .select()
+    .from(schema.mediaJobs)
+    .where(eq(schema.mediaJobs.sessionId, sessionId))
+    .all()
+    .map(mapRowToMediaJob);
 };
 
 export type { FileOperation, RecentWorkspace, Task, Workspace };

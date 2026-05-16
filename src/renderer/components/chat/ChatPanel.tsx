@@ -52,6 +52,8 @@ import {
   ToolOutput,
 } from "../ai-elements/tool";
 import { migrateToParts } from "./helpers";
+import { MediaImageCard } from "./MediaImageCard";
+import { MediaVideoCard } from "./MediaVideoCard";
 import { ModelSelector } from "./ModelSelector";
 import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
@@ -59,11 +61,13 @@ import { SkillMenu } from "./SkillMenu";
 import type {
   ClarificationPart,
   ErrorPart,
+  ImagePart,
   MessagePart,
   PlanMessagePart,
   RecoveryAction,
   ToolPart,
   UsagePart,
+  VideoJobPart,
 } from "./types";
 import { useChatSession } from "./useChatSession";
 
@@ -382,6 +386,14 @@ export const ChatPanel = ({
             className="my-1"
           />
         );
+      }
+      if (part.type === "image") {
+        const ip = part as ImagePart;
+        return <MediaImageCard key={`image-${ip.imageId}`} part={ip} />;
+      }
+      if (part.type === "video-job") {
+        const vp = part as VideoJobPart;
+        return <MediaVideoCard key={`video-${vp.jobId}`} part={vp} />;
       }
       if (part.type === "clarification") {
         const cp = part as ClarificationPart;

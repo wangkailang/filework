@@ -53,7 +53,64 @@ export function useChatSession(
       .catch(() => {});
   }, [selectedLlmConfigId]);
 
+  // Subscribe once to media-job updates so any in-flight video job
+  // (current session or restored from a prior run) updates its inline
+  // VideoJobPart card. The hook is mounted for the chat surface's
+  // lifetime; we tear down the listener on unmount.
+  const crudRefForSubscribe = useRef<{
+    setMessages: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
+    debouncedSave: (msgs: ChatMessage[], sid: string) => void;
+    activeSessionIdRef: { current: string | null };
+  } | null>(null);
+  useEffect(() => {
+    const off = window.filework.media.onJobUpdate(
+      (evt: {
+        jobId: string;
+        status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+        progressPct?: number | null;
+        resultPath?: string | null;
+        errorMessage?: string | null;
+      }) => {
+        const refs = crudRefForSubscribe.current;
+        if (!refs) return;
+        refs.setMessages((prev) => {
+          let mutated = false;
+          const next = prev.map((m) => {
+            if (!m.parts) return m;
+            const newParts = m.parts.map((p) => {
+              if (p.type !== "video-job" || p.jobId !== evt.jobId) return p;
+              mutated = true;
+              return {
+                ...p,
+                status: evt.status,
+                progressPct: evt.progressPct ?? p.progressPct ?? null,
+                resultPath: evt.resultPath ?? p.resultPath ?? null,
+                errorMessage: evt.errorMessage ?? p.errorMessage ?? null,
+              };
+            });
+            return mutated ? { ...m, parts: newParts } : m;
+          });
+          if (mutated && refs.activeSessionIdRef.current) {
+            refs.debouncedSave(next, refs.activeSessionIdRef.current);
+          }
+          return mutated ? next : prev;
+        });
+      },
+    );
+    return () => {
+      if (typeof off === "function") off();
+    };
+  }, []);
+
   const crud = useSessionCrud(workspacePath);
+  // Mirror the crud setters into a ref so the media-job subscriber
+  // (mounted once, no deps) always sees the freshest setters without
+  // re-subscribing on every render.
+  crudRefForSubscribe.current = {
+    setMessages: crud.setMessages,
+    debouncedSave: crud.debouncedSave,
+    activeSessionIdRef: crud.activeSessionIdRef,
+  };
   const stream = useStreamSubscription({
     setMessages: crud.setMessages,
     setLastUsage: crud.setLastUsage,
@@ -131,6 +188,108 @@ export function useChatSession(
         content,
         parts: parts?.filter((p) => p.type !== "plan"),
       }));
+
+    // Image/video modalities bypass the agent loop — both return a
+    // single part (image, video-job, or error) and exit. Centralise the
+    // "set parts → debouncedSave" dance so adding a new modality stays
+    // a one-liner.
+    const replaceAssistant = (parts: MessagePart[], content = "") => {
+      crud.setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === assistantId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], content, parts };
+        if (crud.activeSessionIdRef.current) {
+          crud.debouncedSave(updated, crud.activeSessionIdRef.current);
+        }
+        return updated;
+      });
+    };
+    const replaceWithError = (msg: string) => {
+      crud.setLastError({ message: msg });
+      replaceAssistant([{ type: "error", message: msg }], msg);
+    };
+
+    if (selectedLlmConfigId) {
+      try {
+        const configRaw =
+          await window.filework.llmConfig.get(selectedLlmConfigId);
+        const config =
+          configRaw && !("error" in configRaw)
+            ? (configRaw as {
+                id: string;
+                modality?: "chat" | "image" | "video";
+                model: string;
+              })
+            : null;
+        if (config?.modality === "image") {
+          const result = (await window.filework.media.generateImage({
+            llmConfigId: selectedLlmConfigId,
+            sessionId,
+            prompt: text,
+          })) as
+            | {
+                path: string;
+                prompt: string;
+                configId: string;
+                imageId: string;
+              }
+            | { error: string };
+          if ("error" in result) {
+            replaceWithError(result.error);
+          } else {
+            replaceAssistant([
+              {
+                type: "image",
+                path: result.path,
+                prompt: result.prompt,
+                configId: result.configId,
+                imageId: result.imageId,
+                modelId: config.model,
+              },
+            ]);
+          }
+        } else if (config?.modality === "video") {
+          const result = (await window.filework.media.createVideoJob({
+            llmConfigId: selectedLlmConfigId,
+            sessionId,
+            prompt: text,
+          })) as
+            | {
+                jobId: string;
+                status: "queued";
+                configId: string;
+                prompt: string;
+                modelId: string;
+              }
+            | { error: string };
+          if ("error" in result) {
+            replaceWithError(result.error);
+          } else {
+            replaceAssistant([
+              {
+                type: "video-job",
+                jobId: result.jobId,
+                status: "queued",
+                prompt: result.prompt,
+                configId: result.configId,
+                modelId: result.modelId,
+              },
+            ]);
+          }
+        }
+        if (config?.modality === "image" || config?.modality === "video") {
+          stream.setIsLoading(false);
+          stream.streamAssistantIdRef.current = null;
+          return;
+        }
+      } catch (err) {
+        replaceWithError(err instanceof Error ? err.message : String(err));
+        stream.setIsLoading(false);
+        stream.streamAssistantIdRef.current = null;
+        return;
+      }
+    }
 
     if (stream.connectionTimeoutRef.current)
       clearTimeout(stream.connectionTimeoutRef.current);
