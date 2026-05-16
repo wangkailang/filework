@@ -116,6 +116,22 @@ export function estimateTokens(messages: ModelMessage[]): number {
   return total;
 }
 
+/**
+ * Per-attachment token approximations. Picking conservative defaults
+ * keeps the budget from over-firing compression on routine submits
+ * while staying in the right order of magnitude. Anthropic's image
+ * tokenizer maxes around ~1500 tokens; PDFs depend on length but
+ * ~2000 tokens covers a short doc.
+ *
+ * Crucially: never `JSON.stringify` an image/file part — its `image`
+ * or `data` field is a Buffer, and stringifying expands it to a giant
+ * `{type:"Buffer",data:[...]}` literal that both bloats the estimate
+ * and (downstream) gets parsed back as a plain object, killing the
+ * Buffer identity that the AI SDK schema requires.
+ */
+const IMAGE_TOKEN_APPROX = 1500;
+const FILE_TOKEN_APPROX = 2000;
+
 function estimateMessageTokens(msg: ModelMessage): number {
   if (typeof msg.content === "string") {
     return estimateStringTokens(msg.content);
@@ -136,8 +152,15 @@ function estimateMessageTokens(msg: ModelMessage): number {
       case "tool-result":
         tokens += estimateToolResultTokens(part.output);
         break;
+      case "image":
+        tokens += IMAGE_TOKEN_APPROX;
+        break;
+      case "file":
+        tokens += FILE_TOKEN_APPROX;
+        break;
       default:
-        // reasoning, file, image, etc. — rough estimate from JSON
+        // reasoning and other rare parts — rough estimate from JSON.
+        // Safe here because these don't carry binary fields.
         tokens += estimateStringTokens(JSON.stringify(part));
         break;
     }
@@ -294,6 +317,13 @@ export function truncateToFit(
  * Truncate a single message's text content to fit within a token budget.
  * Uses the CJK ratio (1.5 chars/token) as a conservative estimate so we
  * never exceed the budget regardless of script.
+ *
+ * IMPORTANT: do NOT use `cloneMessage` (JSON-roundtrip) here when the
+ * content array contains binary parts (image/file). Buffer fields would
+ * be serialized to `{type:"Buffer",data:[...]}` plain objects, breaking
+ * the AI SDK's `instanceof Uint8Array` check and rejecting the prompt.
+ * Instead we do a shallow array copy and recreate only the text parts
+ * that need slicing — binary parts pass through by reference.
  */
 function truncateSingleMessage(
   msg: ModelMessage,
@@ -308,7 +338,12 @@ function truncateSingleMessage(
 
   if (!Array.isArray(msg.content)) return msg;
 
-  const cloned = cloneMessage(msg);
+  // Shallow clone: preserve binary part references; only mutate string
+  // fields via new objects so we don't mutate the caller's array.
+  const cloned = {
+    ...msg,
+    content: msg.content.map((p) => ({ ...p })),
+  } as ModelMessage;
   if (!Array.isArray(cloned.content)) return cloned;
 
   let remaining = maxChars;
