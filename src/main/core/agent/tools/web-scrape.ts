@@ -10,6 +10,7 @@
 import { z } from "zod/v4";
 
 import type { ToolDefinition } from "../tool-registry";
+import type { ArticleMeta } from "./web-extract";
 
 export interface WebScrapeDeps {
   fetchImpl: typeof fetch;
@@ -32,10 +33,55 @@ interface RawFirecrawlResponse {
     metadata?: {
       title?: string;
       description?: string;
+      sourceURL?: string;
+      // Firecrawl flattens OpenGraph + article meta into the top-level
+      // `metadata` object. Field names vary by Firecrawl release; the
+      // ones below are the stable / documented set we map into our
+      // ArticleMeta shape.
+      author?: string;
+      publishedTime?: string;
+      modifiedTime?: string;
+      language?: string;
+      ogTitle?: string;
+      ogDescription?: string;
+      ogType?: string;
+      ogSiteName?: string;
+      ogUrl?: string;
+      ogImage?: string;
+      ogVideo?: string;
+      favicon?: string;
+      // Allow unknown extra fields without forcing `any`.
+      [key: string]: unknown;
     };
   };
   error?: string;
 }
+
+/** Map Firecrawl's flat metadata object into our ArticleMeta shape. */
+const firecrawlMetaToArticleMeta = (
+  m: NonNullable<NonNullable<RawFirecrawlResponse["data"]>["metadata"]>,
+): ArticleMeta => {
+  const og: NonNullable<ArticleMeta["og"]> = {
+    title: m.ogTitle || undefined,
+    description: m.ogDescription || undefined,
+    type: m.ogType || undefined,
+    siteName: m.ogSiteName || undefined,
+    url: m.ogUrl || undefined,
+    image: m.ogImage || undefined,
+    video: m.ogVideo || undefined,
+  };
+  const hasOg = Object.values(og).some((v) => typeof v === "string" && v);
+  return {
+    byline: m.author || undefined,
+    siteName: m.ogSiteName || undefined,
+    publishedTime: m.publishedTime || undefined,
+    modifiedTime: m.modifiedTime || undefined,
+    lang: m.language || undefined,
+    canonical: m.sourceURL || undefined,
+    favicon: m.favicon || undefined,
+    og: hasOg ? og : undefined,
+  };
+};
 
 export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
   name: "webScrape",
@@ -43,7 +89,8 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
     "Scrape a URL via Firecrawl (handles anti-bot, JS rendering, captchas server-side). " +
     "Use ONLY when both `webFetch` and `webFetchRendered` failed (empty markdown, 403, captcha). " +
     "Costs Firecrawl API quota — Firecrawl free tier is 500 pages/month. " +
-    "Returns clean markdown.",
+    "Returns clean markdown plus a `meta` object (byline/siteName/publishedTime/favicon/og) mapped from Firecrawl's metadata. " +
+    "`images` / `videos` / `structuredData` are empty arrays here (Firecrawl doesn't itemize them; use webFetch when those matter).",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
@@ -73,13 +120,22 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
     if (json.error) {
       throw new Error(`Firecrawl returned error: ${json.error}`);
     }
+    const metadata = json.data?.metadata;
     return {
       status: res.status,
       url,
-      title: json.data?.metadata?.title ?? null,
-      excerpt: json.data?.metadata?.description ?? null,
+      title: metadata?.title ?? null,
+      excerpt: metadata?.description ?? null,
       markdown: json.data?.markdown ?? "",
       html: json.data?.html ?? null,
+      meta: metadata ? firecrawlMetaToArticleMeta(metadata) : {},
+      // Firecrawl doesn't itemize images / videos / structured data the
+      // way our HTML extractor does; emit empties for symmetry with
+      // webFetch / webFetchRendered so renderer code can branch on a
+      // single shape.
+      images: [],
+      videos: [],
+      structuredData: [],
     };
   },
 });

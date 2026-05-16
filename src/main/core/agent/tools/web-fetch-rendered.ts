@@ -45,6 +45,7 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
   description:
     "Render a URL in a real Chromium window (Electron's own, not Playwright) and return clean reader-mode markdown + raw HTML. " +
     "Use ONLY after `webFetch` returned empty / very-thin markdown on a page that should have content (SPA, JS-rendered docs site, x.com/twitter, Notion). " +
+    "Same side-channel fields as `webFetch`: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos`, `structuredData`. " +
     "Slower than `webFetch` (typically 2-4s) and capped at 2 parallel calls; don't use it as the default fetch. " +
     "If this also returns empty markdown, escalate to `webScrape` (Firecrawl).",
   safety: "safe",
@@ -72,6 +73,9 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
       excerpt: readable.excerpt,
       markdown: readable.markdown,
       images: readable.images,
+      videos: readable.videos,
+      meta: readable.meta,
+      structuredData: readable.structuredData,
       raw: truncated ? html.slice(0, maxBytes) : html,
       truncated,
     };
