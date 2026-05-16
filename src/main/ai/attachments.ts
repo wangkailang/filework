@@ -141,14 +141,48 @@ export async function buildUserContentWithAttachments(
 
   const resolved = await Promise.all(reads);
   for (const r of resolved) {
-    if ("part" in r) out.push(r.part);
-    else notices.push(r.notice);
+    if (!("part" in r)) {
+      notices.push(r.notice);
+      continue;
+    }
+    // Schema-safety guard against a future regression that
+    // JSON-roundtrips the message (e.g. via a clone helper) and turns
+    // the Buffer into `{type:"Buffer",data:[...]}`. The AI SDK's prompt
+    // schema requires `instanceof Uint8Array`; a plain object would
+    // fail validation with an opaque error.
+    const binary =
+      r.part.type === "image"
+        ? r.part.image
+        : r.part.type === "file"
+          ? r.part.data
+          : null;
+    if (binary !== null && !(binary instanceof Uint8Array)) {
+      console.error(
+        `[attachments] ${r.part.type} data is not Uint8Array, got:`,
+        typeof binary,
+      );
+      notices.push(
+        `[Attachment ${r.part.type} was dropped: data became invalid after read.]`,
+      );
+      continue;
+    }
+    out.push(r.part);
   }
 
   if (notices.length > 0) {
     out.push({
       type: "text",
       text: `\n\n${notices.join("\n")}`,
+    });
+  }
+
+  // Defensive: an empty content array is rejected by some provider
+  // adapters even though `userModelMessageSchema` permits it. Fall back
+  // to a single text part so the model gets *something* to act on.
+  if (out.length === 0) {
+    out.push({
+      type: "text",
+      text: "(attachment was provided but could not be processed)",
     });
   }
 

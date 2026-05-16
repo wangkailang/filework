@@ -116,6 +116,22 @@ export function estimateTokens(messages: ModelMessage[]): number {
   return total;
 }
 
+/**
+ * Per-attachment token approximations. Picking conservative defaults
+ * keeps the budget from over-firing compression on routine submits
+ * while staying in the right order of magnitude. Anthropic's image
+ * tokenizer maxes around ~1500 tokens; PDFs depend on length but
+ * ~2000 tokens covers a short doc.
+ *
+ * Crucially: never `JSON.stringify` an image/file part — its `image`
+ * or `data` field is a Buffer, and stringifying expands it to a giant
+ * `{type:"Buffer",data:[...]}` literal that both bloats the estimate
+ * and (downstream) gets parsed back as a plain object, killing the
+ * Buffer identity that the AI SDK schema requires.
+ */
+const IMAGE_TOKEN_APPROX = 1500;
+const FILE_TOKEN_APPROX = 2000;
+
 function estimateMessageTokens(msg: ModelMessage): number {
   if (typeof msg.content === "string") {
     return estimateStringTokens(msg.content);
@@ -136,8 +152,15 @@ function estimateMessageTokens(msg: ModelMessage): number {
       case "tool-result":
         tokens += estimateToolResultTokens(part.output);
         break;
+      case "image":
+        tokens += IMAGE_TOKEN_APPROX;
+        break;
+      case "file":
+        tokens += FILE_TOKEN_APPROX;
+        break;
       default:
-        // reasoning, file, image, etc. — rough estimate from JSON
+        // reasoning and other rare parts — rough estimate from JSON.
+        // Safe here because these don't carry binary fields.
         tokens += estimateStringTokens(JSON.stringify(part));
         break;
     }
@@ -160,10 +183,13 @@ function estimateToolResultTokens(
 // ---------------------------------------------------------------------------
 
 /**
- * Deep-clone a message (simple JSON round-trip — sufficient for our data).
+ * Deep-clone a message. Uses Node's `structuredClone` so binary fields
+ * (`image: Uint8Array`, `data: Buffer`) survive the round-trip with
+ * their prototype intact — the AI SDK's prompt schema checks
+ * `instanceof Uint8Array`, which a JSON round-trip would silently break.
  */
 function cloneMessage(msg: ModelMessage): ModelMessage {
-  return JSON.parse(JSON.stringify(msg));
+  return structuredClone(msg);
 }
 
 /**
