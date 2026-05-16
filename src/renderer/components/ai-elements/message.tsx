@@ -1,10 +1,10 @@
 import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import type { ComponentProps, HTMLAttributes } from "react";
 import { memo } from "react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
+import { MarkdownCodeBlock } from "./markdown-code-block";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: "user" | "assistant";
@@ -78,7 +78,17 @@ export const MessageAction = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { cjk, code, math };
+const streamdownPlugins = { cjk, math };
+
+const streamdownControls: ComponentProps<typeof Streamdown>["controls"] = {
+  table: true,
+  code: false,
+  mermaid: true,
+};
+
+const streamdownComponents: ComponentProps<typeof Streamdown>["components"] = {
+  code: MarkdownCodeBlock,
+};
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
@@ -88,6 +98,8 @@ export const MessageResponse = memo(
         className,
       )}
       plugins={streamdownPlugins}
+      controls={streamdownControls}
+      components={streamdownComponents}
       {...props}
     />
   ),

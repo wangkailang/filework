@@ -66,7 +66,7 @@ export const WelcomeScreen = ({
       {/* Titlebar drag region */}
       <div className="titlebar-drag fixed top-0 left-0 right-0 h-12" />
 
-      <div className="flex flex-col items-center gap-8 max-w-md text-center">
+      <div className="flex flex-col items-center gap-8 w-full max-w-2xl px-6 text-center">
         {/* Logo */}
         <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
           <FolderOpen className="w-10 h-10 text-primary" />
@@ -79,33 +79,33 @@ export const WelcomeScreen = ({
           <p className="text-muted-foreground">{LL.welcome_description()}</p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-3 w-full">
           <button
             type="button"
             onClick={handleSelectDirectory}
-            className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <FolderOpen className="w-5 h-5" />
-            {LL.welcome_selectDirectory()}
+            <FolderOpen className="w-5 h-5 shrink-0" />
+            <span>{LL.welcome_selectDirectory()}</span>
           </button>
           {onSelectGithub && (
             <button
               type="button"
               onClick={onSelectGithub}
-              className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
             >
-              <Github className="w-5 h-5" />
-              Connect GitHub Repo
+              <Github className="w-5 h-5 shrink-0" />
+              <span>Connect GitHub Repo</span>
             </button>
           )}
           {onSelectGitlab && (
             <button
               type="button"
               onClick={onSelectGitlab}
-              className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
             >
-              <Gitlab className="w-5 h-5" />
-              Connect GitLab Repo
+              <Gitlab className="w-5 h-5 shrink-0" />
+              <span>Connect GitLab Repo</span>
             </button>
           )}
         </div>
@@ -121,13 +121,16 @@ export const WelcomeScreen = ({
 
         {/* Recent workspaces */}
         {recentList.length > 0 && (
-          <div className="w-full max-w-sm">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+          <div className="w-full">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 px-1">
               <Clock className="w-3 h-3" />
               <span>{LL.welcome_recentlyOpened()}</span>
+              <span className="text-muted-foreground/60">
+                ({recentList.length})
+              </span>
             </div>
-            <div className="space-y-1">
-              {recentList.slice(0, 5).map((ws) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-[280px] overflow-y-auto pr-1">
+              {recentList.slice(0, 12).map((ws) => {
                 const ref = decodeRef(ws.metadata);
                 const refKind = ref?.kind ?? ws.kind ?? "local";
                 const Icon =
@@ -148,6 +151,7 @@ export const WelcomeScreen = ({
                     key={ws.path}
                     type="button"
                     onClick={handleClick}
+                    title={ws.path}
                     className="group w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm hover:bg-accent transition-colors"
                   >
                     <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
