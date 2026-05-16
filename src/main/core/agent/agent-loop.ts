@@ -338,6 +338,23 @@ export class AgentLoop {
         finalText: finalTextAccum,
       });
     } catch (err) {
+      // Surface zod cause for schema-validation errors so a bad
+      // message shape (image part, tool result, etc.) is debuggable
+      // from the main-process terminal. The AI SDK wraps the ZodError
+      // two levels: InvalidPromptError → TypeValidationError → ZodError.
+      if (
+        err instanceof Error &&
+        err.message?.includes("ModelMessage[]")
+      ) {
+        const c1 = (err as { cause?: unknown }).cause;
+        const c2 = (c1 as { cause?: unknown } | undefined)?.cause;
+        const zodErr = c2 ?? c1;
+        const issues = (zodErr as { issues?: unknown } | undefined)?.issues;
+        console.error(
+          "[agent-loop] schema validation failed. issues:",
+          JSON.stringify(issues, null, 2),
+        );
+      }
       const status: AgentEndStatus =
         err instanceof Error && err.name === "AbortError"
           ? "cancelled"
