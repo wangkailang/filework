@@ -90,7 +90,7 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
     const truncated = raw.length > maxBytes;
     const readable = isHtml(contentType)
       ? extractReadable(raw, res.url)
-      : { title: null, excerpt: null, markdown: "" };
+      : { title: null, excerpt: null, markdown: "", images: [] as string[] };
     return {
       status: res.status,
       statusText: res.statusText,
@@ -99,6 +99,7 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
       title: readable.title,
       excerpt: readable.excerpt,
       markdown: readable.markdown,
+      images: readable.images,
       raw: truncated ? raw.slice(0, maxBytes) : raw,
       truncated,
     };

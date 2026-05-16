@@ -7,11 +7,94 @@ import type {
   ActiveSkillInfo,
   ChatMessage,
   ErrorPart,
+  ImageGalleryPart,
   MessagePart,
   ToolApproval,
   ToolPart,
   UsagePart,
 } from "./types";
+
+// Cap displayed gallery to keep DOM weight in check; remote image grids
+// past this start to feel like a slideshow more than an inline result.
+const MAX_GALLERY_IMAGES = 12;
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object";
+
+/**
+ * Pull image URLs out of a `webSearch` / `webFetch` tool result and
+ * shape them for `ImageGalleryPart`. Tolerates both shapes that the
+ * tools currently produce:
+ *   - webSearch: `images: Array<{ url, description? } | string>`
+ *   - webFetch / webFetchRendered: `images: string[]` (from web-extract)
+ * Returns null when nothing usable is present.
+ */
+function extractGalleryFromToolResult(
+  toolName: string,
+  result: unknown,
+  args: unknown,
+): ImageGalleryPart | null {
+  if (!isRecord(result)) return null;
+  const rawImages = result.images;
+  if (!Array.isArray(rawImages) || rawImages.length === 0) return null;
+
+  const seen = new Set<string>();
+  const images: ImageGalleryPart["images"] = [];
+  for (const entry of rawImages) {
+    let url: string | undefined;
+    let description: string | undefined;
+    if (typeof entry === "string") {
+      url = entry;
+    } else if (isRecord(entry) && typeof entry.url === "string") {
+      url = entry.url;
+      if (typeof entry.description === "string" && entry.description.trim()) {
+        description = entry.description;
+      }
+    }
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const item: ImageGalleryPart["images"][number] = description
+      ? { url, description }
+      : { url };
+    images.push(item);
+    if (images.length >= MAX_GALLERY_IMAGES) break;
+  }
+  if (images.length === 0) return null;
+
+  let source: ImageGalleryPart["source"] = "other";
+  if (toolName === "webSearch") source = "web-search";
+  else if (toolName === "webFetch" || toolName === "webFetchRendered")
+    source = "web-fetch";
+
+  // For webFetch the source page is the URL itself — fan out to each image.
+  let pageUrl: string | undefined;
+  if (source === "web-fetch") {
+    const resultUrl = typeof result.url === "string" ? result.url : undefined;
+    const argsUrl =
+      isRecord(args) && typeof args.url === "string" ? args.url : undefined;
+    pageUrl = resultUrl ?? argsUrl;
+    if (pageUrl) {
+      for (const img of images) {
+        img.sourceUrl = pageUrl;
+      }
+    }
+  }
+
+  let context: string | undefined;
+  if (
+    source === "web-search" &&
+    isRecord(args) &&
+    typeof args.query === "string"
+  ) {
+    context = args.query;
+  } else if (source === "web-fetch") {
+    context = pageUrl;
+  }
+
+  return { type: "image-gallery", source, context, images };
+}
+
 import type { RetryInfo, StreamErrorInfo, UsageInfo } from "./useChatSession";
 
 interface StreamSubscriptionDeps {
@@ -135,7 +218,7 @@ export function useStreamSubscription({
             typeof result === "object" &&
             "denied" in result &&
             (result as Record<string, unknown>).denied === true;
-          return parts.map((p) => {
+          const next = parts.map((p) => {
             if (p.type !== "tool" || p.toolCallId !== toolCallId) return p;
             return {
               ...p,
@@ -151,6 +234,24 @@ export function useStreamSubscription({
                 : undefined,
             };
           });
+          // Auto-surface images from webSearch / webFetch tool output as a
+          // sibling gallery part so the user sees thumbnails rather than a
+          // wall of URLs. Skipped on denied results.
+          if (!isDenied) {
+            const toolPart = next.find(
+              (p): p is ToolPart =>
+                p.type === "tool" && p.toolCallId === toolCallId,
+            );
+            if (toolPart) {
+              const gallery = extractGalleryFromToolResult(
+                toolPart.toolName,
+                result,
+                toolPart.args,
+              );
+              if (gallery) next.push(gallery);
+            }
+          }
+          return next;
         });
       },
     );

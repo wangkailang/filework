@@ -52,6 +52,7 @@ import {
   ToolOutput,
 } from "../ai-elements/tool";
 import { migrateToParts } from "./helpers";
+import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
 import { MediaVideoCard } from "./MediaVideoCard";
 import { ModelSelector } from "./ModelSelector";
@@ -61,6 +62,7 @@ import { SkillMenu } from "./SkillMenu";
 import type {
   ClarificationPart,
   ErrorPart,
+  ImageGalleryPart,
   ImagePart,
   MessagePart,
   PlanMessagePart,
@@ -390,6 +392,16 @@ export const ChatPanel = ({
       if (part.type === "image") {
         const ip = part as ImagePart;
         return <MediaImageCard key={`image-${ip.imageId}`} part={ip} />;
+      }
+      if (part.type === "image-gallery") {
+        const gp = part as ImageGalleryPart;
+        const firstUrl = gp.images[0]?.url ?? "empty";
+        return (
+          <ImageGallery
+            key={`gallery-${gp.source}-${gp.images.length}-${firstUrl}`}
+            part={gp}
+          />
+        );
       }
       if (part.type === "video-job") {
         const vp = part as VideoJobPart;

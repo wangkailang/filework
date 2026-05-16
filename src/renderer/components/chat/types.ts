@@ -13,6 +13,7 @@ import type {
 export type {
   ClarificationPart,
   ErrorPart,
+  ImageGalleryPart,
   ImagePart,
   MessagePart,
   PlanMessagePart,

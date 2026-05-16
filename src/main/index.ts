@@ -292,7 +292,11 @@ app.whenReady().then(async () => {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-file:; media-src local-file:; frame-src local-file:",
+            // img-src allows https:/http: so that web tool results
+            // (webSearch images, webFetch page images) render in the
+            // chat gallery. Remote images are display-only — they don't
+            // grant script execution, so this is bounded in risk.
+            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-file: https: http:; media-src local-file:; frame-src local-file:",
           ],
         },
       });
