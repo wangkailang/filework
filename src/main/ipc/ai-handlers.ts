@@ -758,20 +758,6 @@ const handleTaskExecution = async (
       watchdog.stop();
     }
   } catch (error: unknown) {
-    // Dump the underlying zod cause for schema-validation errors so a
-    // bad shape (image part, tool result, etc.) is debuggable from the
-    // main-process log. The AI SDK wraps the ZodError twice
-    // (InvalidPromptError → TypeValidationError → ZodError).
-    if (error instanceof Error && error.message?.includes("ModelMessage[]")) {
-      const c1 = (error as { cause?: unknown }).cause;
-      const c2 = (c1 as { cause?: unknown } | undefined)?.cause;
-      const zodErr = c2 ?? c1;
-      const issues = (zodErr as { issues?: unknown } | undefined)?.issues;
-      console.error(
-        "[ai:executeTask] schema validation failed. issues:",
-        JSON.stringify(issues, null, 2),
-      );
-    }
     const classified = classifyError(error);
     const errorMsg =
       classified.userMessage ||

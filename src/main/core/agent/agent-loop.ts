@@ -338,51 +338,17 @@ export class AgentLoop {
         finalText: finalTextAccum,
       });
     } catch (err) {
-      // Surface zod cause for schema-validation errors so a bad
-      // message shape (image part, tool result, etc.) is debuggable
-      // from the main-process terminal. The AI SDK wraps the ZodError
-      // two levels: InvalidPromptError → TypeValidationError → ZodError.
-      if (err instanceof Error && err.message?.includes("ModelMessage[]")) {
+      // Surface zod cause for AI SDK prompt-schema errors so a bad
+      // message shape is debuggable from the main-process log. The
+      // SDK wraps the ZodError two levels deep:
+      // InvalidPromptError → TypeValidationError → ZodError.
+      if (err instanceof Error && err.name === "AI_InvalidPromptError") {
         const c1 = (err as { cause?: unknown }).cause;
         const c2 = (c1 as { cause?: unknown } | undefined)?.cause;
-        const zodErr = c2 ?? c1;
-        const issues = (zodErr as { issues?: unknown } | undefined)?.issues;
+        const issues = (c2 ?? c1) as { issues?: unknown } | undefined;
         console.error(
-          "[agent-loop] schema validation failed. issues:",
-          JSON.stringify(issues, null, 2),
-        );
-        // Dump messages structure (Buffers summarized) so the bad
-        // message-index + field is identifiable.
-        const summarized = messages.map((m, idx) => ({
-          idx,
-          role: m.role,
-          content:
-            typeof m.content === "string"
-              ? `string(${m.content.length})`
-              : Array.isArray(m.content)
-                ? m.content.map((p) => {
-                    const o: Record<string, unknown> = { type: p.type };
-                    for (const [k, v] of Object.entries(
-                      p as Record<string, unknown>,
-                    )) {
-                      if (k === "type") continue;
-                      if (v instanceof Uint8Array) {
-                        o[k] = `<Uint8Array len=${v.length}>`;
-                      } else if (v === undefined) {
-                        o[k] = "<UNDEFINED>";
-                      } else if (typeof v === "string") {
-                        o[k] = `string(${v.length})`;
-                      } else {
-                        o[k] = typeof v;
-                      }
-                    }
-                    return o;
-                  })
-                : `unknown(${typeof m.content})`,
-        }));
-        console.error(
-          "[agent-loop] messages structure:",
-          JSON.stringify(summarized, null, 2),
+          "[agent-loop] AI SDK schema validation failed:",
+          JSON.stringify(issues?.issues, null, 2),
         );
       }
       const status: AgentEndStatus =

@@ -183,10 +183,13 @@ function estimateToolResultTokens(
 // ---------------------------------------------------------------------------
 
 /**
- * Deep-clone a message (simple JSON round-trip — sufficient for our data).
+ * Deep-clone a message. Uses Node's `structuredClone` so binary fields
+ * (`image: Uint8Array`, `data: Buffer`) survive the round-trip with
+ * their prototype intact — the AI SDK's prompt schema checks
+ * `instanceof Uint8Array`, which a JSON round-trip would silently break.
  */
 function cloneMessage(msg: ModelMessage): ModelMessage {
-  return JSON.parse(JSON.stringify(msg));
+  return structuredClone(msg);
 }
 
 /**
@@ -317,13 +320,6 @@ export function truncateToFit(
  * Truncate a single message's text content to fit within a token budget.
  * Uses the CJK ratio (1.5 chars/token) as a conservative estimate so we
  * never exceed the budget regardless of script.
- *
- * IMPORTANT: do NOT use `cloneMessage` (JSON-roundtrip) here when the
- * content array contains binary parts (image/file). Buffer fields would
- * be serialized to `{type:"Buffer",data:[...]}` plain objects, breaking
- * the AI SDK's `instanceof Uint8Array` check and rejecting the prompt.
- * Instead we do a shallow array copy and recreate only the text parts
- * that need slicing — binary parts pass through by reference.
  */
 function truncateSingleMessage(
   msg: ModelMessage,
@@ -338,12 +334,7 @@ function truncateSingleMessage(
 
   if (!Array.isArray(msg.content)) return msg;
 
-  // Shallow clone: preserve binary part references; only mutate string
-  // fields via new objects so we don't mutate the caller's array.
-  const cloned = {
-    ...msg,
-    content: msg.content.map((p) => ({ ...p })),
-  } as ModelMessage;
+  const cloned = cloneMessage(msg);
   if (!Array.isArray(cloned.content)) return cloned;
 
   let remaining = maxChars;
