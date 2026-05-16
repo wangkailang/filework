@@ -1,6 +1,7 @@
 import { FileWarning } from "lucide-react";
 import { useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { localFileUrl } from "../../lib/local-file-url";
 
 interface VideoViewerProps {
   filePath: string;
@@ -11,7 +12,7 @@ export const VideoViewer = ({ filePath, fileName }: VideoViewerProps) => {
   const { LL } = useI18nContext();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(false);
-  const src = `local-file://open?path=${encodeURIComponent(filePath)}`;
+  const src = localFileUrl(filePath);
 
   if (error) {
     return (

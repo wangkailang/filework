@@ -9,14 +9,18 @@
  */
 
 import crypto from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 const GENERATED_ROOT = join(homedir(), ".filework", "generated");
+const ATTACHMENTS_ROOT = join(homedir(), ".filework", "attachments");
 
 /** Public for path-validation in protocol handlers. */
 export const generatedRoot = (): string => GENERATED_ROOT;
+
+/** Public for path-validation in protocol handlers. */
+export const attachmentsRoot = (): string => ATTACHMENTS_ROOT;
 
 /** Filesystem-safe ISO timestamp: `YYYYMMDDTHHMMSSZ`. */
 export const tsSlug = (): string =>
@@ -55,5 +59,33 @@ export const saveMediaToDisk = async (
   await mkdir(dir, { recursive: true });
   const path = join(dir, `${tsSlug()}-${shortId}.${ext}`);
   await writeFile(path, bytes);
+  return { path, shortId };
+};
+
+export interface SavedAttachment {
+  /** Absolute path written under `~/.filework/attachments/{sessionId}/`. */
+  path: string;
+  /** 8-char hex; doubles as React key. */
+  shortId: string;
+}
+
+/**
+ * Copy a user-picked / dropped file into
+ * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}`.
+ *
+ * Uses `fs.copyFile` rather than read→write so multi-megabyte PDFs don't
+ * load into memory. Preserves the source extension so the renderer's
+ * `local-file://` protocol handler can pick a MIME from the suffix.
+ */
+export const saveAttachmentToDisk = async (
+  sourcePath: string,
+  sessionId: string,
+): Promise<SavedAttachment> => {
+  const ext = extname(sourcePath).replace(/^\./, "").toLowerCase() || "bin";
+  const shortId = crypto.randomBytes(4).toString("hex");
+  const dir = join(ATTACHMENTS_ROOT, sessionId || "default");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `${tsSlug()}-${shortId}.${ext}`);
+  await copyFile(sourcePath, path);
   return { path, shortId };
 };

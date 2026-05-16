@@ -12,6 +12,8 @@ import type {
 
 export type {
   ArticleMetaPart,
+  AttachmentKind,
+  AttachmentPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,

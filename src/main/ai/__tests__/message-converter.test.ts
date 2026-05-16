@@ -5,17 +5,17 @@ import {
 } from "../message-converter";
 
 describe("convertToCoreMessages", () => {
-  it("returns empty array for empty history", () => {
-    expect(convertToCoreMessages([])).toEqual([]);
+  it("returns empty array for empty history", async () => {
+    expect(await convertToCoreMessages([])).toEqual([]);
   });
 
-  it("converts user message to { role: 'user', content }", () => {
+  it("converts user message to { role: 'user', content }", async () => {
     const history: HistoryMessage[] = [{ role: "user", content: "Hello" }];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toEqual([{ role: "user", content: "Hello" }]);
   });
 
-  it("converts assistant message with TextPart", () => {
+  it("converts assistant message with TextPart", async () => {
     const history: HistoryMessage[] = [
       {
         role: "assistant",
@@ -23,13 +23,13 @@ describe("convertToCoreMessages", () => {
         parts: [{ type: "text", text: "Hi there" }],
       },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toEqual([
       { role: "assistant", content: [{ type: "text", text: "Hi there" }] },
     ]);
   });
 
-  it("converts assistant message with ToolPart into tool-call + tool-result", () => {
+  it("converts assistant message with ToolPart into tool-call + tool-result", async () => {
     const history: HistoryMessage[] = [
       {
         role: "assistant",
@@ -46,7 +46,7 @@ describe("convertToCoreMessages", () => {
         ],
       },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(2);
 
     // Assistant message with tool-call
@@ -76,7 +76,7 @@ describe("convertToCoreMessages", () => {
     });
   });
 
-  it("uses placeholder when ToolPart has no result", () => {
+  it("uses placeholder when ToolPart has no result", async () => {
     const history: HistoryMessage[] = [
       {
         role: "assistant",
@@ -92,7 +92,7 @@ describe("convertToCoreMessages", () => {
         ],
       },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(2);
     const toolMsg = result[1];
     expect(toolMsg.role).toBe("tool");
@@ -107,7 +107,7 @@ describe("convertToCoreMessages", () => {
     }
   });
 
-  it("ignores PlanMessagePart", () => {
+  it("ignores PlanMessagePart", async () => {
     const history: HistoryMessage[] = [
       {
         role: "assistant",
@@ -118,7 +118,7 @@ describe("convertToCoreMessages", () => {
         ],
       },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       role: "assistant",
@@ -126,7 +126,7 @@ describe("convertToCoreMessages", () => {
     });
   });
 
-  it("handles mixed TextPart and ToolPart in one assistant message", () => {
+  it("handles mixed TextPart and ToolPart in one assistant message", async () => {
     const history: HistoryMessage[] = [
       {
         role: "assistant",
@@ -144,7 +144,7 @@ describe("convertToCoreMessages", () => {
         ],
       },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(2);
 
     // Assistant message has both text and tool-call
@@ -165,7 +165,7 @@ describe("convertToCoreMessages", () => {
     expect(result[1].role).toBe("tool");
   });
 
-  it("preserves chronological order of messages", () => {
+  it("preserves chronological order of messages", async () => {
     const history: HistoryMessage[] = [
       { role: "user", content: "First" },
       {
@@ -175,7 +175,7 @@ describe("convertToCoreMessages", () => {
       },
       { role: "user", content: "Third" },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(3);
     expect(result[0]).toEqual({ role: "user", content: "First" });
     expect(result[1]).toEqual({
@@ -185,19 +185,19 @@ describe("convertToCoreMessages", () => {
     expect(result[2]).toEqual({ role: "user", content: "Third" });
   });
 
-  it("handles assistant message with no parts using content string", () => {
+  it("handles assistant message with no parts using content string", async () => {
     const history: HistoryMessage[] = [
       { role: "assistant", content: "Plain text response" },
     ];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toEqual([
       { role: "assistant", content: "Plain text response" },
     ]);
   });
 
-  it("skips assistant message with empty content and no parts", () => {
+  it("skips assistant message with empty content and no parts", async () => {
     const history: HistoryMessage[] = [{ role: "assistant", content: "" }];
-    const result = convertToCoreMessages(history);
+    const result = await convertToCoreMessages(history);
     expect(result).toEqual([]);
   });
 });

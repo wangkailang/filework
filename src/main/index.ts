@@ -18,6 +18,7 @@ config({ path: join(app.getAppPath(), ".env") });
 // Also try from __dirname for bundled builds
 config({ path: join(__dirname, "../../.env") });
 
+import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
@@ -25,6 +26,7 @@ import { stopAllHeadWatchers } from "./core/workspace/head-watcher";
 import { initDatabase } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
+import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import {
   firecrawlCredentialResolver,
@@ -136,23 +138,8 @@ app.whenReady().then(async () => {
     }
     try {
       const buffer = await readFile(filePath);
-      const ext = filePath.split(".").pop()?.toLowerCase();
-      const mimeMap: Record<string, string> = {
-        pdf: "application/pdf",
-        mp4: "video/mp4",
-        webm: "video/webm",
-        ogg: "video/ogg",
-        mov: "video/quicktime",
-        m4v: "video/x-m4v",
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        gif: "image/gif",
-        webp: "image/webp",
-      };
-      const contentType = (ext && mimeMap[ext]) || "application/octet-stream";
       return new Response(buffer, {
-        headers: { "Content-Type": contentType },
+        headers: { "Content-Type": sniffMimeType(filePath) },
       });
     } catch {
       return new Response("File not found", { status: 404 });
@@ -231,6 +218,7 @@ app.whenReady().then(async () => {
   registerWorkspaceHandlers();
   registerLocalGitHandlers();
   registerChatHandlers(sessionStore);
+  registerAttachmentHandlers();
   registerTaskTraceHandlers();
   registerCredentialsHandlers();
   registerGitHubHandlers({
@@ -279,6 +267,21 @@ app.whenReady().then(async () => {
       return result.canceled ? null : result.filePaths[0];
     },
   );
+
+  // Multi-file picker — chat attachment composer.
+  ipcMain.handle("dialog:openFiles", async (): Promise<string[]> => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "Images, PDFs & text",
+          extensions: [...ATTACHMENT_PICKER_EXTENSIONS],
+        },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
 
   // Reveal in Finder / file manager
   ipcMain.handle("shell:showInFinder", async (_event, path: string) => {

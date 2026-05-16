@@ -1,4 +1,5 @@
 import { ImageIcon } from "lucide-react";
+import { localFileUrl } from "../../lib/local-file-url";
 import type { ImagePart } from "./types";
 
 interface MediaImageCardProps {
@@ -15,7 +16,7 @@ interface MediaImageCardProps {
  * MiniMax image configs (e.g. `image-01` vs `image-01-live`).
  */
 export const MediaImageCard = ({ part }: MediaImageCardProps) => {
-  const src = `local-file://open?path=${encodeURIComponent(part.path)}`;
+  const src = localFileUrl(part.path);
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border bg-muted">
       <img

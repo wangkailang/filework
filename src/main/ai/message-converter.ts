@@ -1,4 +1,8 @@
-import type { ModelMessage } from "ai";
+import type { ModelMessage, UserContent } from "ai";
+import {
+  type AttachmentHistoryEntry,
+  buildUserContentWithAttachments,
+} from "./attachments";
 
 // ---------------------------------------------------------------------------
 // Part types (slimmed-down versions of the renderer's MessagePart types)
@@ -23,7 +27,11 @@ export interface PlanMessagePart {
   plan: unknown;
 }
 
-export type MessagePart = TextPart | ToolPart | PlanMessagePart;
+export type MessagePart =
+  | TextPart
+  | ToolPart
+  | PlanMessagePart
+  | AttachmentHistoryEntry;
 
 /**
  * Slimmed-down version of ChatMessage for IPC transport.
@@ -41,21 +49,43 @@ const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
  * Convert frontend HistoryMessage[] to Vercel AI SDK ModelMessage[].
  *
  * Conversion rules:
- * - user message → { role: "user", content }
+ * - user message → { role: "user", content } (string) by default
+ * - user message with attachment parts → { role: "user", content: [...] }
+ *   with image / file / inline-text content parts, gated by provider caps
+ *   (see `attachments.ts`)
  * - assistant TextPart → { role: "assistant", content: [{ type: "text", text }] }
  * - assistant ToolPart → assistant tool-call content part + separate tool role message
  * - PlanMessagePart → ignored
  * - ToolPart missing result → placeholder text used
  * - Message chronological order is preserved
  */
-export function convertToCoreMessages(
+export async function convertToCoreMessages(
   history: HistoryMessage[],
-): ModelMessage[] {
+  opts?: { providerId?: string },
+): Promise<ModelMessage[]> {
   const result: ModelMessage[] = [];
 
   for (const msg of history) {
     if (msg.role === "user") {
-      result.push({ role: "user", content: msg.content });
+      const attachments = (msg.parts ?? []).filter(
+        (p): p is AttachmentHistoryEntry => p.type === "attachment",
+      );
+      if (attachments.length === 0) {
+        result.push({ role: "user", content: msg.content });
+      } else {
+        const content = await buildUserContentWithAttachments(
+          msg.content,
+          attachments,
+          opts?.providerId,
+        );
+        // Our `UserContentPart` mirrors a subset of AI SDK's UserContent
+        // (text / image / file). Cast through `UserContent` so the
+        // ModelMessage union narrows correctly at the provider boundary.
+        result.push({
+          role: "user",
+          content: content as unknown as UserContent,
+        });
+      }
       continue;
     }
 
