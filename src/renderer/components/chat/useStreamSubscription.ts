@@ -5,6 +5,7 @@ import { contentFromParts } from "./helpers";
 import type { SkillApprovalData } from "./SkillApprovalDialog";
 import type {
   ActiveSkillInfo,
+  ArticleMetaPart,
   ChatMessage,
   ErrorPart,
   ImageGalleryPart,
@@ -12,6 +13,7 @@ import type {
   ToolApproval,
   ToolPart,
   UsagePart,
+  VideoGalleryPart,
 } from "./types";
 
 // Cap displayed gallery to keep DOM weight in check; remote image grids
@@ -93,6 +95,108 @@ function extractGalleryFromToolResult(
   }
 
   return { type: "image-gallery", source, context, images };
+}
+
+const MAX_VIDEO_GALLERY = 8;
+
+/**
+ * Same idea as `extractGalleryFromToolResult` but for the `videos`
+ * side-channel webFetch / webFetchRendered now produce. Tolerates both
+ * shapes the renderer might see:
+ *   - new: `[{ url, provider?, poster?, title? }]`
+ *   - bare: `string[]` (defensive — older agent runs may shortcut here)
+ */
+function extractVideoGalleryFromToolResult(
+  toolName: string,
+  result: unknown,
+  args: unknown,
+): VideoGalleryPart | null {
+  if (!isRecord(result)) return null;
+  if (toolName !== "webFetch" && toolName !== "webFetchRendered") return null;
+  const rawVideos = result.videos;
+  if (!Array.isArray(rawVideos) || rawVideos.length === 0) return null;
+
+  const seen = new Set<string>();
+  const videos: VideoGalleryPart["videos"] = [];
+  for (const entry of rawVideos) {
+    let url: string | undefined;
+    let provider: string | undefined;
+    let poster: string | undefined;
+    let title: string | undefined;
+    if (typeof entry === "string") {
+      url = entry;
+    } else if (isRecord(entry) && typeof entry.url === "string") {
+      url = entry.url;
+      if (typeof entry.provider === "string") provider = entry.provider;
+      if (typeof entry.poster === "string") poster = entry.poster;
+      if (typeof entry.title === "string" && entry.title.trim())
+        title = entry.title;
+    }
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    videos.push({ url, provider, poster, title });
+    if (videos.length >= MAX_VIDEO_GALLERY) break;
+  }
+  if (videos.length === 0) return null;
+
+  const resultUrl = typeof result.url === "string" ? result.url : undefined;
+  const argsUrl =
+    isRecord(args) && typeof args.url === "string" ? args.url : undefined;
+  const pageUrl = resultUrl ?? argsUrl;
+  if (pageUrl) {
+    for (const v of videos) v.sourceUrl = pageUrl;
+  }
+  return {
+    type: "video-gallery",
+    source: "web-fetch",
+    context: pageUrl,
+    videos,
+  };
+}
+
+/**
+ * Pull a small set of header-style fields out of `result.meta` produced
+ * by the web tools. Returns null when nothing user-visible is present
+ * (we don't want to render an empty strip just for `lang` or `favicon`
+ * — at least one of byline / siteName / publishedTime must be set).
+ */
+function extractArticleMetaFromToolResult(
+  toolName: string,
+  result: unknown,
+  args: unknown,
+): ArticleMetaPart | null {
+  if (!isRecord(result)) return null;
+  if (
+    toolName !== "webFetch" &&
+    toolName !== "webFetchRendered" &&
+    toolName !== "webScrape"
+  )
+    return null;
+  const meta = result.meta;
+  if (!isRecord(meta)) return null;
+
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v.trim() ? v : undefined;
+
+  const byline = str(meta.byline);
+  const siteName = str(meta.siteName);
+  const publishedTime = str(meta.publishedTime);
+  if (!byline && !siteName && !publishedTime) return null;
+
+  const lang = str(meta.lang);
+  const favicon = str(meta.favicon);
+  const resultUrl = typeof result.url === "string" ? result.url : undefined;
+  const argsUrl =
+    isRecord(args) && typeof args.url === "string" ? args.url : undefined;
+  const canonical = str(meta.canonical);
+  const pageUrl = canonical ?? resultUrl ?? argsUrl;
+
+  return {
+    type: "article-meta",
+    pageUrl,
+    meta: { byline, siteName, publishedTime, lang, favicon },
+  };
 }
 
 import type { RetryInfo, StreamErrorInfo, UsageInfo } from "./useChatSession";
@@ -234,21 +338,35 @@ export function useStreamSubscription({
                 : undefined,
             };
           });
-          // Auto-surface images from webSearch / webFetch tool output as a
-          // sibling gallery part so the user sees thumbnails rather than a
-          // wall of URLs. Skipped on denied results.
+          // Auto-surface side-channel info from webSearch / webFetch /
+          // webScrape: article-meta strip (author/date/site) first,
+          // image gallery, then video gallery — so the rendered order
+          // matches how a reader scans an article header. Skipped on
+          // denied results.
           if (!isDenied) {
             const toolPart = next.find(
               (p): p is ToolPart =>
                 p.type === "tool" && p.toolCallId === toolCallId,
             );
             if (toolPart) {
-              const gallery = extractGalleryFromToolResult(
+              const articleMeta = extractArticleMetaFromToolResult(
                 toolPart.toolName,
                 result,
                 toolPart.args,
               );
-              if (gallery) next.push(gallery);
+              if (articleMeta) next.push(articleMeta);
+              const imageGallery = extractGalleryFromToolResult(
+                toolPart.toolName,
+                result,
+                toolPart.args,
+              );
+              if (imageGallery) next.push(imageGallery);
+              const videoGallery = extractVideoGalleryFromToolResult(
+                toolPart.toolName,
+                result,
+                toolPart.args,
+              );
+              if (videoGallery) next.push(videoGallery);
             }
           }
           return next;

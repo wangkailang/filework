@@ -56,4 +56,124 @@ describe("extractReadable", () => {
     expect(out.title).toBeNull();
     expect(out.markdown).toBe("");
   });
+
+  it("collects meta (favicon, canonical, og, published) from <head>", () => {
+    const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <title>T</title>
+    <link rel="icon" href="/favicon.png">
+    <link rel="canonical" href="https://canonical.example.com/post">
+    <meta property="og:title" content="OG Title">
+    <meta property="og:site_name" content="Example Times">
+    <meta property="og:image" content="/og.jpg">
+    <meta property="article:published_time" content="2024-01-02T03:04:05Z">
+  </head>
+  <body><article><p>A paragraph for readability content density.</p><p>More text for the article body so the parser keeps it.</p></article></body>
+</html>`;
+    const out = extractReadable(html, "https://example.com/post");
+    expect(out.meta.favicon).toBe("https://example.com/favicon.png");
+    expect(out.meta.canonical).toBe("https://canonical.example.com/post");
+    expect(out.meta.siteName).toBe("Example Times");
+    expect(out.meta.publishedTime).toBe("2024-01-02T03:04:05Z");
+    expect(out.meta.lang).toBe("en");
+    expect(out.meta.og?.image).toBe("https://example.com/og.jpg");
+  });
+
+  it("falls back to /favicon.ico when no rel=icon link present", () => {
+    const html = `<!doctype html><html><head><title>x</title></head><body></body></html>`;
+    const out = extractReadable(html, "https://example.com/page");
+    expect(out.meta.favicon).toBe("https://example.com/favicon.ico");
+  });
+
+  it("collects YouTube iframe and normalizes youtu.be short link", () => {
+    const html = `<!doctype html>
+<html>
+  <body>
+    <iframe src="https://www.youtube.com/embed/abc123" title="A talk"></iframe>
+    <iframe src="https://youtu.be/xyz789"></iframe>
+    <iframe src="https://example-ads.com/banner"></iframe>
+  </body>
+</html>`;
+    const out = extractReadable(html, "https://example.com/");
+    expect(out.videos).toHaveLength(2);
+    expect(out.videos[0].provider).toBe("youtube");
+    expect(out.videos[0].url).toContain("/embed/abc123");
+    expect(out.videos[0].title).toBe("A talk");
+    expect(out.videos[1].url).toContain("/embed/xyz789");
+    // Unrelated iframe must be filtered (host not in video whitelist).
+    expect(out.videos.some((v) => v.url.includes("example-ads.com"))).toBe(
+      false,
+    );
+  });
+
+  it("collects <video> with poster and falls back to og:video", () => {
+    const html = `<!doctype html>
+<html>
+  <head><meta property="og:video" content="https://cdn.example.com/clip.mp4"></head>
+  <body>
+    <video src="https://cdn.example.com/main.mp4" poster="https://cdn.example.com/thumb.jpg"></video>
+  </body>
+</html>`;
+    const out = extractReadable(html, "https://example.com/");
+    const direct = out.videos.find((v) => v.kind === "video");
+    expect(direct?.url).toBe("https://cdn.example.com/main.mp4");
+    expect(direct?.poster).toBe("https://cdn.example.com/thumb.jpg");
+    const og = out.videos.find((v) => v.kind === "og");
+    expect(og?.url).toBe("https://cdn.example.com/clip.mp4");
+  });
+
+  it("collects JSON-LD with type whitelist and field trim", () => {
+    const html = `<!doctype html>
+<html>
+  <head>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Recipe",
+      "name": "Chocolate Cake",
+      "author": "Jane",
+      "recipeIngredient": ["flour", "sugar"],
+      "secretInternalField": "should be stripped"
+    }
+    </script>
+    <script type="application/ld+json">
+    {"@type": "Unsupported", "name": "ignored"}
+    </script>
+    <script type="application/ld+json">not-json</script>
+  </head>
+  <body></body>
+</html>`;
+    const out = extractReadable(html, "https://example.com/");
+    expect(out.structuredData).toHaveLength(1);
+    expect(out.structuredData[0].type).toBe("Recipe");
+    expect(out.structuredData[0].data.name).toBe("Chocolate Cake");
+    expect(out.structuredData[0].data.recipeIngredient).toEqual([
+      "flour",
+      "sugar",
+    ]);
+    // Non-whitelisted fields are dropped.
+    expect(out.structuredData[0].data.secretInternalField).toBeUndefined();
+  });
+
+  it("handles @graph wrapper in JSON-LD", () => {
+    const html = `<!doctype html>
+<html>
+  <head>
+    <script type="application/ld+json">
+    {
+      "@graph": [
+        {"@type": "Article", "headline": "Hello", "author": "A"},
+        {"@type": "Person", "name": "A"}
+      ]
+    }
+    </script>
+  </head>
+  <body></body>
+</html>`;
+    const out = extractReadable(html, "https://example.com/");
+    expect(out.structuredData.length).toBeGreaterThanOrEqual(2);
+    const types = out.structuredData.map((i) => i.type).sort();
+    expect(types).toEqual(["Article", "Person"]);
+  });
 });

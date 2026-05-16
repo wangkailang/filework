@@ -11,6 +11,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 export type {
+  ArticleMetaPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -22,6 +23,7 @@ export type {
   ToolApproval,
   ToolPart,
   UsagePart,
+  VideoGalleryPart,
   VideoJobPart,
 } from "../../../main/core/session/message-parts";
 

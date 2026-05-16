@@ -292,11 +292,13 @@ app.whenReady().then(async () => {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            // img-src allows https:/http: so that web tool results
-            // (webSearch images, webFetch page images) render in the
-            // chat gallery. Remote images are display-only — they don't
-            // grant script execution, so this is bounded in risk.
-            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-file: https: http:; media-src local-file:; frame-src local-file:",
+            // img-src / media-src / frame-src allow https:/http: so that
+            // web tool results (search images, page images, <video>
+            // direct links, YouTube/Vimeo/Bilibili embeds) render inline
+            // in the chat. Scripts remain pinned to 'self', so iframe
+            // embeds run sandboxed in their own origin without script
+            // access to our renderer.
+            "default-src 'self' local-file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: local-file: https: http:; media-src local-file: https: http: blob:; frame-src local-file: https:",
           ],
         },
       });

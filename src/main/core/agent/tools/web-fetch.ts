@@ -51,6 +51,8 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
   description:
     "Fetch a public URL and return clean reader-mode markdown plus the raw body. Use this FIRST for any concrete URL — articles, blog posts, READMEs, docs, RSS, JSON APIs. " +
     "Read the `markdown` field for HTML pages (cheap on tokens); read `raw` for JSON/plain text or when `markdown` is empty. " +
+    "Side-channel fields: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos` (YouTube/Vimeo embeds + <video>), `structuredData` (schema.org subsets). " +
+    "Quote `meta.publishedTime` when freshness matters; cite via `meta.byline` / `meta.siteName`. " +
     "If `markdown` is empty AND the page looked thin (JS-rendered SPA, x.com, etc.), retry with `webFetchRendered` for a real-browser load. " +
     "If that also fails (anti-bot, captcha), escalate to `webScrape`.",
   safety: "safe",
@@ -81,6 +83,10 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
         title: null,
         excerpt: null,
         markdown: "",
+        images: [],
+        videos: [],
+        meta: {},
+        structuredData: [],
         raw: "",
         truncated: true,
         error: `Response too large (${advertised} bytes > ${ABSOLUTE_MAX_BYTES} byte cap). Use webFetchRendered or webScrape with format:'markdown' to get extraction without raw HTML.`,
@@ -90,7 +96,15 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
     const truncated = raw.length > maxBytes;
     const readable = isHtml(contentType)
       ? extractReadable(raw, res.url)
-      : { title: null, excerpt: null, markdown: "", images: [] as string[] };
+      : {
+          title: null,
+          excerpt: null,
+          markdown: "",
+          images: [] as string[],
+          videos: [],
+          meta: {},
+          structuredData: [],
+        };
     return {
       status: res.status,
       statusText: res.statusText,
@@ -100,6 +114,9 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
       excerpt: readable.excerpt,
       markdown: readable.markdown,
       images: readable.images,
+      videos: readable.videos,
+      meta: readable.meta,
+      structuredData: readable.structuredData,
       raw: truncated ? raw.slice(0, maxBytes) : raw,
       truncated,
     };

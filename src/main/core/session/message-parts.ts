@@ -180,6 +180,54 @@ export interface ImageGalleryPart {
 }
 
 /**
+ * Embeddable videos surfaced by web tools. Counterpart to
+ * `ImageGalleryPart`: when `webFetch` returns a non-empty `videos`
+ * array (YouTube/Vimeo/Bilibili iframes, <video> elements, og:video),
+ * the renderer appends one of these so the user gets thumbnail-and-play
+ * cards instead of a wall of embed URLs.
+ *
+ * Click-to-load: thumbnails render first, the iframe / <video> only
+ * mounts after the user clicks, keeping the page light and respecting
+ * privacy for YouTube embeds.
+ */
+export interface VideoGalleryPart {
+  type: "video-gallery";
+  source: "web-fetch" | "other";
+  /** URL / context that triggered the call (for the card header). */
+  context?: string;
+  videos: Array<{
+    url: string;
+    /** youtube / vimeo / bilibili / twitter / other / undefined for direct <video>. */
+    provider?: string;
+    /** Optional poster image (from <video poster=> or YouTube oEmbed-style hint). */
+    poster?: string;
+    /** Optional iframe title. */
+    title?: string;
+    /** Page the video was found on — click-through chip. */
+    sourceUrl?: string;
+  }>;
+}
+
+/**
+ * Lightweight article-meta strip rendered above the gallery parts.
+ * Composed from `webFetch` / `webFetchRendered` / `webScrape` results
+ * when the page had at least one of byline / siteName / publishedTime.
+ * Visual: favicon · siteName · • · byline · • · publishedTime.
+ */
+export interface ArticleMetaPart {
+  type: "article-meta";
+  /** Click-through URL for the whole chip. */
+  pageUrl?: string;
+  meta: {
+    byline?: string;
+    siteName?: string;
+    publishedTime?: string;
+    lang?: string;
+    favicon?: string;
+  };
+}
+
+/**
  * In-flight or completed video-generation job. Phase 3 — MiniMax videos
  * take 1–5 minutes, so the main process runs a watcher that updates this
  * part's `status` / `progressPct` / `resultPath` via the
@@ -211,4 +259,6 @@ export type MessagePart =
   | ClarificationPart
   | ImagePart
   | ImageGalleryPart
+  | VideoGalleryPart
+  | ArticleMetaPart
   | VideoJobPart;

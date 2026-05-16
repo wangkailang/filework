@@ -51,6 +51,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "../ai-elements/tool";
+import { ArticleMetaBar } from "./ArticleMetaBar";
 import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
@@ -60,6 +61,7 @@ import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
 import type {
+  ArticleMetaPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -69,9 +71,11 @@ import type {
   RecoveryAction,
   ToolPart,
   UsagePart,
+  VideoGalleryPart,
   VideoJobPart,
 } from "./types";
 import { useChatSession } from "./useChatSession";
+import { VideoGallery } from "./VideoGallery";
 
 const formatTokens = (n: number | null): string => {
   if (n == null) return "-";
@@ -402,6 +406,21 @@ export const ChatPanel = ({
             part={gp}
           />
         );
+      }
+      if (part.type === "video-gallery") {
+        const vg = part as VideoGalleryPart;
+        const firstUrl = vg.videos[0]?.url ?? "empty";
+        return (
+          <VideoGallery
+            key={`video-gallery-${vg.videos.length}-${firstUrl}`}
+            part={vg}
+          />
+        );
+      }
+      if (part.type === "article-meta") {
+        const ap = part as ArticleMetaPart;
+        const key = `article-meta-${ap.pageUrl ?? ""}-${ap.meta.publishedTime ?? ""}-${ap.meta.byline ?? ""}-${ap.meta.siteName ?? ""}`;
+        return <ArticleMetaBar key={key} part={ap} />;
       }
       if (part.type === "video-job") {
         const vp = part as VideoJobPart;
