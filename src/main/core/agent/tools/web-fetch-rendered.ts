@@ -71,6 +71,7 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
       title: readable.title,
       excerpt: readable.excerpt,
       markdown: readable.markdown,
+      images: readable.images,
       raw: truncated ? html.slice(0, maxBytes) : html,
       truncated,
     };

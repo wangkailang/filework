@@ -152,6 +152,34 @@ export interface ImagePart {
 }
 
 /**
+ * Image gallery surfaced by web tools. Emitted by the renderer side of
+ * the stream subscription when `webSearch` (with `includeImages`) or
+ * `webFetch` returns a non-empty `images` array — appended as a sibling
+ * part right after the corresponding `tool` part so the user sees a
+ * clickable thumbnail grid instead of a wall of image URLs.
+ *
+ * Distinct from `ImagePart` (single MiniMax-generated image saved to
+ * disk under `~/.filework/generated/`): gallery images are *remote URLs*
+ * with no local copy, and may load slowly / fail. The renderer must
+ * tolerate `onError` per-image without breaking the card.
+ */
+export interface ImageGalleryPart {
+  type: "image-gallery";
+  /** Which tool produced the images — drives the card title. */
+  source: "web-search" | "web-fetch" | "other";
+  /** Query / URL that triggered the call, shown in the card header. */
+  context?: string;
+  images: Array<{
+    /** Absolute http(s) image URL. */
+    url: string;
+    /** Optional click-through (page the image was found on). */
+    sourceUrl?: string;
+    /** Optional caption (Tavily description or img alt). */
+    description?: string;
+  }>;
+}
+
+/**
  * In-flight or completed video-generation job. Phase 3 — MiniMax videos
  * take 1–5 minutes, so the main process runs a watcher that updates this
  * part's `status` / `progressPct` / `resultPath` via the
@@ -182,4 +210,5 @@ export type MessagePart =
   | UsagePart
   | ClarificationPart
   | ImagePart
+  | ImageGalleryPart
   | VideoJobPart;
