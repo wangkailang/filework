@@ -1,18 +1,11 @@
 import { Globe } from "lucide-react";
 import { useState } from "react";
+import { safeHostname } from "./helpers";
 import type { ArticleMetaPart } from "./types";
 
 interface ArticleMetaBarProps {
   part: ArticleMetaPart;
 }
-
-const safeHostname = (url: string): string | null => {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-};
 
 const formatTime = (iso: string, lang?: string): string => {
   const d = new Date(iso);
@@ -38,15 +31,15 @@ export const ArticleMetaBar = ({ part }: ArticleMetaBarProps) => {
     ? formatTime(meta.publishedTime, meta.lang)
     : null;
 
-  const chips: Array<{ id: string; node: React.ReactNode }> = [];
-  if (siteLabel) chips.push({ id: "site", node: <span>{siteLabel}</span> });
-  if (meta.byline)
-    chips.push({ id: "byline", node: <span>{meta.byline}</span> });
+  const chips: React.ReactElement[] = [];
+  if (siteLabel) chips.push(<span key="site">{siteLabel}</span>);
+  if (meta.byline) chips.push(<span key="byline">{meta.byline}</span>);
   if (dateLabel)
-    chips.push({
-      id: "time",
-      node: <time dateTime={meta.publishedTime}>{dateLabel}</time>,
-    });
+    chips.push(
+      <time key="time" dateTime={meta.publishedTime}>
+        {dateLabel}
+      </time>,
+    );
 
   if (chips.length === 0) return null;
 
@@ -55,7 +48,7 @@ export const ArticleMetaBar = ({ part }: ArticleMetaBarProps) => {
     if (i > 0) {
       interleaved.push(
         <span
-          key={`sep-before-${chip.id}`}
+          key={`sep-${chip.key}`}
           aria-hidden="true"
           className="text-muted-foreground/40"
         >
@@ -63,7 +56,7 @@ export const ArticleMetaBar = ({ part }: ArticleMetaBarProps) => {
         </span>,
       );
     }
-    interleaved.push(<span key={chip.id}>{chip.node}</span>);
+    interleaved.push(chip);
   });
 
   const inner = (

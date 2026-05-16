@@ -1,18 +1,11 @@
 import { ChevronLeft, ChevronRight, Images, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { safeHostname } from "./helpers";
 import type { ImageGalleryPart } from "./types";
 
 interface ImageGalleryProps {
   part: ImageGalleryPart;
 }
-
-const safeHostname = (url: string): string | null => {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-};
 
 const headerLabel = (part: ImageGalleryPart): string => {
   if (part.source === "web-search")

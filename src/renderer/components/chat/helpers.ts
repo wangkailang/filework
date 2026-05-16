@@ -22,3 +22,11 @@ export const contentFromParts = (parts: MessagePart[]): string =>
 
 export const truncateTitle = (text: string, max = 50): string =>
   text.length > max ? `${text.slice(0, max)}…` : text;
+
+export const safeHostname = (url: string): string | null => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+};

@@ -311,6 +311,10 @@ const normalizeYoutubeShortLink = (u: URL): URL => {
 };
 
 const MAX_VIDEOS = 8;
+// Defensive cap on per-tag-type DOM scan length. A forum page with
+// hundreds of embedded tweets / inline ads would otherwise pay full
+// iteration cost only to discard everything via the provider whitelist.
+const MAX_SCAN_PER_TAG = 200;
 
 const collectVideos = (
   document: ReturnType<typeof parseHTML>["document"],
@@ -326,8 +330,11 @@ const collectVideos = (
     out.push(v);
   };
 
-  // 1. iframes (most common case — YouTube/Vimeo embeds)
-  for (const el of Array.from(document.querySelectorAll("iframe"))) {
+  const iframes = Array.from(document.querySelectorAll("iframe")).slice(
+    0,
+    MAX_SCAN_PER_TAG,
+  );
+  for (const el of iframes) {
     const src =
       el.getAttribute("src") ??
       el.getAttribute("data-src") ??
@@ -352,8 +359,11 @@ const collectVideos = (
     });
   }
 
-  // 2. <video> elements (direct or with <source>)
-  for (const el of Array.from(document.querySelectorAll("video"))) {
+  const videos = Array.from(document.querySelectorAll("video")).slice(
+    0,
+    MAX_SCAN_PER_TAG,
+  );
+  for (const el of videos) {
     const direct = el.getAttribute("src");
     const source =
       direct ?? el.querySelector("source")?.getAttribute("src") ?? null;
@@ -370,7 +380,6 @@ const collectVideos = (
     });
   }
 
-  // 3. og:video / twitter:player as a last resort
   const ogVideo =
     attr(document, 'meta[property="og:video"]', "content") ??
     attr(document, 'meta[property="og:video:url"]', "content") ??
@@ -525,6 +534,13 @@ const pickFields = (
   return out;
 };
 
+// Skip JSON-LD scripts larger than this — a 200KB schema blob still
+// gets parsed in full before our output truncation kicks in, and the
+// pages that ship truly useful Recipe/Product schemas come in well
+// under this. SEO tools that dump enormous BreadcrumbList graphs are
+// the typical offender.
+const MAX_LD_SCRIPT_BYTES = 64 * 1024;
+
 const collectStructuredData = (
   document: ReturnType<typeof parseHTML>["document"],
 ): StructuredDataItem[] => {
@@ -533,13 +549,16 @@ const collectStructuredData = (
   // We filter by `type` ourselves rather than using a CSS attribute
   // selector. linkedom's selector parser stumbles on the `/` and `+`
   // characters inside `"application/ld+json"`, returning zero matches.
-  const scripts = Array.from(document.querySelectorAll("script")).filter(
-    (el) =>
-      (el.getAttribute("type") ?? "").toLowerCase() === "application/ld+json",
-  );
+  const scripts = Array.from(document.querySelectorAll("script"))
+    .filter(
+      (el) =>
+        (el.getAttribute("type") ?? "").toLowerCase() === "application/ld+json",
+    )
+    .slice(0, MAX_SCAN_PER_TAG);
   for (const el of scripts) {
     const txt = el.textContent ?? (el as { innerHTML?: string }).innerHTML;
     if (!txt) continue;
+    if (txt.length > MAX_LD_SCRIPT_BYTES) continue;
     let parsed: unknown;
     try {
       parsed = JSON.parse(txt);

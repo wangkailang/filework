@@ -1,18 +1,11 @@
 import { Film, Play } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { safeHostname } from "./helpers";
 import type { VideoGalleryPart } from "./types";
 
 interface VideoGalleryProps {
   part: VideoGalleryPart;
 }
-
-const safeHostname = (url: string): string | null => {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-};
 
 const headerLabel = (part: VideoGalleryPart): string => {
   if (part.context) {
@@ -52,12 +45,8 @@ export const VideoGallery = ({ part }: VideoGalleryProps) => {
   const [playing, setPlaying] = useState<number | null>(null);
   const [failed, setFailed] = useState<Set<number>>(() => new Set());
 
-  const visibleCount = useMemo(
-    () => part.videos.filter((_, i) => !failed.has(i)).length,
-    [part.videos, failed],
-  );
-
-  if (visibleCount === 0) return null;
+  const visibleCount = part.videos.length - failed.size;
+  if (visibleCount <= 0) return null;
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border bg-muted">
@@ -86,7 +75,11 @@ export const VideoGallery = ({ part }: VideoGalleryProps) => {
                     referrerPolicy="no-referrer"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowFullScreen
-                    sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+                    // Intentionally omits allow-same-origin: the embed
+                    // doesn't need DOM access to its host, and dropping
+                    // it prevents a malicious page from navigating the
+                    // parent frame via window.top.
+                    sandbox="allow-scripts allow-presentation allow-popups"
                     className="h-full w-full"
                   />
                 ) : (
