@@ -152,5 +152,12 @@ export async function buildUserContentWithAttachments(
     });
   }
 
+  // Defensive: an empty content array is rejected by some provider
+  // adapters even though `userModelMessageSchema` permits it. Fall back
+  // to a single text part so the model gets *something* to act on.
+  if (out.length === 0) {
+    out.push({ type: "text", text: "(attachment was provided but could not be processed)" });
+  }
+
   return out;
 }
