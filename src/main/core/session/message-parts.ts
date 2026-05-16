@@ -250,6 +250,39 @@ export interface VideoJobPart {
   modelId?: string;
 }
 
+/**
+ * User-attached file (image / pdf / text). Created by `chat:attachFile`
+ * after the renderer drops or picks a file: the source is copied into
+ * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}` so the
+ * attachment survives across app restarts and JSONL stays small (path +
+ * metadata only).
+ *
+ * Distinct from `ImagePart` (which is a *generated* image): this part
+ * lives on user messages, drives composer-side chips, and the message
+ * converter walks `parts` to build the user-message content array sent
+ * to the LLM.
+ *
+ * `kind` is the coarse routing flag used by both renderer (icon vs.
+ * thumbnail) and converter (image content / file content / inline text).
+ */
+export type AttachmentKind = "image" | "pdf" | "text";
+
+export interface AttachmentPart {
+  type: "attachment";
+  /** Absolute path under `~/.filework/attachments/{sessionId}/`. */
+  path: string;
+  /** Original filename shown in the chip. */
+  name: string;
+  /** MIME sniffed from the extension at attach time. */
+  mimeType: string;
+  /** Bytes, captured at attach time. */
+  size: number;
+  /** Routing flag — image / pdf / text. */
+  kind: AttachmentKind;
+  /** 8-char hex paired with the timestamp; safe React key. */
+  attachmentId: string;
+}
+
 export type MessagePart =
   | TextPart
   | ToolPart
@@ -261,4 +294,5 @@ export type MessagePart =
   | ImageGalleryPart
   | VideoGalleryPart
   | ArticleMetaPart
-  | VideoJobPart;
+  | VideoJobPart
+  | AttachmentPart;

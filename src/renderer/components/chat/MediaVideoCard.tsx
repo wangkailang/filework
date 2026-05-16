@@ -1,4 +1,5 @@
 import { Film, Loader2, X } from "lucide-react";
+import { localFileUrl } from "../../lib/local-file-url";
 import type { VideoJobPart } from "./types";
 
 interface MediaVideoCardProps {
@@ -42,7 +43,7 @@ export const MediaVideoCard = ({ part }: MediaVideoCardProps) => {
     <div className="my-2 overflow-hidden rounded-lg border border-border bg-muted">
       {part.status === "succeeded" && part.resultPath ? (
         <video
-          src={`local-file://open?path=${encodeURIComponent(part.resultPath)}`}
+          src={localFileUrl(part.resultPath)}
           controls
           className="block w-full max-h-[480px] bg-background"
         >

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { truncateTitle } from "./helpers";
-import type { ChatMessage, MessagePart } from "./types";
+import type { AttachmentPart, ChatMessage, MessagePart } from "./types";
 import { usePlanFlow } from "./usePlanFlow";
 import { useSessionCrud } from "./useSessionCrud";
 import { useStreamSubscription } from "./useStreamSubscription";
@@ -131,9 +131,30 @@ export function useChatSession(
   // ---------------------------------------------------------------------------
   // Submit & approval
   // ---------------------------------------------------------------------------
-  const handleSubmit = async (message: { text: string }) => {
+  const handleSubmit = async (message: {
+    text: string;
+    attachments?: Array<Omit<AttachmentPart, "type">>;
+  }) => {
     const text = message.text.trim();
-    if (!text || stream.isLoading) return;
+    const attachments = message.attachments ?? [];
+    if ((!text && attachments.length === 0) || stream.isLoading) return;
+
+    // Attachments are chat-modality only. Reject before persisting the
+    // user message so the JSONL store doesn't carry an orphan record
+    // referencing the wrong provider.
+    if (attachments.length > 0 && selectedLlmConfigId) {
+      const cfgRaw = await window.filework.llmConfig.get(selectedLlmConfigId);
+      const modality =
+        cfgRaw && !("error" in cfgRaw)
+          ? (cfgRaw as { modality?: "chat" | "image" | "video" }).modality
+          : null;
+      if (modality === "image" || modality === "video") {
+        crud.setLastError({
+          message: `Attachments are only supported for chat models. Switch to a chat config to send "${attachments[0].name}".`,
+        });
+        return;
+      }
+    }
 
     setInput("");
 
@@ -144,12 +165,23 @@ export function useChatSession(
 
     const isFirstMessage = crud.messages.length === 0;
 
+    const attachmentParts: AttachmentPart[] = attachments.map((a) => ({
+      type: "attachment",
+      path: a.path,
+      name: a.name,
+      mimeType: a.mimeType,
+      size: a.size,
+      kind: a.kind,
+      attachmentId: a.attachmentId,
+    }));
+
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       sessionId,
       role: "user",
       content: text,
       timestamp: new Date().toISOString(),
+      parts: attachmentParts.length > 0 ? attachmentParts : undefined,
     };
 
     const assistantId = crypto.randomUUID();
@@ -174,7 +206,7 @@ export function useChatSession(
     stream.streamAssistantIdRef.current = assistantId;
 
     if (isFirstMessage) {
-      const title = truncateTitle(text);
+      const title = truncateTitle(text || attachmentParts[0]?.name || "Files");
       window.filework.updateChatSession(sessionId, { title });
       crud.setSessions((prev) =>
         prev.map((s) => (s.id === sessionId ? { ...s, title } : s)),
@@ -481,6 +513,7 @@ export function useChatSession(
     retryInfo: stream.retryInfo,
     lastUsage: crud.lastUsage,
     lastError: crud.lastError,
+    setLastError: crud.setLastError,
     isStalled: plan.isStalled,
     handleSubmit,
     handleApproval,

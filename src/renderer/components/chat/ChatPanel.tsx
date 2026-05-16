@@ -11,7 +11,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import {
@@ -37,8 +37,10 @@ import {
   MessageResponse,
 } from "../ai-elements/message";
 import { PlanViewer } from "../ai-elements/plan-viewer";
+import type { ComposerAttachment } from "../ai-elements/prompt-input";
 import {
   PromptInput,
+  PromptInputAttachButton,
   PromptInputBody,
   PromptInputFooter,
   PromptInputSubmit,
@@ -52,6 +54,7 @@ import {
   ToolOutput,
 } from "../ai-elements/tool";
 import { ArticleMetaBar } from "./ArticleMetaBar";
+import { AttachmentChips, AttachmentList } from "./AttachmentChips";
 import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
@@ -62,6 +65,7 @@ import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
 import type {
   ArticleMetaPart,
+  AttachmentPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -233,6 +237,87 @@ export const ChatPanel = ({
   const { LL } = useI18nContext();
   const [showHistory, setShowHistory] = useState(false);
   const chat = useChatSession(workspacePath, workspaceRefJson);
+
+  // Composer-side pending attachments — lifted out of PromptInput so the
+  // drag-drop overlay (sibling DOM) and the file picker feed the same
+  // source of truth. PromptInput receives `attachments` as a controlled
+  // prop and clears via onAttachmentsChange after a successful submit.
+  const [pendingAttachments, setPendingAttachments] = useState<
+    ComposerAttachment[]
+  >([]);
+  const [isDragging, setIsDragging] = useState(false);
+  // Tracks nested onDragEnter/Leave fires so the overlay clears only
+  // when the cursor truly leaves the panel (children re-fire on hover).
+  const dragDepth = useRef(0);
+
+  const attachSourcePath = async (
+    sourcePath: string,
+    originalName?: string,
+  ): Promise<ComposerAttachment | null> => {
+    // If no active session yet, drop into a generic `draft/` folder under
+    // attachments root. The file path is immutable once written, so we
+    // don't need to migrate when the session id is eventually minted.
+    const sessionId = chat.activeSessionId ?? "draft";
+    const result = await window.filework.chatAttachFile({
+      sessionId,
+      sourcePath,
+      originalName,
+    });
+    if (result && typeof result === "object" && "error" in result) {
+      chat.setLastError({ message: `Attach failed: ${result.error}` });
+      return null;
+    }
+    return result;
+  };
+
+  const attachMany = async (
+    sources: Array<{ path: string; name?: string }>,
+  ) => {
+    const results = await Promise.all(
+      sources.map((s) => attachSourcePath(s.path, s.name)),
+    );
+    const ok = results.filter((r): r is ComposerAttachment => r !== null);
+    if (ok.length > 0) setPendingAttachments((prev) => [...prev, ...ok]);
+  };
+
+  const handlePickFiles = async () => {
+    const paths = await window.filework.openFiles();
+    await attachMany(paths.map((p) => ({ path: p })));
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.attachmentId !== id));
+  };
+
+  const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  };
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragging(false);
+  };
+  const onDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragging(false);
+    const sources = Array.from(e.dataTransfer.files)
+      .map((file) => ({
+        path: window.filework.getPathForFile(file),
+        name: file.name,
+      }))
+      .filter((s) => Boolean(s.path));
+    await attachMany(sources);
+  };
 
   const ERROR_TYPE_LABELS = useMemo(() => getErrorTypeLabels(LL), [LL]);
   const RETRY_TYPE_LABELS = useMemo(() => getRetryTypeLabels(LL), [LL]);
@@ -472,7 +557,21 @@ export const ChatPanel = ({
   // JSX
   // ---------------------------------------------------------------------------
   return (
-    <div className="relative flex flex-col h-full">
+    <section
+      aria-label="Chat panel"
+      className="relative flex flex-col h-full"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {isDragging && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-primary/5 backdrop-blur-sm">
+          <div className="rounded-xl border-2 border-dashed border-primary bg-background/80 px-6 py-4 text-sm font-medium text-primary shadow-lg">
+            Drop files to attach
+          </div>
+        </div>
+      )}
       {showHistory && (
         <SessionList
           sessions={chat.sessions}
@@ -530,40 +629,55 @@ export const ChatPanel = ({
             </ConversationEmptyState>
           ) : (
             <>
-              {chat.messages.map((msg, index) => (
-                <div key={msg.id}>
-                  <Message from={msg.role}>
-                    <MessageContent>
-                      {msg.role === "assistant"
-                        ? renderAssistantParts(msg.parts ?? migrateToParts(msg))
-                        : msg.content}
-                    </MessageContent>
-                  </Message>
-                  {msg.role === "user" && !chat.isLoading && (
-                    <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                      <MessageAction
-                        onClick={() => chat.handleForkSession(msg.id)}
-                        label={LL.chat_forkHere()}
-                      >
-                        <GitBranch className="size-3" />
-                      </MessageAction>
-                    </MessageActions>
-                  )}
-                  {msg.role === "assistant" &&
-                    index === chat.messages.length - 1 && (
-                      <MessageActions>
+              {chat.messages.map((msg, index) => {
+                const userAttachments =
+                  msg.role === "user"
+                    ? ((msg.parts?.filter((p) => p.type === "attachment") as
+                        | AttachmentPart[]
+                        | undefined) ?? [])
+                    : [];
+                return (
+                  <div key={msg.id}>
+                    <Message from={msg.role}>
+                      <MessageContent>
+                        {msg.role === "assistant" ? (
+                          renderAssistantParts(msg.parts ?? migrateToParts(msg))
+                        ) : (
+                          <>
+                            {userAttachments.length > 0 && (
+                              <AttachmentList attachments={userAttachments} />
+                            )}
+                            {msg.content}
+                          </>
+                        )}
+                      </MessageContent>
+                    </Message>
+                    {msg.role === "user" && !chat.isLoading && (
+                      <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                         <MessageAction
-                          onClick={() =>
-                            navigator.clipboard.writeText(msg.content)
-                          }
-                          label="Copy"
+                          onClick={() => chat.handleForkSession(msg.id)}
+                          label={LL.chat_forkHere()}
                         >
-                          <CopyIcon className="size-3" />
+                          <GitBranch className="size-3" />
                         </MessageAction>
                       </MessageActions>
                     )}
-                </div>
-              ))}
+                    {msg.role === "assistant" &&
+                      index === chat.messages.length - 1 && (
+                        <MessageActions>
+                          <MessageAction
+                            onClick={() =>
+                              navigator.clipboard.writeText(msg.content)
+                            }
+                            label="Copy"
+                          >
+                            <CopyIcon className="size-3" />
+                          </MessageAction>
+                        </MessageActions>
+                      )}
+                  </div>
+                );
+              })}
               {chat.isLoading &&
                 chat.messages[chat.messages.length - 1]?.content === "" &&
                 !chat.messages[chat.messages.length - 1]?.parts?.length && (
@@ -679,8 +793,16 @@ export const ChatPanel = ({
 
       <div className="px-6 py-4">
         <div className="max-w-2xl mx-auto">
-          <PromptInput onSubmit={chat.handleSubmit}>
+          <PromptInput
+            onSubmit={chat.handleSubmit}
+            attachments={pendingAttachments}
+            onAttachmentsChange={setPendingAttachments}
+          >
             <PromptInputBody>
+              <AttachmentChips
+                attachments={pendingAttachments}
+                onRemove={handleRemoveAttachment}
+              />
               <div className="relative">
                 <SkillMenu
                   input={chat.input}
@@ -694,10 +816,16 @@ export const ChatPanel = ({
               </div>
             </PromptInputBody>
             <PromptInputFooter>
-              <ModelSelector
-                selectedConfigId={chat.selectedLlmConfigId}
-                onSelect={chat.setSelectedLlmConfigId}
-              />
+              <div className="flex items-center gap-1">
+                <PromptInputAttachButton
+                  onClick={handlePickFiles}
+                  disabled={chat.isLoading}
+                />
+                <ModelSelector
+                  selectedConfigId={chat.selectedLlmConfigId}
+                  onSelect={chat.setSelectedLlmConfigId}
+                />
+              </div>
               <PromptInputSubmit
                 disabled={false}
                 status={chat.isLoading ? "streaming" : "ready"}
@@ -714,6 +842,6 @@ export const ChatPanel = ({
           onRespond={chat.handleSkillApproval}
         />
       )}
-    </div>
+    </section>
   );
 };

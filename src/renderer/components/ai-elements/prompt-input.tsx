@@ -1,4 +1,4 @@
-import { CornerDownLeftIcon, SquareIcon } from "lucide-react";
+import { CornerDownLeftIcon, PaperclipIcon, SquareIcon } from "lucide-react";
 import type {
   FormEvent,
   HTMLAttributes,
@@ -12,7 +12,17 @@ import {
   useEffect,
   useState,
 } from "react";
+import type { AttachmentPart } from "../../../main/core/session/message-parts";
 import { cn } from "../../lib/utils";
+
+// ============================================================================
+// Composer attachment shape — the form's `attachments` prop. Derived
+// from AttachmentPart so renaming a field in one place stays a one-spot
+// change. Other `ai-elements/*` already import from message-parts
+// (ToolApproval, ApprovalState, PlanView), so the boundary is OK.
+// ============================================================================
+
+export type ComposerAttachment = Omit<AttachmentPart, "type">;
 
 // ============================================================================
 // Context — carries the textarea value so PromptInput can read it on submit
@@ -31,6 +41,7 @@ const PromptInputContext = createContext<PromptInputContextValue | null>(null);
 
 export interface PromptInputMessage {
   text: string;
+  attachments?: ComposerAttachment[];
 }
 
 export type PromptInputProps = Omit<
@@ -38,27 +49,42 @@ export type PromptInputProps = Omit<
   "onSubmit"
 > & {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
+  /**
+   * Controlled attachment list — owned by the parent so drag-drop on
+   * sibling DOM and the file picker both feed the same source of truth.
+   * When provided, PromptInput clears it via `onAttachmentsChange([])`
+   * after a successful submit.
+   */
+  attachments?: ComposerAttachment[];
+  onAttachmentsChange?: (next: ComposerAttachment[]) => void;
 };
 
 export const PromptInput = ({
   className,
   onSubmit,
   children,
+  attachments,
+  onAttachmentsChange,
   ...props
 }: PromptInputProps) => {
   const [value, setValue] = useState("");
+  const atts = attachments ?? [];
 
   const handleSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      if (!value.trim()) return;
-      const result = onSubmit({ text: value });
+      if (!value.trim() && atts.length === 0) return;
+      const result = onSubmit({
+        text: value,
+        attachments: atts.length > 0 ? atts : undefined,
+      });
       if (result instanceof Promise) {
         await result;
       }
       setValue("");
+      onAttachmentsChange?.([]);
     },
-    [value, onSubmit],
+    [value, onSubmit, atts, onAttachmentsChange],
   );
 
   return (
@@ -264,3 +290,33 @@ export const PromptInputSubmit = ({
     </button>
   );
 };
+
+// ============================================================================
+// PromptInputAttachButton
+// ============================================================================
+
+export type PromptInputAttachButtonProps = HTMLAttributes<HTMLButtonElement> & {
+  disabled?: boolean;
+};
+
+export const PromptInputAttachButton = ({
+  className,
+  disabled,
+  "aria-label": ariaLabel = "Attach files",
+  ...props
+}: PromptInputAttachButtonProps) => (
+  <button
+    type="button"
+    {...props}
+    disabled={disabled}
+    aria-label={ariaLabel}
+    className={cn(
+      "inline-flex items-center justify-center rounded-md p-2 transition-colors",
+      "text-muted-foreground hover:text-foreground hover:bg-accent",
+      "disabled:opacity-50 disabled:cursor-not-allowed",
+      className,
+    )}
+  >
+    <PaperclipIcon className="size-4" />
+  </button>
+);

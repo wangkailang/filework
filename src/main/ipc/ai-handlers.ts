@@ -256,8 +256,9 @@ const handleTaskExecution = async (
     let convertedHistory: import("ai").ModelMessage[] | undefined;
     if (Array.isArray(payload.history) && payload.history.length > 0) {
       try {
-        const coreMessages = convertToCoreMessages(
+        const coreMessages = await convertToCoreMessages(
           payload.history as HistoryMessage[],
+          { providerId: llmConfig?.provider },
         );
 
         let compressorCalled = false;

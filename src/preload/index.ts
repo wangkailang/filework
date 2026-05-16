@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { CredentialKind } from "../shared/credentials";
 
@@ -10,6 +10,7 @@ const api = {
   // Dialog
   openDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("dialog:openDirectory", defaultPath),
+  openFiles: (): Promise<string[]> => ipcRenderer.invoke("dialog:openFiles"),
   showInFinder: (path: string) =>
     ipcRenderer.invoke("shell:showInFinder", path),
 
@@ -21,6 +22,22 @@ const api = {
     ipcRenderer.invoke("fs:readFileBase64", path),
   directoryStats: (path: string) =>
     ipcRenderer.invoke("fs:directoryStats", path),
+
+  /**
+   * Drag-drop helper: resolve the absolute filesystem path of a `File`
+   * object pulled out of `DataTransfer.files`. Electron 32+ removed the
+   * `path` property from `File`; `webUtils.getPathForFile` is the
+   * blessed replacement and must run in the preload (it cannot be
+   * exposed as a plain IPC channel since `File` doesn't serialize).
+   */
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+
+  // Chat attachments
+  chatAttachFile: (payload: {
+    sessionId: string;
+    sourcePath: string;
+    originalName?: string;
+  }) => ipcRenderer.invoke("chat:attachFile", payload),
 
   // AI
   getAIConfig: () => ipcRenderer.invoke("ai:getConfig"),
