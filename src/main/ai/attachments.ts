@@ -141,8 +141,38 @@ export async function buildUserContentWithAttachments(
 
   const resolved = await Promise.all(reads);
   for (const r of resolved) {
-    if ("part" in r) out.push(r.part);
-    else notices.push(r.notice);
+    if ("part" in r) {
+      // Sanity check: image/file data MUST be a Uint8Array (Buffer extends
+      // it). If somehow the value got JSON-roundtripped along the way, it
+      // arrives here as a plain object — log loudly and drop with a notice
+      // so the LLM call doesn't crash on schema validation.
+      if (r.part.type === "image" && !(r.part.image instanceof Uint8Array)) {
+        console.error(
+          "[attachments] image data is not Uint8Array, got:",
+          typeof r.part.image,
+          r.part.image && typeof r.part.image === "object"
+            ? Object.keys(r.part.image as object).slice(0, 5)
+            : r.part.image,
+        );
+        notices.push(
+          "[Attachment image was dropped: data became invalid after read.]",
+        );
+        continue;
+      }
+      if (r.part.type === "file" && !(r.part.data instanceof Uint8Array)) {
+        console.error(
+          "[attachments] file data is not Uint8Array, got:",
+          typeof r.part.data,
+        );
+        notices.push(
+          "[Attachment file was dropped: data became invalid after read.]",
+        );
+        continue;
+      }
+      out.push(r.part);
+    } else {
+      notices.push(r.notice);
+    }
   }
 
   if (notices.length > 0) {
