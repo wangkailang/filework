@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { filterQuestions, loadGaiaDataset, parseLine } from "../dataset";
+import {
+  filterQuestions,
+  loadGaiaDataset,
+  parseLine,
+  parseRecord,
+} from "../dataset";
 
 // ─── parseLine ───────────────────────────────────────────────────────
 
@@ -103,6 +108,110 @@ describe("parseLine", () => {
   it("returns null for blank lines", () => {
     expect(parseLine("")).toBeNull();
     expect(parseLine("   ")).toBeNull();
+  });
+});
+
+// ─── parseRecord (shared between JSONL + parquet paths) ──────────────
+
+describe("parseRecord", () => {
+  it("accepts Level as a string-formatted integer (parquet shape)", () => {
+    // GAIA's metadata.parquet stores Level as a string "1"/"2"/"3",
+    // while the legacy JSONL stores it as a number. Both must parse.
+    const q = parseRecord({
+      task_id: "x",
+      Question: "q",
+      Level: "2",
+      "Final answer": "y",
+      file_name: "",
+    });
+    expect(q?.level).toBe(2);
+  });
+
+  it("accepts Level as a bigint (parquet INT64 schema)", () => {
+    const q = parseRecord({
+      task_id: "x",
+      Question: "q",
+      Level: 1n,
+      "Final answer": "y",
+      file_name: "",
+    });
+    expect(q?.level).toBe(1);
+  });
+
+  it("rejects non-integer string Level", () => {
+    expect(
+      parseRecord({
+        task_id: "x",
+        Question: "q",
+        Level: "1.5",
+        "Final answer": "y",
+        file_name: "",
+      }),
+    ).toBeNull();
+    expect(
+      parseRecord({
+        task_id: "x",
+        Question: "q",
+        Level: "abc",
+        "Final answer": "y",
+        file_name: "",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for non-object input", () => {
+    expect(parseRecord(null)).toBeNull();
+    expect(parseRecord("string")).toBeNull();
+    expect(parseRecord(42)).toBeNull();
+  });
+
+  it("extracts annotator steps from an object (parquet shape)", () => {
+    const q = parseRecord({
+      task_id: "x",
+      Question: "q",
+      Level: 1,
+      "Final answer": "y",
+      file_name: "",
+      "Annotator Metadata": {
+        Steps: "Step 1. ...",
+        "Number of steps": "1",
+      },
+    });
+    expect(q?.annotatorSteps).toBe("Step 1. ...");
+  });
+
+  it("extracts annotator steps from a JSON-string (legacy shape)", () => {
+    const q = parseRecord({
+      task_id: "x",
+      Question: "q",
+      Level: 1,
+      "Final answer": "y",
+      file_name: "",
+      "Annotator Metadata": JSON.stringify({ Steps: "from string" }),
+    });
+    expect(q?.annotatorSteps).toBe("from string");
+  });
+
+  it("leaves annotator steps undefined when missing or malformed", () => {
+    expect(
+      parseRecord({
+        task_id: "x",
+        Question: "q",
+        Level: 1,
+        "Final answer": "y",
+        file_name: "",
+      })?.annotatorSteps,
+    ).toBeUndefined();
+    expect(
+      parseRecord({
+        task_id: "x",
+        Question: "q",
+        Level: 1,
+        "Final answer": "y",
+        file_name: "",
+        "Annotator Metadata": "not json",
+      })?.annotatorSteps,
+    ).toBeUndefined();
   });
 });
 
