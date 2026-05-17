@@ -36,6 +36,13 @@ export interface SkillFrontmatter {
     /** Script to run after skill completion */
     "post-complete"?: string;
   };
+  /**
+   * Opt this skill into the post-turn reflection gate. When true,
+   * AgentLoop runs a verdict check after each `streamText` call and may
+   * retry with feedback up to `maxReflections` times. Costs one extra
+   * cheap-model call per turn.
+   */
+  reflect?: boolean;
 }
 
 // ─── Parsed Skill ────────────────────────────────────────────────────

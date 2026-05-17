@@ -21,7 +21,6 @@ function nextScript(): ScriptedRun {
 
 vi.mock("../../core/agent/agent-loop", () => ({
   AgentLoop: class {
-    constructor(_cfg: unknown) {}
     async *run(_prompt: string) {
       const { events } = nextScript();
       for (const ev of events) yield ev;
@@ -185,7 +184,7 @@ describe("createForkSkillRunner", () => {
     expect(concatenated).toBe("Hello world");
   });
 
-  it("on agent_end:failed emits ai:stream-error and returns normally", async () => {
+  it("on agent_end:failed emits ai:stream-error and returns a failed report", async () => {
     scriptedRuns.push({
       events: [
         {
@@ -210,9 +209,14 @@ describe("createForkSkillRunner", () => {
       parentSignal: new AbortController().signal,
       workspacePath: "/ws",
     });
-    await expect(
-      runner({ systemPrompt: "sys", workspacePath: "/ws", prompt: "p" }),
-    ).resolves.toBeUndefined();
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+
+    expect(report.status).toBe("failed");
+    expect(report.error).toBe("rate limit");
 
     const send = sender.send as ReturnType<typeof vi.fn>;
     const errorCalls = send.mock.calls.filter(
@@ -246,9 +250,12 @@ describe("createForkSkillRunner", () => {
       parentSignal: parentCtrl.signal,
       workspacePath: "/ws",
     });
-    await expect(
-      runner({ systemPrompt: "sys", workspacePath: "/ws", prompt: "p" }),
-    ).resolves.toBeUndefined();
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+    expect(report.status).toBe("cancelled");
   });
 
   it("passes opts.allowedTools straight through to buildAgentToolRegistry", async () => {
@@ -308,6 +315,150 @@ describe("createForkSkillRunner", () => {
     expect(buildAgentToolRegistry).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTools: [] }),
     );
+  });
+
+  it("returns an ok report with summary from agent_end.finalText", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "t",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          type: "tool_execution_start",
+          agentId: "t",
+          toolCallId: "c1",
+          toolName: "readFile",
+          args: {},
+        },
+        {
+          type: "tool_execution_end",
+          agentId: "t",
+          toolCallId: "c1",
+          toolName: "readFile",
+          result: "ok",
+          success: true,
+          durationMs: 0,
+        },
+        {
+          type: "agent_end",
+          agentId: "t",
+          status: "completed",
+          finalText: "Here is the answer.",
+          totalUsage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            totalTokens: 15,
+          },
+        },
+      ],
+    });
+
+    const sender = fakeSender();
+    const runner = createForkSkillRunner({
+      sender,
+      taskId: "t",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+
+    expect(report.status).toBe("ok");
+    expect(report.summary).toBe("Here is the answer.");
+    expect(report.toolCallCount).toBe(1);
+    expect(report.usage.inputTokens).toBe(10);
+  });
+
+  it("validates artifacts against contract.output.schema for format=json", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "t",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          type: "agent_end",
+          agentId: "t",
+          status: "completed",
+          finalText: 'Here is the result: {"count": 7, "label": "ok"}',
+        },
+      ],
+    });
+
+    const { z } = await import("zod/v4");
+    const sender = fakeSender();
+    const runner = createForkSkillRunner({
+      sender,
+      taskId: "t",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "extract counts",
+        input: { prompt: "p" },
+        output: {
+          format: "json",
+          schema: z.object({ count: z.number(), label: z.string() }),
+        },
+        termination: {},
+      },
+    });
+
+    expect(report.status).toBe("ok");
+    expect(report.artifacts).toEqual({ count: 7, label: "ok" });
+  });
+
+  it("downgrades to failed when format=json artifacts miss schema", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "t",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          type: "agent_end",
+          agentId: "t",
+          status: "completed",
+          finalText: '{"count":"not-a-number"}',
+        },
+      ],
+    });
+
+    const { z } = await import("zod/v4");
+    const sender = fakeSender();
+    const runner = createForkSkillRunner({
+      sender,
+      taskId: "t",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "extract",
+        input: { prompt: "p" },
+        output: { format: "json", schema: z.object({ count: z.number() }) },
+        termination: {},
+      },
+    });
+    expect(report.status).toBe("failed");
+    expect(report.error).toMatch(/schema validation/);
   });
 
   it("falls back to default model when modelOverrideId lookup throws", async () => {

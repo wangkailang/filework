@@ -321,6 +321,158 @@ describe("AgentLoop", () => {
     expect(end.error?.message).toBe("boom");
   });
 
+  it("invokes reflect hook and loops when verdict=retry", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "first" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "corrected" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const seenFinalTexts: string[] = [];
+    const reflectMock = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: "retry", feedback: "do better" })
+      .mockResolvedValueOnce({ kind: "continue" });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: {
+        reflect: async (summary, signal) => {
+          seenFinalTexts.push(summary.finalText);
+          return reflectMock(summary, signal);
+        },
+      },
+      maxReflections: 2,
+    });
+
+    const events = await collect(loop, "hi");
+    const types = events.map((e) => e.type);
+
+    expect(types).toContain("reflection_verdict");
+    expect(reflectMock).toHaveBeenCalledTimes(2);
+    expect(seenFinalTexts).toEqual(["first", "corrected"]);
+
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.finalText).toBe("corrected");
+  });
+
+  it("emits failed agent_end with reflection_aborted when verdict=abort", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "bad" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: {
+        reflect: async () => ({ kind: "abort", reason: "loop detected" }),
+      },
+    });
+
+    const events = await collect(loop, "hi");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("failed");
+    expect(end.error?.type).toBe("reflection_aborted");
+    expect(end.error?.message).toBe("loop detected");
+  });
+
+  it("respects maxReflections and stops looping after the cap", async () => {
+    for (let i = 0; i < 3; i++) {
+      scriptedRuns.push({
+        parts: [
+          { type: "start-step" },
+          { type: "text-delta", text: `attempt-${i}` },
+          { type: "finish-step", finishReason: "stop", usage: {} },
+        ],
+      });
+    }
+
+    const reflectMock = vi
+      .fn()
+      .mockResolvedValue({ kind: "retry", feedback: "more" });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: { reflect: reflectMock },
+      maxReflections: 2,
+    });
+
+    const events = await collect(loop, "hi");
+    expect(reflectMock).toHaveBeenCalledTimes(2);
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.finalText).toBe("attempt-2");
+  });
+
+  it("passes turn summary with collected tool calls to reflect hook", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "t1",
+          toolName: "readPdf",
+          input: {},
+        },
+        {
+          type: "tool-result",
+          toolCallId: "t1",
+          toolName: "readPdf",
+          output: { success: false, error: "pdf parse failed" },
+        },
+        { type: "finish-step", finishReason: "tool-calls", usage: {} },
+        { type: "start-step" },
+        { type: "text-delta", text: "ok done" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    let captured: unknown;
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      hooks: {
+        reflect: async (s) => {
+          captured = s;
+          return { kind: "continue" };
+        },
+      },
+    });
+
+    await collect(loop, "read a pdf");
+    expect(captured).toMatchObject({
+      finalText: "ok done",
+      toolCalls: [expect.objectContaining({ name: "readPdf", success: false })],
+    });
+  });
+
   it("emits retry event and re-runs the stream when classifier says retryable", async () => {
     scriptedRuns.push({
       parts: [{ type: "start-step" }],

@@ -80,6 +80,9 @@ function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
       fm.hooks = hooks;
     }
   }
+  if (typeof raw.reflect === "boolean") {
+    fm.reflect = raw.reflect;
+  }
 
   return fm;
 }

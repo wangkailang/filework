@@ -19,6 +19,7 @@ import {
   ConfirmationAccepted,
   ConfirmationAction,
   ConfirmationActions,
+  ConfirmationBatch,
   ConfirmationRejected,
   ConfirmationRequest,
 } from "../ai-elements/confirmation";
@@ -66,6 +67,7 @@ import { SkillMenu } from "./SkillMenu";
 import type {
   ArticleMetaPart,
   AttachmentPart,
+  BatchApprovalPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -510,6 +512,20 @@ export const ChatPanel = ({
       if (part.type === "video-job") {
         const vp = part as VideoJobPart;
         return <MediaVideoCard key={`video-${vp.jobId}`} part={vp} />;
+      }
+      if (part.type === "batch-approval") {
+        const bp = part as BatchApprovalPart;
+        return (
+          <ConfirmationBatch
+            key={`batch-${bp.batchId}`}
+            state={bp.state}
+            toolName={bp.toolName}
+            entries={bp.entries}
+            onApproveAll={() => chat.handleBatchApproval(bp.batchId, true)}
+            onDenyAll={() => chat.handleBatchApproval(bp.batchId, false)}
+            className="my-1"
+          />
+        );
       }
       if (part.type === "clarification") {
         const cp = part as ClarificationPart;

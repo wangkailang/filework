@@ -124,6 +124,16 @@ export type AgentEvent =
       agentId: string;
       originalTokens: number;
       compressedTokens: number;
+    }
+  | {
+      type: "reflection_verdict";
+      agentId: string;
+      /** 0-based attempt counter for this reflection cycle. */
+      attempt: number;
+      verdict:
+        | { kind: "continue" }
+        | { kind: "retry"; feedback: string }
+        | { kind: "abort"; reason: string };
     };
 
 export type AgentEventType = AgentEvent["type"];

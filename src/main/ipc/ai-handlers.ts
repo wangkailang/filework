@@ -15,6 +15,7 @@ import {
   convertToCoreMessages,
   type HistoryMessage,
 } from "../ai/message-converter";
+import { appendPattern } from "../ai/pattern-store";
 import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { emitTaskTraceEvent } from "../ai/task-trace-store";
@@ -25,6 +26,11 @@ import {
 } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
 import type { AgentEvent } from "../core/agent/events";
+import {
+  builtinRules,
+  createReflectionGate,
+  defaultRules,
+} from "../core/agent/reflection-gate";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
@@ -61,6 +67,7 @@ import {
   stopTaskExecution,
   toolCallToTaskMap,
 } from "./ai-task-control";
+import { settleBatch } from "./approval-batcher";
 import { buildApprovalHook } from "./approval-hook";
 import { createForkSkillRunner } from "./fork-skill-runner";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
@@ -133,6 +140,7 @@ const handleTaskExecution = async (
     ref.kind === "local" ? ref.path : (payload.workspacePath ?? "");
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const taskStartMs = Date.now();
   const sender = event.sender;
 
   addTask({
@@ -536,6 +544,16 @@ const handleTaskExecution = async (
     });
     const agentTools = { ...registryTools, ...skillTools };
 
+    // Default: zero-LLM rules layer (pdfParseFailure + toolDeniedSequence)
+    // attached on every task. When the skill opts in with `reflect: true`,
+    // we add `emptyAssistantWithTools` + LLM verdict on top.
+    const reflectOptIn = skill?.external?.frontmatter.reflect === true;
+    const reflectHook = createReflectionGate(
+      reflectOptIn
+        ? { model, rules: builtinRules() }
+        : { rules: defaultRules() },
+    );
+
     const agentLoop = new AgentLoop({
       workspace,
       model,
@@ -545,6 +563,7 @@ const handleTaskExecution = async (
       providerOptions,
       signal: controller.signal,
       agentId: id,
+      hooks: { reflect: reflectHook },
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
         return {
@@ -686,6 +705,14 @@ const handleTaskExecution = async (
                   recoveryActions: cls.recoveryActions,
                 });
               }
+              void appendPattern({
+                kind: "task",
+                ts: new Date().toISOString(),
+                taskId: id,
+                status: "failed",
+                totalUsage: ev.totalUsage,
+                durationMs: Date.now() - taskStartMs,
+              });
               return { id, status: "failed", message: errorMsg };
             }
 
@@ -737,6 +764,14 @@ const handleTaskExecution = async (
                 outputTokens: agentOutputTokens,
                 totalTokens: agentTotalTokens,
               },
+            });
+            void appendPattern({
+              kind: "task",
+              ts: new Date().toISOString(),
+              taskId: id,
+              status: wasCancelled ? "cancelled" : "completed",
+              totalUsage: ev.totalUsage,
+              durationMs: Date.now() - taskStartMs,
             });
             if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
             return { id, status: "completed" };
@@ -811,6 +846,14 @@ export const registerAIHandlers = () => {
         toolCallToTaskMap.delete(payload.toolCallId);
       }
       return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    "ai:approveToolCallBatch",
+    async (_event, payload: { batchId: string; approved: boolean }) => {
+      const settled = settleBatch(payload.batchId, payload.approved);
+      return { ok: settled };
     },
   );
 

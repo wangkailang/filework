@@ -6,6 +6,10 @@ import {
   toolCallToTaskMap,
 } from "../ai-task-control";
 import { requestApproval } from "../ai-tools";
+import {
+  __resetBatcherForTests,
+  __settleByToolCallIdForTests,
+} from "../approval-batcher";
 
 /**
  * Asserts the M6 PR 2 approval routing: `gitCommit` follows the
@@ -22,18 +26,27 @@ const stubSender = (): Electron.WebContents =>
     send: () => {},
   }) as unknown as Electron.WebContents;
 
+/**
+ * Settle a pending approval by toolCallId. Non-`ALWAYS_PROMPT_TOOLS`
+ * route through `approval-batcher`; this helper transparently
+ * dispatches to whichever path is in use.
+ */
 const settle = async (toolCallId: string, approved: boolean): Promise<void> => {
-  // Yield once so requestApproval has a chance to register the resolver.
   await Promise.resolve();
   const resolve = pendingApprovals.get(toolCallId);
-  if (!resolve) throw new Error(`no pending approval for ${toolCallId}`);
-  resolve(approved);
+  if (resolve) {
+    resolve(approved);
+    return;
+  }
+  if (__settleByToolCallIdForTests(toolCallId, approved)) return;
+  throw new Error(`no pending approval for ${toolCallId}`);
 };
 
 describe("requestApproval — whitelist routing", () => {
   beforeEach(() => {
     pendingApprovals.clear();
     toolCallToTaskMap.clear();
+    __resetBatcherForTests();
   });
 
   afterEach(() => {

@@ -36,6 +36,11 @@ const DEFAULT_LAZY_THRESHOLD = 10;
  * `src/main/ipc/fork-skill-runner.ts:createForkSkillRunner`.
  */
 export interface ExecutorDeps {
+  /**
+   * Run a sub-agent and stream its events back over IPC. Returns a
+   * `SubAgentReport`, typed loosely here so legacy callers that discard
+   * the value continue to compile.
+   */
   runSubagent: (opts: {
     /** System prompt — already wrapped with `wrapWithSecurityBoundary`. */
     systemPrompt: string;
@@ -47,7 +52,7 @@ export interface ExecutorDeps {
     allowedTools?: string[];
     /** Skill frontmatter `model` field. Falls back to default on failure. */
     modelOverrideId?: string;
-  }) => Promise<void>;
+  }) => Promise<unknown>;
 }
 
 export interface ExecutionContext {

@@ -394,6 +394,48 @@ const api = {
   },
   approveToolCall: (toolCallId: string, approved: boolean) =>
     ipcRenderer.invoke("ai:approveToolCall", { toolCallId, approved }),
+  onStreamToolBatchApproval: (
+    callback: (data: {
+      id: string;
+      batchId: string;
+      toolName: string;
+      entries: Array<{
+        toolCallId: string;
+        args: unknown;
+        description: string;
+      }>;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        batchId: string;
+        toolName: string;
+        entries: Array<{
+          toolCallId: string;
+          args: unknown;
+          description: string;
+        }>;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-tool-batch-approval", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:stream-tool-batch-approval", handler);
+  },
+  approveToolCallBatch: (batchId: string, approved: boolean) =>
+    ipcRenderer.invoke("ai:approveToolCallBatch", { batchId, approved }),
+  onStreamToolBatchAutoApproved: (
+    callback: (data: { id: string; batchId: string }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { id: string; batchId: string },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-tool-batch-auto-approved", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:stream-tool-batch-auto-approved", handler);
+  },
   onStreamRetry: (
     callback: (data: {
       id: string;
