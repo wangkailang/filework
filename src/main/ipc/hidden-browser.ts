@@ -16,11 +16,20 @@
  * reach Node.
  *
  * Concurrency: capped at 2 parallel renders so the agent can't fork 50
- * fetches and balloon memory.
+ * fetches and balloon memory. Stateful interactive sessions live in
+ * `interactive-browser.ts`; window setup + teardown primitives are
+ * shared via `browser-window-utils.ts`.
  */
 import { randomUUID } from "node:crypto";
 
-import { BrowserWindow, session } from "electron";
+import type { BrowserWindow } from "electron";
+
+import {
+  createHiddenWindow,
+  destroyHiddenWindow,
+  sleep,
+  waitForPageLoad,
+} from "./browser-window-utils";
 
 export interface RenderedFetchResult {
   html: string;
@@ -36,8 +45,8 @@ interface RenderOpts {
   settleMs?: number;
   /**
    * Optional cancellation. Honored both while queued (rejects without
-   * spawning a window) and during load (the loadURL race already loses
-   * to its own timeout, so the window gets closed in finally).
+   * spawning a window) and during load (waitForPageLoad observes the
+   * signal directly).
    */
   signal?: AbortSignal;
 }
@@ -100,60 +109,19 @@ export const fetchRenderedHtml = async (
   const partition = `headless-${randomUUID()}`;
   let win: BrowserWindow | null = null;
   try {
-    win = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        partition,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webSecurity: true,
-      },
-    });
-
+    win = createHiddenWindow(partition);
     const wc = win.webContents;
-    const status: number | null = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`loadURL timed out after ${timeoutMs}ms: ${url}`));
-      }, timeoutMs);
-      const onFinish = () => {
-        cleanup();
-        resolve(200);
-      };
-      const onFail = (_e: Electron.Event, code: number, desc: string): void => {
-        cleanup();
-        reject(new Error(`load failed (${code}) ${desc}: ${url}`));
-      };
-      const cleanup = () => {
-        clearTimeout(timer);
-        wc.removeListener("did-finish-load", onFinish);
-        wc.removeListener("did-fail-load", onFail);
-      };
-      wc.once("did-finish-load", onFinish);
-      wc.once("did-fail-load", onFail);
-      void wc.loadURL(url);
-    });
-
-    // Let client-side hydration paint. 1500ms covers most React/Vue SPAs.
-    await new Promise((r) => setTimeout(r, settleMs));
+    const loadPromise = waitForPageLoad(win, timeoutMs, opts.signal);
+    void wc.loadURL(url);
+    const status = await loadPromise;
+    await sleep(settleMs);
 
     const html = (await wc.executeJavaScript(
       "document.documentElement.outerHTML",
     )) as string;
-    const finalUrl = wc.getURL();
-    return { html, finalUrl, status };
+    return { html, finalUrl: wc.getURL(), status };
   } finally {
-    try {
-      if (win && !win.isDestroyed()) win.close();
-    } catch {
-      // already closed
-    }
-    try {
-      await session.fromPartition(partition).clearStorageData();
-    } catch {
-      // partition may not have been touched if loadURL never fired
-    }
+    await destroyHiddenWindow(win, partition);
     release();
   }
 };
