@@ -5,6 +5,7 @@ export const dataProcessor: Skill = {
   name: "数据处理",
   description: "CSV/JSON/Excel 格式转换、合并、清洗、统计分析",
   category: "task",
+  reflect: true,
   keywords: [
     "csv",
     "json",

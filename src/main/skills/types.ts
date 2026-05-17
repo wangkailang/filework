@@ -22,4 +22,13 @@ export interface Skill {
   tools?: Record<string, Tool>;
   /** Suggested prompts for onboarding */
   suggestions?: string[];
+  /**
+   * Opt into the post-turn reflection gate (LLM verdict + extended
+   * rules). When true, each turn pays one extra cheap-model call to
+   * catch hallucination, format mismatch, or missed tool failures.
+   * The default rules (pdfParseFailure + toolDeniedSequence) run
+   * regardless. Mirrors the SKILL.md frontmatter `reflect: true` field
+   * for built-in TS-export skills.
+   */
+  reflect?: boolean;
 }

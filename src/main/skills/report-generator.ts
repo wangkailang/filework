@@ -5,6 +5,7 @@ export const reportGenerator: Skill = {
   name: "报告生成",
   description: "分析目录内容，生成结构化的 Markdown 报告文件",
   category: "task",
+  reflect: true,
   keywords: [
     "生成报告",
     "写报告",
