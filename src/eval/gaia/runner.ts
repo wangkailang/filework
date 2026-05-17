@@ -24,6 +24,8 @@ import { AgentLoop } from "../../main/core/agent/agent-loop";
 import type { AgentEvent } from "../../main/core/agent/events";
 
 import { filterQuestions, loadGaiaDataset } from "./dataset";
+import { calculateCost } from "./pricing";
+import { renderReports } from "./report";
 import {
   extractFinalAnswer,
   groupByLevel,
@@ -329,6 +331,9 @@ const runOneQuestion = async (
     exception,
   );
 
+  const estimatedCostUsd =
+    calculateCost(deps.model, collected?.totalUsage) ?? undefined;
+
   const result: QuestionResult = {
     taskId: question.taskId,
     level: question.level,
@@ -343,6 +348,7 @@ const runOneQuestion = async (
     },
     durationMs,
     tokenUsage: collected?.totalUsage,
+    estimatedCostUsd,
     toolCalls: collected?.toolCalls ?? [],
     stepCount: collected?.stepCount ?? 0,
     reflectionFired: collected?.reflectionFired ?? false,
@@ -390,6 +396,15 @@ const buildSummary = (
     };
   }
 
+  // Cost aggregation. `estimatedCostUsd` is undefined for unpriced
+  // models — those rows are excluded from both total and median so we
+  // don't dilute the figure with synthetic zeros.
+  const costs = results
+    .map((r) => r.estimatedCostUsd)
+    .filter((c): c is number => typeof c === "number");
+  const totalCostUsd = costs.reduce((a, b) => a + b, 0);
+  const medianCostUsd = median(costs);
+
   return {
     config: {
       level:
@@ -409,7 +424,10 @@ const buildSummary = (
       totalMs: durations.reduce((a, b) => a + b, 0),
       medianMs: median(durations),
     },
-    cost: { totalUsd: 0, perQuestionMedianUsd: 0 },
+    cost: {
+      totalUsd: totalCostUsd,
+      perQuestionMedianUsd: medianCostUsd,
+    },
     failureTags: tagCounts,
   };
 };
@@ -484,6 +502,26 @@ export const runGaia = async (
     JSON.stringify(summary, null, 2),
     "utf-8",
   );
+
+  // Phase 2: human-readable companions to summary.json. Kept best-
+  // effort — a render failure here shouldn't lose the JSON results.
+  try {
+    const { failures, toolUsage } = renderReports(results, summary);
+    await writeFile(
+      path.join(opts.outputDir, "failures.md"),
+      failures,
+      "utf-8",
+    );
+    await writeFile(
+      path.join(opts.outputDir, "tool-usage.md"),
+      toolUsage,
+      "utf-8",
+    );
+  } catch (err) {
+    console.warn(
+      `[gaia] failed to render Markdown reports: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   return { summary, results };
 };

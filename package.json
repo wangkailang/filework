@@ -32,6 +32,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "gaia-eval": "tsx src/eval/gaia/cli.ts",
+    "gaia-eval-diff": "tsx src/eval/gaia/diff-cli.ts",
     "typesafe-i18n": "typesafe-i18n --no-watch",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
