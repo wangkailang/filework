@@ -20,8 +20,13 @@
  *
  * Lifecycle:
  *   - Up to {@link MAX_SESSIONS} live at once; opening past the cap
- *     evicts the least-recently-used.
+ *     evicts the least-recently-used. Slot reservation is serialized
+ *     via `openSlotChain` so concurrent opens can't each evict a
+ *     healthy session.
  *   - Idle reaper closes sessions untouched for {@link IDLE_TIMEOUT_MS}.
+ *     The interval runs forever once armed (it's `.unref()`'d), so
+ *     there's no race between "size reached zero, clear timer" and
+ *     "new session arriving".
  *   - Sessions cleared on `app:before-quit` to avoid leaking windows.
  *
  * Safety:
@@ -30,12 +35,21 @@
  *     `ref` or `text` can't break out of the string literal.
  *   - `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
  *     mean the loaded page cannot reach Node APIs.
+ *
+ * Window setup, the load-event race, and partition teardown are shared
+ * with `hidden-browser.ts` via `browser-window-utils.ts`.
  */
 import { randomUUID } from "node:crypto";
 
-import { app, BrowserWindow, session } from "electron";
+import { app, type BrowserWindow } from "electron";
 
 import { extractReadable } from "../core/agent/tools/web-extract";
+import {
+  createHiddenWindow,
+  destroyHiddenWindow,
+  sleep,
+  waitForPageLoad,
+} from "./browser-window-utils";
 
 // ─── Limits ──────────────────────────────────────────────────────────
 
@@ -251,33 +265,22 @@ interface Session {
   window: BrowserWindow;
   partition: string;
   lastUsedAt: number;
-  createdAt: number;
 }
 
 const sessions = new Map<string, Session>();
 let reaperTimer: NodeJS.Timeout | null = null;
 let appQuitHookInstalled = false;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((r) => {
-    setTimeout(r, ms);
-  });
+/**
+ * Serializes the slot-reservation phase of `openBrowserSession`. Each
+ * caller awaits the previous one's reservation (eviction + window
+ * creation + map insert) before checking the cap, then releases —
+ * which lets the slow loadURL run in parallel across opens.
+ */
+let openSlotChain: Promise<void> = Promise.resolve();
 
 const touch = (s: Session): void => {
   s.lastUsedAt = Date.now();
-};
-
-const closeWindow = async (s: Session): Promise<void> => {
-  try {
-    if (!s.window.isDestroyed()) s.window.close();
-  } catch {
-    // already closed
-  }
-  try {
-    await session.fromPartition(s.partition).clearStorageData();
-  } catch {
-    // partition may never have been touched
-  }
 };
 
 const evictOne = async (): Promise<void> => {
@@ -287,7 +290,7 @@ const evictOne = async (): Promise<void> => {
   }
   if (oldest) {
     sessions.delete(oldest.id);
-    await closeWindow(oldest);
+    await destroyHiddenWindow(oldest.window, oldest.partition);
   }
 };
 
@@ -295,17 +298,11 @@ const ensureReaper = (): void => {
   if (reaperTimer) return;
   reaperTimer = setInterval(() => {
     const now = Date.now();
-    const stale: Session[] = [];
-    for (const s of sessions.values()) {
-      if (now - s.lastUsedAt > IDLE_TIMEOUT_MS) stale.push(s);
-    }
-    for (const s of stale) {
-      sessions.delete(s.id);
-      void closeWindow(s);
-    }
-    if (sessions.size === 0 && reaperTimer) {
-      clearInterval(reaperTimer);
-      reaperTimer = null;
+    for (const s of [...sessions.values()]) {
+      if (now - s.lastUsedAt > IDLE_TIMEOUT_MS) {
+        sessions.delete(s.id);
+        void destroyHiddenWindow(s.window, s.partition);
+      }
     }
   }, REAPER_INTERVAL_MS);
   if (typeof reaperTimer.unref === "function") reaperTimer.unref();
@@ -315,7 +312,9 @@ const ensureAppQuitHook = (): void => {
   if (appQuitHookInstalled) return;
   try {
     app.on("before-quit", () => {
-      for (const s of sessions.values()) void closeWindow(s);
+      for (const s of sessions.values()) {
+        void destroyHiddenWindow(s.window, s.partition);
+      }
       sessions.clear();
       if (reaperTimer) {
         clearInterval(reaperTimer);
@@ -331,33 +330,6 @@ const ensureAppQuitHook = (): void => {
 };
 
 // ─── Internals ───────────────────────────────────────────────────────
-
-const waitForLoad = (
-  win: BrowserWindow,
-  timeoutMs: number,
-): Promise<number | null> =>
-  new Promise((resolve, reject) => {
-    const wc = win.webContents;
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`load timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    const onFinish = (): void => {
-      cleanup();
-      resolve(200);
-    };
-    const onFail = (_e: Electron.Event, code: number, desc: string): void => {
-      cleanup();
-      reject(new Error(`load failed (${code}) ${desc}`));
-    };
-    const cleanup = (): void => {
-      clearTimeout(timer);
-      wc.removeListener("did-finish-load", onFinish);
-      wc.removeListener("did-fail-load", onFail);
-    };
-    wc.once("did-finish-load", onFinish);
-    wc.once("did-fail-load", onFail);
-  });
 
 const takeSnapshot = async (s: Session): Promise<InteractiveSnapshot> => {
   const raw = (await s.window.webContents.executeJavaScript(
@@ -375,6 +347,92 @@ const requireSession = (sessionId: string): Session => {
   }
   touch(s);
   return s;
+};
+
+/**
+ * Reserve a slot in the LRU under the `openSlotChain` mutex, then
+ * synchronously create the window and commit the session to the
+ * `sessions` map. Releases the chain before returning so the caller
+ * can do its slow loadURL in parallel with other opens.
+ */
+const reserveSlotAndCreateSession = async (
+  opts: OpenSessionOptions,
+): Promise<Session> => {
+  const prev = openSlotChain;
+  let releaseSlot!: () => void;
+  openSlotChain = new Promise<void>((r) => {
+    releaseSlot = r;
+  });
+  try {
+    await prev;
+    if (opts.signal?.aborted) {
+      throw new DOMException("aborted", "AbortError");
+    }
+    ensureAppQuitHook();
+    ensureReaper();
+    while (sessions.size >= MAX_SESSIONS) {
+      await evictOne();
+    }
+    const id = randomUUID();
+    const partition = `headless-session-${id}`;
+    const win = createHiddenWindow(partition);
+    const s: Session = {
+      id,
+      window: win,
+      partition,
+      lastUsedAt: Date.now(),
+    };
+    sessions.set(id, s);
+    return s;
+  } finally {
+    releaseSlot();
+  }
+};
+
+/**
+ * Run a page-side action script, optionally awaiting navigation, then
+ * snapshot the resulting page. Centralises the listener-management
+ * dance shared by click and type.
+ */
+const runActionWithNavWait = async (
+  s: Session,
+  script: string,
+  errPrefix: string,
+  opts: ActionOptions,
+): Promise<InteractiveSnapshot> => {
+  const wc = s.window.webContents;
+  let navStarted = false;
+  const onNav = (): void => {
+    navStarted = true;
+  };
+  wc.once("did-start-navigation", onNav);
+
+  try {
+    const result = (await wc.executeJavaScript(script)) as {
+      ok?: true;
+      error?: string;
+    };
+    if (result?.error) {
+      throw new Error(`${errPrefix}: ${result.error}`);
+    }
+
+    await sleep(POST_ACTION_SETTLE_MS);
+
+    if (navStarted) {
+      try {
+        await waitForPageLoad(s.window, NAV_WAIT_TIMEOUT_MS, opts.signal);
+      } catch {
+        // Soft-fail: snapshot whatever loaded.
+      }
+      await sleep(POST_NAV_SETTLE_MS);
+    }
+  } finally {
+    // `wc.once` self-removes on fire; only manually remove when it
+    // never fired (no navigation), to avoid a dangling listener.
+    if (!navStarted) wc.removeListener("did-start-navigation", onNav);
+  }
+
+  return await takeSnapshot(s);
 };
 
 // ─── Public API ──────────────────────────────────────────────────────
@@ -395,64 +453,20 @@ export const openBrowserSession = async (
     throw new DOMException("aborted", "AbortError");
   }
 
-  ensureAppQuitHook();
-  ensureReaper();
+  const s = await reserveSlotAndCreateSession(opts);
 
-  while (sessions.size >= MAX_SESSIONS) {
-    await evictOne();
-  }
-
-  const id = randomUUID();
-  const partition = `headless-session-${id}`;
-  const win = new BrowserWindow({
-    show: false,
-    webPreferences: {
-      partition,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-    },
-  });
-
-  const onAbort = (): void => {
-    try {
-      if (!win.isDestroyed()) win.close();
-    } catch {
-      // ignore
-    }
-  };
-  opts.signal?.addEventListener("abort", onAbort, { once: true });
-
+  // Slow load runs after the slot mutex releases — concurrent opens
+  // can overlap their network IO.
   try {
-    const loadPromise = waitForLoad(win, timeoutMs);
-    void win.webContents.loadURL(url);
+    const loadPromise = waitForPageLoad(s.window, timeoutMs, opts.signal);
+    void s.window.webContents.loadURL(url);
     await loadPromise;
     await sleep(settleMs);
-
-    const s: Session = {
-      id,
-      window: win,
-      partition,
-      lastUsedAt: Date.now(),
-      createdAt: Date.now(),
-    };
-    sessions.set(id, s);
     return await takeSnapshot(s);
   } catch (err) {
-    try {
-      if (!win.isDestroyed()) win.close();
-    } catch {
-      // ignore
-    }
-    try {
-      await session.fromPartition(partition).clearStorageData();
-    } catch {
-      // ignore
-    }
+    sessions.delete(s.id);
+    await destroyHiddenWindow(s.window, s.partition);
     throw err;
-  } finally {
-    opts.signal?.removeEventListener("abort", onAbort);
   }
 };
 
@@ -464,47 +478,15 @@ export const openBrowserSession = async (
 export const clickInBrowserSession = async (
   sessionId: string,
   ref: string,
-  _opts: ActionOptions = {},
+  opts: ActionOptions = {},
 ): Promise<InteractiveSnapshot> => {
   const s = requireSession(sessionId);
-  const wc = s.window.webContents;
-
-  let navStarted = false;
-  const onNav = (): void => {
-    navStarted = true;
-  };
-  wc.once("did-start-navigation", onNav);
-
-  let actionResult: { ok?: true; error?: string };
-  try {
-    actionResult = (await wc.executeJavaScript(buildClickScript(ref))) as {
-      ok?: true;
-      error?: string;
-    };
-  } catch (err) {
-    wc.removeListener("did-start-navigation", onNav);
-    throw err;
-  }
-
-  if (actionResult?.error) {
-    wc.removeListener("did-start-navigation", onNav);
-    throw new Error(`click failed: ${actionResult.error} (ref=${ref})`);
-  }
-
-  await sleep(POST_ACTION_SETTLE_MS);
-
-  if (navStarted) {
-    try {
-      await waitForLoad(s.window, NAV_WAIT_TIMEOUT_MS);
-    } catch {
-      // Soft-fail: snapshot whatever loaded.
-    }
-    await sleep(POST_NAV_SETTLE_MS);
-  } else {
-    wc.removeListener("did-start-navigation", onNav);
-  }
-
-  return await takeSnapshot(s);
+  return await runActionWithNavWait(
+    s,
+    buildClickScript(ref),
+    `click failed (ref=${ref})`,
+    opts,
+  );
 };
 
 /**
@@ -517,46 +499,15 @@ export const typeInBrowserSession = async (
   ref: string,
   text: string,
   submit: boolean,
-  _opts: ActionOptions = {},
+  opts: ActionOptions = {},
 ): Promise<InteractiveSnapshot> => {
   const s = requireSession(sessionId);
-  const wc = s.window.webContents;
-
-  let navStarted = false;
-  const onNav = (): void => {
-    navStarted = true;
-  };
-  if (submit) wc.once("did-start-navigation", onNav);
-
-  let actionResult: { ok?: true; error?: string };
-  try {
-    actionResult = (await wc.executeJavaScript(
-      buildTypeScript(ref, text, submit),
-    )) as { ok?: true; error?: string };
-  } catch (err) {
-    if (submit) wc.removeListener("did-start-navigation", onNav);
-    throw err;
-  }
-
-  if (actionResult?.error) {
-    if (submit) wc.removeListener("did-start-navigation", onNav);
-    throw new Error(`type failed: ${actionResult.error} (ref=${ref})`);
-  }
-
-  await sleep(POST_ACTION_SETTLE_MS);
-
-  if (submit && navStarted) {
-    try {
-      await waitForLoad(s.window, NAV_WAIT_TIMEOUT_MS);
-    } catch {
-      // Soft-fail: snapshot whatever loaded.
-    }
-    await sleep(POST_NAV_SETTLE_MS);
-  } else if (submit) {
-    wc.removeListener("did-start-navigation", onNav);
-  }
-
-  return await takeSnapshot(s);
+  return await runActionWithNavWait(
+    s,
+    buildTypeScript(ref, text, submit),
+    `type failed (ref=${ref})`,
+    opts,
+  );
 };
 
 /** Re-read the current page without acting. */
@@ -574,22 +525,6 @@ export const closeBrowserSession = async (
   const s = sessions.get(sessionId);
   if (!s) return { closed: false };
   sessions.delete(s.id);
-  await closeWindow(s);
+  await destroyHiddenWindow(s.window, s.partition);
   return { closed: true };
-};
-
-/** Test hook — clears all sessions without touching real windows. */
-export const _resetForTests = (): void => {
-  for (const s of sessions.values()) {
-    try {
-      if (!s.window.isDestroyed?.()) s.window.close?.();
-    } catch {
-      // ignore
-    }
-  }
-  sessions.clear();
-  if (reaperTimer) {
-    clearInterval(reaperTimer);
-    reaperTimer = null;
-  }
 };
