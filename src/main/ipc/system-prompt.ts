@@ -24,7 +24,8 @@ const COMMON_RULES = `- Use absolute paths based on the workspace path provided.
 - Respond in the same language as the user's prompt.
 - Prefer the minimum number of tool calls needed. Don't explore unless the task requires it.
 - For analytical, conceptual, or research questions, answer directly — do not invent filesystem work.
-- If the user's intent is genuinely ambiguous, call \`askClarification\` instead of guessing.`;
+- If the user's intent is genuinely ambiguous, call \`askClarification\` instead of guessing.
+- If the user references an attachment (file, image, PDF, etc.) but the conversation content does not contain a matching attachment part, do NOT use filesystem tools to search for it. Tell the user the attachment did not reach you and ask them to re-upload.`;
 
 interface BuildAgentSystemPromptOptions {
   workspacePath: string;

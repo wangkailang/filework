@@ -1,12 +1,27 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+vi.mock("../pdf-text", () => ({
+  extractPdfText: vi.fn(),
+}));
 
 import {
   type AttachmentHistoryEntry,
   buildUserContentWithAttachments,
 } from "../attachments";
+import { extractPdfText } from "../pdf-text";
+
+const mockedExtract = vi.mocked(extractPdfText);
 
 const mkAttachment = (
   path: string,
@@ -47,6 +62,10 @@ describe("buildUserContentWithAttachments", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    mockedExtract.mockReset();
+  });
+
   it("returns text-only content when there are no attachments", async () => {
     const out = await buildUserContentWithAttachments("hello", []);
     expect(out).toEqual([{ type: "text", text: "hello" }]);
@@ -72,9 +91,18 @@ describe("buildUserContentWithAttachments", () => {
     if (out[2].type === "file") {
       expect(out[2].mediaType).toBe("application/pdf");
     }
+    // Anthropic path is binary-native; extractor should not be called.
+    expect(mockedExtract).not.toHaveBeenCalled();
   });
 
-  it("openai: pdf is dropped with a text notice; image still goes through", async () => {
+  it("openai: pdf is extracted to inline text (no 'not sent' notice)", async () => {
+    mockedExtract.mockResolvedValueOnce({
+      ok: true,
+      text: "Hello PDF body",
+      pages: 3,
+      truncated: false,
+    });
+
     const out = await buildUserContentWithAttachments(
       "see attached",
       [
@@ -83,14 +111,69 @@ describe("buildUserContentWithAttachments", () => {
       ],
       "openai",
     );
+
     expect(out.filter((p) => p.type === "image")).toHaveLength(1);
     expect(out.filter((p) => p.type === "file")).toHaveLength(0);
-    const noticeText = out
+
+    const joined = out
       .filter((p) => p.type === "text")
       .map((p) => (p as { type: "text"; text: string }).text)
       .join("\n");
-    expect(noticeText).toMatch(/doc\.pdf/);
-    expect(noticeText.toLowerCase()).toMatch(/not support|pdf/);
+
+    expect(joined).toMatch(/--- attached PDF: doc\.pdf \(3 pages\) ---/);
+    expect(joined).toMatch(/Hello PDF body/);
+    expect(joined).toMatch(/--- end PDF: doc\.pdf ---/);
+    expect(joined).not.toMatch(/not sent/i);
+    expect(joined).not.toMatch(/could not be parsed/i);
+    expect(mockedExtract).toHaveBeenCalledWith(pdfPath);
+  });
+
+  it("openai: pdf parse failure → notice that warns against filesystem search", async () => {
+    mockedExtract.mockResolvedValueOnce({
+      ok: false,
+      error: "Invalid PDF structure",
+    });
+
+    const out = await buildUserContentWithAttachments(
+      "summarize",
+      [mkAttachment(pdfPath, "doc.pdf", "application/pdf", "pdf")],
+      "openai",
+    );
+
+    const joined = out
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { type: "text"; text: string }).text)
+      .join("\n");
+
+    expect(joined).toMatch(/doc\.pdf/);
+    expect(joined).toMatch(/could not be parsed/);
+    expect(joined).toMatch(/Invalid PDF structure/);
+    expect(joined).toMatch(/do not search the filesystem/);
+  });
+
+  it("openai: pdf truncation trailer is included when extractor reports truncated", async () => {
+    mockedExtract.mockResolvedValueOnce({
+      ok: true,
+      text: "x".repeat(80_000),
+      pages: 999,
+      truncated: true,
+    });
+
+    const out = await buildUserContentWithAttachments(
+      "",
+      [mkAttachment(pdfPath, "big.pdf", "application/pdf", "pdf")],
+      "openai",
+    );
+
+    const pdfPart = out.find(
+      (p) =>
+        p.type === "text" &&
+        (p as { type: "text"; text: string }).text.includes("big.pdf"),
+    ) as { type: "text"; text: string } | undefined;
+    expect(pdfPart).toBeDefined();
+    expect(pdfPart?.text).toMatch(
+      /\[truncated, only the first 80k characters were included\]/,
+    );
   });
 
   it("text/code file is inlined with a delimiter wrapper", async () => {
@@ -130,7 +213,14 @@ describe("buildUserContentWithAttachments", () => {
     expect(notices).toMatch(/Failed to read attachment "missing\.png"/);
   });
 
-  it("ollama: images and pdfs are both dropped to notices", async () => {
+  it("ollama: image dropped with notice; pdf still extracted to inline text", async () => {
+    mockedExtract.mockResolvedValueOnce({
+      ok: true,
+      text: "ollama-visible body",
+      pages: 1,
+      truncated: false,
+    });
+
     const out = await buildUserContentWithAttachments(
       "compare",
       [
@@ -139,14 +229,18 @@ describe("buildUserContentWithAttachments", () => {
       ],
       "ollama",
     );
+
     expect(out.filter((p) => p.type === "image")).toHaveLength(0);
     expect(out.filter((p) => p.type === "file")).toHaveLength(0);
-    const notices = out
+
+    const joined = out
       .filter((p) => p.type === "text")
       .map((p) => (p as { type: "text"; text: string }).text)
       .join("\n");
-    expect(notices).toMatch(/shot\.png/);
-    expect(notices).toMatch(/doc\.pdf/);
+
+    expect(joined).toMatch(/shot\.png/); // image notice
+    expect(joined).toMatch(/ollama-visible body/); // pdf extracted text
+    expect(joined).toMatch(/--- attached PDF: doc\.pdf/);
   });
 
   it("empty base text + attachment-only → image part still emitted", async () => {

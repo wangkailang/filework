@@ -21,6 +21,7 @@
 import { readFile } from "node:fs/promises";
 
 import type { AttachmentKind } from "../core/session/message-parts";
+import { extractPdfText } from "./pdf-text";
 
 export interface AttachmentHistoryEntry {
   type: "attachment";
@@ -105,8 +106,25 @@ export async function buildUserContentWithAttachments(
       }
       if (a.kind === "pdf") {
         if (!caps.pdf) {
+          // Provider can't accept a native PDF file part. Instead of
+          // dropping the binary and leaving the model with only a
+          // "not sent" notice (which used to trigger hallucinated
+          // listDirectory calls hunting for the file), extract the
+          // text inline so the model can analyze the contents directly.
+          const extracted = await extractPdfText(a.path);
+          if (!extracted.ok) {
+            return {
+              notice: `[Attachment "${a.name}" (PDF) could not be parsed: ${extracted.error}. The attachment was provided by the user — do not search the filesystem for it.]`,
+            };
+          }
+          const trailer = extracted.truncated
+            ? "\n... [truncated, only the first 80k characters were included]"
+            : "";
           return {
-            notice: `[Attachment "${a.name}" (PDF) was not sent: provider "${providerId ?? "unknown"}" does not support PDF documents. Try Anthropic / Claude for native PDF support.]`,
+            part: {
+              type: "text" as const,
+              text: `\n\n--- attached PDF: ${a.name} (${extracted.pages} pages) ---\n${extracted.text}${trailer}\n--- end PDF: ${a.name} ---\n`,
+            },
           };
         }
         const buf = await readFile(a.path);
