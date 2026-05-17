@@ -25,6 +25,7 @@ import {
   type IncrementalScanResult,
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
+import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
 import { buildGitTools } from "../core/agent/tools/git-tools";
 import { buildGithubTools } from "../core/agent/tools/github-tools";
 import { buildGitlabTools } from "../core/agent/tools/gitlab-tools";
@@ -269,6 +270,14 @@ export const buildAgentToolRegistry = ({
     }
     {
       const def = buildWebFetchRenderedTool();
+      if (allow(def.name)) registry.register(def);
+    }
+    // Interactive browsing — stateful Chromium sessions with click/type
+    // support. Same Electron runtime as `webFetchRendered`, no extra
+    // deps. Registered alongside the web stack so any skill that allows
+    // `webFetchRendered` can opt into interactive flows by including
+    // `browserOpen` etc. in its `allowed-tools`.
+    for (const def of buildBrowserInteractiveTools()) {
       if (allow(def.name)) registry.register(def);
     }
     if (agentRegistryDeps.resolveTavilyToken) {
