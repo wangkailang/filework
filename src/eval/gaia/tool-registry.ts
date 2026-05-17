@@ -52,6 +52,79 @@ export interface BuildEvalRegistryOptions {
   firecrawlKey?: string | null;
 }
 
+// ─── Tool result size cap ────────────────────────────────────────────
+
+/**
+ * Maximum serialised JSON size of any single tool result. Beyond this,
+ * long string fields are individually truncated.
+ *
+ * Why: a webFetch that returns 200KB of markdown, replayed across 12
+ * turns, is 2.4MB of input tokens. The first GAIA smoke run hit 9M
+ * input tokens on a single stuck question for exactly this reason.
+ * Capping per-result bounds the worst case to a few hundred KB of
+ * conversation history.
+ */
+const TOOL_RESULT_CAP_BYTES = 30_000;
+/** When the result is over the cap, individual strings get clipped to this. */
+const STRING_LEAF_CAP_BYTES = 8_000;
+
+const TRUNCATED_SUFFIX = (orig: number): string =>
+  `\n\n...(truncated, ${orig - STRING_LEAF_CAP_BYTES} more bytes — request a narrower slice if you need them)`;
+
+const capStringsInValue = (value: unknown): unknown => {
+  if (typeof value === "string") {
+    return value.length > STRING_LEAF_CAP_BYTES
+      ? value.slice(0, STRING_LEAF_CAP_BYTES) + TRUNCATED_SUFFIX(value.length)
+      : value;
+  }
+  if (Array.isArray(value)) return value.map(capStringsInValue);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = capStringsInValue(v);
+    }
+    return out;
+  }
+  return value;
+};
+
+/**
+ * Cap a tool result: returns the original when small, or a deeply-
+ * cloned-and-truncated version when serialised size exceeds the cap.
+ * Strings shorter than {@link STRING_LEAF_CAP_BYTES} pass through
+ * untouched even on the over-cap path — only the long ones get clipped.
+ *
+ * Exported for unit tests.
+ */
+export const capToolResult = (result: unknown): unknown => {
+  if (typeof result === "string") {
+    return result.length > TOOL_RESULT_CAP_BYTES
+      ? result.slice(0, TOOL_RESULT_CAP_BYTES) +
+          `\n\n...(truncated, ${result.length - TOOL_RESULT_CAP_BYTES} more bytes)`
+      : result;
+  }
+  let serialised: string | undefined;
+  try {
+    serialised = JSON.stringify(result);
+  } catch {
+    return result;
+  }
+  // JSON.stringify returns `undefined` for `undefined` and functions —
+  // both are terminal and far under the cap.
+  if (serialised === undefined || serialised.length <= TOOL_RESULT_CAP_BYTES) {
+    return result;
+  }
+  return capStringsInValue(result);
+};
+
+const wrapWithResultCap = (def: ToolDefinition): ToolDefinition => ({
+  ...def,
+  execute: async (args, ctx) => {
+    const result = await def.execute(args, ctx);
+    return capToolResult(result);
+  },
+});
+
 /**
  * Wrap a skill's loose-shaped tool (typed as ai-sdk's `Tool`) into our
  * `ToolDefinition` form so it can join the registry alongside the
@@ -78,18 +151,19 @@ export const buildEvalToolRegistry = (
   opts: BuildEvalRegistryOptions,
 ): ToolRegistry => {
   const registry = new ToolRegistry();
+  const register = (def: ToolDefinition): void => {
+    registry.register(wrapWithResultCap(def));
+  };
 
   // Core file tools — no scanner; eval workspaces are small per-question.
-  for (const def of buildFileTools()) {
-    registry.register(def);
-  }
+  for (const def of buildFileTools()) register(def);
 
   // Web stack (the renderer-only ones are skipped).
-  registry.register(buildWebFetchTool({ fetchImpl: opts.fetchImpl }));
-  registry.register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
+  register(buildWebFetchTool({ fetchImpl: opts.fetchImpl }));
+  register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
 
   if (opts.tavilyKey) {
-    registry.register(
+    register(
       buildWebSearchTool({
         fetchImpl: opts.fetchImpl,
         resolveTavilyToken: async () => opts.tavilyKey ?? null,
@@ -97,7 +171,7 @@ export const buildEvalToolRegistry = (
     );
   }
   if (opts.firecrawlKey) {
-    registry.register(
+    register(
       buildWebScrapeTool({
         fetchImpl: opts.fetchImpl,
         resolveFirecrawlToken: async () => opts.firecrawlKey ?? null,
@@ -113,7 +187,7 @@ export const buildEvalToolRegistry = (
     if (!skill.tools) continue;
     for (const [name, tool] of Object.entries(skill.tools)) {
       if (seen.has(name)) continue;
-      registry.register(adaptSkillTool(name, tool));
+      register(adaptSkillTool(name, tool));
       seen.add(name);
     }
   }
