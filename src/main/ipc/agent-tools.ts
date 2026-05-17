@@ -33,6 +33,7 @@ import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../core/agent/tools/web-search";
+import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
 import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
@@ -278,6 +279,12 @@ export const buildAgentToolRegistry = ({
     // `webFetchRendered` can opt into interactive flows by including
     // `browserOpen` etc. in its `allowed-tools`.
     for (const def of buildBrowserInteractiveTools()) {
+      if (allow(def.name)) registry.register(def);
+    }
+    {
+      const def = buildYoutubeTranscriptTool({
+        fetchImpl: agentRegistryDeps.fetchFn,
+      });
       if (allow(def.name)) registry.register(def);
     }
     if (agentRegistryDeps.resolveTavilyToken) {
