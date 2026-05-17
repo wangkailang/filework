@@ -28,6 +28,11 @@ import type {
   TokenUsage,
   TurnEndReason,
 } from "./events";
+import type {
+  ReflectHook,
+  ToolCallSummary,
+  TurnSummary,
+} from "./reflection-gate";
 import type { ErrorClassifier } from "./retry";
 import { withRetry } from "./retry";
 import type { BeforeToolCallHook, ToolContext } from "./tool-registry";
@@ -52,6 +57,13 @@ export type TransformContextHook = (
 export interface AgentLoopHooks {
   beforeToolCall?: BeforeToolCallHook;
   transformContext?: TransformContextHook;
+  /**
+   * Optional post-stream verdict hook. When present, AgentLoop runs the
+   * hook after each `streamText` call and may loop with appended
+   * feedback up to `maxReflections` times. Unset → identical behavior
+   * to pre-reflection AgentLoop.
+   */
+  reflect?: ReflectHook;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +94,12 @@ export interface AgentLoopConfig {
   agentId?: string;
   /** Optional error classifier to enable retry. Without it, no retries. */
   classifyError?: ErrorClassifier;
+  /**
+   * Max reflection cycles when `hooks.reflect` is set. Each cycle is one
+   * extra `streamText` call. Default 2 (so up to 3 total streamText
+   * invocations: initial + 2 retries).
+   */
+  maxReflections?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,13 +213,20 @@ export class AgentLoop {
     let totalUsage: TokenUsage | undefined;
     let providerMetadata: Record<string, unknown> | undefined;
     let finalTextAccum = "";
+    // Only collected when a reflect hook is configured — saves Map
+    // allocation + per-tool-call writes on the default chat path.
+    const reflectEnabled = this.cfg.hooks?.reflect !== undefined;
 
-    const callStreamText = async () => {
+    const callStreamText = async (): Promise<TurnSummary> => {
       // Per-turn buffers — reset on retry.
       let turnIndex = -1;
       let messageId = "";
       let messageText = "";
       let messageOpen = false;
+      let lastFinishReason: string | undefined;
+      const toolResults = reflectEnabled
+        ? new Map<string, ToolCallSummary>()
+        : undefined;
 
       const result = streamText({
         model: this.cfg.model,
@@ -244,6 +269,11 @@ export class AgentLoop {
             break;
           }
           case "tool-call": {
+            toolResults?.set(part.toolCallId, {
+              name: part.toolName,
+              success: true,
+              result: undefined,
+            });
             emit({
               type: "tool_execution_start",
               agentId,
@@ -256,6 +286,11 @@ export class AgentLoop {
           case "tool-result": {
             const out = part.output as { success?: boolean; denied?: boolean };
             const success = !(out && out.success === false);
+            toolResults?.set(part.toolCallId, {
+              name: part.toolName,
+              success,
+              result: part.output,
+            });
             emit({
               type: "tool_execution_end",
               agentId,
@@ -280,6 +315,7 @@ export class AgentLoop {
               finalTextAccum += messageText;
               messageOpen = false;
             }
+            lastFinishReason = part.finishReason;
             emit({
               type: "turn_end",
               agentId,
@@ -309,6 +345,15 @@ export class AgentLoop {
       } catch {
         // Non-critical
       }
+
+      return {
+        agentId,
+        turnIndex,
+        finalText: finalTextAccum,
+        toolCalls: toolResults ? Array.from(toolResults.values()) : [],
+        endReason: mapTurnEndReason(lastFinishReason),
+        usage: totalUsage,
+      };
     };
 
     const onRetry = (attempt: number, errorType: string) => {
@@ -324,19 +369,67 @@ export class AgentLoop {
     };
 
     try {
-      await withRetry(callStreamText, {
-        classify: this.cfg.classifyError,
-        onRetry,
-        signal: this.cfg.signal,
-      });
-      emit({
-        type: "agent_end",
-        agentId,
-        status: "completed",
-        totalUsage,
-        providerMetadata,
-        finalText: finalTextAccum,
-      });
+      const maxReflections = this.cfg.maxReflections ?? 2;
+      let reflectionAttempts = 0;
+      let aborted: { reason: string } | undefined;
+
+      while (true) {
+        const summary = await withRetry(callStreamText, {
+          classify: this.cfg.classifyError,
+          onRetry,
+          signal: this.cfg.signal,
+        });
+
+        if (!this.cfg.hooks?.reflect) break;
+        if (this.cfg.signal?.aborted) break;
+        if (reflectionAttempts >= maxReflections) break;
+
+        const verdict = await this.cfg.hooks.reflect(summary, this.cfg.signal);
+        emit({
+          type: "reflection_verdict",
+          agentId,
+          attempt: reflectionAttempts,
+          verdict,
+        });
+
+        if (verdict.kind === "continue") break;
+        if (verdict.kind === "abort") {
+          aborted = { reason: verdict.reason };
+          break;
+        }
+        // Retry: append the assistant's prior answer (so the model has
+        // its own output as context) plus the reflection feedback. The
+        // feedback is tagged so the model treats it as a quality-review
+        // note rather than a new user request.
+        messages.push({ role: "assistant", content: summary.finalText });
+        messages.push({
+          role: "user",
+          content: `[Reflection feedback — revise the previous answer]\n${verdict.feedback}`,
+        });
+        finalTextAccum = "";
+        reflectionAttempts++;
+      }
+
+      if (aborted) {
+        emit({
+          type: "agent_end",
+          agentId,
+          status: "failed",
+          error: { message: aborted.reason, type: "reflection_aborted" },
+          totalUsage,
+          providerMetadata,
+          finalText: finalTextAccum,
+        });
+      } else {
+        emit({
+          type: "agent_end",
+          agentId,
+          status: "completed",
+          totalUsage,
+          providerMetadata,
+          finalText: finalTextAccum,
+        });
+      }
     } catch (err) {
       // Surface zod cause for AI SDK prompt-schema errors so a bad
       // message shape is debuggable from the main-process log. The

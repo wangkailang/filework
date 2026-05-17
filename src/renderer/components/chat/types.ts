@@ -14,6 +14,8 @@ export type {
   ArticleMetaPart,
   AttachmentKind,
   AttachmentPart,
+  BatchApprovalEntry,
+  BatchApprovalPart,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,

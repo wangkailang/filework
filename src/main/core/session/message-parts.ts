@@ -41,6 +41,12 @@ export interface ToolApproval {
   extraContext?: string;
 }
 
+export interface BatchApprovalEntry {
+  toolCallId: string;
+  args: unknown;
+  description: string;
+}
+
 // ─── Plan viewer (data shape — UI lives in plan-viewer.tsx) ─────────
 
 export interface PlanSubStepView {
@@ -283,6 +289,19 @@ export interface AttachmentPart {
   attachmentId: string;
 }
 
+/**
+ * Batched destructive-tool approval card. Emitted when the LLM fires N
+ * concurrent destructive calls in one turn and the main process coalesces
+ * them via `approval-batcher`. One card → one click for all entries.
+ */
+export interface BatchApprovalPart {
+  type: "batch-approval";
+  batchId: string;
+  toolName: string;
+  entries: BatchApprovalEntry[];
+  state: ApprovalState;
+}
+
 export type MessagePart =
   | TextPart
   | ToolPart
@@ -295,4 +314,5 @@ export type MessagePart =
   | VideoGalleryPart
   | ArticleMetaPart
   | VideoJobPart
-  | AttachmentPart;
+  | AttachmentPart
+  | BatchApprovalPart;

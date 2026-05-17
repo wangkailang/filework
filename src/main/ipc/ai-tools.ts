@@ -31,6 +31,7 @@ import {
   toolCallToTaskMap,
   whitelistToolForTask,
 } from "./ai-task-control";
+import { enqueueForBatch } from "./approval-batcher";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
@@ -492,6 +493,26 @@ export const requestApproval = (
       });
     }
     return Promise.resolve(true);
+  }
+
+  // Non-broadcast-effect destructive tools coalesce into a single
+  // approval card per (task, toolName) so a wave of 14 concurrent
+  // deleteFile calls becomes 1 click instead of 14. ALWAYS_PROMPT_TOOLS
+  // (gitPush, openPullRequest, etc.) keep the single-card path below.
+  if (!ALWAYS_PROMPT_TOOLS.has(toolName)) {
+    const describeFn = dangerousToolDescriptions[toolName];
+    const description = describeFn
+      ? describeFn(args as Record<string, unknown>)
+      : toolName;
+    return enqueueForBatch({
+      sender,
+      taskId,
+      toolName,
+      toolCallId,
+      args,
+      description,
+      abortSignal,
+    });
   }
 
   return new Promise<boolean>((resolve) => {

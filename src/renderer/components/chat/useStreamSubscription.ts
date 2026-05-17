@@ -408,6 +408,34 @@ export function useStreamSubscription({
       },
     );
 
+    const offToolBatchApproval = window.filework.onStreamToolBatchApproval(
+      ({ id, batchId, toolName, entries }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          parts.push({
+            type: "batch-approval",
+            batchId,
+            toolName,
+            entries,
+            state: "approval-requested",
+          });
+          return parts;
+        });
+      },
+    );
+
+    const offToolBatchAutoApproved =
+      window.filework.onStreamToolBatchAutoApproved(({ id, batchId }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) =>
+          parts.map((p) =>
+            p.type === "batch-approval" && p.batchId === batchId
+              ? { ...p, state: "approval-accepted" as const }
+              : p,
+          ),
+        );
+      });
+
     const offDone = window.filework.onStreamDone(({ id }) => {
       if (id !== streamTaskIdRef.current) return;
       console.log("[Stream Done] Cleaning up taskId:", id);
@@ -622,6 +650,8 @@ export function useStreamSubscription({
       offToolCall();
       offToolResult();
       offToolApproval();
+      offToolBatchApproval();
+      offToolBatchAutoApproved();
       offRetry();
       offDone();
       offError();

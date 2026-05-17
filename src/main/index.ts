@@ -19,6 +19,7 @@ config({ path: join(app.getAppPath(), ".env") });
 config({ path: join(__dirname, "../../.env") });
 
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
+import { initPatternStore } from "./ai/pattern-store";
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
@@ -103,6 +104,10 @@ const createWindow = () => {
 };
 
 app.whenReady().then(async () => {
+  // Pattern capture sink. Opt-in by initializing before any task runs;
+  // appendPattern is a no-op until this fires.
+  initPatternStore(join(app.getPath("userData"), "patterns.jsonl"));
+
   // Route main-process fetch + spawned git children through the user's
   // proxy (system or env). Must run before any IPC handler registration
   // or workspace clone, so every later network call inherits it.

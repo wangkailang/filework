@@ -435,6 +435,28 @@ export function useChatSession(
     window.filework.approveToolCall(toolCallId, approved);
   };
 
+  const handleBatchApproval = (batchId: string, approved: boolean) => {
+    crud.setMessages((prev) => {
+      const assistantId = stream.streamAssistantIdRef.current;
+      const idx = prev.findIndex((m) => m.id === assistantId);
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      const msg = updated[idx];
+      const newParts = (msg.parts ?? []).map((p) => {
+        if (p.type !== "batch-approval" || p.batchId !== batchId) return p;
+        return {
+          ...p,
+          state: (approved
+            ? "approval-accepted"
+            : "approval-rejected") as ApprovalState,
+        };
+      });
+      updated[idx] = { ...msg, parts: newParts };
+      return updated;
+    });
+    window.filework.approveToolCallBatch(batchId, approved);
+  };
+
   const handleStopGeneration = useCallback(() => {
     const taskId = stream.streamTaskIdRef.current;
     console.log(
@@ -517,6 +539,7 @@ export function useChatSession(
     isStalled: plan.isStalled,
     handleSubmit,
     handleApproval,
+    handleBatchApproval,
     handleSkillApproval,
     handleApprovePlan: plan.handleApprovePlan,
     handleRejectPlan: plan.handleRejectPlan,

@@ -5,6 +5,8 @@
  * and tool execution tracking for concurrent AI operations.
  */
 
+import { cancelBatchesForTask } from "./approval-batcher";
+
 /** 按任务 ID 存储活跃的 AbortController，用于中止流式生成 */
 export const abortControllers = new Map<string, AbortController>();
 
@@ -190,6 +192,12 @@ export const stopTaskExecution = (taskId: string): boolean => {
       }
     }
   }
+
+  // Reject any in-flight batched approvals (buffering + flushed) for
+  // this task. Per-entry abort signals already settle promptly, but
+  // this explicit sweep guards against orphaned entries whose signal
+  // wasn't propagated.
+  cancelBatchesForTask(taskId);
 
   return stopped;
 };

@@ -1,6 +1,9 @@
 import { CheckCircle2, ShieldAlert, XCircle } from "lucide-react";
 import type { HTMLAttributes } from "react";
-import type { ApprovalState } from "../../../main/core/session/message-parts";
+import type {
+  ApprovalState,
+  BatchApprovalEntry,
+} from "../../../main/core/session/message-parts";
 import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -146,3 +149,70 @@ export const ConfirmationAction = ({
     {children}
   </button>
 );
+
+// ---------------------------------------------------------------------------
+// Batch — one card for N destructive calls coalesced by approval-batcher
+// ---------------------------------------------------------------------------
+
+interface ConfirmationBatchProps {
+  state: ApprovalState;
+  toolName: string;
+  entries: BatchApprovalEntry[];
+  onApproveAll: () => void;
+  onDenyAll: () => void;
+  /** Max entries shown before "+N more" collapse. Default 5. */
+  previewLimit?: number;
+  className?: string;
+}
+
+export const ConfirmationBatch = ({
+  state,
+  toolName,
+  entries,
+  onApproveAll,
+  onDenyAll,
+  previewLimit = 5,
+  className,
+}: ConfirmationBatchProps) => {
+  const count = entries.length;
+  const visible = entries.slice(0, previewLimit);
+  const hidden = Math.max(0, count - previewLimit);
+
+  return (
+    <Confirmation state={state} className={className}>
+      <ConfirmationRequest>
+        <div className="flex flex-col gap-1">
+          <div className="font-medium">
+            批准 {count} 个 {toolName} 操作？
+          </div>
+          <ul className="ml-1 mt-0.5 space-y-0.5 text-foreground/70">
+            {visible.map((e) => (
+              <li key={e.toolCallId} className="truncate">
+                · {e.description}
+              </li>
+            ))}
+            {hidden > 0 && (
+              <li className="text-foreground/50">…还有 {hidden} 个</li>
+            )}
+          </ul>
+        </div>
+      </ConfirmationRequest>
+      {state === "approval-requested" && (
+        <ConfirmationActions>
+          <ConfirmationAction variant="default" onClick={onApproveAll}>
+            批准全部 {count} 个
+          </ConfirmationAction>
+          <ConfirmationAction variant="destructive" onClick={onDenyAll}>
+            拒绝全部
+          </ConfirmationAction>
+        </ConfirmationActions>
+      )}
+      {state === "approval-accepted" && (
+        <ConfirmationAccepted>已批准 {count} 个操作</ConfirmationAccepted>
+      )}
+      {state === "approval-rejected" && (
+        <ConfirmationRejected>已拒绝 {count} 个操作</ConfirmationRejected>
+      )}
+    </Confirmation>
+  );
+};
