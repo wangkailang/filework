@@ -5,6 +5,7 @@ import { docxProcessor } from "./docx-processor";
 import { duplicateFinder } from "./duplicate-finder";
 import { fileOrganizer } from "./file-organizer";
 import { pdfProcessor } from "./pdf-processor";
+import { pptxProcessor } from "./pptx-processor";
 import { projectScaffolder } from "./project-scaffolder";
 import { reportGenerator } from "./report-generator";
 import type { Skill } from "./types";
@@ -23,6 +24,7 @@ export const skills: Skill[] = [
   pdfProcessor,
   xlsxProcessor,
   docxProcessor,
+  pptxProcessor,
 ];
 
 /** Singleton SkillRegistry instance with built-in skills pre-registered */
