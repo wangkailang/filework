@@ -545,9 +545,12 @@ const handleTaskExecution = async (
     const agentTools = { ...registryTools, ...skillTools };
 
     // Default: zero-LLM rules layer (pdfParseFailure + toolDeniedSequence)
-    // attached on every task. When the skill opts in with `reflect: true`,
-    // we add `emptyAssistantWithTools` + LLM verdict on top.
-    const reflectOptIn = skill?.external?.frontmatter.reflect === true;
+    // attached on every task. When the skill opts in with `reflect: true`
+    // — either via SKILL.md frontmatter (external skills) or via the
+    // built-in TS skill's `reflect` field — we add
+    // `emptyAssistantWithTools` + LLM verdict on top.
+    const reflectOptIn =
+      skill?.external?.frontmatter.reflect === true || skill?.reflect === true;
     const reflectHook = createReflectionGate(
       reflectOptIn
         ? { model, rules: builtinRules() }

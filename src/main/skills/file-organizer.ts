@@ -5,6 +5,7 @@ export const fileOrganizer: Skill = {
   name: "文件整理",
   description: "按类型、日期、大小自动分类文件，批量重命名，清理空目录",
   category: "task",
+  reflect: true,
   keywords: [
     "整理",
     "分类",

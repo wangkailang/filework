@@ -5,6 +5,7 @@ export const projectScaffolder: Skill = {
   name: "项目脚手架",
   description: "根据模板创建项目目录结构，初始化配置文件",
   category: "task",
+  reflect: true,
   keywords: [
     "创建项目",
     "初始化",

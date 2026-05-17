@@ -92,6 +92,7 @@ export const duplicateFinder: Skill = {
   id: "duplicate-finder",
   name: "重复文件检测",
   description: "基于文件哈希检测重复文件，建议清理方案",
+  reflect: true,
   keywords: [
     "重复",
     "duplicate",
