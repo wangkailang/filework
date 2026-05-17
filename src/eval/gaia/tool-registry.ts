@@ -39,9 +39,7 @@ import { buildFileTools } from "../../main/core/agent/tools";
 import { buildWebFetchTool } from "../../main/core/agent/tools/web-fetch";
 import { buildWebScrapeTool } from "../../main/core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../../main/core/agent/tools/web-search";
-// NOTE: youtubeTranscript will be registered here once PR #68 merges
-// into main. Keeping the registration out for now so this branch can
-// land independently.
+import { buildYoutubeTranscriptTool } from "../../main/core/agent/tools/youtube-transcript";
 import type { Workspace } from "../../main/core/workspace/types";
 import { skills } from "../../main/skills";
 
@@ -88,7 +86,7 @@ export const buildEvalToolRegistry = (
 
   // Web stack (the renderer-only ones are skipped).
   registry.register(buildWebFetchTool({ fetchImpl: opts.fetchImpl }));
-  // youtubeTranscript registration deferred until PR #68 merges.
+  registry.register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
 
   if (opts.tavilyKey) {
     registry.register(
