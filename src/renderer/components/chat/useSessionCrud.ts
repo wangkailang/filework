@@ -13,6 +13,12 @@ export function useSessionCrud(workspacePath: string) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  // Set by createNewSession() so the load-history effect below skips the
+  // disk fetch on activation — the local caller (e.g. the chat submit
+  // handler) has just put messages into state but the JSONL file hasn't
+  // been written yet (debouncedSave is on a 500ms timer). Without this
+  // guard, getChatHistory returns [] and wipes the in-flight message.
+  const freshSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
   messagesRef.current = messages;
 
@@ -65,6 +71,13 @@ export function useSessionCrud(workspacePath: string) {
       setMessages([]);
       return;
     }
+    if (freshSessionIdRef.current === activeSessionId) {
+      // Session was just created locally by createNewSession(); the
+      // caller will populate messages itself. Skip the disk read so we
+      // don't race-wipe the in-flight first message.
+      freshSessionIdRef.current = null;
+      return;
+    }
     const load = async () => {
       try {
         const history = await window.filework.getChatHistory(activeSessionId);
@@ -107,6 +120,9 @@ export function useSessionCrud(workspacePath: string) {
     flushPendingSave();
     const session: ChatSession =
       await window.filework.createChatSession(workspacePath);
+    // Flag the load-history effect to skip the disk read on activation —
+    // the caller (submit handler) is about to set messages itself.
+    freshSessionIdRef.current = session.id;
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
     setMessages([]);
@@ -114,13 +130,18 @@ export function useSessionCrud(workspacePath: string) {
   }, [flushPendingSave, workspacePath]);
 
   const handleNewChat = useCallback(
-    async (isLoading: boolean) => {
+    (isLoading: boolean) => {
       if (isLoading) return;
+      // Don't persist a new session yet — it's created lazily on the
+      // first message submit (useChatSession.ts). Otherwise an empty
+      // ".jsonl" file leaks into the sidebar.
+      flushPendingSave();
+      setActiveSessionId(null);
+      setMessages([]);
       setLastUsage(null);
       setLastError(null);
-      await createNewSession();
     },
-    [createNewSession],
+    [flushPendingSave],
   );
 
   const handleSelectSession = useCallback(
