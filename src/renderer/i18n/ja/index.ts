@@ -276,6 +276,12 @@ const ja: Translation = {
   sidebar_refresh: "ディレクトリを更新",
   sidebar_closeDir: "ディレクトリを閉じる",
   sidebar_skills: "スキル",
+  sidebar_permissionDenied: "アクセス権限がありません",
+  sidebar_permissionDeniedHint:
+    "macOS がこのフォルダへのアクセスをブロックしています。システム設定 → プライバシーとセキュリティ → ファイルとフォルダ で許可してください。",
+  sidebar_folderNotFound: "フォルダが見つかりません",
+  sidebar_openSystemSettings: "システム設定を開く",
+  sidebar_retry: "再試行",
 
   // useChatSession
   chat_userStopped: "ユーザーが実行を停止しました",

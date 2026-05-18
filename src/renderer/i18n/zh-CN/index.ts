@@ -266,6 +266,12 @@ const zhCN: Translation = {
   sidebar_refresh: "刷新目录",
   sidebar_closeDir: "关闭目录",
   sidebar_skills: "技能",
+  sidebar_permissionDenied: "无权访问",
+  sidebar_permissionDeniedHint:
+    "macOS 阻止访问此文件夹。请在「系统设置 → 隐私与安全性 → 文件与文件夹」中授权。",
+  sidebar_folderNotFound: "文件夹不存在",
+  sidebar_openSystemSettings: "打开系统设置",
+  sidebar_retry: "重试",
 
   // useChatSession
   chat_userStopped: "用户已停止执行",
