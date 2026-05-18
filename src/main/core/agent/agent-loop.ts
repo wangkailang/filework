@@ -86,6 +86,12 @@ export interface AgentLoopConfig {
   hooks?: AgentLoopHooks;
   /** Hard cap on internal AI-SDK steps per `streamText` call. Default 20. */
   maxStepsPerTurn?: number;
+  /**
+   * Sampling temperature passed to `streamText`. Default unset (uses
+   * provider default, typically 0.7-1.0). Eval harnesses should set this
+   * to `0` for reproducible runs.
+   */
+  temperature?: number;
   /** Provider-specific options merged into the streamText call. */
   providerOptions?: ProviderOptions;
   /** Caller-provided abort. Aborting cancels the run. */
@@ -217,7 +223,9 @@ export class AgentLoop {
     // allocation + per-tool-call writes on the default chat path.
     const reflectEnabled = this.cfg.hooks?.reflect !== undefined;
 
-    const callStreamText = async (): Promise<TurnSummary> => {
+    const callStreamText = async (
+      passNoTools: boolean,
+    ): Promise<TurnSummary> => {
       // Per-turn buffers — reset on retry.
       let turnIndex = -1;
       let messageId = "";
@@ -230,12 +238,15 @@ export class AgentLoop {
 
       const result = streamText({
         model: this.cfg.model,
-        tools: aiTools,
+        tools: passNoTools ? {} : aiTools,
         stopWhen: stepCountIs(this.cfg.maxStepsPerTurn ?? 20),
         system: this.cfg.systemPrompt,
         messages,
         abortSignal: this.cfg.signal,
         providerOptions: this.cfg.providerOptions,
+        ...(this.cfg.temperature !== undefined && {
+          temperature: this.cfg.temperature,
+        }),
       });
 
       for await (const part of result.fullStream) {
@@ -372,9 +383,13 @@ export class AgentLoop {
       const maxReflections = this.cfg.maxReflections ?? 2;
       let reflectionAttempts = 0;
       let aborted: { reason: string } | undefined;
+      // Cleared each iteration; set by the previous turn's reflection
+      // verdict when `forceNoTools` was true.
+      let passNoTools = false;
 
       while (true) {
-        const summary = await withRetry(callStreamText, {
+        const captured = passNoTools;
+        const summary = await withRetry(() => callStreamText(captured), {
           classify: this.cfg.classifyError,
           onRetry,
           signal: this.cfg.signal,
@@ -400,12 +415,19 @@ export class AgentLoop {
         // Retry: append the assistant's prior answer (so the model has
         // its own output as context) plus the reflection feedback. The
         // feedback is tagged so the model treats it as a quality-review
-        // note rather than a new user request.
+        // note rather than a new user request. When `forceNoTools` is
+        // honored, the appended note tells the model tools are off — the
+        // prose lives here (not in the rule) so it stays paired with the
+        // actual tool-stripping done above.
         messages.push({ role: "assistant", content: summary.finalText });
+        const toolsOffNote = verdict.forceNoTools
+          ? "\n\n(Tools are disabled for the next attempt — answer from the information already gathered.)"
+          : "";
         messages.push({
           role: "user",
-          content: `[Reflection feedback — revise the previous answer]\n${verdict.feedback}`,
+          content: `[Reflection feedback — revise the previous answer]\n${verdict.feedback}${toolsOffNote}`,
         });
+        passNoTools = verdict.forceNoTools === true;
         finalTextAccum = "";
         reflectionAttempts++;
       }

@@ -38,6 +38,17 @@ export const normalizeForScoring = (s: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+// Extracts a leading numeric literal from a normalized string. Used by
+// the numeric scoring path to forgive trailing units the model echoed
+// from the question (e.g. "0.1777 m^3" against truth "0.1777"). Returns
+// NaN when the string does not start with a number — leading garbage
+// stays a fail so the tolerance doesn't mask wrong answers.
+const LEADING_NUMBER_RE = /^-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/i;
+const tryLeadingNumber = (s: string): number => {
+  const m = s.match(LEADING_NUMBER_RE);
+  return m ? Number(m[0]) : NaN;
+};
+
 const LIST_DELIM = /[,;|]/;
 
 const isListLike = (s: string): boolean => LIST_DELIM.test(s);
@@ -87,9 +98,11 @@ export const scoreAnswer = (
     };
   }
 
-  // Numeric path — only when BOTH sides parse cleanly as numbers.
-  const pn = Number(np);
-  const tn = Number(nt);
+  // Numeric path — strict `Number()` first; if either side fails, fall
+  // back to extracting a leading number (handles "0.1777 m^3" vs "0.1777"
+  // where the model echoes a unit that the question already named).
+  const pn = Number.isFinite(Number(np)) ? Number(np) : tryLeadingNumber(np);
+  const tn = Number.isFinite(Number(nt)) ? Number(nt) : tryLeadingNumber(nt);
   if (Number.isFinite(pn) && Number.isFinite(tn) && np !== "" && nt !== "") {
     const close = Math.abs(pn - tn) < 1e-6 || pn.toFixed(2) === tn.toFixed(2);
     return {
@@ -123,6 +136,10 @@ export const scoreAnswer = (
 
 // ─── Final-answer extraction ─────────────────────────────────────────
 
+// KEEP IN SYNC with `FINAL_ANSWER_LINE_RE` in
+// src/main/core/agent/reflection-gate.ts. The `missingFinalAnswer`
+// reflection rule mirrors this regex so its accept/reject is symmetric
+// with what this scorer would actually grade. If you change one, change both.
 const FINAL_ANSWER_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
 
 /**

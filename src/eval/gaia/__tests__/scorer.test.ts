@@ -90,11 +90,45 @@ describe("scoreAnswer — numeric path", () => {
   });
 
   it("does NOT take the numeric path when only one side is numeric", () => {
-    // "42" parses; "Forty-two" doesn't. Numeric path is skipped, falls
-    // through to exact (fails).
+    // "42" parses; "Forty-two" doesn't even via leading-number fallback
+    // (no leading digit). Numeric path is skipped, falls through to fail.
     const r = scoreAnswer("42", "Forty-two");
     expect(r.passed).toBe(false);
     expect(r.matchType).toBe("fail");
+  });
+});
+
+describe("scoreAnswer — leading-number tolerance", () => {
+  it("passes when predicted has a unit suffix the question already named (0.1777 m^3 vs 0.1777)", () => {
+    const r = scoreAnswer("0.1777 m^3", "0.1777");
+    expect(r.passed).toBe(true);
+    expect(r.matchType).toBe("numeric");
+  });
+
+  it("passes when predicted has a trailing unit (42 kg vs 42)", () => {
+    expect(scoreAnswer("42 kg", "42").passed).toBe(true);
+  });
+
+  it("is symmetric — passes when truth has the trailing unit (42 vs 42 kg)", () => {
+    expect(scoreAnswer("42", "42 kg").passed).toBe(true);
+  });
+
+  it("does NOT mask reasoning errors: different numbers still fail (17000 vs 17 — Kipchoge guard)", () => {
+    const r = scoreAnswer("17000", "17");
+    expect(r.passed).toBe(false);
+  });
+
+  it("combines fuzz prefix and unit suffix ('about 0.5 mph' vs '0.5')", () => {
+    expect(scoreAnswer("about 0.5 mph", "0.5").passed).toBe(true);
+  });
+
+  it("rejects leading garbage — 'abc 42' is not a leading number", () => {
+    expect(scoreAnswer("abc 42", "42").passed).toBe(false);
+  });
+
+  it("only matches the leading number, not embedded ones ('42 cats and 5 dogs' vs '5')", () => {
+    // Leading number is 42; truth is 5; numbers don't match → fail.
+    expect(scoreAnswer("42 cats and 5 dogs", "5").passed).toBe(false);
   });
 });
 

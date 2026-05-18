@@ -27,6 +27,11 @@ interface ParsedFlags {
   apiKey: string;
   model: string;
   baseUrl?: string;
+  /**
+   * `number` → pass to streamText / verifier; `null` → omit the
+   * parameter (OpenAI reasoning models). Default is `0` (deterministic).
+   */
+  temperature: number | null;
   smoke: boolean;
   help: boolean;
 }
@@ -45,6 +50,10 @@ Optional:
   --limit <N>             First N questions only   (default: all)
   --smoke                 Equivalent to --level 1 --limit 5
   --base-url <url>        Override provider endpoint (OpenAI-compatible providers)
+  --temperature <n>       Sampling temperature      (default: 0 for deterministic runs)
+                          Pass 'none' to omit the parameter — required for
+                          OpenAI reasoning models (o1/o3/o5/gpt-5 reasoning)
+                          which reject any temperature setting.
 
 Environment:
   GAIA_EVAL_API_KEY       Used when --api-key is omitted
@@ -69,6 +78,7 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     "api-key": { type: "string" as const },
     model: { type: "string" as const },
     "base-url": { type: "string" as const },
+    temperature: { type: "string" as const, default: "0" },
     smoke: { type: "boolean" as const, default: false },
     help: { type: "boolean" as const, default: false, short: "h" },
   };
@@ -109,6 +119,22 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     (v["api-key"] as string | undefined) ?? process.env.GAIA_EVAL_API_KEY;
   if (!apiKey) return "--api-key (or env GAIA_EVAL_API_KEY) is required";
 
+  // Temperature: numeric strings → number; "none" / "default" / "off" → null
+  // (omit the parameter — needed for OpenAI reasoning models).
+  const tempArg = String(v.temperature ?? "0")
+    .trim()
+    .toLowerCase();
+  let temperature: number | null;
+  if (tempArg === "none" || tempArg === "default" || tempArg === "off") {
+    temperature = null;
+  } else {
+    const n = Number(tempArg);
+    if (!Number.isFinite(n) || n < 0 || n > 2) {
+      return `--temperature must be a number in [0, 2] or "none" (got "${String(v.temperature)}")`;
+    }
+    temperature = n;
+  }
+
   const stamp = new Date()
     .toISOString()
     .replace(/[:.]/g, "-")
@@ -129,6 +155,7 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     apiKey,
     model: v.model as string,
     baseUrl: v["base-url"] as string | undefined,
+    temperature,
     smoke,
     help: false,
   };
@@ -156,8 +183,10 @@ const main = async (): Promise<number> => {
 
   process.stdout.write(`[gaia] dataset:  ${parsed.dataset}\n`);
   process.stdout.write(`[gaia] output:   ${parsed.output}\n`);
+  const tempLabel =
+    parsed.temperature === null ? "omitted" : parsed.temperature;
   process.stdout.write(
-    `[gaia] level=${parsed.level} limit=${parsed.limit ?? "all"} provider=${parsed.provider} model=${parsed.model}\n\n`,
+    `[gaia] level=${parsed.level} limit=${parsed.limit ?? "all"} provider=${parsed.provider} model=${parsed.model} temperature=${tempLabel}\n\n`,
   );
 
   const startMs = Date.now();
@@ -172,6 +201,7 @@ const main = async (): Promise<number> => {
       apiKey: parsed.apiKey,
       model: parsed.model,
       baseUrl: parsed.baseUrl,
+      temperature: parsed.temperature,
       onProgress: ({ index, total, result }) => {
         const mark = result.passed ? "✓" : "✗";
         const dur = formatDuration(result.durationMs);
