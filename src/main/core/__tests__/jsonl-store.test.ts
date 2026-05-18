@@ -11,6 +11,23 @@ describe("JsonlSessionStore", () => {
   let rootDir: string;
   let store: JsonlSessionStore;
 
+  // listSessions() filters out files with no MessageLine, so most
+  // tests need to seed at least one message before listing.
+  const seedMessage = async (
+    sessionId: string,
+    workspacePath: string,
+    timestamp = "2026-05-09T22:00:00.000Z",
+  ) =>
+    store.saveMessages(sessionId, workspacePath, [
+      {
+        id: `seed-${sessionId}`,
+        sessionId,
+        role: "user",
+        content: "seed",
+        timestamp,
+      },
+    ]);
+
   beforeEach(async () => {
     rootDir = await mkdtemp(path.join(tmpdir(), "fw-jsonl-"));
     store = new JsonlSessionStore(rootDir);
@@ -28,10 +45,26 @@ describe("JsonlSessionStore", () => {
       expect(session.title).toBe("First chat");
       expect(session.workspacePath).toBe(ws);
 
+      await seedMessage(session.id, ws);
       const list = await store.listSessions(ws);
       expect(list).toHaveLength(1);
       expect(list[0].id).toBe(session.id);
       expect(list[0].title).toBe("First chat");
+    });
+
+    it("listSessions skips sessions with no messages (empty-session filter)", async () => {
+      const ws = "/ws";
+      const empty = await store.createSession(ws, "drafted, never sent");
+      const real = await store.createSession(ws, "real chat");
+      await seedMessage(real.id, ws);
+
+      const list = await store.listSessions(ws);
+      expect(list.map((s) => s.id)).toEqual([real.id]);
+      // The empty session file still exists on disk — filter is read-side
+      // only — but it must NOT appear in the sidebar.
+      const wsDir = path.join(rootDir, workspaceKey(ws));
+      const files = await readdir(wsDir);
+      expect(files.some((f) => f.startsWith(empty.id))).toBe(true);
     });
 
     it("defaults the title to 新对话", async () => {
@@ -42,6 +75,8 @@ describe("JsonlSessionStore", () => {
     it("isolates sessions per workspace via the hashed key", async () => {
       const a = await store.createSession("/ws/a", "A");
       const b = await store.createSession("/ws/b", "B");
+      await seedMessage(a.id, "/ws/a");
+      await seedMessage(b.id, "/ws/b");
       const aList = await store.listSessions("/ws/a");
       const bList = await store.listSessions("/ws/b");
       expect(aList.map((s) => s.id)).toEqual([a.id]);
@@ -51,8 +86,10 @@ describe("JsonlSessionStore", () => {
 
     it("listSessions returns sessions sorted desc by updatedAt", async () => {
       const s1 = await store.createSession("/ws", "first");
+      await seedMessage(s1.id, "/ws", "2026-05-09T22:00:00.000Z");
       await new Promise((r) => setTimeout(r, 5));
       const s2 = await store.createSession("/ws", "second");
+      await seedMessage(s2.id, "/ws", "2026-05-09T22:00:05.000Z");
       const list = await store.listSessions("/ws");
       expect(list[0].id).toBe(s2.id);
       expect(list[1].id).toBe(s1.id);
@@ -81,6 +118,7 @@ describe("JsonlSessionStore", () => {
   describe("updateSession", () => {
     it("renames the title and bumps updatedAt", async () => {
       const session = await store.createSession("/ws", "Old");
+      await seedMessage(session.id, "/ws");
       await new Promise((r) => setTimeout(r, 5));
       await store.updateSession(session.id, { title: "New" });
       const [reloaded] = await store.listSessions("/ws");
@@ -283,6 +321,7 @@ describe("JsonlSessionStore", () => {
   describe("atomic write + crash recovery", () => {
     it("ignores stale .tmp orphans at next read", async () => {
       const s = await store.createSession("/ws");
+      await seedMessage(s.id, "/ws");
       const wsDir = path.join(rootDir, workspaceKey("/ws"));
       await writeFile(
         path.join(wsDir, `${s.id}.jsonl.tmp`),

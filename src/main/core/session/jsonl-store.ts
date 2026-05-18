@@ -124,15 +124,18 @@ export class JsonlSessionStore {
     for (const name of entries) {
       if (!name.endsWith(SESSION_FILE_EXT)) continue;
       const fp = path.join(dir, name);
-      const head = await this.readFirstSessionLine(fp);
-      if (head) {
-        sessions.push(stripForkFields(head));
-        // Opportunistically populate the index.
-        this.sessionIndex.set(head.id, {
-          workspaceKey: workspaceKey(workspacePath),
-          filePath: fp,
-        });
-      }
+      const records = await this.readAllRecords(fp);
+      const head = records[0];
+      if (!head || head.kind !== "session") continue;
+      // Skip sessions that never got a message — otherwise they show
+      // up in the sidebar as click-through-to-nothing records.
+      if (!records.some((r) => r.kind === "message")) continue;
+      sessions.push(stripForkFields(head));
+      // Opportunistically populate the index.
+      this.sessionIndex.set(head.id, {
+        workspaceKey: workspaceKey(workspacePath),
+        filePath: fp,
+      });
     }
     sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     return sessions;
