@@ -1,0 +1,7 @@
+INFO 2026-05-18T09:00:00 server started on port 3000
+ERROR 2026-05-18T09:01:12 connection refused: upstream db unreachable
+WARN 2026-05-18T09:02:30 high memory: 85% of heap
+ERROR 2026-05-18T09:03:18 db timeout after 30s
+INFO 2026-05-18T09:04:05 retry succeeded after 3 attempts
+ERROR 2026-05-18T09:05:44 disk full on /var/log
+INFO 2026-05-18T09:06:00 graceful shutdown initiated
