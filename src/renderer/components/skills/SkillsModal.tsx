@@ -366,77 +366,78 @@ const SkillCard = ({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
       className={cn(
-        "w-full text-left rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors group cursor-pointer",
+        "relative rounded-lg border border-border hover:bg-accent/50 transition-colors group",
         skill.enabled === false && "opacity-60",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="font-medium text-sm text-foreground truncate">
-              {skill.name}
-            </span>
-            <span
-              className={cn(
-                "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                SOURCE_COLORS[skill.source],
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "w-full text-left p-3",
+          // Reserve space on the right for the absolutely-positioned switch.
+          togglable && "pr-12",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="font-medium text-sm text-foreground truncate">
+                {skill.name}
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  SOURCE_COLORS[skill.source],
+                )}
+              >
+                {sourceLabels[skill.source]}
+              </span>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+                {skill.category === "task"
+                  ? LL.skillsModal_task()
+                  : LL.skillsModal_tool()}
+              </span>
+              {skill.enabled === false && (
+                <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600">
+                  {LL.skillsModal_sourceDisabled()}
+                </span>
               )}
-            >
-              {sourceLabels[skill.source]}
-            </span>
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
-              {skill.category === "task"
-                ? LL.skillsModal_task()
-                : LL.skillsModal_tool()}
-            </span>
-            {skill.enabled === false && (
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600">
-                {LL.skillsModal_sourceDisabled()}
+            </div>
+            <p className="text-xs text-muted-foreground line-clamp-2">
+              {skill.description}
+            </p>
+          </div>
+          <span className="shrink-0 font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+            {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
+          </span>
+        </div>
+        {skill.keywords.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {skill.keywords.slice(0, 6).map((kw) => (
+              <span
+                key={kw}
+                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {kw}
+              </span>
+            ))}
+            {skill.keywords.length > 6 && (
+              <span className="text-[10px] text-muted-foreground">
+                +{skill.keywords.length - 6}
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2">
-            {skill.description}
-          </p>
-        </div>
-        <div className="shrink-0 flex items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
-          </span>
-          {togglable && (
-            <SkillSwitch
-              checked={skill.enabled === true}
-              onChange={onToggle}
-              ariaLabel={skill.name}
-            />
-          )}
-        </div>
-      </div>
-      {skill.keywords.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {skill.keywords.slice(0, 6).map((kw) => (
-            <span
-              key={kw}
-              className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-            >
-              {kw}
-            </span>
-          ))}
-          {skill.keywords.length > 6 && (
-            <span className="text-[10px] text-muted-foreground">
-              +{skill.keywords.length - 6}
-            </span>
-          )}
+        )}
+      </button>
+      {togglable && (
+        <div className="absolute top-3 right-3">
+          <SkillSwitch
+            checked={skill.enabled === true}
+            onChange={onToggle}
+            ariaLabel={skill.name}
+          />
         </div>
       )}
     </div>
