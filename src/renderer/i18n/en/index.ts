@@ -233,6 +233,7 @@ const en: BaseTranslation = {
   skillsModal_sourceProject: "Project",
   skillsModal_sourcePersonal: "Personal",
   skillsModal_sourceAdditional: "Additional",
+  skillsModal_sourceDisabled: "Disabled",
 
   // Usage panel
   usage_loading: "Loading usage data...",

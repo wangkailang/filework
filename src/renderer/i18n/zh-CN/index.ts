@@ -216,6 +216,7 @@ const zhCN: Translation = {
   skillsModal_sourceProject: "项目",
   skillsModal_sourcePersonal: "个人",
   skillsModal_sourceAdditional: "扩展",
+  skillsModal_sourceDisabled: "未启用",
 
   // Usage panel
   usage_loading: "加载用量数据...",

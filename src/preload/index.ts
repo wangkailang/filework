@@ -44,6 +44,9 @@ const api = {
   getSkills: () => ipcRenderer.invoke("ai:getSkills"),
   getSuggestions: () => ipcRenderer.invoke("ai:getSuggestions"),
   listSkills: () => ipcRenderer.invoke("ai:listSkills"),
+  listAllSkills: () => ipcRenderer.invoke("ai:listAllSkills"),
+  setSkillEnabled: (skillId: string, enabled: boolean) =>
+    ipcRenderer.invoke("ai:setSkillEnabled", { skillId, enabled }),
   getSkillDetail: (skillId: string) =>
     ipcRenderer.invoke("ai:getSkillDetail", { skillId }),
   initSkills: (payload: { workspacePath: string; additionalDirs?: string[] }) =>

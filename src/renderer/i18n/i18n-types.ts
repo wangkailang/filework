@@ -716,6 +716,10 @@ type RootTranslation = {
 	 */
 	skillsModal_sourceAdditional: string
 	/**
+	 * Badge shown on skills whose source is disabled
+	 */
+	skillsModal_sourceDisabled: string
+	/**
 	 * L​o​a​d​i​n​g​ ​u​s​a​g​e​ ​d​a​t​a​.​.​.
 	 */
 	usage_loading: string
@@ -1624,6 +1628,10 @@ export type TranslationFunctions = {
 	 * Additional
 	 */
 	skillsModal_sourceAdditional: () => LocalizedString
+	/**
+	 * Badge shown on skills whose source is disabled
+	 */
+	skillsModal_sourceDisabled: () => LocalizedString
 	/**
 	 * Loading usage data...
 	 */
