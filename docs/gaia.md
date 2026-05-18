@@ -141,6 +141,43 @@ pnpm gaia-eval-diff <baseline-dir> <current-dir> [--output <path>] [--stdout]
 | `--output <path>` | 写到指定路径（默认 `<current>/diff-vs-baseline.md`） |
 | `--stdout` | 同时打印到 stdout |
 
+### `gaia-eval-replay`
+
+从 `events/*.jsonl` 提取**轨迹指纹**（tool call 序列 + reflection verdicts + end status）。**不调 LLM**、**不花钱**，本地几秒钟出结果。
+
+```bash
+# 单条 — 查看一条轨迹的 signature
+pnpm gaia-eval-replay <events.jsonl>
+
+# 两两 — 对齐两条轨迹的 tool 序列
+pnpm gaia-eval-replay <baseline.jsonl> <current.jsonl>
+
+# 批量 — 遍历两个 run 目录的 events/，输出 replay-vs-baseline.md
+pnpm gaia-eval-replay --batch <baseline-dir> <current-dir> [--output <path>]
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--batch` | 走批量模式，参数变成两个 run 目录 |
+| `--output <path>` | 批量模式下，markdown 报告写到指定路径（默认 `<current-dir>/replay-vs-baseline.md`） |
+| `--json` | 单条模式下打印 JSON（脚本里用） |
+
+退出码：
+- `0` 单条 signature 输出成功 / 批量模式下无 drift
+- `1` 参数错误
+- `2` 运行时报错
+- `3` 检测到轨迹漂移（pair 或 batch 模式，**CI 可以拿这个 gate**）
+
+**什么时候用**：
+
+- 调 reflection-gate 阈值 / agent-loop 改动后，想知道"路径有没有变"而不是"分数偶尔抽风"
+- 把一条已录好的 events.jsonl 当 fixture，未来代码改动后 hash 不一致就是真回归
+- 同一道题、两次 run、分数都对，但工具序列变了 → 静默漂移，等某天爆雷之前抓到
+
+**signature 包含什么**：tool call 序列（name + 稳定排序后的 args hash + success）+ reflection verdicts 列表 + agent_end status。**不包含** token timing、message deltas、retry — 那些是噪声。
+
+**当前不做的**：v1 只对比已录好的轨迹，不会"用新代码重跑录好的 LLM 响应"。后者需要 streamText shim，留给 v2。
+
 ---
 
 ## 答案协议与 Reflection Gate
@@ -194,10 +231,11 @@ System prompt 端的配合：
 ├── failures.md               # 按 tag 分组的失败报告 + 每 tag 3 个例题
 ├── tool-usage.md             # 工具调用统计（次数 / 中位耗时 / 错误率）
 ├── diff-vs-baseline.md       # 仅在跑过 gaia-eval-diff 后存在
+├── replay-vs-baseline.md     # 仅在跑过 gaia-eval-replay --batch 后存在
 ├── per-question/
 │   └── <task_id>.json        # 单题完整记录
 ├── events/
-│   └── <task_id>.jsonl       # 单题 AgentEvent 流（debug 用）
+│   └── <task_id>.jsonl       # 单题 AgentEvent 流（debug 用 + replay 用）
 └── workspaces/<task_id>/     # 单题运行时的临时 dir（默认跑完清理）
 ```
 
