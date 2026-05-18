@@ -457,6 +457,68 @@ export function useChatSession(
     window.filework.approveToolCallBatch(batchId, approved);
   };
 
+  /**
+   * Resolve the brainstorming HARD-GATE for the given workflow key:
+   * flip backend state via preload, update the local design-approval
+   * card visual state, and continue the conversation with a follow-up
+   * user message so the agent can resume work.
+   */
+  const handleDesignDecision = (
+    workflowKey: string,
+    decision:
+      | { approved: true; editedDesign?: string }
+      | { approved: false; reason: string },
+  ) => {
+    const decidedAt = new Date().toISOString();
+    crud.setMessages((prev) => {
+      let changed = false;
+      const updated = prev.map((msg) => {
+        if (!msg.parts) return msg;
+        const newParts = msg.parts.map((p) => {
+          if (p.type !== "design-approval" || p.workflowKey !== workflowKey) {
+            return p;
+          }
+          if (p.state !== "pending") return p;
+          changed = true;
+          return {
+            ...p,
+            state: decision.approved
+              ? ("approved" as const)
+              : ("rejected" as const),
+            rejectReason: decision.approved ? undefined : decision.reason,
+            decidedAt,
+            design:
+              decision.approved && decision.editedDesign
+                ? decision.editedDesign
+                : p.design,
+          };
+        });
+        return changed ? { ...msg, parts: newParts } : msg;
+      });
+      return changed ? updated : prev;
+    });
+
+    if (decision.approved) {
+      void window.filework.approveDesign(workflowKey).catch((err) => {
+        console.warn("[approveDesign] failed", err);
+      });
+    } else {
+      void window.filework
+        .rejectDesign(workflowKey, decision.reason)
+        .catch((err) => {
+          console.warn("[rejectDesign] failed", err);
+        });
+    }
+
+    const continuation = decision.approved
+      ? decision.editedDesign
+        ? `Design approved with the following edits — please follow this version:\n\n${decision.editedDesign}\n\nProceed with implementation.`
+        : "Design approved. Please proceed with the implementation."
+      : `Design rejected: ${decision.reason}\n\nPlease revise the design and call requestDesignApproval again.`;
+
+    void handleSubmit({ text: continuation });
+  };
+
   const handleStopGeneration = useCallback(() => {
     const taskId = stream.streamTaskIdRef.current;
     console.log(
@@ -540,6 +602,7 @@ export function useChatSession(
     handleSubmit,
     handleApproval,
     handleBatchApproval,
+    handleDesignDecision,
     handleSkillApproval,
     handleApprovePlan: plan.handleApprovePlan,
     handleRejectPlan: plan.handleRejectPlan,

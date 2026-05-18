@@ -585,6 +585,22 @@ export function useStreamSubscription({
       },
     );
 
+    const offDesignApproval = window.filework.onStreamDesignApproval(
+      ({ id, workflowKey, design, summary }) => {
+        if (id !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          parts.push({
+            type: "design-approval",
+            workflowKey,
+            design,
+            summary,
+            state: "pending",
+          });
+          return parts;
+        });
+      },
+    );
+
     const offRetry = window.filework.onStreamRetry(
       ({ id, attempt, type, maxRetries }) => {
         if (id !== streamTaskIdRef.current) return;
@@ -656,6 +672,7 @@ export function useStreamSubscription({
       offDone();
       offError();
       offClarification();
+      offDesignApproval();
       offSkillApprovalRequest();
       offCiRunDone();
       offCiRunTimeout();

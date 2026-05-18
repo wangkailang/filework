@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Brain,
+  ClipboardCheck,
   Cpu,
   Globe,
   KeyRound,
@@ -70,6 +71,7 @@ export const SettingsModal = ({
   const { LL, locale } = useI18nContext();
   const [theme, setTheme] = useState<Theme>("dark");
   const [activeTab, setActiveTab] = useState<Tab>("general");
+  const [hardGate, setHardGate] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("filework-theme") as Theme | null;
@@ -78,6 +80,30 @@ export const SettingsModal = ({
       applyTheme(saved);
     }
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    window.filework
+      .getSetting("processDiscipline.hardGate")
+      .then((value) => {
+        if (!cancelled) setHardGate(value === "true");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const toggleHardGate = useCallback(() => {
+    const next = !hardGate;
+    setHardGate(next);
+    window.filework
+      .setSetting("processDiscipline.hardGate", next ? "true" : "false")
+      .catch((err) => {
+        console.warn("[settings] hardGate write failed", err);
+      });
+  }, [hardGate]);
 
   const handleThemeChange = (t: Theme) => {
     setTheme(t);
@@ -190,6 +216,44 @@ export const SettingsModal = ({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Process Discipline (brainstorming HARD-GATE) */}
+              <div className="space-y-2">
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
+                  {LL.settings_processDiscipline()}
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleHardGate}
+                  className={`w-full flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                    hardGate
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-border hover:bg-accent"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">
+                      {LL.settings_processDiscipline_hardGate()}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+                      {LL.settings_processDiscipline_hardGate_hint()}
+                    </div>
+                  </div>
+                  <span
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                      hardGate ? "bg-primary" : "bg-muted"
+                    }`}
+                    aria-hidden
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${
+                        hardGate ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
 
               {/* Theme */}

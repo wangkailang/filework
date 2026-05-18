@@ -161,6 +161,26 @@ const en: BaseTranslation = {
   // Clarification
   clarification_title: "Clarification Needed",
 
+  // Design approval (brainstorming HARD-GATE)
+  designApproval_pendingHeader: "Design awaiting approval",
+  designApproval_approvedHeader: "Design approved",
+  designApproval_rejectedHeader: "Design rejected",
+  designApproval_approve: "Approve",
+  designApproval_reject: "Reject",
+  designApproval_edit: "Edit",
+  designApproval_saveAndApprove: "Save & approve",
+  designApproval_rejectReasonPlaceholder:
+    "Why? (e.g. scope is too wide, swap approach …)",
+  designApproval_approvedBadge: "Approved",
+  designApproval_rejectedBadge: "Rejected",
+  designApproval_cancel: "Cancel",
+
+  // Process Discipline settings (brainstorming HARD-GATE toggle)
+  settings_processDiscipline: "Process Discipline",
+  settings_processDiscipline_hardGate: "Brainstorming HARD-GATE",
+  settings_processDiscipline_hardGate_hint:
+    "Block destructive tools (writeFile, deleteFile, runCommand, git*) until you approve a design the agent produced. Off by default.",
+
   // Conversation
   conv_scrollToBottom: "Scroll to bottom",
   conv_newMessages: "New messages",

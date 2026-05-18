@@ -154,6 +154,26 @@ const ja: Translation = {
   // Clarification
   clarification_title: "確認が必要",
 
+  // Design approval (brainstorming HARD-GATE)
+  designApproval_pendingHeader: "デザイン承認待ち",
+  designApproval_approvedHeader: "デザイン承認済み",
+  designApproval_rejectedHeader: "デザイン却下",
+  designApproval_approve: "承認",
+  designApproval_reject: "却下",
+  designApproval_edit: "編集",
+  designApproval_saveAndApprove: "保存して承認",
+  designApproval_rejectReasonPlaceholder:
+    "理由は？（範囲が広すぎる、別案にする等）",
+  designApproval_approvedBadge: "承認済み",
+  designApproval_rejectedBadge: "却下",
+  designApproval_cancel: "キャンセル",
+
+  // Process Discipline settings (brainstorming HARD-GATE toggle)
+  settings_processDiscipline: "ワークフロー規律",
+  settings_processDiscipline_hardGate: "Brainstorming ハードゲート",
+  settings_processDiscipline_hardGate_hint:
+    "あなたがデザインを承認するまで、破壊的なツール（writeFile / deleteFile / runCommand / git* など）を遮断します。デフォルトはオフ。",
+
   // Conversation
   conv_scrollToBottom: "一番下にスクロール",
   conv_newMessages: "新しいメッセージ",

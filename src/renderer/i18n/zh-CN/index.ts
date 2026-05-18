@@ -145,6 +145,25 @@ const zhCN: Translation = {
   // Clarification
   clarification_title: "需要确认",
 
+  // Design approval (brainstorming HARD-GATE)
+  designApproval_pendingHeader: "设计待审批",
+  designApproval_approvedHeader: "设计已审批",
+  designApproval_rejectedHeader: "设计已驳回",
+  designApproval_approve: "审批通过",
+  designApproval_reject: "驳回",
+  designApproval_edit: "编辑",
+  designApproval_saveAndApprove: "保存并通过",
+  designApproval_rejectReasonPlaceholder: "原因？（如范围过大、方案需替换……）",
+  designApproval_approvedBadge: "已通过",
+  designApproval_rejectedBadge: "已驳回",
+  designApproval_cancel: "取消",
+
+  // Process Discipline settings (brainstorming HARD-GATE toggle)
+  settings_processDiscipline: "工作流纪律",
+  settings_processDiscipline_hardGate: "Brainstorming 硬闸",
+  settings_processDiscipline_hardGate_hint:
+    "在你审批 agent 提交的设计之前，阻断写类工具（writeFile / deleteFile / runCommand / git* 等）。默认关闭。",
+
   // Conversation
   conv_scrollToBottom: "滚动到底部",
   conv_newMessages: "新消息",

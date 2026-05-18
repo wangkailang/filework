@@ -302,6 +302,28 @@ export interface BatchApprovalPart {
   state: ApprovalState;
 }
 
+/**
+ * Design-approval card emitted by the brainstorming HARD-GATE. Written
+ * when the agent calls `requestDesignApproval(...)`; the renderer
+ * surfaces an inline card with Approve / Reject controls. Approval
+ * flips the chat-workflow-state gate so subsequent destructive tools
+ * pass through `approval-hook`.
+ *
+ * `workflowKey` is the session-or-task key the gate is keyed by — the
+ * renderer threads it back to `window.filework.approveDesign(...)` /
+ * `rejectDesign(...)` so we hit the right state slot.
+ */
+export interface DesignApprovalPart {
+  type: "design-approval";
+  workflowKey: string;
+  design: string;
+  summary?: string;
+  state: "pending" | "approved" | "rejected";
+  rejectReason?: string;
+  /** ISO-8601 timestamp written when the user decides. */
+  decidedAt?: string;
+}
+
 export type MessagePart =
   | TextPart
   | ToolPart
@@ -315,4 +337,5 @@ export type MessagePart =
   | ArticleMetaPart
   | VideoJobPart
   | AttachmentPart
-  | BatchApprovalPart;
+  | BatchApprovalPart
+  | DesignApprovalPart;

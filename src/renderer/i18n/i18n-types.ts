@@ -476,6 +476,62 @@ type RootTranslation = {
 	 */
 	clarification_title: string
 	/**
+	 * D​e​s​i​g​n​ ​a​w​a​i​t​i​n​g​ ​a​p​p​r​o​v​a​l
+	 */
+	designApproval_pendingHeader: string
+	/**
+	 * D​e​s​i​g​n​ ​a​p​p​r​o​v​e​d
+	 */
+	designApproval_approvedHeader: string
+	/**
+	 * D​e​s​i​g​n​ ​r​e​j​e​c​t​e​d
+	 */
+	designApproval_rejectedHeader: string
+	/**
+	 * A​p​p​r​o​v​e
+	 */
+	designApproval_approve: string
+	/**
+	 * R​e​j​e​c​t
+	 */
+	designApproval_reject: string
+	/**
+	 * E​d​i​t
+	 */
+	designApproval_edit: string
+	/**
+	 * S​a​v​e​ ​&​ ​a​p​p​r​o​v​e
+	 */
+	designApproval_saveAndApprove: string
+	/**
+	 * W​h​y​?
+	 */
+	designApproval_rejectReasonPlaceholder: string
+	/**
+	 * A​p​p​r​o​v​e​d
+	 */
+	designApproval_approvedBadge: string
+	/**
+	 * R​e​j​e​c​t​e​d
+	 */
+	designApproval_rejectedBadge: string
+	/**
+	 * C​a​n​c​e​l
+	 */
+	designApproval_cancel: string
+	/**
+	 * P​r​o​c​e​s​s​ ​D​i​s​c​i​p​l​i​n​e
+	 */
+	settings_processDiscipline: string
+	/**
+	 * B​r​a​i​n​s​t​o​r​m​i​n​g​ ​H​A​R​D​-​G​A​T​E
+	 */
+	settings_processDiscipline_hardGate: string
+	/**
+	 * B​l​o​c​k​ ​d​e​s​t​r​u​c​t​i​v​e​ ​t​o​o​l​s​ ​u​n​t​i​l​ ​a​p​p​r​o​v​e​d
+	 */
+	settings_processDiscipline_hardGate_hint: string
+	/**
 	 * S​c​r​o​l​l​ ​t​o​ ​b​o​t​t​o​m
 	 */
 	conv_scrollToBottom: string
@@ -1392,6 +1448,62 @@ export type TranslationFunctions = {
 	 * Clarification Needed
 	 */
 	clarification_title: () => LocalizedString
+	/**
+	 * Design awaiting approval
+	 */
+	designApproval_pendingHeader: () => LocalizedString
+	/**
+	 * Design approved
+	 */
+	designApproval_approvedHeader: () => LocalizedString
+	/**
+	 * Design rejected
+	 */
+	designApproval_rejectedHeader: () => LocalizedString
+	/**
+	 * Approve
+	 */
+	designApproval_approve: () => LocalizedString
+	/**
+	 * Reject
+	 */
+	designApproval_reject: () => LocalizedString
+	/**
+	 * Edit
+	 */
+	designApproval_edit: () => LocalizedString
+	/**
+	 * Save & approve
+	 */
+	designApproval_saveAndApprove: () => LocalizedString
+	/**
+	 * Why?
+	 */
+	designApproval_rejectReasonPlaceholder: () => LocalizedString
+	/**
+	 * Approved
+	 */
+	designApproval_approvedBadge: () => LocalizedString
+	/**
+	 * Rejected
+	 */
+	designApproval_rejectedBadge: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	designApproval_cancel: () => LocalizedString
+	/**
+	 * Process Discipline
+	 */
+	settings_processDiscipline: () => LocalizedString
+	/**
+	 * Brainstorming HARD-GATE
+	 */
+	settings_processDiscipline_hardGate: () => LocalizedString
+	/**
+	 * Block destructive tools until approved
+	 */
+	settings_processDiscipline_hardGate_hint: () => LocalizedString
 	/**
 	 * Scroll to bottom
 	 */

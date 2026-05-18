@@ -496,6 +496,28 @@ const api = {
     return () => ipcRenderer.removeListener("ai:stream-clarification", handler);
   },
 
+  onStreamDesignApproval: (
+    callback: (data: {
+      id: string;
+      workflowKey: string;
+      design: string;
+      summary?: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        workflowKey: string;
+        design: string;
+        summary?: string;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-design-approval", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:stream-design-approval", handler);
+  },
+
   // Watchdog events (stall detection)
   onWatchdog: (
     callback: (data: {

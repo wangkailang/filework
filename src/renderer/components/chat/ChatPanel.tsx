@@ -30,6 +30,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "../ai-elements/conversation";
+import { DesignApprovalCard } from "../ai-elements/design-approval";
 import {
   Message,
   MessageAction,
@@ -69,6 +70,7 @@ import type {
   AttachmentPart,
   BatchApprovalPart,
   ClarificationPart,
+  DesignApprovalPart,
   ErrorPart,
   ImageGalleryPart,
   ImagePart,
@@ -524,6 +526,45 @@ export const ChatPanel = ({
             onApproveAll={() => chat.handleBatchApproval(bp.batchId, true)}
             onDenyAll={() => chat.handleBatchApproval(bp.batchId, false)}
             className="my-1"
+          />
+        );
+      }
+      if (part.type === "design-approval") {
+        const dp = part as DesignApprovalPart;
+        return (
+          <DesignApprovalCard
+            key={`design-${dp.workflowKey}-${dp.state}`}
+            workflowKey={dp.workflowKey}
+            design={dp.design}
+            summary={dp.summary}
+            state={dp.state}
+            rejectReason={dp.rejectReason}
+            labels={{
+              pendingHeader: LL.designApproval_pendingHeader(),
+              approvedHeader: LL.designApproval_approvedHeader(),
+              rejectedHeader: LL.designApproval_rejectedHeader(),
+              approve: LL.designApproval_approve(),
+              reject: LL.designApproval_reject(),
+              edit: LL.designApproval_edit(),
+              saveAndApprove: LL.designApproval_saveAndApprove(),
+              rejectReasonPlaceholder:
+                LL.designApproval_rejectReasonPlaceholder(),
+              approvedBadge: LL.designApproval_approvedBadge(),
+              rejectedBadge: LL.designApproval_rejectedBadge(),
+              cancel: LL.designApproval_cancel(),
+            }}
+            onApprove={({ editedDesign }) =>
+              chat.handleDesignDecision(dp.workflowKey, {
+                approved: true,
+                editedDesign,
+              })
+            }
+            onReject={(reason) =>
+              chat.handleDesignDecision(dp.workflowKey, {
+                approved: false,
+                reason,
+              })
+            }
           />
         );
       }
