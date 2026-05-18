@@ -120,6 +120,7 @@ pnpm gaia-eval-diff ~/gaia-runs/baseline-2026-05-17 ~/gaia-runs/after-tuning
 | `--level 1\|2\|3\|all` | — | `1` | 难度过滤 |
 | `--limit <N>` | — | 不限 | 取前 N 题 |
 | `--smoke` | — | false | 等同 `--level 1 --limit 5` |
+| `--temperature <n>` | — | `0` | 采样温度。`0` 是确定性贪婪解码（默认，便于做 diff 对比）。可填 `0.7` 之类做探索；推理模型（o1/o3/o5/gpt-5 reasoning）必须传 `none`（也接受 `default`/`off`），否则 SDK 会打 `temperature is not supported` 警告 |
 | `--output <dir>` | — | `~/gaia-runs/<timestamp>` | 输出目录 |
 
 退出码：
@@ -139,6 +140,49 @@ pnpm gaia-eval-diff <baseline-dir> <current-dir> [--output <path>] [--stdout]
 | `<current-dir>` | 新 run 的输出目录 |
 | `--output <path>` | 写到指定路径（默认 `<current>/diff-vs-baseline.md`） |
 | `--stdout` | 同时打印到 stdout |
+
+---
+
+## 答案协议与 Reflection Gate
+
+GAIA 题面要求 agent 以 `FINAL ANSWER: <答案>` 收尾。harness 装了一条 **reflection gate**（[`reflection-gate.ts`](../src/main/core/agent/reflection-gate.ts)），在每次 `streamText` 收束后检测三类问题并自动 retry：
+
+1. **`missingFinalAnswer` rule** — 检测到 `finalText` 里没有合法的 `FINAL ANSWER:` 行（无、空、被遮蔽）就 retry。
+2. **Tool-less retry** — retry 时强制 `tools: {}`（`forceNoTools: true`），模型只能基于已收集的信息收尾，避免它在 retry pass 上又把 step budget 用光。
+3. **LLM 答案形态验证（verifier）** — 当 deterministic rule 都没触发、模型确实给出了 `FINAL ANSWER` 时，gate 再做一次小 LLM 调用，问"答案的单位/量级/格式是否跟题目字面要求一致"。例如题目问 "how many **thousand** hours" 而答 "17000"（小时）会被 verifier 标 retry。verifier **不验事实对错**，只验形态对齐。
+
+verifier 的 prompt 在 [`runner.ts → buildAnswerVerifierPrompt`](../src/eval/gaia/runner.ts) 里组装，包含题目原文 + 模型的 final response 尾部 ~1200 字。
+
+成本：verifier 仅在模型已经发出 `FINAL ANSWER` 时才花一次 LLM 调用（rule 触发时短路）。DeepSeek 上单题 < $0.001，53 题 L1 全集追加约 $0.05。`createReflectionGate({ llmFallback: false })` 可关掉。
+
+retry 上限由 `AgentLoopConfig.maxReflections`（默认 `2`）控制，所以单题最多 1 + 2 = 3 次 streamText 调用。
+
+System prompt 端的配合：
+
+- **Answer protocol** 章节：硬要求每个回复必须以 `FINAL ANSWER:` 行收尾，找不到答案就写 `FINAL ANSWER: unknown`。
+- **Stop conditions** 章节：3 次尝试后没找到答案就 graceful give up，emit `unknown`。
+- **Unit interpretation** 章节：明确告诉模型 "how many thousand X" 单位是"千 X"，避免 Kipchoge 类的单位混淆（`17000` vs `17`）。
+
+---
+
+## 可复现性
+
+默认 `--temperature 0` → 贪婪解码 → 同样输入永远产生同样输出。verifier 的 LLM 调用也走 `llmTemperature: 0`。这是 harness 调参的前提 —— 不开确定性，5 题 smoke 上一两个 question 在 lucky/unlucky 之间翻面，harness 改动的信号会被采样噪声完全淹没。
+
+什么时候要 opt out：
+
+| 场景 | 建议 |
+|---|---|
+| 评估 harness / scorer / prompt 改动 | 保持默认 `--temperature 0` |
+| 测模型稳健性 / 走多样路径 | `--temperature 0.7` |
+| 跑 OpenAI 推理模型（o1/o3/o5/gpt-5 reasoning） | `--temperature none`，SDK 才不会丢警告。这些模型本身做内部 CoT 采样，**不可能完全确定化** |
+| 跑 DeepSeek-R1 / 第三方代理上的推理模型 | 通常仍然接受 `temperature`，默认 0 即可；如果代理报错再降级到 `none` |
+
+启动日志会显式打温度：
+
+```
+[gaia] level=1 limit=5 provider=deepseek model=deepseek-chat temperature=0
+```
 
 ---
 
@@ -167,9 +211,11 @@ pnpm gaia-eval-diff <baseline-dir> <current-dir> [--output <path>] [--stdout]
   "byLevel": { "1": { "n": 53, "passed": 22, "accuracy": 0.415 } },
   "duration": { "totalMs": 1800000, "medianMs": 32000 },
   "cost": { "totalUsd": 0.19, "perQuestionMedianUsd": 0.003 },
-  "failureTags": { "no_tool_calls": 8, "wrong_answer_correct_path": 12 }
+  "failureTags": { "attachment_not_processed": 4, "wrong_answer_correct_path": 12, "no_tool_calls": 8 }
 }
 ```
+
+> `reflection_not_fired` 现在应该恒为 0（gate 在 GAIA 默认启用，每题都会触发 verdict）。出现就是 harness 配置 bug。
 
 ### `per-question/<task_id>.json` 关键字段
 
@@ -208,8 +254,8 @@ pnpm gaia-eval-diff <baseline-dir> <current-dir> [--output <path>] [--stdout]
 | `tool_error` | 至少一个工具返回 error 但 agent 没换路径 | `per-question/*.json` 的 `toolCalls[]` 看具体哪个 |
 | `attachment_not_processed` | 题有附件但所有工具调用都没碰过那个路径 | 附件类型可能没有对应 parser（如 audio/video） |
 | `context_overflow` | `agent_end.error.message` 含 "context" | 调大 `maxStepsPerTurn` 或检查 compaction |
-| `reflection_not_fired` | 长链（≥5 turn）但 `reflection_verdict` event 缺席 | reflection-gate 阈值偏高 |
-| `wrong_answer_correct_path` | 工具调用 ≥2 次，最终答案错 | 大概率是 normalisation / 抽取错位，比 `predicted` vs `groundTruth` |
+| `reflection_not_fired` | 长链（≥5 turn）但 `reflection_verdict` event 缺席 | 自从 reflection-gate 在 GAIA 默认启用后，正常情况下不会出现。若出现，说明 gate 被外部代码绕过了，查 `runOneQuestion` 的 AgentLoop 装配 |
+| `wrong_answer_correct_path` | 工具调用 ≥2 次，最终答案错 | 比 `predicted` vs `groundTruth`：常见原因 (1) 模型推理错（如 Kipchoge 单位混淆），(2) 答案带了题目已经说过的单位（scorer 会用 `tryLeadingNumber` 兜底，但兜不住的情况仍然 fail），(3) 列表答案的元素拼写不对 |
 | `timeout` | 单题超 5 分钟（默认） | agent 卡死 or 任务真需要更多时间 |
 | `exception` | runner 自己抛了 | 看 `per-question/*.json` 的 `exception` 字段堆栈 |
 
@@ -231,6 +277,8 @@ L1 全集（53 题）成本估算：
 | openai | `gpt-4o` | 2.5 / 10 | ~$3–5 | OpenAI 标准 |
 
 价格表硬编码在 [`pricing.ts`](../src/eval/gaia/pricing.ts) 的 `MODEL_PRICES`。新模型加一行即可。
+
+注：上表是裸 agent 调用的成本估算。reflection gate 的 LLM verifier 会在每个有 `FINAL ANSWER` 的题上多花一次小 LLM 调用（输入 ~500–1200 tokens，输出 < 100 tokens），按 DeepSeek 价格 L1 全集追加约 $0.05。如果 verifier 用更贵的模型（gate 默认复用 agent model）就按比例放大。
 
 ### Rate Limit 注意
 
@@ -366,12 +414,13 @@ dataset 文件格式跟 loader 期待不匹配。检查 `<datasetDir>/metadata.p
 |---|---|
 | [`types.ts`](../src/eval/gaia/types.ts) | 所有 interface（GaiaQuestion, QuestionResult, RunSummary, FailureTag, ...） |
 | [`dataset.ts`](../src/eval/gaia/dataset.ts) | Parquet / JSONL loader + 过滤 |
-| [`scorer.ts`](../src/eval/gaia/scorer.ts) | 归一化 exact-match 评分 + FINAL ANSWER 抽取 |
+| [`scorer.ts`](../src/eval/gaia/scorer.ts) | 归一化 exact-match 评分 + FINAL ANSWER 抽取 + 数值前缀容忍（`tryLeadingNumber`）|
 | [`workspace.ts`](../src/eval/gaia/workspace.ts) | 每题临时 `LocalWorkspace` + 附件复制 |
 | [`tool-registry.ts`](../src/eval/gaia/tool-registry.ts) | eval mode 工具子集 |
 | [`runner.ts`](../src/eval/gaia/runner.ts) | per-question 主循环 + summary 聚合 + report 落盘 |
 | [`pricing.ts`](../src/eval/gaia/pricing.ts) | 模型价格表 |
 | [`report.ts`](../src/eval/gaia/report.ts) | `failures.md` + `tool-usage.md` 生成 |
 | [`diff.ts`](../src/eval/gaia/diff.ts) | 跨运行对比逻辑 |
-| [`cli.ts`](../src/eval/gaia/cli.ts) | `gaia-eval` 入口 |
+| [`cli.ts`](../src/eval/gaia/cli.ts) | `gaia-eval` 入口（含 `--temperature` 解析）|
+| [`../src/main/core/agent/reflection-gate.ts`](../src/main/core/agent/reflection-gate.ts) | 答案协议 retry rule（`missingFinalAnswer`）+ `forceNoTools` retry flag + LLM verifier hook。GAIA-specific 与 chat-path 共享，GAIA-specific rule 在 runner 里 compose |
 | [`diff-cli.ts`](../src/eval/gaia/diff-cli.ts) | `gaia-eval-diff` 入口 |
