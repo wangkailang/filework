@@ -21,6 +21,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  diffQualityMetrics,
+  type QualityMetricsDelta,
+  renderQualityDeltaTable,
+} from "./metrics";
 import { formatCost } from "./pricing";
 import type { FailureTag, QuestionResult, RunSummary } from "./types";
 
@@ -100,6 +105,8 @@ export interface RunDiff {
   /** In current but not baseline. */
   added: ChangedQuestion[];
   failureTagDeltas: FailureTagDelta[];
+  /** Per-metric deltas of trajectory quality. Empty when either side lacks `quality`. */
+  qualityDeltas: QualityMetricsDelta[];
 }
 
 const countFailureTags = (
@@ -211,6 +218,10 @@ export const computeDiff = (
     removed,
     added,
     failureTagDeltas,
+    qualityDeltas: diffQualityMetrics(
+      baseline.summary.quality,
+      current.summary.quality,
+    ),
   };
 };
 
@@ -362,6 +373,14 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
       const sign = d.delta > 0 ? `+${d.delta}` : `${d.delta}`;
       lines.push(`| \`${d.tag}\` | ${d.baseline} | ${d.current} | ${sign} |`);
     }
+    lines.push("");
+  }
+
+  // Trajectory quality deltas.
+  if (diff.qualityDeltas.length > 0) {
+    lines.push("## Trajectory quality");
+    lines.push("");
+    lines.push(renderQualityDeltaTable(diff.qualityDeltas));
     lines.push("");
   }
 

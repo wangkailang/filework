@@ -1,0 +1,10 @@
+{"task_id":"cap-001-md-h2","Question":"What is the second H2 heading in the attached markdown file? Answer with just the heading text.","Level":1,"Final answer":"Tools","file_name":"notes.md"}
+{"task_id":"cap-002-csv-rows","Question":"How many data rows (excluding the header row) are in the attached CSV file? Answer with a single integer.","Level":1,"Final answer":"5","file_name":"people.csv"}
+{"task_id":"cap-003-numbers-sum","Question":"What is the sum of the integers in the attached file? Numbers are one per line. Answer with a single integer.","Level":1,"Final answer":"55","file_name":"numbers.txt"}
+{"task_id":"cap-004-log-error-count","Question":"How many lines in the attached log file start with the literal token ERROR? Answer with a single integer.","Level":1,"Final answer":"3","file_name":"app.log"}
+{"task_id":"cap-005-json-array-length","Question":"How many items are in the top-level array in the attached JSON file? Answer with a single integer.","Level":1,"Final answer":"7","file_name":"items.json"}
+{"task_id":"cap-006-multiply","Question":"Compute 17 multiplied by 23 and provide the integer answer.","Level":1,"Final answer":"391","file_name":""}
+{"task_id":"cap-007-power-of-two","Question":"What is 2 to the power of 10? Answer with a single integer.","Level":1,"Final answer":"1024","file_name":""}
+{"task_id":"cap-008-yaml-version","Question":"In the attached YAML file, what is the value of the top-level key 'version'? Answer with the version string only.","Level":1,"Final answer":"1.2.3","file_name":"config.yaml"}
+{"task_id":"cap-009-tsv-max","Question":"In the attached tab-separated file, what is the maximum value in the 'price' column? Answer with a single integer.","Level":1,"Final answer":"99","file_name":"products.tsv"}
+{"task_id":"cap-010-extension-count","Question":"The attached file is a directory listing, one filename per line. How many entries end with the extension .txt? Answer with a single integer.","Level":1,"Final answer":"4","file_name":"ls.txt"}

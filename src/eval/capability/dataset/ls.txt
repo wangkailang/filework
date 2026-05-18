@@ -1,0 +1,9 @@
+README.md
+notes.txt
+config.json
+log.txt
+script.sh
+data.txt
+output.log
+backup.txt
+image.png

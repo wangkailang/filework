@@ -29,6 +29,7 @@ import {
 } from "../../main/core/agent/reflection-gate";
 
 import { filterQuestions, loadGaiaDataset } from "./dataset";
+import { computeQualityMetrics } from "./metrics";
 import { calculateCost } from "./pricing";
 import { renderReports } from "./report";
 import {
@@ -545,6 +546,7 @@ const buildSummary = (
       perQuestionMedianUsd: medianCostUsd,
     },
     failureTags: tagCounts,
+    quality: computeQualityMetrics(results),
   };
 };
 

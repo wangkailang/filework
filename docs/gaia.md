@@ -2,6 +2,8 @@
 
 filework agent 的本地化 GAIA 跑分工具。不需要 HF leaderboard 提交，所有结果落地到本地目录。
 
+> **想做更快的 sanity 回归？** 试试 [capability eval](./capability-eval.md) —— 10 道手写确定性题，约 3 分钟、$0.01 以内、复用同一个 runner。
+
 ## 为什么有这个
 
 之前所有 "+X GAIA 分" 的估算都是理论值。Phase 1（[#71](https://github.com/wangkailang/filework/pull/71)）+ Phase 2（[#73](https://github.com/wangkailang/filework/pull/73)）让我们能跑真实分数、对每次改动做回归对比。
