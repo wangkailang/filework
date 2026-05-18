@@ -315,6 +315,16 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(path);
   });
 
+  // Open macOS "Files and Folders" privacy pane so user can grant access
+  // to ~/Downloads / ~/Documents / ~/Desktop etc. No-op on non-macOS.
+  ipcMain.handle("shell:openFilesAndFoldersSettings", async () => {
+    if (process.platform === "darwin") {
+      await shell.openExternal(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
+      );
+    }
+  });
+
   // Set Content-Security-Policy (production only — dev needs unsafe-eval for Vite HMR)
   if (!process.env.ELECTRON_RENDERER_URL) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

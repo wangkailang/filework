@@ -283,6 +283,12 @@ const en: BaseTranslation = {
   sidebar_refresh: "Refresh directory",
   sidebar_closeDir: "Close directory",
   sidebar_skills: "Skills",
+  sidebar_permissionDenied: "Permission denied",
+  sidebar_permissionDeniedHint:
+    "macOS is blocking access to this folder. Grant access under System Settings → Privacy & Security → Files and Folders.",
+  sidebar_folderNotFound: "Folder not found",
+  sidebar_openSystemSettings: "Open System Settings",
+  sidebar_retry: "Retry",
 
   // useChatSession
   chat_userStopped: "User stopped execution",

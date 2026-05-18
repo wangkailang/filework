@@ -16,19 +16,19 @@ export type Translations = RootTranslation
 
 type RootTranslation = {
 	/**
-	 * F​i​l​e​W​o​r​k
+	 * W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t
 	 */
 	appName: string
 	/**
-	 * Y​o​u​r​ ​L​o​c​a​l​ ​F​i​l​e​ ​A​I​ ​A​s​s​i​s​t​a​n​t
+	 * Y​o​u​r​ ​L​o​c​a​l​ ​A​I​ ​W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t
 	 */
 	tagline: string
 	/**
-	 * F​i​l​e​W​o​r​k
+	 * W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t
 	 */
 	welcome_title: string
 	/**
-	 * Y​o​u​r​ ​l​o​c​a​l​ ​f​i​l​e​ ​A​I​ ​a​s​s​i​s​t​a​n​t​.​ ​S​e​l​e​c​t​ ​a​ ​w​o​r​k​i​n​g​ ​d​i​r​e​c​t​o​r​y​ ​a​n​d​ ​t​e​l​l​ ​m​e​ ​w​h​a​t​ ​t​o​ ​d​o​.
+	 * A​ ​g​e​n​e​r​a​l​-​p​u​r​p​o​s​e​ ​A​I​ ​a​g​e​n​t​ ​f​o​r​ ​y​o​u​r​ ​l​o​c​a​l​ ​w​o​r​k​s​p​a​c​e​.​ ​S​e​l​e​c​t​ ​a​ ​w​o​r​k​i​n​g​ ​d​i​r​e​c​t​o​r​y​ ​a​n​d​ ​t​e​l​l​ ​m​e​ ​w​h​a​t​ ​t​o​ ​d​o​.
 	 */
 	welcome_description: string
 	/**
@@ -36,7 +36,7 @@ type RootTranslation = {
 	 */
 	welcome_selectDirectory: string
 	/**
-	 * F​i​l​e​W​o​r​k​ ​o​n​l​y​ ​w​o​r​k​s​ ​w​i​t​h​i​n​ ​y​o​u​r​ ​s​e​l​e​c​t​e​d​ ​d​i​r​e​c​t​o​r​y​.​ ​Y​o​u​r​ ​d​a​t​a​ ​n​e​v​e​r​ ​l​e​a​v​e​s​ ​y​o​u​r​ ​c​o​m​p​u​t​e​r​.
+	 * W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t​ ​o​n​l​y​ ​o​p​e​r​a​t​e​s​ ​i​n​s​i​d​e​ ​y​o​u​r​ ​s​e​l​e​c​t​e​d​ ​d​i​r​e​c​t​o​r​y​.​ ​Y​o​u​r​ ​d​a​t​a​ ​n​e​v​e​r​ ​l​e​a​v​e​s​ ​y​o​u​r​ ​c​o​m​p​u​t​e​r​.
 	 */
 	welcome_privacy: string
 	/**
@@ -716,7 +716,7 @@ type RootTranslation = {
 	 */
 	skillsModal_sourceAdditional: string
 	/**
-	 * Badge shown on skills whose source is disabled
+	 * D​i​s​a​b​l​e​d
 	 */
 	skillsModal_sourceDisabled: string
 	/**
@@ -900,6 +900,26 @@ type RootTranslation = {
 	 */
 	sidebar_skills: string
 	/**
+	 * P​e​r​m​i​s​s​i​o​n​ ​d​e​n​i​e​d
+	 */
+	sidebar_permissionDenied: string
+	/**
+	 * m​a​c​O​S​ ​i​s​ ​b​l​o​c​k​i​n​g​ ​a​c​c​e​s​s​ ​t​o​ ​t​h​i​s​ ​f​o​l​d​e​r​.​ ​G​r​a​n​t​ ​a​c​c​e​s​s​ ​u​n​d​e​r​ ​S​y​s​t​e​m​ ​S​e​t​t​i​n​g​s​ ​→​ ​P​r​i​v​a​c​y​ ​&​ ​S​e​c​u​r​i​t​y​ ​→​ ​F​i​l​e​s​ ​a​n​d​ ​F​o​l​d​e​r​s​.
+	 */
+	sidebar_permissionDeniedHint: string
+	/**
+	 * F​o​l​d​e​r​ ​n​o​t​ ​f​o​u​n​d
+	 */
+	sidebar_folderNotFound: string
+	/**
+	 * O​p​e​n​ ​S​y​s​t​e​m​ ​S​e​t​t​i​n​g​s
+	 */
+	sidebar_openSystemSettings: string
+	/**
+	 * R​e​t​r​y
+	 */
+	sidebar_retry: string
+	/**
 	 * U​s​e​r​ ​s​t​o​p​p​e​d​ ​e​x​e​c​u​t​i​o​n
 	 */
 	chat_userStopped: string
@@ -937,19 +957,19 @@ type RootTranslation = {
 
 export type TranslationFunctions = {
 	/**
-	 * FileWork
+	 * Workspace Agent
 	 */
 	appName: () => LocalizedString
 	/**
-	 * Your Local File AI Assistant
+	 * Your Local AI Workspace Agent
 	 */
 	tagline: () => LocalizedString
 	/**
-	 * FileWork
+	 * Workspace Agent
 	 */
 	welcome_title: () => LocalizedString
 	/**
-	 * Your local file AI assistant. Select a working directory and tell me what to do.
+	 * A general-purpose AI agent for your local workspace. Select a working directory and tell me what to do.
 	 */
 	welcome_description: () => LocalizedString
 	/**
@@ -957,7 +977,7 @@ export type TranslationFunctions = {
 	 */
 	welcome_selectDirectory: () => LocalizedString
 	/**
-	 * FileWork only works within your selected directory. Your data never leaves your computer.
+	 * Workspace Agent only operates inside your selected directory. Your data never leaves your computer.
 	 */
 	welcome_privacy: () => LocalizedString
 	/**
@@ -1629,7 +1649,7 @@ export type TranslationFunctions = {
 	 */
 	skillsModal_sourceAdditional: () => LocalizedString
 	/**
-	 * Badge shown on skills whose source is disabled
+	 * Disabled
 	 */
 	skillsModal_sourceDisabled: () => LocalizedString
 	/**
@@ -1804,6 +1824,26 @@ export type TranslationFunctions = {
 	 * Skills
 	 */
 	sidebar_skills: () => LocalizedString
+	/**
+	 * Permission denied
+	 */
+	sidebar_permissionDenied: () => LocalizedString
+	/**
+	 * macOS is blocking access to this folder. Grant access under System Settings → Privacy & Security → Files and Folders.
+	 */
+	sidebar_permissionDeniedHint: () => LocalizedString
+	/**
+	 * Folder not found
+	 */
+	sidebar_folderNotFound: () => LocalizedString
+	/**
+	 * Open System Settings
+	 */
+	sidebar_openSystemSettings: () => LocalizedString
+	/**
+	 * Retry
+	 */
+	sidebar_retry: () => LocalizedString
 	/**
 	 * User stopped execution
 	 */

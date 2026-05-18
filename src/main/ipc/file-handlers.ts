@@ -11,12 +11,44 @@ export interface FileInfo {
   modifiedAt: string;
 }
 
+// Stable error tags the renderer detects via error.message prefix.
+// IPC flattens Error → string, so prefix is the only reliable channel.
+export const FS_ERROR_TAG = {
+  PERMISSION_DENIED: "FS_PERMISSION_DENIED",
+  NOT_FOUND: "FS_NOT_FOUND",
+} as const;
+
+const isPermissionError = (err: unknown): boolean => {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: string }).code;
+  return code === "EPERM" || code === "EACCES";
+};
+
+const isNotFoundError = (err: unknown): boolean => {
+  if (typeof err !== "object" || err === null) return false;
+  return (err as { code?: string }).code === "ENOENT";
+};
+
+const wrapFsError = (err: unknown, path: string): Error => {
+  if (isPermissionError(err)) {
+    return new Error(`[${FS_ERROR_TAG.PERMISSION_DENIED}] ${path}`);
+  }
+  if (isNotFoundError(err)) {
+    return new Error(`[${FS_ERROR_TAG.NOT_FOUND}] ${path}`);
+  }
+  return err instanceof Error ? err : new Error(String(err));
+};
+
 export const registerFileHandlers = () => {
   // List directory contents
   ipcMain.handle(
     "fs:listDirectory",
     async (_event, dirPath: string, _depth = 1): Promise<FileInfo[]> => {
-      const entries = await readdir(dirPath, { withFileTypes: true });
+      const entries = await readdir(dirPath, { withFileTypes: true }).catch(
+        (err: unknown) => {
+          throw wrapFsError(err, dirPath);
+        },
+      );
       const files: FileInfo[] = [];
 
       for (const entry of entries) {
@@ -65,6 +97,8 @@ export const registerFileHandlers = () => {
     const entries = await readdir(dirPath, {
       withFileTypes: true,
       recursive: true,
+    }).catch((err: unknown) => {
+      throw wrapFsError(err, dirPath);
     });
     let totalFiles = 0;
     let totalDirs = 0;

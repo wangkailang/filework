@@ -13,6 +13,8 @@ const api = {
   openFiles: (): Promise<string[]> => ipcRenderer.invoke("dialog:openFiles"),
   showInFinder: (path: string) =>
     ipcRenderer.invoke("shell:showInFinder", path),
+  openFilesAndFoldersSettings: () =>
+    ipcRenderer.invoke("shell:openFilesAndFoldersSettings"),
 
   // File system
   listDirectory: (path: string, depth?: number) =>
