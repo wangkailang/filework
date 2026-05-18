@@ -29,6 +29,7 @@ import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
+import { registerChatWorkflowHandlers } from "./ipc/chat-workflow-handlers";
 import {
   firecrawlCredentialResolver,
   registerCredentialsHandlers,
@@ -223,6 +224,7 @@ app.whenReady().then(async () => {
   registerWorkspaceHandlers();
   registerLocalGitHandlers();
   registerChatHandlers(sessionStore);
+  registerChatWorkflowHandlers();
   registerAttachmentHandlers();
   registerTaskTraceHandlers();
   registerCredentialsHandlers();

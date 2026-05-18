@@ -530,13 +530,22 @@ const handleTaskExecution = async (
     // Registry tools (file ops + askClarification) flow through the
     // beforeToolCall approval hook. Skill-bundled tools (e.g. pdf-processor)
     // are pre-built ai-sdk Tool objects and are merged in unguarded.
+    const enforceDesignGate =
+      processSkills.length > 0 &&
+      getSetting("processDiscipline.hardGate") === "true";
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId: id,
       workspace,
       allowedTools,
+      sessionId: payload.sessionId,
     });
-    const beforeToolCall = buildApprovalHook({ sender, taskId: id });
+    const beforeToolCall = buildApprovalHook({
+      sender,
+      taskId: id,
+      sessionId: payload.sessionId,
+      enforceDesignGate,
+    });
     const registryTools = toolRegistry.toAiSdkTools({
       ctxFactory: ({ toolCallId }) => ({
         workspace,

@@ -16,22 +16,54 @@
 import type { WebContents } from "electron";
 
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
+import {
+  isDesignApproved,
+  resolveWorkflowKey,
+} from "../state/chat-workflow-state";
 import { requestApproval } from "./ai-tools";
 import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 
 interface BuildApprovalHookOptions {
   sender: WebContents;
   taskId: string;
+  /**
+   * Chat-session id used as the workflow-state key for the
+   * brainstorming HARD-GATE. Falls back to `taskId` when absent.
+   */
+  sessionId?: string;
+  /**
+   * Opt-in: when true, destructive tools are denied until the user
+   * approves the agent's pending design via `requestDesignApproval`.
+   * Defaults to `false` so existing callers (plan-runner, fork-skill-
+   * runner, tests) keep their current behavior. The main chat path
+   * passes `true` when the user has enabled the process-discipline
+   * hard gate.
+   */
+  enforceDesignGate?: boolean;
 }
 
 const DENIED_REASON = "用户拒绝了此操作";
 const OUTSIDE_WORKSPACE_REASON = "路径必须在当前 workspace 内";
+const DESIGN_GATE_DENIED_REASON =
+  "Design not approved yet. Per the brainstorming skill, call `requestDesignApproval({ design })` with a concise design markdown BEFORE attempting any destructive tool. Stop and wait for the user's reply once the tool returns.";
 
 export const buildApprovalHook = ({
   sender,
   taskId,
+  sessionId,
+  enforceDesignGate = false,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
+  const workflowKey = resolveWorkflowKey(sessionId, taskId);
   return async (call, ctx) => {
+    // ── Brainstorming HARD-GATE ─────────────────────────────────────
+    // Destructive tools are blocked until the user approves a design.
+    // `requestDesignApproval` itself is safety:"safe" so it never lands
+    // here — only writeFile / deleteFile / runCommand / git* / github*
+    // / gitlab* etc. that the ToolRegistry classifies as destructive.
+    if (enforceDesignGate && !isDesignApproved(workflowKey)) {
+      return { allow: false, reason: DESIGN_GATE_DENIED_REASON };
+    }
+
     // ── Plan-approved writeFile fast path ───────────────────────────
     if (call.toolName === "writeFile") {
       const args = call.args as { path?: string };

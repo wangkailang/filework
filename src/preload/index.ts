@@ -880,6 +880,23 @@ const api = {
     messages: unknown[],
   ) =>
     ipcRenderer.invoke("chat:saveHistory", sessionId, workspacePath, messages),
+
+  // Brainstorming design-approval HARD-GATE (Process Discipline)
+  approveDesign: (workflowKey: string) =>
+    ipcRenderer.invoke("chat:design-decision", {
+      workflowKey,
+      approved: true,
+    }),
+  rejectDesign: (workflowKey: string, reason?: string) =>
+    ipcRenderer.invoke("chat:design-decision", {
+      workflowKey,
+      approved: false,
+      reason,
+    }),
+  getDesignState: (workflowKey: string) =>
+    ipcRenderer.invoke("chat:get-design-state", { workflowKey }),
+  clearDesignState: (workflowKey: string) =>
+    ipcRenderer.invoke("chat:clear-design-state", { workflowKey }),
 };
 
 contextBridge.exposeInMainWorld("filework", api);

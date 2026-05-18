@@ -68,6 +68,38 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("readFile, listDirectory");
     expect(prompt).toContain("工具限制");
   });
+
+  it("injects process skills as a Process Discipline preamble", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      processSkills: [
+        {
+          id: "using-superpowers",
+          name: "using-superpowers",
+          external: { body: "Always check skills before responding." },
+        } as never,
+        {
+          id: "brainstorming",
+          name: "brainstorming",
+          external: { body: "Design before implementing." },
+        } as never,
+      ],
+    });
+    expect(prompt).toContain("Process Discipline");
+    expect(prompt).toContain('<process-skill name="using-superpowers">');
+    expect(prompt).toContain("Always check skills before responding.");
+    expect(prompt).toContain('<process-skill name="brainstorming">');
+    expect(prompt).toContain("Design before implementing.");
+  });
+
+  it("omits the Process Discipline section when processSkills is empty", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      processSkills: [],
+    });
+    expect(prompt).not.toContain("Process Discipline");
+    expect(prompt).not.toContain("<process-skill");
+  });
 });
 
 describe("buildPlanStepSystemPrompt", () => {

@@ -29,6 +29,7 @@ import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-intera
 import { buildGitTools } from "../core/agent/tools/git-tools";
 import { buildGithubTools } from "../core/agent/tools/github-tools";
 import { buildGitlabTools } from "../core/agent/tools/gitlab-tools";
+import { buildRequestDesignApprovalTool } from "../core/agent/tools/request-design-approval";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
@@ -47,6 +48,11 @@ interface BuildAgentToolRegistryOptions {
   workspace: Workspace;
   /** Restrict to this allow-list when set (skill `allowed-tools` frontmatter). */
   allowedTools?: string[];
+  /**
+   * Chat-session id. Used as the workflow-state key for the
+   * brainstorming HARD-GATE. Falls back to `taskId` inside the tool.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -155,6 +161,7 @@ export const buildAgentToolRegistry = ({
   taskId,
   workspace,
   allowedTools,
+  sessionId,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
@@ -162,6 +169,17 @@ export const buildAgentToolRegistry = ({
 
   for (const def of buildFileTools({ incrementalScanner: wrapScanner() })) {
     if (allow(def.name)) registry.register(def);
+  }
+
+  // Brainstorming HARD-GATE handoff — always registered so the agent
+  // can request design approval. The companion `beforeToolCall` design
+  // gate (in approval-hook.ts) reads the workflow state this tool
+  // writes. The tool itself is safe (no side effects beyond IPC + an
+  // in-memory state write), so it bypasses the approval flow.
+  if (allow("requestDesignApproval")) {
+    registry.register(
+      buildRequestDesignApprovalTool({ sender, taskId, sessionId }),
+    );
   }
 
   // M12: after a rerun is approved + executed, auto-subscribe the run to
