@@ -173,7 +173,7 @@ export const missingFinalAnswer: ReflectionRule = (turn) => {
         : "Your previous response did not end with the required `FINAL ANSWER: <answer>` line. ") +
       "Re-emit a final response that ends with exactly:\n\n" +
       "    FINAL ANSWER: <your answer>\n\n" +
-      "If you cannot determine the answer from the work you've already done, write `FINAL ANSWER: unknown`.",
+      "If you cannot determine the answer with certainty, commit to your best guess based on the evidence you've gathered. DO NOT write `FINAL ANSWER: unknown`, `N/A`, or `I don't know` — those always score 0.",
   };
 };
 

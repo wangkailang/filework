@@ -142,6 +142,19 @@ export const scoreAnswer = (
 // with what this scorer would actually grade. If you change one, change both.
 const FINAL_ANSWER_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
 
+// Surrounding markdown / code markers the model sometimes wraps the answer
+// in (e.g. `FINAL ANSWER: **green, white**`). Stripped from both ends of
+// the extracted value. Only touches outer wrappers — internal markdown is
+// left alone so we don't mangle answers that contain `*` or `_` legitimately.
+const SURROUNDING_MARKDOWN_LEAD_RE = /^(\*{1,2}|_{1,2}|`)+/;
+const SURROUNDING_MARKDOWN_TAIL_RE = /(\*{1,2}|_{1,2}|`)+$/;
+
+// Phrases the model uses when narrating its plan rather than giving an answer.
+// Used to reject fallback captures like "Let me try searching via DuckDuckGo…"
+// — these are thinking text leaked when the model never emitted FINAL ANSWER.
+const THINKING_PREFIX_RE =
+  /^(let me|let's|now i|now let|i'll|i will|i need|i'm going|first,|next,|then,|the markdown)\b/i;
+
 /**
  * Pull "FINAL ANSWER: ..." out of the agent's last text turn.
  *
@@ -161,11 +174,24 @@ export const extractFinalAnswer = (agentText: string): string | null => {
   const lines = agentText.trimEnd().split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const m = lines[i].match(FINAL_ANSWER_RE);
-    if (m) return m[1].replace(/^["']|["']$/g, "").trim();
+    if (m) {
+      return m[1]
+        .replace(/^["']|["']$/g, "")
+        .trim()
+        .replace(SURROUNDING_MARKDOWN_LEAD_RE, "")
+        .replace(SURROUNDING_MARKDOWN_TAIL_RE, "")
+        .trim();
+    }
   }
-  // Fallback: last non-empty line of the response.
+  // Fallback: last non-empty line of the response. Reject when the line
+  // is clearly the model narrating its next move rather than committing
+  // to an answer — returning null is cleaner than treating the thinking
+  // text as a (wrong) answer in failure reports.
   const tail = lines.reverse().find((l) => l.trim().length > 0);
-  return tail ? tail.trim() : null;
+  if (!tail) return null;
+  const trimmed = tail.trim();
+  if (THINKING_PREFIX_RE.test(trimmed)) return null;
+  return trimmed;
 };
 
 // ─── Aggregation helpers ─────────────────────────────────────────────
