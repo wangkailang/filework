@@ -135,4 +135,12 @@ export interface RunnerOptions {
   perQuestionTimeoutMs?: number;
   /** Concurrency cap. v1 enforces 1 — kept here for future expansion. */
   concurrency?: number;
+  /**
+   * Sampling temperature passed to both the main streamText call and the
+   * reflection-gate's LLM verifier. Default `0` (deterministic). Pass
+   * `null` to omit the parameter entirely — required for OpenAI reasoning
+   * models (o1/o3/o5/gpt-5 reasoning) which reject any `temperature`
+   * setting and emit an SDK warning.
+   */
+  temperature?: number | null;
 }

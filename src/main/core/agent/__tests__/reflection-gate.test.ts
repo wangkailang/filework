@@ -15,6 +15,7 @@ import {
   createReflectionGate,
   defaultRules,
   emptyAssistantWithTools,
+  missingFinalAnswer,
   pdfParseFailure,
   type TurnSummary,
   toolDeniedSequence,
@@ -152,6 +153,107 @@ describe("emptyAssistantWithTools rule", () => {
           toolCalls: [{ name: "x", success: true, result: {} }],
           finalText: "",
           endReason: "tool_calls",
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("missingFinalAnswer rule (GAIA opt-in)", () => {
+  it("retries when finalText has narration but no FINAL ANSWER line", () => {
+    const v = missingFinalAnswer(
+      mkTurn({
+        finalText:
+          "Let me compute this analytically.\nI think the answer is around 3.",
+        endReason: "stop",
+      }),
+    );
+    expect(v?.kind).toBe("retry");
+    if (v?.kind === "retry") {
+      expect(v.feedback).toMatch(/FINAL ANSWER/);
+    }
+  });
+
+  it("abstains when FINAL ANSWER line is present", () => {
+    expect(
+      missingFinalAnswer(
+        mkTurn({
+          finalText: "Some reasoning.\n\nFINAL ANSWER: 3",
+          endReason: "stop",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("accepts dash and lowercase variants", () => {
+    expect(
+      missingFinalAnswer(
+        mkTurn({
+          finalText: "final answer - 42",
+          endReason: "stop",
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      missingFinalAnswer(
+        mkTurn({
+          finalText: "Final Answer: unknown",
+          endReason: "stop",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects FINAL ANSWER followed by only whitespace (no actual answer)", () => {
+    const v = missingFinalAnswer(
+      mkTurn({
+        finalText: "I tried hard.\nFINAL ANSWER:   ",
+        endReason: "stop",
+      }),
+    );
+    expect(v?.kind).toBe("retry");
+  });
+
+  it("retries with budget-exhausted wording when endReason is tool_calls (step budget cut off mid-tool-flow)", () => {
+    // At the gate's call site (post-callStreamText), endReason=tool_calls
+    // means the SDK halted `stopWhen` while the model was still planning
+    // tool calls — i.e. budget exhausted. This is exactly when we want a
+    // retry, not a skip.
+    const v = missingFinalAnswer(
+      mkTurn({
+        finalText: "Let me try another tool.",
+        endReason: "tool_calls",
+      }),
+    );
+    expect(v?.kind).toBe("retry");
+    if (v?.kind === "retry") {
+      expect(v.feedback).toMatch(/budget/i);
+      expect(v.forceNoTools).toBe(true);
+    }
+  });
+
+  it("retries with natural-end wording when endReason is stop and no FINAL ANSWER", () => {
+    const v = missingFinalAnswer(
+      mkTurn({
+        finalText: "Some reasoning but no sentinel.",
+        endReason: "stop",
+      }),
+    );
+    expect(v?.kind).toBe("retry");
+    if (v?.kind === "retry") {
+      // Natural-end wording explicitly references the missing line, not budget.
+      expect(v.feedback).toMatch(/required `FINAL ANSWER/);
+      expect(v.feedback).not.toMatch(/budget/i);
+      expect(v.forceNoTools).toBe(true);
+    }
+  });
+
+  it("abstains when finalText is empty (delegated to other rules)", () => {
+    expect(
+      missingFinalAnswer(
+        mkTurn({
+          finalText: "",
+          endReason: "stop",
         }),
       ),
     ).toBeNull();
@@ -316,6 +418,121 @@ describe("createReflectionGate", () => {
     const hook = createReflectionGate({ model: fakeModel });
     const v = await hook(mkTurn({ finalText: "k." }));
     expect(v.kind).toBe("continue");
+  });
+
+  it("uses a custom llmPromptBuilder when provided", async () => {
+    mockedGenerate.mockReset();
+    mockedGenerate.mockResolvedValueOnce({
+      text: '{"verdict":"continue"}',
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const fakeModel = {} as LanguageModel;
+    const builder = vi.fn((turn: TurnSummary) => `CUSTOM:${turn.finalText}`);
+    const hook = createReflectionGate({
+      model: fakeModel,
+      llmPromptBuilder: builder,
+    });
+    await hook(mkTurn({ finalText: "answer-payload" }));
+
+    expect(builder).toHaveBeenCalledOnce();
+    expect(mockedGenerate).toHaveBeenCalledOnce();
+    const call = mockedGenerate.mock.calls[0][0] as { prompt: string };
+    expect(call.prompt).toBe("CUSTOM:answer-payload");
+  });
+
+  it("stamps forceNoTools on LLM retry verdicts when llmForceNoTools is set", async () => {
+    mockedGenerate.mockReset();
+    mockedGenerate.mockResolvedValueOnce({
+      text: '{"verdict":"retry","feedback":"fix unit"}',
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const fakeModel = {} as LanguageModel;
+    const hook = createReflectionGate({
+      model: fakeModel,
+      llmForceNoTools: true,
+    });
+    const v = await hook(mkTurn({ finalText: "17000" }));
+    expect(v.kind).toBe("retry");
+    if (v.kind === "retry") {
+      expect(v.feedback).toBe("fix unit");
+      expect(v.forceNoTools).toBe(true);
+    }
+  });
+
+  it("does NOT stamp forceNoTools on LLM continue verdicts even when llmForceNoTools is set", async () => {
+    mockedGenerate.mockReset();
+    mockedGenerate.mockResolvedValueOnce({
+      text: '{"verdict":"continue"}',
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const fakeModel = {} as LanguageModel;
+    const hook = createReflectionGate({
+      model: fakeModel,
+      llmForceNoTools: true,
+    });
+    const v = await hook(mkTurn({ finalText: "ok" }));
+    expect(v.kind).toBe("continue");
+  });
+
+  it("passes llmTemperature to generateText when configured", async () => {
+    mockedGenerate.mockReset();
+    mockedGenerate.mockResolvedValueOnce({
+      text: '{"verdict":"continue"}',
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const fakeModel = {} as LanguageModel;
+    const hook = createReflectionGate({
+      model: fakeModel,
+      llmTemperature: 0,
+    });
+    await hook(mkTurn({ finalText: "ok" }));
+
+    expect(mockedGenerate).toHaveBeenCalledOnce();
+    const call = mockedGenerate.mock.calls[0][0] as { temperature?: number };
+    expect(call.temperature).toBe(0);
+  });
+
+  it("omits temperature when llmTemperature is unset", async () => {
+    mockedGenerate.mockReset();
+    mockedGenerate.mockResolvedValueOnce({
+      text: '{"verdict":"continue"}',
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const fakeModel = {} as LanguageModel;
+    const hook = createReflectionGate({ model: fakeModel });
+    await hook(mkTurn({ finalText: "ok" }));
+
+    const call = mockedGenerate.mock.calls[0][0] as Record<string, unknown>;
+    expect("temperature" in call).toBe(false);
+  });
+
+  it("does NOT stamp forceNoTools on rule-driven retry verdicts (only LLM verdicts)", async () => {
+    // A deterministic rule fires retry first; llmForceNoTools should not
+    // mutate that verdict because the LLM path was not taken.
+    mockedGenerate.mockReset();
+    const fakeModel = {} as LanguageModel;
+    const hook = createReflectionGate({
+      model: fakeModel,
+      llmForceNoTools: true,
+    });
+    const v = await hook(
+      mkTurn({
+        toolCalls: [
+          {
+            name: "readPdf",
+            success: false,
+            result: { error: "pdf parse failed" },
+          },
+        ],
+      }),
+    );
+    expect(v.kind).toBe("retry");
+    if (v.kind === "retry") {
+      // pdfParseFailure rule does not set forceNoTools, so the flag must
+      // remain unset (undefined or false).
+      expect(v.forceNoTools).toBeUndefined();
+    }
+    expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
   it("propagates abort signal failures", async () => {

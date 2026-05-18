@@ -22,7 +22,18 @@ export interface TurnSummary {
 
 export type ReflectionVerdict =
   | { kind: "continue" }
-  | { kind: "retry"; feedback: string }
+  | {
+      kind: "retry";
+      feedback: string;
+      /**
+       * When true, AgentLoop must call the next `streamText` pass with an
+       * empty tool set so the model physically cannot invoke any tools.
+       * Used by `missingFinalAnswer` to recover from step-budget exhaustion
+       * — letting the model keep its tools on retry tends to re-exhaust
+       * the budget instead of producing the final answer.
+       */
+      forceNoTools?: boolean;
+    }
   | { kind: "abort"; reason: string };
 
 export type ReflectHook = (
@@ -37,6 +48,28 @@ export interface ReflectionGateConfig {
   rules?: ReflectionRule[];
   /** Default true. Set false to skip LLM when all rules abstain. */
   llmFallback?: boolean;
+  /**
+   * Override the default LLM-fallback prompt. Receives the turn summary
+   * and returns the full prompt string sent to `generateText`. Used by
+   * harnesses (e.g. GAIA) that need question-aware answer verification
+   * — they can close over additional context (question text, expected
+   * format) the generic prompt doesn't have access to.
+   */
+  llmPromptBuilder?: (turn: TurnSummary) => string;
+  /**
+   * When the LLM fallback returns a `retry` verdict, also stamp it with
+   * `forceNoTools: true` so AgentLoop strips tools on the retry pass.
+   * Sensible for verifier-style fallbacks where the model already
+   * gathered all info it needs and the retry is purely a re-format.
+   * Default false (preserves chat-path behavior).
+   */
+  llmForceNoTools?: boolean;
+  /**
+   * Sampling temperature for the LLM-fallback `generateText` call.
+   * Default unset (uses provider default). Eval harnesses should set
+   * this to `0` for reproducible verifier verdicts.
+   */
+  llmTemperature?: number;
 }
 
 export const pdfParseFailure: ReflectionRule = (turn) => {
@@ -96,6 +129,52 @@ export const emptyAssistantWithTools: ReflectionRule = (turn) => {
     };
   }
   return null;
+};
+
+// KEEP IN SYNC with `FINAL_ANSWER_RE` in src/eval/gaia/scorer.ts:126.
+// A "valid" FINAL ANSWER line is one where the scorer would extract a
+// non-empty payload — so the rule's accept/reject is symmetric with what
+// the scorer would actually grade. If you change one, change both.
+const FINAL_ANSWER_LINE_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
+
+/**
+ * Opt-in rule for evaluation harnesses that mandate a `FINAL ANSWER: <x>`
+ * sentinel (e.g. GAIA). Triggers `retry` with feedback when the assistant
+ * finished a streamText pass without emitting a line the scorer would
+ * accept.
+ *
+ * Important: the gate is invoked once per completed `streamText` pass
+ * (not per internal step). At that point `endReason === "tool_calls"`
+ * means the model exhausted `stopWhen`/`maxStepsPerTurn` while still
+ * planning tool calls — exactly when we want the retry feedback to say
+ * "stop calling tools and emit your best answer."
+ *
+ * Skips when `finalText` is empty — that case belongs to
+ * `emptyAssistantWithTools` or the harness's own failure tagging.
+ *
+ * NOT included in `builtinRules()` / `defaultRules()` because the protocol
+ * is harness-specific; passing this into `createReflectionGate({ rules })`
+ * is the supported integration point.
+ */
+export const missingFinalAnswer: ReflectionRule = (turn) => {
+  if (turn.finalText.trim().length === 0) return null;
+  const ok = turn.finalText.split(/\r?\n/).some((line) => {
+    const m = line.match(FINAL_ANSWER_LINE_RE);
+    return m !== null && m[1].trim().length > 0;
+  });
+  if (ok) return null;
+  const budgetExhausted = turn.endReason === "tool_calls";
+  return {
+    kind: "retry",
+    forceNoTools: true,
+    feedback:
+      (budgetExhausted
+        ? "You ran out of tool-call budget without emitting a final answer. "
+        : "Your previous response did not end with the required `FINAL ANSWER: <answer>` line. ") +
+      "Re-emit a final response that ends with exactly:\n\n" +
+      "    FINAL ANSWER: <your answer>\n\n" +
+      "If you cannot determine the answer from the work you've already done, write `FINAL ANSWER: unknown`.",
+  };
 };
 
 /**
@@ -188,13 +267,16 @@ function parseLlmVerdict(text: string): ReflectionVerdict {
 async function runLlmReflection(
   model: LanguageModel,
   turn: TurnSummary,
+  promptBuilder: (t: TurnSummary) => string,
+  temperature: number | undefined,
   signal?: AbortSignal,
 ): Promise<ReflectionVerdict> {
   try {
     const { text } = await generateText({
       model,
-      prompt: LLM_REFLECT_PROMPT + serializeTurnForReflection(turn),
+      prompt: promptBuilder(turn),
       abortSignal: signal,
+      ...(temperature !== undefined && { temperature }),
     });
     return parseLlmVerdict(text);
   } catch (err) {
@@ -207,11 +289,16 @@ async function runLlmReflection(
   }
 }
 
+const defaultLlmPromptBuilder = (turn: TurnSummary): string =>
+  LLM_REFLECT_PROMPT + serializeTurnForReflection(turn);
+
 export function createReflectionGate(
   config: ReflectionGateConfig = {},
 ): ReflectHook {
   const rules = config.rules ?? builtinRules();
   const llmFallback = config.llmFallback !== false;
+  const promptBuilder = config.llmPromptBuilder ?? defaultLlmPromptBuilder;
+  const llmForceNoTools = config.llmForceNoTools === true;
 
   return async (turn, signal) => {
     for (const rule of rules) {
@@ -219,7 +306,17 @@ export function createReflectionGate(
       if (verdict !== null) return verdict;
     }
     if (llmFallback && config.model) {
-      return runLlmReflection(config.model, turn, signal);
+      const verdict = await runLlmReflection(
+        config.model,
+        turn,
+        promptBuilder,
+        config.llmTemperature,
+        signal,
+      );
+      if (llmForceNoTools && verdict.kind === "retry") {
+        return { ...verdict, forceNoTools: true };
+      }
+      return verdict;
     }
     return { kind: "continue" };
   };

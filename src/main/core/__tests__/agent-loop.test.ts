@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import { type LanguageModel, streamText } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod/v4";
 
@@ -429,6 +429,123 @@ describe("AgentLoop", () => {
     expect(end.finalText).toBe("attempt-2");
   });
 
+  it("strips tools on the retry pass when verdict carries forceNoTools=true", async () => {
+    // First pass: model emits text but no FINAL ANSWER (mocked away here —
+    // the test only checks tool-set wiring, not the rule itself).
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "thinking out loud..." },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    // Second pass (tool-less retry): emits the final answer.
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "FINAL ANSWER: 42" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const reflectMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: "retry",
+        feedback: "emit FINAL ANSWER",
+        forceNoTools: true,
+      })
+      .mockResolvedValueOnce({ kind: "continue" });
+
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: registryWith({
+        name: "echo",
+        description: "Echo",
+        safety: "safe",
+        inputSchema: z.object({ msg: z.string() }),
+        execute: async (args: unknown) => (args as { msg: string }).msg,
+      }),
+      systemPrompt: "system",
+      hooks: { reflect: reflectMock },
+      maxReflections: 2,
+    });
+
+    const events = await collect(loop, "hi");
+
+    expect(streamTextSpy).toHaveBeenCalledTimes(2);
+    const firstTools = (streamTextSpy.mock.calls[0][0] as { tools: unknown })
+      .tools as Record<string, unknown>;
+    const secondTools = (streamTextSpy.mock.calls[1][0] as { tools: unknown })
+      .tools as Record<string, unknown>;
+    expect(Object.keys(firstTools)).toContain("echo");
+    expect(secondTools).toEqual({});
+
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.finalText).toBe("FINAL ANSWER: 42");
+  });
+
+  it("only clears tools for one pass — a subsequent retry without forceNoTools restores tools", async () => {
+    // 3 scripted passes: each emits some text and stops.
+    for (let i = 0; i < 3; i++) {
+      scriptedRuns.push({
+        parts: [
+          { type: "start-step" },
+          { type: "text-delta", text: `pass-${i}` },
+          { type: "finish-step", finishReason: "stop", usage: {} },
+        ],
+      });
+    }
+
+    const reflectMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        kind: "retry",
+        feedback: "no tools",
+        forceNoTools: true,
+      })
+      // Second verdict opts back into tools (no forceNoTools).
+      .mockResolvedValueOnce({ kind: "retry", feedback: "try again" })
+      .mockResolvedValueOnce({ kind: "continue" });
+
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: registryWith({
+        name: "echo",
+        description: "Echo",
+        safety: "safe",
+        inputSchema: z.object({ msg: z.string() }),
+        execute: async (args: unknown) => (args as { msg: string }).msg,
+      }),
+      systemPrompt: "system",
+      hooks: { reflect: reflectMock },
+      // Need 3 reflections to reach the third pass.
+      maxReflections: 3,
+    });
+
+    await collect(loop, "hi");
+
+    expect(streamTextSpy).toHaveBeenCalledTimes(3);
+    const toolsForCall = (i: number) =>
+      (streamTextSpy.mock.calls[i][0] as { tools: unknown }).tools as Record<
+        string,
+        unknown
+      >;
+    expect(Object.keys(toolsForCall(0))).toContain("echo"); // initial
+    expect(toolsForCall(1)).toEqual({}); // tool-less retry
+    expect(Object.keys(toolsForCall(2))).toContain("echo"); // tools restored
+  });
+
   it("passes turn summary with collected tool calls to reflect hook", async () => {
     scriptedRuns.push({
       parts: [
@@ -471,6 +588,53 @@ describe("AgentLoop", () => {
       finalText: "ok done",
       toolCalls: [expect.objectContaining({ name: "readPdf", success: false })],
     });
+  });
+
+  it("passes temperature to streamText when configured", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "ok" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      temperature: 0,
+    });
+    await collect(loop, "hi");
+
+    const call = streamTextSpy.mock.calls[0][0] as { temperature?: number };
+    expect(call.temperature).toBe(0);
+  });
+
+  it("omits temperature when not configured (preserves provider default)", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "ok" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+    });
+    await collect(loop, "hi");
+
+    const call = streamTextSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect("temperature" in call).toBe(false);
   });
 
   it("emits retry event and re-runs the stream when classifier says retryable", async () => {

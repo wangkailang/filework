@@ -22,6 +22,11 @@ import path from "node:path";
 import { createModelWithAdapter } from "../../main/ai/adapters";
 import { AgentLoop } from "../../main/core/agent/agent-loop";
 import type { AgentEvent } from "../../main/core/agent/events";
+import {
+  builtinRules,
+  createReflectionGate,
+  missingFinalAnswer,
+} from "../../main/core/agent/reflection-gate";
 
 import { filterQuestions, loadGaiaDataset } from "./dataset";
 import { calculateCost } from "./pricing";
@@ -44,6 +49,55 @@ import type {
 import { setupQuestionWorkspace } from "./workspace";
 
 const DEFAULT_PER_QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
+
+const MAX_ANSWER_TAIL_FOR_VERIFIER = 1200;
+
+/**
+ * Builds the LLM verifier prompt sent by the reflection-gate's llmFallback
+ * after deterministic rules abstain. The verifier checks ONLY answer
+ * form/unit/magnitude alignment with the question — not factual
+ * correctness. It is intentionally conservative ("prefer continue when
+ * uncertain") so that correct answers aren't false-flagged.
+ *
+ * The most expensive prior failure this targets is the Kipchoge case:
+ * question says "how many thousand hours", model answered 17000 (raw
+ * hours) instead of 17 (thousands).
+ */
+const buildAnswerVerifierPrompt = (
+  questionText: string,
+  finalText: string,
+): string => {
+  // Send only the tail of finalText — the FINAL ANSWER line lives at
+  // the end, and the verifier doesn't need the full reasoning trail.
+  const tail = finalText.slice(-MAX_ANSWER_TAIL_FOR_VERIFIER);
+  return [
+    "You are an answer-FORM verifier for the GAIA benchmark.",
+    "Check ONLY whether the model's FINAL ANSWER matches the unit, magnitude,",
+    "and format that the question LITERALLY asks for.",
+    "You do NOT verify factual correctness — you only check form alignment.",
+    "",
+    "Common mismatches to flag:",
+    "- Question asks 'how many thousand X' / 'how many million X' / 'how many",
+    "  percent' but the answer is in raw units (e.g. '17000 hours' instead of",
+    "  '17' for 'how many thousand hours').",
+    "- Question says 'in m^3' / 'in km' but the answer repeats the unit when",
+    "  the protocol asks for the bare value.",
+    "- Question specifies a format (date, integer, list) and the answer breaks",
+    "  that format.",
+    "",
+    "Output STRICT JSON only, no other text:",
+    '{ "verdict": "continue" | "retry", "feedback": "..." }',
+    "- continue: form matches the question. PREFER this when uncertain.",
+    "- retry: form clearly mismatches; feedback briefly states what to fix",
+    "  and what the answer SHOULD look like.",
+    "",
+    "QUESTION:",
+    questionText,
+    "",
+    "MODEL'S FINAL RESPONSE (tail):",
+    tail,
+  ].join("\n");
+};
 
 const buildSystemPrompt = (
   q: NormalizedQuestion,
@@ -93,6 +147,21 @@ const buildSystemPrompt = (
     "- If a tool returns an error, try a different approach rather than retrying identically.",
     "- Tool results are truncated above ~30KB. If you need a different slice of a long",
     "  document, request a smaller range explicitly (e.g. by page or by sheet).",
+    "",
+    "## Unit interpretation (READ CAREFULLY before answering)",
+    "When the question contains a unit-bearing phrase, your final answer must be",
+    "expressed in those exact units — not in raw underlying units.",
+    "",
+    "- 'how many thousand X' → answer is the count of X in thousands.",
+    "  Example: a calculation yielding 17054.9 hours, rounded to the nearest 1000,",
+    "  is 17 (i.e. 17 thousand hours) — NOT 17000.",
+    "- 'how many million X' / 'how many hundred X' / 'in millions of X' → same rule.",
+    "- 'what percent' → answer is the percentage value (e.g. 42 or 42%, not 0.42).",
+    "- 'how many X' (no scale word) → answer is the raw count.",
+    "",
+    "If the question says 'round to the nearest 1000', that is a precision",
+    "instruction. Apply rounding FIRST, then convert to the requested unit",
+    "(thousands, millions, etc.) if the question asks for one.",
   ];
   if (attachmentPath) {
     sections.push(
@@ -258,6 +327,12 @@ interface PerQuestionDeps {
   apiKey: string;
   model: string;
   baseUrl?: string;
+  /**
+   * Resolved sampling temperature. `number` → pass through; `null` →
+   * skip the parameter entirely (for OpenAI reasoning models). The CLI
+   * layer translates `--temperature` into this value.
+   */
+  temperature: number | null;
 }
 
 const runOneQuestion = async (
@@ -300,6 +375,26 @@ const runOneQuestion = async (
       baseUrl: deps.baseUrl,
     });
 
+    // Reflection gate enforces the FINAL ANSWER protocol via deterministic
+    // rules, then runs an LLM verifier that checks the emitted answer's
+    // unit/magnitude/format against the literal question. `missingFinalAnswer`
+    // is GAIA-specific so it's composed here rather than baked into
+    // builtinRules. The LLM verifier short-circuits when any rule already
+    // fired retry/abort — it only spends a model call on turns that
+    // already passed protocol checks. Temperature follows `deps.temperature`
+    // — null means "omit entirely" (required for OpenAI reasoning models).
+    const temperatureForSdk =
+      deps.temperature === null ? undefined : deps.temperature;
+    const reflectGate = createReflectionGate({
+      model,
+      rules: [missingFinalAnswer, ...builtinRules()],
+      llmFallback: true,
+      llmPromptBuilder: (turn) =>
+        buildAnswerVerifierPrompt(question.question, turn.finalText),
+      llmForceNoTools: true,
+      llmTemperature: temperatureForSdk,
+    });
+
     const loop = new AgentLoop({
       workspace: ws.workspace,
       model,
@@ -308,7 +403,9 @@ const runOneQuestion = async (
       }),
       systemPrompt: buildSystemPrompt(question, ws.attachmentPath),
       maxStepsPerTurn: 12,
+      temperature: temperatureForSdk,
       signal: controller.signal,
+      hooks: { reflect: reflectGate },
     });
 
     const result = await runWithTimeout(
@@ -487,6 +584,11 @@ export const runGaia = async (
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeoutMs =
     opts.perQuestionTimeoutMs ?? DEFAULT_PER_QUESTION_TIMEOUT_MS;
+  // `opts.temperature` semantics: `undefined` → deterministic default (0);
+  // `null` → omit the parameter entirely (OpenAI reasoning models);
+  // `number` → pass through.
+  const temperature: number | null =
+    opts.temperature === undefined ? 0 : opts.temperature;
   const deps: PerQuestionDeps = {
     fetchImpl,
     tavilyKey: opts.tavilyKey ?? process.env.TAVILY_API_KEY ?? null,
@@ -495,6 +597,7 @@ export const runGaia = async (
     apiKey: opts.apiKey,
     model: opts.model,
     baseUrl: opts.baseUrl,
+    temperature,
   };
 
   const results: QuestionResult[] = [];
