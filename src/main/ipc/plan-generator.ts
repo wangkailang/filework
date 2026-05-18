@@ -60,6 +60,21 @@ export const needsPlanning = (prompt: string): boolean => {
   // ── Long prompts with genuine complexity ──
   if (prompt.length > 300) return true;
 
+  // ── Single-deliverable fast-exit ──
+  // "生成/导出 X" 型请求在长度可控、不含多动作连接词时视为单意图。
+  // 即使关键词同时命中多个 task skill（如 report-generator + data-processor），
+  // 也应直接执行而非进入 plan 流程。
+  const singleDeliverablePatterns = [
+    /^(帮我|请|麻烦)?\s*(生成|创建|制作|导出|输出|写|做)/,
+    /^(please\s+)?(generate|create|make|export|output|write|build|produce)\b/i,
+  ];
+  if (
+    prompt.length < 150 &&
+    singleDeliverablePatterns.some((p) => p.test(prompt.trim()))
+  ) {
+    return false;
+  }
+
   // ── Multiple "task" skill hits → likely multi-step ──
   let taskSkillHits = 0;
   for (const skill of skills) {
