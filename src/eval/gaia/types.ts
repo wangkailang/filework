@@ -115,6 +115,12 @@ export interface RunSummary {
   duration: { totalMs: number; medianMs: number };
   cost: { totalUsd: number; perQuestionMedianUsd: number };
   failureTags: Partial<Record<FailureTag, number>>;
+  /**
+   * Trajectory quality metrics — median steps, tool redundancy, and
+   * reflection effectiveness. Optional so older `summary.json` files
+   * still load through `gaia-eval-diff`. New runs always populate it.
+   */
+  quality?: import("./metrics").QualityMetrics;
 }
 
 // ─── Configuration ───────────────────────────────────────────────────
