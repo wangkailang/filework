@@ -207,6 +207,46 @@ describe("extractFinalAnswer", () => {
     expect(extractFinalAnswer("")).toBeNull();
     expect(extractFinalAnswer("    ")).toBeNull();
   });
+
+  it("strips surrounding markdown bold/italic/backticks from the extracted answer", () => {
+    expect(extractFinalAnswer("FINAL ANSWER: **green, white**")).toBe(
+      "green, white",
+    );
+    expect(extractFinalAnswer("FINAL ANSWER: green, white**")).toBe(
+      "green, white",
+    );
+    expect(extractFinalAnswer("FINAL ANSWER: *42*")).toBe("42");
+    expect(extractFinalAnswer("FINAL ANSWER: __bold__")).toBe("bold");
+    expect(extractFinalAnswer("FINAL ANSWER: `code`")).toBe("code");
+  });
+
+  it("returns null when fallback would capture a thinking-prefix line", () => {
+    // These are real failure-mode outputs from the 2026-05-18 GAIA run —
+    // the model never emitted FINAL ANSWER and the fallback used to leak
+    // its narration as the predicted answer.
+    expect(
+      extractFinalAnswer(
+        "Let me try searching via DuckDuckGo or another search engine.",
+      ),
+    ).toBeNull();
+    expect(
+      extractFinalAnswer(
+        "Working through this...\nNow I need to find the first rule.",
+      ),
+    ).toBeNull();
+    expect(
+      extractFinalAnswer("I'll look at the federal rules of evidence on LII."),
+    ).toBeNull();
+  });
+
+  it("still falls back for non-thinking last lines", () => {
+    // Guard against over-aggressive filtering — legitimate short answers
+    // without the sentinel must still pass through.
+    expect(extractFinalAnswer("After research:\n42")).toBe("42");
+    expect(
+      extractFinalAnswer("Working through this...\nThe answer is 42"),
+    ).toBe("The answer is 42");
+  });
 });
 
 // ─── Aggregation helpers ─────────────────────────────────────────────
