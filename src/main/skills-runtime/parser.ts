@@ -46,6 +46,13 @@ function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
   if (typeof raw["user-invocable"] === "boolean") {
     fm["user-invocable"] = raw["user-invocable"];
   }
+  if (
+    raw.category === "process" ||
+    raw.category === "task" ||
+    raw.category === "tool"
+  ) {
+    fm.category = raw.category;
+  }
   if (raw.requires != null && typeof raw.requires === "object") {
     const req = raw.requires as Record<string, unknown>;
     const requires: SkillFrontmatter["requires"] = {};

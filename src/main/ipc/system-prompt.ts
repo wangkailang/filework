@@ -36,7 +36,34 @@ interface BuildAgentSystemPromptOptions {
   skillArgs?: string;
   /** True when the user typed `/skill ...` explicitly. */
   isExplicitSkillCommand?: boolean;
+  /**
+   * Workflow-discipline skills (frontmatter `category: process`) that
+   * must always be injected as a preamble — e.g. `using-superpowers`
+   * and `brainstorming`. Distinct from the task `skill` slot above,
+   * which competes for prompt-based selection.
+   */
+  processSkills?: UnifiedSkill[];
 }
+
+/**
+ * Render a "Process Discipline" preamble from the given process skills.
+ *
+ * Each skill's body is wrapped in a fenced `<process-skill ...>` section
+ * with the skill name so the model can distinguish process rules from
+ * the active task skill and from base behavioral guidelines.
+ */
+const buildProcessDisciplinePreamble = (
+  processSkills: UnifiedSkill[],
+): string => {
+  if (processSkills.length === 0) return "";
+  const sections = processSkills
+    .map((s) => {
+      const body = s.external?.body ?? s.systemPrompt;
+      return `<process-skill name="${s.name}">\n${body.trim()}\n</process-skill>`;
+    })
+    .join("\n\n");
+  return `## Process Discipline\n\nThese rules apply to EVERY task in this session, regardless of how the user phrases the request. Read them before deciding how to respond.\n\n${sections}`;
+};
 
 /**
  * Build the system prompt for ad-hoc (non-plan) task execution.
@@ -51,7 +78,9 @@ export const buildAgentSystemPrompt = ({
   skill,
   skillArgs,
   isExplicitSkillCommand,
+  processSkills = [],
 }: BuildAgentSystemPromptOptions): string => {
+  const processPreamble = buildProcessDisciplinePreamble(processSkills);
   const sections: string[] = [
     AGENT_IDENTITY,
     "",
@@ -60,6 +89,9 @@ export const buildAgentSystemPrompt = ({
     "Rules:",
     COMMON_RULES,
   ];
+  if (processPreamble) {
+    sections.push("", processPreamble);
+  }
 
   if (skill) {
     if (isExplicitSkillCommand) {

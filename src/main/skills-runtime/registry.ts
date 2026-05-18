@@ -247,6 +247,22 @@ export class SkillRegistry {
   }
 
   /**
+   * List skills tagged with the given frontmatter `category`.
+   *
+   * Use `listByCategory("process")` to fetch the workflow-discipline
+   * skills (e.g. `using-superpowers`, `brainstorming`) that must always
+   * be injected into the system prompt — distinct from task/tool skills
+   * which compete for prompt-based selection.
+   */
+  listByCategory(
+    category: NonNullable<SkillFrontmatter["category"]>,
+  ): UnifiedSkill[] {
+    return Array.from(this.skills.values()).filter(
+      (s) => s.external?.frontmatter.category === category,
+    );
+  }
+
+  /**
    * List every external skill ever discovered, including those whose
    * source is currently disabled or that failed eligibility checks.
    *

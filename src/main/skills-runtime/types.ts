@@ -18,6 +18,13 @@ export interface SkillFrontmatter {
   "disable-model-invocation"?: boolean;
   /** Whether the skill appears in the user menu (default true) */
   "user-invocable"?: boolean;
+  /**
+   * Skill role. `process` skills carry workflow discipline (e.g.
+   * brainstorming, debugging) and are always injected into the system
+   * prompt — they do not compete with `task`/`tool` skills for
+   * prompt-based selection. Default treatment when absent is `task`.
+   */
+  category?: "process" | "task" | "tool";
   /** Runtime dependency declarations for eligibility gating */
   requires?: {
     /** Required binaries (checked against PATH) */

@@ -469,12 +469,14 @@ const handleTaskExecution = async (
     }
     const skillTools = skill?.tools ?? {};
 
+    const processSkills = skillRegistry.listByCategory("process");
     const systemPrompt =
       buildAgentSystemPrompt({
         workspacePath: legacyWorkspacePath,
         skill,
         skillArgs,
         isExplicitSkillCommand,
+        processSkills,
       }) + skillPrompt;
 
     console.log(
