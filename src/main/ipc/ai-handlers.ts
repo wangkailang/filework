@@ -43,6 +43,7 @@ import {
   getDefaultLlmConfig,
   getLlmConfig,
   getSetting,
+  setSetting,
   updateTask,
 } from "../db";
 import { getAllSuggestions, skillRegistry, skills } from "../skills";
@@ -918,34 +919,71 @@ export const registerAIHandlers = () => {
     "ai:getSkillDetail",
     async (_event, payload: { skillId: string }) => {
       const skill = skillRegistry.getById(payload.skillId);
-      if (!skill) return null;
+      if (skill) {
+        return {
+          id: skill.id,
+          name: skill.name,
+          description: skill.description,
+          source: skill.external?.source?.type ?? "built-in",
+          category: skill.category ?? "tool",
+          keywords: skill.keywords ?? [],
+          suggestions: skill.suggestions ?? [],
+          systemPrompt: skill.external ? undefined : skill.systemPrompt,
+          isExternal: !!skill.external,
+          enabled: true,
+          eligible: true,
+          external: skill.external
+            ? {
+                context: skill.external.frontmatter.context ?? "default",
+                allowedTools: skill.external.frontmatter["allowed-tools"] ?? [],
+                userInvocable:
+                  skill.external.frontmatter["user-invocable"] !== false,
+                disableModelInvocation:
+                  skill.external.frontmatter["disable-model-invocation"] ===
+                  true,
+                requires: skill.external.frontmatter.requires,
+                hasHooks: !!(
+                  skill.external.frontmatter.hooks?.["pre-activate"] ||
+                  skill.external.frontmatter.hooks?.["post-complete"]
+                ),
+                sourcePath: skill.external.sourcePath,
+                body: skill.external.body,
+              }
+            : undefined,
+        };
+      }
+
+      // Fallback: skill is discovered but not registered (e.g. a
+      // disabled personal/additional skill). Render its metadata so the
+      // user can preview the skill and choose to enable it inline.
+      const discovered = skillRegistry.getDiscovered(payload.skillId);
+      if (!discovered) return null;
+      const fm = discovered.parsed.frontmatter;
       return {
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        source: skill.external?.source?.type ?? "built-in",
-        category: skill.category ?? "tool",
-        keywords: skill.keywords ?? [],
-        suggestions: skill.suggestions ?? [],
-        systemPrompt: skill.external ? undefined : skill.systemPrompt,
-        isExternal: !!skill.external,
-        external: skill.external
-          ? {
-              context: skill.external.frontmatter.context ?? "default",
-              allowedTools: skill.external.frontmatter["allowed-tools"] ?? [],
-              userInvocable:
-                skill.external.frontmatter["user-invocable"] !== false,
-              disableModelInvocation:
-                skill.external.frontmatter["disable-model-invocation"] === true,
-              requires: skill.external.frontmatter.requires,
-              hasHooks: !!(
-                skill.external.frontmatter.hooks?.["pre-activate"] ||
-                skill.external.frontmatter.hooks?.["post-complete"]
-              ),
-              sourcePath: skill.external.sourcePath,
-              body: skill.external.body,
-            }
-          : undefined,
+        id: discovered.skillId,
+        name: fm.name ?? discovered.skillId,
+        description: fm.description ?? "",
+        source: discovered.source.type,
+        category: "tool" as const,
+        keywords: [],
+        suggestions: [],
+        systemPrompt: undefined,
+        isExternal: true,
+        enabled: false,
+        eligible: discovered.eligible,
+        ineligibleReason: discovered.ineligibleReason,
+        external: {
+          context: fm.context ?? "default",
+          allowedTools: fm["allowed-tools"] ?? [],
+          userInvocable: fm["user-invocable"] !== false,
+          disableModelInvocation: fm["disable-model-invocation"] === true,
+          requires: fm.requires,
+          hasHooks: !!(
+            fm.hooks?.["pre-activate"] || fm.hooks?.["post-complete"]
+          ),
+          sourcePath: discovered.parsed.sourcePath,
+          body: discovered.parsed.body,
+        },
       };
     },
   );
@@ -980,6 +1018,95 @@ export const registerAIHandlers = () => {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : "Unknown error";
         console.error("[ai:refreshSkills] Failed:", msg);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  // Skills modal: full inventory, including disabled-by-source and
+  // ineligible entries. Built-in skills are merged in as always-enabled.
+  ipcMain.handle("ai:listAllSkills", async () => {
+    const builtIns = skillRegistry.listAll().filter((s) => !s.external);
+    const builtInItems = builtIns.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      source: "built-in" as const,
+      category: s.category ?? "tool",
+      keywords: s.keywords ?? [],
+      suggestions: s.suggestions ?? [],
+      isExternal: false,
+      enabled: true,
+      eligible: true,
+      external: undefined,
+    }));
+
+    const externalItems = skillRegistry.listAllDiscovered().map((d) => {
+      const fm = d.frontmatter;
+      const userInvocable = fm["user-invocable"] !== false;
+      return {
+        id: d.skillId,
+        name: d.name,
+        description: d.description,
+        source: d.source.type,
+        category: "tool" as const,
+        keywords: [],
+        suggestions: [],
+        isExternal: true,
+        enabled: d.enabled,
+        eligible: d.eligible,
+        ineligibleReason: d.ineligibleReason,
+        external: {
+          context: fm.context ?? "default",
+          allowedTools: fm["allowed-tools"] ?? [],
+          userInvocable,
+          disableModelInvocation: fm["disable-model-invocation"] === true,
+          requires: fm.requires,
+          hasHooks: !!(
+            fm.hooks?.["pre-activate"] || fm.hooks?.["post-complete"]
+          ),
+          sourcePath: d.sourcePath,
+        },
+      };
+    });
+
+    // Filter out non-user-invocable external skills so the modal mirrors
+    // the existing listUserVisible() contract for invocability.
+    return [
+      ...builtInItems,
+      ...externalItems.filter((s) => s.external?.userInvocable !== false),
+    ];
+  });
+
+  ipcMain.handle(
+    "ai:setSkillEnabled",
+    async (_event, payload: { skillId: string; enabled: boolean }) => {
+      try {
+        const inventory = skillRegistry.listAllDiscovered();
+        const entry = inventory.find((d) => d.skillId === payload.skillId);
+        if (!entry) {
+          return { ok: false, error: `Unknown skill: ${payload.skillId}` };
+        }
+        if (
+          entry.source.type !== "personal" &&
+          entry.source.type !== "additional"
+        ) {
+          return {
+            ok: false,
+            error: `Only personal and additional skills can be toggled (source: ${entry.source.type})`,
+          };
+        }
+
+        skillRegistry.setSkillEnabled(payload.skillId, payload.enabled);
+
+        // Persist allow-list as a JSON-encoded array of skill IDs.
+        const ids = skillRegistry.getEnabledSkillIds();
+        setSetting("skills.enabled-ids", JSON.stringify(ids));
+
+        return { ok: true };
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("[ai:setSkillEnabled] Failed:", msg);
         return { ok: false, error: msg };
       }
     },

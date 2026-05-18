@@ -1,5 +1,5 @@
 import { ArrowLeft, Blocks, ExternalLink, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
@@ -31,6 +31,15 @@ interface SkillListItem {
   keywords: string[];
   suggestions: string[];
   isExternal: boolean;
+  /**
+   * Whether the skill is currently registered into the runtime.
+   * Optional only because `ai:getSkillDetail` (used in the detail view)
+   * does not currently echo this field — list responses always set it.
+   */
+  enabled?: boolean;
+  /** Whether the skill passed eligibility checks at discovery time. */
+  eligible?: boolean;
+  ineligibleReason?: string;
   external?: SkillExternalInfo;
 }
 
@@ -69,19 +78,59 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   const [detail, setDetail] = useState<SkillDetailData | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const refreshSkills = useCallback(async () => {
+    const list = (await window.filework.listAllSkills()) as
+      | SkillListItem[]
+      | undefined;
+    setSkills(list ?? []);
+  }, []);
+
   // Fetch skill list when modal opens
   useEffect(() => {
     if (!open) return;
     setSelectedSkillId(null);
     setDetail(null);
     let cancelled = false;
-    window.filework.listSkills().then((list: SkillListItem[]) => {
+    void (async () => {
+      const list = (await window.filework.listAllSkills()) as
+        | SkillListItem[]
+        | undefined;
       if (!cancelled) setSkills(list ?? []);
-    });
+    })();
     return () => {
       cancelled = true;
     };
   }, [open]);
+
+  const handleSkillToggle = useCallback(
+    async (skillId: string, next: boolean) => {
+      // Optimistic local update — flip the enabled flag immediately so
+      // the switch feels instant; we re-fetch on success for source of
+      // truth, and roll back on failure.
+      setSkills((prev) =>
+        prev.map((s) => (s.id === skillId ? { ...s, enabled: next } : s)),
+      );
+      setDetail((prev) =>
+        prev && prev.id === skillId ? { ...prev, enabled: next } : prev,
+      );
+      const res = (await window.filework.setSkillEnabled(skillId, next)) as {
+        ok: boolean;
+        error?: string;
+      };
+      if (!res?.ok) {
+        setSkills((prev) =>
+          prev.map((s) => (s.id === skillId ? { ...s, enabled: !next } : s)),
+        );
+        setDetail((prev) =>
+          prev && prev.id === skillId ? { ...prev, enabled: !next } : prev,
+        );
+        console.warn("[SkillsModal] setSkillEnabled failed:", res?.error);
+        return;
+      }
+      await refreshSkills();
+    },
+    [refreshSkills],
+  );
 
   // Fetch detail when a skill is selected
   useEffect(() => {
@@ -173,7 +222,11 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
         </div>
 
         {selectedSkillId ? (
-          <SkillDetailView detail={detail} loading={loading} />
+          <SkillDetailView
+            detail={detail}
+            loading={loading}
+            onToggle={handleSkillToggle}
+          />
         ) : (
           <SkillListView
             skills={filtered}
@@ -183,6 +236,7 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
             onSearchChange={setSearch}
             availableSources={availableSources}
             onSelect={setSelectedSkillId}
+            onSkillToggle={handleSkillToggle}
           />
         )}
       </div>
@@ -200,6 +254,7 @@ const SkillListView = ({
   onSearchChange,
   availableSources,
   onSelect,
+  onSkillToggle,
 }: {
   skills: SkillListItem[];
   filter: FilterType;
@@ -208,6 +263,7 @@ const SkillListView = ({
   onSearchChange: (s: string) => void;
   availableSources: SourceType[];
   onSelect: (id: string) => void;
+  onSkillToggle: (skillId: string, next: boolean) => void | Promise<void>;
 }) => {
   const { LL } = useI18nContext();
   const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
@@ -258,6 +314,7 @@ const SkillListView = ({
                 key={skill.id}
                 skill={skill}
                 onClick={() => onSelect(skill.id)}
+                onToggle={(next) => onSkillToggle(skill.id, next)}
               />
             ))}
           </div>
@@ -295,22 +352,37 @@ const FilterTab = ({
 const SkillCard = ({
   skill,
   onClick,
+  onToggle,
 }: {
   skill: SkillListItem;
   onClick: () => void;
+  onToggle: (next: boolean) => void | Promise<void>;
 }) => {
   const { LL } = useI18nContext();
   const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
 
+  const togglable =
+    skill.source === "personal" || skill.source === "additional";
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full text-left rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors group"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={cn(
+        "w-full text-left rounded-lg border border-border p-3 hover:bg-accent/50 transition-colors group cursor-pointer",
+        skill.enabled === false && "opacity-60",
+      )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="font-medium text-sm text-foreground truncate">
               {skill.name}
             </span>
@@ -327,14 +399,28 @@ const SkillCard = ({
                 ? LL.skillsModal_task()
                 : LL.skillsModal_tool()}
             </span>
+            {skill.enabled === false && (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600">
+                {LL.skillsModal_sourceDisabled()}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground line-clamp-2">
             {skill.description}
           </p>
         </div>
-        <span className="shrink-0 font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-          {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
-        </span>
+        <div className="shrink-0 flex items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+            {skill.isExternal ? `/${skill.id}` : LL.skillsModal_autoMatch()}
+          </span>
+          {togglable && (
+            <SkillSwitch
+              checked={skill.enabled === true}
+              onChange={onToggle}
+              ariaLabel={skill.name}
+            />
+          )}
+        </div>
       </div>
       {skill.keywords.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
@@ -353,18 +439,59 @@ const SkillCard = ({
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 };
+
+/** Compact toggle switch used inline on per-skill cards. */
+const SkillSwitch = ({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void | Promise<void>;
+  ariaLabel: string;
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label={ariaLabel}
+    onClick={(e) => {
+      e.stopPropagation();
+      void onChange(!checked);
+    }}
+    onKeyDown={(e) => {
+      // Prevent the parent div role="button" from also acting on space/enter
+      if (e.key === " " || e.key === "Enter") {
+        e.stopPropagation();
+      }
+    }}
+    className={cn(
+      "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-border transition-colors",
+      checked ? "bg-primary" : "bg-muted",
+    )}
+  >
+    <span
+      className={cn(
+        "inline-block h-3 w-3 transform rounded-full bg-background shadow transition-transform",
+        checked ? "translate-x-3.5" : "translate-x-0.5",
+      )}
+    />
+  </button>
+);
 
 /* ── Skill Detail View ───────────────────────────────────────────── */
 
 const SkillDetailView = ({
   detail,
   loading,
+  onToggle,
 }: {
   detail: SkillDetailData | null;
   loading: boolean;
+  onToggle: (skillId: string, next: boolean) => void | Promise<void>;
 }) => {
   const { LL } = useI18nContext();
   const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
@@ -378,6 +505,8 @@ const SkillDetailView = ({
   }
 
   const ext = detail.external;
+  const togglable =
+    detail.source === "personal" || detail.source === "additional";
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
@@ -396,6 +525,20 @@ const SkillDetailView = ({
             ? LL.skillsModal_taskType()
             : LL.skillsModal_toolType()}
         </span>
+        {detail.enabled === false && (
+          <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-600">
+            {LL.skillsModal_sourceDisabled()}
+          </span>
+        )}
+        {togglable && (
+          <span className="ml-auto flex items-center gap-2">
+            <SkillSwitch
+              checked={detail.enabled === true}
+              onChange={(next) => onToggle(detail.id, next)}
+              ariaLabel={detail.name}
+            />
+          </span>
+        )}
         {ext?.context === "fork" && (
           <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-600">
             {LL.skillsModal_isolatedContext()}

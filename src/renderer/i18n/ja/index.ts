@@ -226,6 +226,7 @@ const ja: Translation = {
   skillsModal_sourceProject: "プロジェクト",
   skillsModal_sourcePersonal: "個人",
   skillsModal_sourceAdditional: "拡張",
+  skillsModal_sourceDisabled: "未有効化",
 
   // Usage panel
   usage_loading: "使用量データを読み込み中...",

@@ -24,7 +24,7 @@ import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
 import { stopAllHeadWatchers } from "./core/workspace/head-watcher";
-import { initDatabase } from "./db";
+import { getSetting, initDatabase } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
@@ -256,10 +256,32 @@ app.whenReady().then(async () => {
       );
     });
 
-  // Discover personal-level skills at startup (project skills are loaded on workspace open)
-  initSkillDiscovery(skillRegistry, "").catch((err) => {
-    console.warn("[startup] Failed to discover personal skills:", err);
-  });
+  // Discover personal-level skills at startup (project skills are loaded
+  // on workspace open). Each personal / additional skill is gated by a
+  // per-skill toggle in the Skills modal — discover them so they appear
+  // in the inventory, but only register the IDs the user has enabled.
+  const enabledIdsRaw = getSetting("skills.enabled-ids");
+  let enabledSkillIds: string[] = [];
+  if (enabledIdsRaw) {
+    try {
+      const parsed = JSON.parse(enabledIdsRaw);
+      if (Array.isArray(parsed)) {
+        enabledSkillIds = parsed.filter(
+          (v): v is string => typeof v === "string",
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[startup] Malformed skills.enabled-ids setting, ignoring:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  initSkillDiscovery(skillRegistry, "", undefined, enabledSkillIds).catch(
+    (err) => {
+      console.warn("[startup] Failed to discover personal skills:", err);
+    },
+  );
 
   // Directory picker
   ipcMain.handle(
