@@ -200,4 +200,79 @@ describe("convertToCoreMessages", () => {
     const result = await convertToCoreMessages(history);
     expect(result).toEqual([]);
   });
+
+  it("preserves ReasoningPart so reasoning_content survives cross-turn", async () => {
+    // Xiaomi MiMo / DeepSeek-Reasoner: the API rejects follow-up turns
+    // that omit the previous assistant's reasoning_content. The DeepSeek
+    // adapter picks up `{ type: "reasoning" }` parts in the assistant
+    // content array and threads them into the outgoing request body.
+    const history: HistoryMessage[] = [
+      {
+        role: "assistant",
+        content: "The capital is Paris.",
+        parts: [
+          { type: "reasoning", text: "Recalling: France's capital is Paris." },
+          { type: "text", text: "The capital is Paris." },
+        ],
+      },
+    ];
+    const result = await convertToCoreMessages(history);
+    expect(result).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "reasoning",
+            text: "Recalling: France's capital is Paris.",
+          },
+          { type: "text", text: "The capital is Paris." },
+        ],
+      },
+    ]);
+  });
+
+  it("drops empty ReasoningPart so we don't ship a blank reasoning entry", async () => {
+    const history: HistoryMessage[] = [
+      {
+        role: "assistant",
+        content: "ok",
+        parts: [
+          { type: "reasoning", text: "" },
+          { type: "text", text: "ok" },
+        ],
+      },
+    ];
+    const result = await convertToCoreMessages(history);
+    expect(result).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "ok" }] },
+    ]);
+  });
+
+  it("orders reasoning before text and tool-call parts", async () => {
+    const history: HistoryMessage[] = [
+      {
+        role: "assistant",
+        content: "checking…",
+        parts: [
+          { type: "text", text: "Let me look that up." },
+          { type: "reasoning", text: "The user wants a file read." },
+          {
+            type: "tool",
+            toolCallId: "tcA",
+            toolName: "readFile",
+            args: { path: "/x" },
+            result: "data",
+            state: "result",
+          },
+        ],
+      },
+    ];
+    const result = await convertToCoreMessages(history);
+    const assistant = result[0];
+    expect(assistant.role).toBe("assistant");
+    if (assistant.role === "assistant" && Array.isArray(assistant.content)) {
+      const types = assistant.content.map((p) => p.type);
+      expect(types).toEqual(["reasoning", "text", "tool-call"]);
+    }
+  });
 });

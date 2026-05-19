@@ -13,6 +13,7 @@ export type { CacheMetrics, ProviderAdapter, ProviderConfig } from "./base";
 import { AnthropicAdapter } from "./anthropic";
 import { DeepSeekAdapter } from "./deepseek";
 import { OpenAIAdapter } from "./openai";
+import { XiaomiAdapter } from "./xiaomi";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -32,12 +33,47 @@ const adapters: Record<string, ProviderAdapter> = {
   custom: openaiAdapter,
   ollama: openaiAdapter,
   minimax: openaiAdapter,
-  // Xiaomi MiMo (reasoning model) returns `reasoning_content` in the same
-  // OpenAI-compatible chat schema DeepSeek-Reasoner does. Reuse the
-  // DeepSeek adapter — its `createDeepSeek({ baseURL })` is just a
-  // reasoning_content-aware OpenAI-compatible HTTP client.
-  xiaomi: deepseekAdapter,
+  // Xiaomi MiMo speaks the same wire protocol as DeepSeek-Reasoner but
+  // mandates `reasoning_content` on EVERY assistant turn (not just the
+  // latest). The deepseek adapter drops past reasoning. XiaomiAdapter
+  // wraps deepseek with a fetch interceptor that re-stamps reasoning
+  // captured from the original prompt — see xiaomi.ts banner.
+  xiaomi: new XiaomiAdapter(),
 };
+
+// Hostnames whose API requires reasoning_content to be threaded back to
+// the assistant message on every follow-up turn. The OpenAI adapter
+// silently drops reasoning parts during message conversion, so any
+// custom/openai-typed config pointing at one of these endpoints would
+// otherwise 400 the moment the model emits reasoning. Force-route those
+// to the DeepSeek adapter (the only OpenAI-compatible adapter we have
+// that preserves reasoning_content).
+const REASONING_HOST_PATTERNS = [/(^|\.)xiaomimimo\.com$/i];
+
+function isReasoningPassThroughHost(baseUrl: string | null | undefined) {
+  if (!baseUrl) return false;
+  try {
+    const host = new URL(baseUrl).hostname;
+    return REASONING_HOST_PATTERNS.some((rx) => rx.test(host));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the canonical adapter name from a provider config, applying
+ * URL-based overrides for endpoints that require special handling
+ * (e.g. Xiaomi MiMo's reasoning_content round-trip).
+ */
+export function resolveAdapterName(
+  provider: string,
+  baseUrl?: string | null,
+): string {
+  if (provider !== "xiaomi" && isReasoningPassThroughHost(baseUrl)) {
+    return "xiaomi";
+  }
+  return provider;
+}
 
 /**
  * Get the adapter for a given provider name.
@@ -53,7 +89,8 @@ export function getAdapter(provider: string): ProviderAdapter {
  * Convenience function combining adapter lookup with model creation.
  */
 export function createModelWithAdapter(config: ProviderConfig) {
-  const adapter = getAdapter(config.provider);
+  const resolved = resolveAdapterName(config.provider, config.baseUrl);
+  const adapter = getAdapter(resolved);
   const model = adapter.createModel(config);
   return { model, adapter };
 }

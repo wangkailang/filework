@@ -13,6 +13,19 @@ export interface TextPart {
   text: string;
 }
 
+/**
+ * Hidden reasoning emitted by reasoning-capable models. Persisted to the
+ * session JSONL and replayed here so adapters that require reasoning to
+ * be threaded back to the assistant message on follow-up turns
+ * (Xiaomi MiMo, DeepSeek-Reasoner) get the previous turn's
+ * reasoning_content. Adapters that ignore reasoning parts (OpenAI Chat
+ * Completions) silently drop them — safe no-op.
+ */
+export interface ReasoningPart {
+  type: "reasoning";
+  text: string;
+}
+
 export interface ToolPart {
   type: "tool";
   toolCallId: string;
@@ -29,6 +42,7 @@ export interface PlanMessagePart {
 
 export type MessagePart =
   | TextPart
+  | ReasoningPart
   | ToolPart
   | PlanMessagePart
   | AttachmentHistoryEntry;
@@ -98,6 +112,7 @@ export async function convertToCoreMessages(
       continue;
     }
 
+    const reasoningParts: Array<{ type: "reasoning"; text: string }> = [];
     const textParts: Array<{ type: "text"; text: string }> = [];
     const toolCallParts: Array<{
       type: "tool-call";
@@ -117,6 +132,13 @@ export async function convertToCoreMessages(
           const tp = part as TextPart;
           if (tp.text) {
             textParts.push({ type: "text", text: tp.text });
+          }
+          break;
+        }
+        case "reasoning": {
+          const rp = part as ReasoningPart;
+          if (rp.text) {
+            reasoningParts.push({ type: "reasoning", text: rp.text });
           }
           break;
         }
@@ -141,8 +163,12 @@ export async function convertToCoreMessages(
       }
     }
 
-    // Build assistant message content array
+    // Build assistant message content array. Reasoning must appear before
+    // text/tool-call parts so adapters (DeepSeek / Xiaomi) that scan for
+    // the first `reasoning` part attach it to the assistant message's
+    // `reasoning_content` field.
     const assistantContent: Array<
+      | { type: "reasoning"; text: string }
       | { type: "text"; text: string }
       | {
           type: "tool-call";
@@ -150,7 +176,7 @@ export async function convertToCoreMessages(
           toolName: string;
           input: unknown;
         }
-    > = [...textParts, ...toolCallParts];
+    > = [...reasoningParts, ...textParts, ...toolCallParts];
 
     if (assistantContent.length > 0) {
       result.push({ role: "assistant", content: assistantContent });
