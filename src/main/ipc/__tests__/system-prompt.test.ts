@@ -57,6 +57,22 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("askClarification");
   });
 
+  it("default prompt includes the four Karpathy operating principles", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("Operating Principles");
+    expect(prompt).toContain("Think Before Acting");
+    expect(prompt).toContain("Simplicity First");
+    expect(prompt).toContain("Surgical Changes");
+    expect(prompt).toContain("Goal-Driven Execution");
+  });
+
+  it("default prompt separates project constraints from behavioral principles", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("Project Constraints");
+    expect(prompt).toMatch(/absolute paths/i);
+    expect(prompt).toMatch(/same language/i);
+  });
+
   it("default prompt injects 'Current date:' with date + weekday + UTC offset", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toMatch(
@@ -69,13 +85,6 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toMatch(/User locale: [A-Za-z-]+ \(.+\)/);
   });
 
-  it("default prompt includes behavioral guidelines when no skill is active", () => {
-    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    expect(prompt).toContain("Behavioral Guidelines");
-    expect(prompt).toContain("Surgical Precision");
-    expect(prompt).toContain("Verification");
-  });
-
   it("explicit skill command surfaces skill name and skipping-exploration hint", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,
@@ -86,18 +95,24 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Demo");
     expect(prompt).toContain("do the thing");
     expect(prompt).toContain("不要进行不必要的环境探索");
-    // Skill-active branch drops the generic Behavioral Guidelines block.
-    expect(prompt).not.toContain("Behavioral Guidelines");
   });
 
-  it("agent-browser skill triggers npx agent-browser hint", () => {
-    const prompt = buildAgentSystemPrompt({
+  it("operating principles apply whether or not a skill is active", () => {
+    const withoutSkill = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    const withSkill = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,
-      skill: { id: "agent-browser", name: "Agent Browser" } as never,
-      skillArgs: "open example.com",
+      skill: { id: "demo", name: "Demo" } as never,
       isExplicitSkillCommand: true,
     });
-    expect(prompt).toContain("npx agent-browser");
+    for (const heading of [
+      "Think Before Acting",
+      "Simplicity First",
+      "Surgical Changes",
+      "Goal-Driven Execution",
+    ]) {
+      expect(withoutSkill).toContain(heading);
+      expect(withSkill).toContain(heading);
+    }
   });
 
   it("allowed-tools restriction is announced when skill restricts tools", () => {

@@ -27,9 +27,47 @@ import { formatCurrentDate, formatLocaleContext } from "./system-prompt";
 // the old `../planner` barrel.
 export type { Plan, PlanStep } from "./plan-types";
 
-/** Build the skill catalog string for the planner system prompt */
-const buildSkillCatalog = (): string =>
-  skills.map((s) => `- **${s.id}**: ${s.name} — ${s.description}`).join("\n");
+/** Format one skill as a catalog bullet */
+const formatSkillEntry = (s: (typeof skills)[number]): string =>
+  `- **${s.id}**: ${s.name} — ${s.description}`;
+
+/**
+ * Build a skill catalog filtered by relevance to the user's prompt.
+ *
+ * Why filter: the catalog is injected into the planner system prompt
+ * every call. As the skill set grows, an all-skills catalog dilutes
+ * the prompt with mostly-irrelevant entries.
+ *
+ * Matching rule: case-insensitive keyword hit on the prompt. We
+ * always include all "task"-category skills (they produce side
+ * effects, so the planner must be able to assign them as step
+ * skillIds regardless of prompt wording).
+ *
+ * Safety net: if fewer than `MIN_CATALOG_SIZE` skills match, fall
+ * back to the full catalog. Avoids starving the planner when the
+ * prompt is short or uses synonyms we don't index.
+ */
+const MIN_CATALOG_SIZE = 3;
+
+export const buildRelevantSkillCatalog = (prompt: string): string => {
+  const lower = prompt.toLowerCase();
+  const matched: Array<(typeof skills)[number]> = [];
+
+  for (const s of skills) {
+    const isTask = s.category === "task";
+    const keywordHit = s.keywords.some((kw) =>
+      lower.includes(kw.toLowerCase()),
+    );
+    if (isTask || keywordHit) {
+      matched.push(s);
+    }
+  }
+
+  if (matched.length < MIN_CATALOG_SIZE) {
+    return skills.map(formatSkillEntry).join("\n");
+  }
+  return matched.map(formatSkillEntry).join("\n");
+};
 
 /**
  * Heuristic: should this prompt go through the planner?
@@ -104,54 +142,38 @@ export const planTask = async (
   const planId = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const skillCatalog = buildSkillCatalog();
+  const skillCatalog = buildRelevantSkillCatalog(prompt);
 
   const result = await generateText({
     model,
     tools: readOnlyTools,
     stopWhen: stepCountIs(10),
     abortSignal,
-    system: `You are a task planner for a general-purpose AI Agent operating in the user's workspace.
+    system: `You are a task planner. Inspect the workspace briefly (≤3 read-only tool calls — listDirectory, directoryStats; avoid reading file contents), then output a JSON plan.
 
 Current date: ${formatCurrentDate()}
 User locale: ${formatLocaleContext()}
-Current workspace: ${workspacePath}
-
-## Your workflow
-1. BRIEFLY inspect the workspace with read-only tools (listDirectory, directoryStats) — use at most 2-3 tool calls. Do NOT read file contents unless absolutely necessary for planning.
-2. Analyze the user's request and break it into 3-7 ordered steps.
-3. Output a JSON execution plan.
-
-CRITICAL: You MUST output the JSON plan. Do not spend all your turns on exploration. If unsure about details, plan conservatively — the executor will discover details during execution.
+Workspace: ${workspacePath}
 
 ## Available skills
 ${skillCatalog}
 
-## Rules
-- You MUST output valid JSON as the LAST part of your response, wrapped in \`\`\`json code fence.
-- Break complex requests into 3-7 discrete steps. NEVER output a single step for a multi-part request.
-- Each step should be a discrete, independently executable action.
-- Assign a skillId only if the step clearly maps to one of the available skills.
-- Keep step descriptions concise but specific. Include concrete file names, paths, or targets when known.
-- Order steps logically (dependencies first).
-- For complex steps, add a "subSteps" array (2-5 items). Each sub-step MUST be specific and actionable:
-  - BAD: "查看文件内容", "评估质量", "优化结构" (too vague)
-  - GOOD: "读取 report.md 提取章节标题", "对比原文检查遗漏段落", "按时间线重组第3-5节"
-  - Sub-steps should mention concrete files, data, or operations so the user knows exactly what will happen.
-- Simple steps (single tool call) can omit subSteps.
-- Every step SHOULD include a "verify" field: a concrete check the executor can perform to confirm the step succeeded (e.g. "listDirectory confirms files sorted into YYYY-MM subdirectories", "readFile checks report.md contains all sections").
+## How to plan
+Break the request into 3-7 ordered steps. Each step is a discrete, independently executable action with concrete file/path targets when known. Order by dependency. Assign a skillId only when a step clearly maps to one of the skills above. For each step, define how the executor will verify success — the \`verify\` field is the success criterion. For complex steps, decompose into 2-5 specific subSteps that mention concrete files, data, or operations.
 
-## JSON schema
+## Output
+Wrap a JSON object in a \`\`\`json fence as the last part of your response:
+
 \`\`\`
 {
-  "goal": "string — one-sentence summary of the overall goal",
+  "goal": "one-sentence summary of the overall goal",
   "steps": [
     {
-      "action": "string — short verb label",
-      "description": "string — what this step does, mention target files/paths",
-      "skillId": "string | undefined — skill id if applicable",
-      "subSteps": ["读取 data.csv 提取关键指标", "生成对比图表数据"], // optional
-      "verify": "string — how to confirm this step succeeded" // recommended
+      "action": "short verb label",
+      "description": "what this step does; mention target files/paths",
+      "skillId": "skill id if applicable",
+      "subSteps": ["concrete sub-task 1", "concrete sub-task 2"],
+      "verify": "how to confirm this step succeeded"
     }
   ]
 }

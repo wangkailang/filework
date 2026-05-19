@@ -62,15 +62,39 @@ export const formatLocaleContext = (
   resolved: Intl.ResolvedDateTimeFormatOptions = new Intl.DateTimeFormat().resolvedOptions(),
 ): string => `${resolved.locale} (${resolved.timeZone})`;
 
-const COMMON_RULES = `- Use absolute paths based on the workspace path provided.
-- Be careful with destructive operations (delete, overwrite, run command); confirm scope before acting.
-- When the user explicitly authorizes a destructive action (e.g. replies "是 / yes / delete / 删除"), execute the EXACT operation they requested. Do not silently substitute a less-destructive alternative (e.g. truncating a file instead of deleting it, backing up instead of overwriting). If you genuinely believe a safer alternative is better, call \`askClarification\` and propose the substitution — do NOT perform the substitute and then claim you did what was asked.
-- Prefer the specialized tool over \`runCommand\` whenever one fits: use \`deleteFile\` to delete, \`writeFile\` to write, \`listDirectory\` to list, etc. Use \`runCommand\` only when no specialized tool covers the task.
-- Respond in the same language as the user's prompt.
-- Prefer the minimum number of tool calls needed. Don't explore unless the task requires it.
+/**
+ * Operating principles + project constraints for the agent.
+ *
+ * Structured per the Karpathy 4-principle CLAUDE.md convention
+ * (Think / Simplicity / Surgical / Goal-Driven) so the model has a
+ * clear mental frame at every decision point, plus a separate block
+ * for filework-specific engineering constraints (paths, language).
+ *
+ * Same block applies whether or not a skill is active — keeping
+ * model behavior consistent across execution paths.
+ */
+const OPERATING_PRINCIPLES = `## Operating Principles
+
+### Think Before Acting
+- State your assumptions explicitly. If the user's intent is ambiguous, call \`askClarification\` instead of guessing.
+- If multiple interpretations exist, present them briefly — don't pick silently.
+- When the user authorizes a destructive action, execute the EXACT operation they requested. If a safer alternative seems better, propose it via \`askClarification\` — do not silently substitute.
+
+### Simplicity First
+- Do the minimum work that answers the user. No speculative exploration.
 - For analytical, conceptual, or research questions, answer directly — do not invent filesystem work.
-- If the user's intent is genuinely ambiguous, call \`askClarification\` instead of guessing.
-- If the user references an attachment (file, image, PDF, etc.) but the conversation content does not contain a matching attachment part, do NOT use filesystem tools to search for it. Tell the user the attachment did not reach you and ask them to re-upload.`;
+- Prefer the specialized tool over \`runCommand\` when one fits (\`deleteFile\`, \`writeFile\`, \`listDirectory\`, etc.).
+
+### Surgical Changes
+- Only modify files directly related to the user's request.
+- Don't "improve" adjacent code, comments, or formatting. If you notice unrelated issues, mention them — don't fix them.
+
+### Goal-Driven Execution
+- After completing a task, briefly verify the result. State what was done and what was verified.
+
+## Project Constraints
+- Use absolute paths based on the workspace path provided.
+- Respond in the same language as the user's prompt.`;
 
 interface BuildAgentSystemPromptOptions {
   workspacePath: string;
@@ -102,8 +126,7 @@ export const buildAgentSystemPrompt = ({
     `User locale: ${formatLocaleContext()}`,
     `Current workspace: ${workspacePath}`,
     "",
-    "Rules:",
-    COMMON_RULES,
+    OPERATING_PRINCIPLES,
   ];
 
   if (skill) {
@@ -113,11 +136,6 @@ export const buildAgentSystemPrompt = ({
         `重要：用户已明确调用 ${skill.name} 技能执行任务: "${skillArgs ?? ""}"`,
         "请直接执行指定任务，不要进行不必要的环境探索或目录列举。",
       );
-      if (skill.id === "agent-browser") {
-        sections.push(
-          "当前任务是网页相关操作，请直接使用 npx agent-browser 命令执行任务，避免使用其他文件操作工具。",
-        );
-      }
     }
     const allowedTools = skill.external?.frontmatter["allowed-tools"];
     if (allowedTools) {
@@ -126,25 +144,6 @@ export const buildAgentSystemPrompt = ({
         `工具限制：当前技能仅允许使用以下工具: ${allowedTools.join(", ")}`,
       );
     }
-  } else {
-    // Behavioral guidelines applied only when no skill is steering the task.
-    sections.push(
-      "",
-      "## Behavioral Guidelines",
-      "",
-      "### Before Acting",
-      "- State your assumptions explicitly. If the user's intent is ambiguous, ask before executing.",
-      "- If multiple interpretations exist, present them briefly — don't pick silently.",
-      "",
-      "### Surgical Precision",
-      "- Only modify files directly related to the user's request.",
-      '- Don\'t "improve" adjacent code, comments, or formatting.',
-      "- If you notice unrelated issues, mention them — don't fix them.",
-      "",
-      "### Verification",
-      "- After completing a task, briefly verify the result.",
-      "- State what was done and what was verified.",
-    );
   }
 
   return sections.join("\n");
