@@ -16,8 +16,21 @@ export const manualStopFlags = new Map<string, boolean>();
 /** 按任务 ID 跟踪活跃的工具执行，用于取消 */
 export const activeToolExecutions = new Map<string, Set<AbortController>>();
 
+/**
+ * Result of a user approval decision. `choice` is set when the
+ * approval card offered multiple options (e.g. branch-name picker) and
+ * lets the tool layer override its execution args.
+ */
+export interface ApprovalResult {
+  approved: boolean;
+  choice?: string;
+}
+
 /** 工具调用审批等待队列 */
-export const pendingApprovals = new Map<string, (approved: boolean) => void>();
+export const pendingApprovals = new Map<
+  string,
+  (result: ApprovalResult) => void
+>();
 
 /**
  * Tasks running under an approved plan — writeFile skips individual
@@ -186,7 +199,7 @@ export const stopTaskExecution = (taskId: string): boolean => {
         console.log(
           "[Task Control] Rejecting pending tool approval for stopped task",
         );
-        resolve(false);
+        resolve({ approved: false });
         pendingApprovals.delete(toolCallId);
         toolCallToTaskMap.delete(toolCallId);
       }

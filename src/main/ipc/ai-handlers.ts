@@ -512,11 +512,22 @@ const handleTaskExecution = async (
     let agentProviderMeta: Record<string, unknown> | undefined;
 
     const sessionScope = (payload.sessionId ?? id).slice(0, 8);
+    // Derive a non-routable commit identity from the active LLM. This is
+    // what shows up as `--author` on every commit the agent creates.
+    // No fallback — if there's no llmConfig the SCM's commit() will
+    // throw rather than silently writing a "Claude" default.
+    const commitIdentity = llmConfig
+      ? {
+          name: llmConfig.model,
+          email: `noreply+${llmConfig.provider}@filework.local`,
+        }
+      : undefined;
     const workspace =
       ref.kind === "local"
         ? new LocalWorkspace(ref.path)
         : await createWorkspace(ref, requireWorkspaceFactoryDeps(), {
             sessionScope,
+            commitIdentity,
           });
 
     // For GitHub workspaces, register the clone dir for sandbox checks now.
@@ -861,10 +872,13 @@ const handleTaskExecution = async (
 export const registerAIHandlers = () => {
   ipcMain.handle(
     "ai:approveToolCall",
-    async (_event, payload: { toolCallId: string; approved: boolean }) => {
+    async (
+      _event,
+      payload: { toolCallId: string; approved: boolean; choice?: string },
+    ) => {
       const resolve = pendingApprovals.get(payload.toolCallId);
       if (resolve) {
-        resolve(payload.approved);
+        resolve({ approved: payload.approved, choice: payload.choice });
         pendingApprovals.delete(payload.toolCallId);
         toolCallToTaskMap.delete(payload.toolCallId);
       }

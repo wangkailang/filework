@@ -12,7 +12,9 @@ import type { WebContents } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const requestApproval = vi.fn(
-  async (..._args: unknown[]): Promise<boolean> => true,
+  async (
+    ..._args: unknown[]
+  ): Promise<{ approved: boolean; choice?: string }> => ({ approved: true }),
 );
 vi.mock("../ai-tools", () => ({
   requestApproval: (...args: unknown[]) => requestApproval(...args),

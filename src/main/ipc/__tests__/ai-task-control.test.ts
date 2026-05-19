@@ -27,8 +27,8 @@ describe("stopTaskExecution", () => {
     activeToolExecutions.set(taskId, new Set([toolController]));
 
     let approved: boolean | undefined;
-    pendingApprovals.set("tool-call-1", (value: boolean) => {
-      approved = value;
+    pendingApprovals.set("tool-call-1", (result) => {
+      approved = result.approved;
     });
     toolCallToTaskMap.set("tool-call-1", taskId);
 

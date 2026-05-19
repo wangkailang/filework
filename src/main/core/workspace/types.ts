@@ -346,11 +346,35 @@ export interface WorkflowSummary {
  * in M6 PR 2; query + comment in M6 PR 3; CI runs in M8 — all github/gitlab
  * backed today).
  */
+/**
+ * Error thrown by SCM implementations when commit / push / openPR is
+ * invoked before `proposeSessionBranch` has established the working
+ * branch. Single constant so both GitHub and GitLab paths surface
+ * identical wording (and consumers can match on it).
+ */
+export const NO_SESSION_BRANCH_ERROR =
+  "No session branch chosen yet — call proposeSessionBranch first.";
+
 export interface WorkspaceSCM {
   status?(): Promise<{ branch: string; dirty: boolean }>;
   diff?(rel?: string): Promise<string>;
   /** Symbolic name of the currently checked-out branch. */
   currentBranch?(): Promise<string>;
+  /**
+   * Set the branch this session should commit / push / open PRs on.
+   * Called by the `proposeSessionBranch` tool after the user has
+   * approved one of the LLM's candidate names. Implementations may
+   * defer branch creation until first commit.
+   */
+  setSessionBranch?(branch: string): void;
+  /** Current chosen session branch, or null when not yet set. */
+  getSessionBranch?(): string | null;
+  /**
+   * Set the LLM-derived identity used as `git commit --author`. Called
+   * at session-bind time so commits in this workspace are attributed to
+   * the active model rather than a hardcoded default.
+   */
+  setCommitIdentity?(identity: { name: string; email: string }): void;
   /**
    * Switch the working tree to `branch`, like `git checkout` in a
    * local project. Fetches from origin first, then either checks out

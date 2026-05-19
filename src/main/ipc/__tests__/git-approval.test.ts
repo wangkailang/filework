@@ -35,7 +35,7 @@ const settle = async (toolCallId: string, approved: boolean): Promise<void> => {
   await Promise.resolve();
   const resolve = pendingApprovals.get(toolCallId);
   if (resolve) {
-    resolve(approved);
+    resolve({ approved });
     return;
   }
   if (__settleByToolCallIdForTests(toolCallId, approved)) return;
@@ -53,7 +53,7 @@ describe("requestApproval — whitelist routing", () => {
     vi.useRealTimers();
   });
 
-  it("gitCommit auto-approves the second invocation after the first user OK", async () => {
+  it("gitCommit re-prompts every time (never whitelisted)", async () => {
     const taskId = "t-commit";
     const sender = stubSender();
 
@@ -61,15 +61,47 @@ describe("requestApproval — whitelist routing", () => {
       message: "x",
     });
     await settle("tc-1", true);
-    expect(await p1).toBe(true);
-    expect(isToolWhitelistedForTask(taskId, "gitCommit")).toBe(true);
+    expect(await p1).toEqual({ approved: true });
+    // Critical: gitCommit must NOT be whitelisted after first OK —
+    // every commit is a separate high-risk decision.
+    expect(isToolWhitelistedForTask(taskId, "gitCommit")).toBe(false);
 
-    // Second call: short-circuited; no pendingApprovals entry created.
+    // Second call: must register a fresh approval (no auto-approve).
     const p2 = requestApproval(sender, taskId, "tc-2", "gitCommit", {
       message: "y",
     });
-    expect(pendingApprovals.has("tc-2")).toBe(false);
-    expect(await p2).toBe(true);
+    expect(pendingApprovals.has("tc-2")).toBe(true);
+    await settle("tc-2", true);
+    expect(await p2).toEqual({ approved: true });
+  });
+
+  it("proposeSessionBranch re-prompts every time and never enters the whitelist", async () => {
+    const taskId = "t-propose";
+    const sender = stubSender();
+
+    const p1 = requestApproval(
+      sender,
+      taskId,
+      "tps-1",
+      "proposeSessionBranch",
+      { candidates: ["feature/x"] },
+    );
+    await settle("tps-1", true);
+    expect(await p1).toEqual({ approved: true });
+    expect(isToolWhitelistedForTask(taskId, "proposeSessionBranch")).toBe(
+      false,
+    );
+
+    const p2 = requestApproval(
+      sender,
+      taskId,
+      "tps-2",
+      "proposeSessionBranch",
+      { candidates: ["feature/y"] },
+    );
+    expect(pendingApprovals.has("tps-2")).toBe(true);
+    await settle("tps-2", true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("gitPush re-prompts every time even after the user has approved once", async () => {
@@ -78,14 +110,14 @@ describe("requestApproval — whitelist routing", () => {
 
     const p1 = requestApproval(sender, taskId, "tp-1", "gitPush", {});
     await settle("tp-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     // Critical: NOT whitelisted.
     expect(isToolWhitelistedForTask(taskId, "gitPush")).toBe(false);
 
     const p2 = requestApproval(sender, taskId, "tp-2", "gitPush", {});
     expect(pendingApprovals.has("tp-2")).toBe(true);
     await settle("tp-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("openPullRequest also never enters the whitelist", async () => {
@@ -96,7 +128,7 @@ describe("requestApproval — whitelist routing", () => {
       title: "x",
     });
     await settle("tpr-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "openPullRequest")).toBe(false);
   });
 
@@ -108,7 +140,7 @@ describe("requestApproval — whitelist routing", () => {
       body: "thanks!",
     });
     await settle("tci-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubCommentIssue")).toBe(false);
     // Second call must register a fresh approval (no auto-approve).
     const p2 = requestApproval(sender, taskId, "tci-2", "githubCommentIssue", {
@@ -117,7 +149,7 @@ describe("requestApproval — whitelist routing", () => {
     });
     expect(pendingApprovals.has("tci-2")).toBe(true);
     await settle("tci-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("githubCommentPullRequest also never enters the whitelist", async () => {
@@ -131,7 +163,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 42, body: "ok" },
     );
     await settle("tcp-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubCommentPullRequest")).toBe(
       false,
     );
@@ -144,7 +176,7 @@ describe("requestApproval — whitelist routing", () => {
       path: "/a",
     });
     await settle("tw-1", true);
-    expect(await p).toBe(true);
+    expect(await p).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "writeFile")).toBe(true);
   });
 
@@ -156,7 +188,7 @@ describe("requestApproval — whitelist routing", () => {
       body: "hi",
     });
     await settle("tgi-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabCommentIssue")).toBe(false);
 
     const p2 = requestApproval(sender, taskId, "tgi-2", "gitlabCommentIssue", {
@@ -165,7 +197,7 @@ describe("requestApproval — whitelist routing", () => {
     });
     expect(pendingApprovals.has("tgi-2")).toBe(true);
     await settle("tgi-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("gitlabCommentMergeRequest also never enters the whitelist", async () => {
@@ -179,7 +211,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 42, body: "ok" },
     );
     await settle("tgm-1", true);
-    expect(await p).toBe(true);
+    expect(await p).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabCommentMergeRequest")).toBe(
       false,
     );
@@ -198,7 +230,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "1" },
     );
     await settle("trr-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubRerunWorkflowRun")).toBe(
       false,
     );
@@ -212,7 +244,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("trr-2")).toBe(true);
     await settle("trr-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("githubRerunFailedJobs also never enters the whitelist", async () => {
@@ -226,7 +258,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "1" },
     );
     await settle("trf-1", true);
-    expect(await p).toBe(true);
+    expect(await p).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubRerunFailedJobs")).toBe(
       false,
     );
@@ -239,7 +271,7 @@ describe("requestApproval — whitelist routing", () => {
       runId: "1",
     });
     await settle("tgr-1", true);
-    expect(await p).toBe(true);
+    expect(await p).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabRetryPipeline")).toBe(false);
   });
 
@@ -256,7 +288,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 7, body: "ok" },
     );
     await settle("trv-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubReviewPullRequest")).toBe(
       false,
     );
@@ -270,7 +302,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("trv-2")).toBe(true);
     await settle("trv-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("gitlabReviewMergeRequest also never enters the whitelist", async () => {
@@ -284,7 +316,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 7, body: "ok" },
     );
     await settle("tglr-1", true);
-    expect(await p).toBe(true);
+    expect(await p).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabReviewMergeRequest")).toBe(
       false,
     );
@@ -303,7 +335,7 @@ describe("requestApproval — whitelist routing", () => {
       { workflowFile: "ci.yml", ref: "main" },
     );
     await settle("tdsp-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubDispatchWorkflow")).toBe(
       false,
     );
@@ -317,7 +349,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tdsp-2")).toBe(true);
     await settle("tdsp-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("githubCancelWorkflowRun whitelists after first OK (auto-approves second call)", async () => {
@@ -331,7 +363,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "1" },
     );
     await settle("tcc-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubCancelWorkflowRun")).toBe(
       true,
     );
@@ -345,7 +377,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "2" },
     );
     expect(pendingApprovals.has("tcc-2")).toBe(false);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("gitlabCancelPipeline also whitelists after first OK", async () => {
@@ -359,7 +391,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "1" },
     );
     await settle("tgc-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabCancelPipeline")).toBe(true);
 
     const p2 = requestApproval(
@@ -370,7 +402,7 @@ describe("requestApproval — whitelist routing", () => {
       { runId: "2" },
     );
     expect(pendingApprovals.has("tgc-2")).toBe(false);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   // ── M14: gitlabCreatePipeline always prompts ───────────────────────
@@ -386,7 +418,7 @@ describe("requestApproval — whitelist routing", () => {
       { ref: "main" },
     );
     await settle("tgcp-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabCreatePipeline")).toBe(
       false,
     );
@@ -400,7 +432,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tgcp-2")).toBe(true);
     await settle("tgcp-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   // ── M15: review lifecycle tools always prompt ──────────────────────
@@ -414,7 +446,7 @@ describe("requestApproval — whitelist routing", () => {
       message: "hasty",
     });
     await settle("tgd-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubDismissReview")).toBe(false);
 
     const p2 = requestApproval(sender, taskId, "tgd-2", "githubDismissReview", {
@@ -424,7 +456,7 @@ describe("requestApproval — whitelist routing", () => {
     });
     expect(pendingApprovals.has("tgd-2")).toBe(true);
     await settle("tgd-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("githubEditReviewBody re-prompts every time (never whitelisted)", async () => {
@@ -438,7 +470,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 7, reviewId: "42", body: "final" },
     );
     await settle("tge-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "githubEditReviewBody")).toBe(
       false,
     );
@@ -452,7 +484,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tge-2")).toBe(true);
     await settle("tge-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   // ── M16: GitLab MR Approve / Unapprove always prompt ───────────────
@@ -468,7 +500,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 7 },
     );
     await settle("tga-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(isToolWhitelistedForTask(taskId, "gitlabApproveMergeRequest")).toBe(
       false,
     );
@@ -482,7 +514,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tga-2")).toBe(true);
     await settle("tga-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("gitlabUnapproveMergeRequest re-prompts every time (never whitelisted)", async () => {
@@ -496,7 +528,7 @@ describe("requestApproval — whitelist routing", () => {
       { number: 9 },
     );
     await settle("tgu-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(
       isToolWhitelistedForTask(taskId, "gitlabUnapproveMergeRequest"),
     ).toBe(false);
@@ -510,7 +542,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tgu-2")).toBe(true);
     await settle("tgu-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   // ── M17: PR inline-comment edit / delete always prompt ─────────────
@@ -526,7 +558,7 @@ describe("requestApproval — whitelist routing", () => {
       { commentId: "12345", body: "fix" },
     );
     await settle("tgec-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(
       isToolWhitelistedForTask(taskId, "githubEditPullRequestReviewComment"),
     ).toBe(false);
@@ -540,7 +572,7 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tgec-2")).toBe(true);
     await settle("tgec-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 
   it("githubDeletePullRequestReviewComment re-prompts every time (never whitelisted)", async () => {
@@ -554,7 +586,7 @@ describe("requestApproval — whitelist routing", () => {
       { commentId: "12346" },
     );
     await settle("tgdc-1", true);
-    expect(await p1).toBe(true);
+    expect(await p1).toEqual({ approved: true });
     expect(
       isToolWhitelistedForTask(taskId, "githubDeletePullRequestReviewComment"),
     ).toBe(false);
@@ -568,6 +600,6 @@ describe("requestApproval — whitelist routing", () => {
     );
     expect(pendingApprovals.has("tgdc-2")).toBe(true);
     await settle("tgdc-2", true);
-    expect(await p2).toBe(true);
+    expect(await p2).toEqual({ approved: true });
   });
 });
