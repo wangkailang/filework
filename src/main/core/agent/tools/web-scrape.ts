@@ -86,11 +86,7 @@ const firecrawlMetaToArticleMeta = (
 export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
   name: "webScrape",
   description:
-    "Scrape a URL via Firecrawl (handles anti-bot, JS rendering, captchas server-side). " +
-    "Use ONLY when both `webFetch` and `webFetchRendered` failed (empty markdown, 403, captcha). " +
-    "Costs Firecrawl API quota — Firecrawl free tier is 500 pages/month. " +
-    "Returns clean markdown plus a `meta` object (byline/siteName/publishedTime/favicon/og) mapped from Firecrawl's metadata. " +
-    "`images` / `videos` / `structuredData` are empty arrays here (Firecrawl doesn't itemize them; use webFetch when those matter).",
+    "Scrape a URL via Firecrawl (anti-bot + JS rendering + captcha bypass, server-side). Costs Firecrawl quota — use only when `webFetch` and `webFetchRendered` both failed. Returns markdown + `meta`; `images`/`videos`/`structuredData` come back empty.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {

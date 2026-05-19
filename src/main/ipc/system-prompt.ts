@@ -181,7 +181,7 @@ export const buildPlanStepSystemPrompt = ({
     : "";
 
   const verificationInstruction = step.verification
-    ? `\n\n## Verification\nAfter completing this step, verify: ${step.verification}`
+    ? `\n\n## Verification\nAfter completing this step, verify: ${step.verification}\nThen briefly state whether the verification criterion was met.`
     : "";
 
   return `${AGENT_IDENTITY} You are executing step ${step.id}/${plan.steps.length} of a planned task.

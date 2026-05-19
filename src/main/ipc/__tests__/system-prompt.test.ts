@@ -213,7 +213,7 @@ describe("buildPlanStepSystemPrompt", () => {
     expect(prompt).toContain("2. stat each file");
   });
 
-  it("step prompt with verification includes Verification block", () => {
+  it("step prompt with verification includes Verification block + closure line", () => {
     const step: PlanStep = {
       id: 1,
       action: "scan",
@@ -229,6 +229,11 @@ describe("buildPlanStepSystemPrompt", () => {
     });
     expect(prompt).toContain("## Verification");
     expect(prompt).toContain("directory has 10 files");
+    // Goal-Driven Execution: each step's verify loop should close with
+    // an explicit pass/fail statement instead of being left implicit.
+    expect(prompt).toContain(
+      "Then briefly state whether the verification criterion was met.",
+    );
   });
 
   it("step prompt with skill appends Active Skill block", () => {

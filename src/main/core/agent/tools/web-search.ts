@@ -105,12 +105,7 @@ interface RawTavilyResponse {
 export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
   name: "webSearch",
   description:
-    "Search the web with a natural-language question. Returns ranked URLs + snippets + (often) a synthesized answer. " +
-    "Use this when the user asks something and didn't supply a URL — the answer/snippets are usually enough; " +
-    "deep-fetch via `webFetch` only when you need the full article. " +
-    "For time-sensitive queries (今天/最新/recent/this week/last month), constrain recency with: `topic: 'news'` + `days: 1` (today), `days: 7` (this week); or `timeRange: 'day'|'week'|'month'|'year'`; or explicit `startDate`/`endDate` (YYYY-MM-DD). Use the system-prompt's `Current date` line as the anchor. " +
-    "When the user wants to SEE pictures (e.g. '搜几张...的图片', 'show me photos of ...'), pass `includeImages: true`; " +
-    "the returned `images` array is rendered as a clickable gallery — you don't need to repeat the URLs in your text reply.",
+    "Search the web. Returns ranked URLs, snippets, an optional synthesized answer, and optional images.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
