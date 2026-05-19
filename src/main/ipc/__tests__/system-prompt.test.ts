@@ -4,9 +4,43 @@ import type { Plan, PlanStep } from "../plan-types";
 import {
   buildAgentSystemPrompt,
   buildPlanStepSystemPrompt,
+  formatCurrentDate,
+  formatLocaleContext,
 } from "../system-prompt";
 
 const WORKSPACE = "/Users/me/workspace";
+
+describe("formatCurrentDate", () => {
+  it("renders YYYY-MM-DD (Weekday, UTC±N) for a fixed date", () => {
+    // 2026-05-19 was a Tuesday.
+    const fixed = new Date(2026, 4, 19, 10, 0, 0); // local time
+    const out = formatCurrentDate(fixed);
+    expect(out).toMatch(/^2026-05-19 \(Tuesday, UTC[+-]\d{1,2}(?::\d{2})?\)$/);
+  });
+
+  it("uses day granularity — same string for any time-of-day on the same date", () => {
+    const morning = new Date(2026, 4, 19, 0, 0, 0);
+    const evening = new Date(2026, 4, 19, 23, 59, 59);
+    expect(formatCurrentDate(morning)).toBe(formatCurrentDate(evening));
+  });
+});
+
+describe("formatLocaleContext", () => {
+  it("renders `<locale> (<timeZone>)` from resolved options", () => {
+    const resolved = {
+      locale: "zh-TW",
+      timeZone: "Asia/Taipei",
+      // remaining fields not consumed by formatLocaleContext but required by the type
+      calendar: "gregory",
+      numberingSystem: "latn",
+    } as unknown as Intl.ResolvedDateTimeFormatOptions;
+    expect(formatLocaleContext(resolved)).toBe("zh-TW (Asia/Taipei)");
+  });
+
+  it("default invocation returns a non-empty `<locale> (<tz>)` string from the host runtime", () => {
+    expect(formatLocaleContext()).toMatch(/^[A-Za-z-]+ \(.+\)$/);
+  });
+});
 
 describe("buildAgentSystemPrompt", () => {
   it("default prompt is domain-neutral (no FileWork file-management identity)", () => {
@@ -21,6 +55,18 @@ describe("buildAgentSystemPrompt", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toMatch(/analytical|conceptual|research/i);
     expect(prompt).toContain("askClarification");
+  });
+
+  it("default prompt injects 'Current date:' with date + weekday + UTC offset", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(
+      /Current date: \d{4}-\d{2}-\d{2} \([A-Z][a-z]+day, UTC[+-]\d/,
+    );
+  });
+
+  it("default prompt injects 'User locale:' with locale + timezone", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/User locale: [A-Za-z-]+ \(.+\)/);
   });
 
   it("default prompt includes behavioral guidelines when no skill is active", () => {
@@ -104,6 +150,30 @@ describe("buildPlanStepSystemPrompt", () => {
     expect(prompt).toContain(WORKSPACE);
     expect(prompt).toContain("(plan markdown)");
     expect(prompt).toContain("(none — this is the first step)");
+  });
+
+  it("step prompt injects 'Current date:' with date + weekday + UTC offset", () => {
+    const step: PlanStep = plan.steps[0];
+    const prompt = buildPlanStepSystemPrompt({
+      plan,
+      step,
+      planContext: "",
+      previousResults: "",
+    });
+    expect(prompt).toMatch(
+      /Current date: \d{4}-\d{2}-\d{2} \([A-Z][a-z]+day, UTC[+-]\d/,
+    );
+  });
+
+  it("step prompt injects 'User locale:' with locale + timezone", () => {
+    const step: PlanStep = plan.steps[0];
+    const prompt = buildPlanStepSystemPrompt({
+      plan,
+      step,
+      planContext: "",
+      previousResults: "",
+    });
+    expect(prompt).toMatch(/User locale: [A-Za-z-]+ \(.+\)/);
   });
 
   it("step prompt with sub-steps includes Sub-tasks block", () => {

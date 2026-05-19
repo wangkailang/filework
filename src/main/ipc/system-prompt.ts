@@ -19,6 +19,49 @@ import type { Plan, PlanStep } from "./plan-types";
 
 const AGENT_IDENTITY = `You are a general-purpose AI Agent operating with full access to the user's workspace and a set of tools (read/write/list files, run shell commands, ask the user for clarification, plus any skill-specific tools).`;
 
+/**
+ * Format the current date for system-prompt injection: `YYYY-MM-DD (Weekday, UTC±N)`.
+ *
+ * Day-granular (no time-of-day) so the rendered string is stable for the
+ * whole local day — this keeps the system prompt byte-identical across
+ * requests in the same day, which matters for upstream prompt cache hits.
+ *
+ * The model has no way to know the current real-world date (its training
+ * cutoff is always older than "today"), so we inject it as a plain fact
+ * — not a behavioral rule. Used by both system-prompt builders here and
+ * by the planner's own LLM call in `plan-generator.ts`.
+ */
+export const formatCurrentDate = (now: Date = new Date()): string => {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const offsetMin = -now.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const oh = Math.floor(abs / 60);
+  const om = abs % 60;
+  const offset =
+    om === 0
+      ? `UTC${sign}${oh}`
+      : `UTC${sign}${oh}:${String(om).padStart(2, "0")}`;
+  return `${y}-${m}-${d} (${weekday}, ${offset})`;
+};
+
+/**
+ * Format the user's locale + timezone for system-prompt injection:
+ * `zh-TW (Asia/Taipei)`.
+ *
+ * Same rationale as `formatCurrentDate`: this is a plain fact about the
+ * user's environment the model otherwise cannot know. Gives the model
+ * an implicit geographic anchor for queries that elide location
+ * ("今天的天气", "现在是几点", "附近") and a language hint that
+ * complements the existing "respond in same language" rule.
+ */
+export const formatLocaleContext = (
+  resolved: Intl.ResolvedDateTimeFormatOptions = new Intl.DateTimeFormat().resolvedOptions(),
+): string => `${resolved.locale} (${resolved.timeZone})`;
+
 const COMMON_RULES = `- Use absolute paths based on the workspace path provided.
 - Be careful with destructive operations (delete, overwrite, run command); confirm scope before acting.
 - When the user explicitly authorizes a destructive action (e.g. replies "是 / yes / delete / 删除"), execute the EXACT operation they requested. Do not silently substitute a less-destructive alternative (e.g. truncating a file instead of deleting it, backing up instead of overwriting). If you genuinely believe a safer alternative is better, call \`askClarification\` and propose the substitution — do NOT perform the substitute and then claim you did what was asked.
@@ -55,6 +98,8 @@ export const buildAgentSystemPrompt = ({
   const sections: string[] = [
     AGENT_IDENTITY,
     "",
+    `Current date: ${formatCurrentDate()}`,
+    `User locale: ${formatLocaleContext()}`,
     `Current workspace: ${workspacePath}`,
     "",
     "Rules:",
@@ -142,6 +187,8 @@ export const buildPlanStepSystemPrompt = ({
 
   return `${AGENT_IDENTITY} You are executing step ${step.id}/${plan.steps.length} of a planned task.
 
+Current date: ${formatCurrentDate()}
+User locale: ${formatLocaleContext()}
 Current workspace: ${plan.workspacePath}
 
 ## Current Plan (from disk)
