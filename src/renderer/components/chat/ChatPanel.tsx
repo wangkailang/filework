@@ -61,6 +61,7 @@ import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
 import { MediaVideoCard } from "./MediaVideoCard";
 import { ModelSelector } from "./ModelSelector";
+import { ReasoningBlock } from "./ReasoningBlock";
 import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
@@ -74,6 +75,7 @@ import type {
   ImagePart,
   MessagePart,
   PlanMessagePart,
+  ReasoningPart,
   RecoveryAction,
   ToolPart,
   UsagePart,
@@ -406,7 +408,17 @@ export const ChatPanel = ({
 
   const renderAssistantParts = (parts: MessagePart[]) => {
     const textKeyCounts = new Map<string, number>();
+    let reasoningIdx = 0;
     return parts.map((part) => {
+      if (part.type === "reasoning") {
+        reasoningIdx++;
+        return (
+          <ReasoningBlock
+            key={`reasoning-${reasoningIdx}`}
+            part={part as ReasoningPart}
+          />
+        );
+      }
       if (part.type === "text" && part.text) {
         const baseKey = `text-${part.text}`;
         const keyCount = (textKeyCounts.get(baseKey) ?? 0) + 1;

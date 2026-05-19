@@ -47,6 +47,12 @@ const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
   ["deepseek-coder", 64_000],
   ["deepseek-reasoner", 64_000],
   ["deepseek", 64_000],
+  // Xiaomi MiMo (reasoning model). MiMo-v2.5-pro advertises 128K context;
+  // the prefix catch-all keeps future MiMo SKUs working without a code
+  // change. If a deployment uses a smaller window the user can configure
+  // a Custom provider as an override.
+  ["mimo-v2.5", 128_000],
+  ["mimo", 128_000],
 ];
 
 /**

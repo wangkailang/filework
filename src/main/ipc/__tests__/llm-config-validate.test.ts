@@ -1,0 +1,71 @@
+import { describe, expect, it } from "vitest";
+import { validateLlmConfigPayload } from "../llm-config-handlers";
+
+describe("validateLlmConfigPayload — xiaomi provider", () => {
+  it("accepts a complete xiaomi config (apiKey + baseUrl + model)", () => {
+    const err = validateLlmConfigPayload({
+      name: "My MiMo",
+      provider: "xiaomi",
+      apiKey: "sk-test",
+      baseUrl: "https://example.xiaomi.com/v1",
+      model: "mimo-v2.5-pro",
+    });
+    expect(err).toBeNull();
+  });
+
+  it("rejects xiaomi config missing apiKey", () => {
+    const err = validateLlmConfigPayload({
+      name: "My MiMo",
+      provider: "xiaomi",
+      baseUrl: "https://example.xiaomi.com/v1",
+      model: "mimo-v2.5-pro",
+    });
+    expect(err).toMatch(/apiKey/);
+  });
+
+  it("rejects xiaomi config missing baseUrl", () => {
+    const err = validateLlmConfigPayload({
+      name: "My MiMo",
+      provider: "xiaomi",
+      apiKey: "sk-test",
+      model: "mimo-v2.5-pro",
+    });
+    expect(err).toMatch(/baseUrl/);
+  });
+
+  it("rejects empty/whitespace apiKey", () => {
+    const err = validateLlmConfigPayload({
+      name: "My MiMo",
+      provider: "xiaomi",
+      apiKey: "   ",
+      baseUrl: "https://example.xiaomi.com/v1",
+      model: "mimo-v2.5-pro",
+    });
+    expect(err).toMatch(/apiKey/);
+  });
+
+  it("rejects unknown provider (regression guard)", () => {
+    const err = validateLlmConfigPayload({
+      name: "Bogus",
+      provider: "bogus-provider" as unknown as "xiaomi",
+      apiKey: "sk-test",
+      baseUrl: "https://example.com",
+      model: "foo",
+    });
+    expect(err).toMatch(/Invalid provider/);
+  });
+
+  it("does not validate the model id against the token-budget table", () => {
+    // Unknown model ids should still pass validation — they just fall back
+    // to DEFAULT_TOKEN_BUDGET at runtime. Guards against a future tightening
+    // that would break new MiMo SKUs the moment they ship.
+    const err = validateLlmConfigPayload({
+      name: "MiMo Future",
+      provider: "xiaomi",
+      apiKey: "sk-test",
+      baseUrl: "https://example.xiaomi.com/v1",
+      model: "mimo-v3-experimental",
+    });
+    expect(err).toBeNull();
+  });
+});

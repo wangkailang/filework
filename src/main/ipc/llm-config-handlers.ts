@@ -54,6 +54,7 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     "ollama",
     "custom",
     "minimax",
+    "xiaomi",
   ];
   if (!validProviders.includes(data.provider)) {
     return `Invalid provider: ${data.provider}`;
@@ -61,14 +62,21 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
 
   // Hosted providers all require apiKey. MiniMax always needs one
   // regardless of modality (chat / image / video share the same key).
-  if (["openai", "anthropic", "deepseek", "minimax"].includes(data.provider)) {
+  // Xiaomi MiMo also requires an apiKey from the Xiaomi open platform.
+  if (
+    ["openai", "anthropic", "deepseek", "minimax", "xiaomi"].includes(
+      data.provider,
+    )
+  ) {
     if (!data.apiKey || data.apiKey.trim() === "") {
       return "apiKey is required for this provider";
     }
   }
 
-  // ollama/custom require baseUrl
-  if (["ollama", "custom"].includes(data.provider)) {
+  // ollama/custom/xiaomi require an explicit baseUrl. Xiaomi's open
+  // platform has no default endpoint baked into any SDK we depend on;
+  // users paste it from the Xiaomi developer console.
+  if (["ollama", "custom", "xiaomi"].includes(data.provider)) {
     if (!data.baseUrl || data.baseUrl.trim() === "") {
       return "baseUrl is required for this provider";
     }

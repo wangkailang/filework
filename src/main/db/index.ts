@@ -83,7 +83,7 @@ export const initDatabase = async () => {
     CREATE TABLE IF NOT EXISTS llm_configs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax')),
+      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi')),
       api_key TEXT,
       base_url TEXT,
       model TEXT NOT NULL,
@@ -268,6 +268,49 @@ export const initDatabase = async () => {
     } catch (err) {
       console.error(
         "[db] failed to widen llm_configs.provider CHECK; existing configs remain usable, new minimax provider rows will fail:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  // Second widening pass: add 'xiaomi' to the provider CHECK. Same dance as
+  // the minimax migration above — SQLite can't ALTER a CHECK in place. This
+  // is a no-op once the table already lists 'xiaomi'.
+  const llmConfigsSqlV2 = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='llm_configs'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (llmConfigsSqlV2 && !llmConfigsSqlV2.includes("xiaomi")) {
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE llm_configs_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi')),
+            api_key TEXT,
+            base_url TEXT,
+            model TEXT NOT NULL,
+            modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, model, modality, is_default, created_at, updated_at)
+            SELECT id, name, provider, api_key, base_url, model,
+                   COALESCE(modality, 'chat'),
+                   is_default, created_at, updated_at
+              FROM llm_configs;
+          DROP TABLE llm_configs;
+          ALTER TABLE llm_configs_new RENAME TO llm_configs;
+        `);
+      })();
+      console.log("[db] widened llm_configs.provider CHECK to include xiaomi");
+    } catch (err) {
+      console.error(
+        "[db] failed to widen llm_configs.provider CHECK; existing configs remain usable, new xiaomi provider rows will fail:",
         err instanceof Error ? err.message : err,
       );
     }
@@ -768,7 +811,8 @@ export type LlmProvider =
   | "deepseek"
   | "ollama"
   | "custom"
-  | "minimax";
+  | "minimax"
+  | "xiaomi";
 
 export type LlmModality = "chat" | "image" | "video";
 

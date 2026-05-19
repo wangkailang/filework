@@ -263,6 +263,26 @@ const api = {
     ipcRenderer.on("ai:stream-delta", handler);
     return () => ipcRenderer.removeListener("ai:stream-delta", handler);
   },
+  onStreamReasoning: (
+    callback: (data: { id: string; messageId: string; delta: string }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { id: string; messageId: string; delta: string },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-reasoning", handler);
+    return () => ipcRenderer.removeListener("ai:stream-reasoning", handler);
+  },
+  onStreamReasoningEnd: (
+    callback: (data: { id: string; messageId: string }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { id: string; messageId: string },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-reasoning-end", handler);
+    return () => ipcRenderer.removeListener("ai:stream-reasoning-end", handler);
+  },
   onStreamToolCall: (
     callback: (data: {
       id: string;
@@ -586,7 +606,8 @@ const api = {
         | "deepseek"
         | "ollama"
         | "custom"
-        | "minimax";
+        | "minimax"
+        | "xiaomi";
       apiKey?: string;
       baseUrl?: string;
       model: string;
@@ -603,7 +624,8 @@ const api = {
           | "deepseek"
           | "ollama"
           | "custom"
-          | "minimax";
+          | "minimax"
+          | "xiaomi";
         apiKey?: string;
         baseUrl?: string;
         model?: string;
