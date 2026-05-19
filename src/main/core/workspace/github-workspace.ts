@@ -58,6 +58,7 @@ import type {
   WorkspaceKind,
   WorkspaceSCM,
 } from "./types";
+import { NO_SESSION_BRANCH_ERROR } from "./types";
 import { workspaceRefId } from "./workspace-ref";
 
 export interface GitHubRef {
@@ -107,12 +108,20 @@ export interface GitHubWorkspaceDeps {
    */
   resolveProxy?: ProxyResolver;
   /**
-   * Per-session scope for auto-branching. Commits land on
-   * `claude/<sessionScope>`. The factory passes `sessionId.slice(0,8)`
-   * so the same chat session keeps committing to the same branch across
-   * agent turns. If omitted, a stable token derived from the ref is used.
+   * Per-session scope, used to derive a stable workspace identifier and
+   * (historically) the auto-branch name. The branch name itself is now
+   * chosen by the agent via `proposeSessionBranch`; this field is kept
+   * for backward compatibility and as a fallback identifier when no
+   * chat session id is available.
    */
   sessionScope?: string;
+  /**
+   * LLM-derived commit identity. Used as `git commit --author`. When
+   * omitted, the SCM's `commit()` throws — there is no default Claude
+   * identity. The IPC layer (`ai-handlers.ts`) constructs this from the
+   * active `llmConfig` and passes it through `CreateWorkspaceOpts`.
+   */
+  commitIdentity?: { name: string; email: string };
 }
 
 /**
@@ -300,6 +309,12 @@ interface GitHubScmDeps {
   repo: string;
   resolveToken: () => Promise<string>;
   sessionScope: string;
+  /**
+   * Active LLM-derived commit identity. Set by `setCommitIdentity()` at
+   * session-bind time. When unset, `commit()` throws — there is no
+   * default fallback.
+   */
+  commitIdentity?: { name: string; email: string };
   /** GIT_ASKPASS helper path. Same plumbing as ensureClone. */
   askpassPath?: string;
   spawnFn?: typeof spawn;
@@ -315,17 +330,32 @@ const GH_HEADERS = (token: string): Record<string, string> => ({
   "Content-Type": "application/json",
 });
 
-const COMMIT_AUTHOR = "Claude <claude@anthropic.com>";
-
 class GitHubWorkspaceSCM implements WorkspaceSCM {
+  private chosenBranch: string | null = null;
+
   constructor(private readonly deps: GitHubScmDeps) {}
 
   private get cwd(): string {
     return this.deps.cloneDir;
   }
 
+  setSessionBranch(branch: string): void {
+    this.chosenBranch = branch;
+  }
+
+  getSessionBranch(): string | null {
+    return this.chosenBranch;
+  }
+
+  setCommitIdentity(identity: { name: string; email: string }): void {
+    this.deps.commitIdentity = identity;
+  }
+
   private sessionBranch(): string {
-    return `claude/${this.deps.sessionScope}`;
+    if (!this.chosenBranch) {
+      throw new Error(NO_SESSION_BRANCH_ERROR);
+    }
+    return this.chosenBranch;
   }
 
   async status(): Promise<{ branch: string; dirty: boolean }> {
@@ -412,7 +442,13 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
     if (!staged) {
       return { sha: "", branch: this.sessionBranch(), filesChanged: 0 };
     }
-    await runGit(["commit", "-m", input.message, "--author", COMMIT_AUTHOR], {
+    if (!this.deps.commitIdentity) {
+      throw new Error(
+        "commit identity not configured; no LLM model bound to this workspace",
+      );
+    }
+    const author = `${this.deps.commitIdentity.name} <${this.deps.commitIdentity.email}>`;
+    await runGit(["commit", "-m", input.message, "--author", author], {
       cwd: this.cwd,
       spawnFn: this.deps.spawnFn,
     });
@@ -927,9 +963,11 @@ class GitHubWorkspaceSCM implements WorkspaceSCM {
   }
 
   /**
-   * Ensure the working tree is on `claude/<scope>`. First entry creates
-   * the branch off the remote-tracking ref so the agent never commits
-   * directly to the workspace's base ref.
+   * Ensure the working tree is on the chosen session branch. The agent
+   * must have already called `proposeSessionBranch` (which populated
+   * `chosenBranch`); first entry here creates the branch off the
+   * remote-tracking ref so the agent never commits directly to the
+   * workspace's base ref.
    */
   private async ensureSessionBranch(): Promise<void> {
     const current = (
@@ -1037,6 +1075,7 @@ export class GitHubWorkspace implements Workspace {
       repo: ref.repo,
       resolveToken: () => deps.resolveToken(ref.credentialId),
       sessionScope: deps.sessionScope ?? fallbackSessionScope(ref),
+      commitIdentity: deps.commitIdentity,
       askpassPath: deps.askpassPath,
       spawnFn: deps.spawnFn,
       fetchFn: deps.fetchFn,

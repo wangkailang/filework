@@ -59,6 +59,7 @@ import type {
   WorkspaceKind,
   WorkspaceSCM,
 } from "./types";
+import { NO_SESSION_BRANCH_ERROR } from "./types";
 import { workspaceRefId } from "./workspace-ref";
 
 export interface GitLabRef {
@@ -96,8 +97,11 @@ export interface GitLabWorkspaceDeps {
    * some hosts. Undefined falls back to inherited `process.env`.
    */
   resolveProxy?: ProxyResolver;
-  /** Per-session scope for auto-branching. */
+  /** Per-session scope, used as workspace identifier. Branch naming is
+   * now driven by the agent via `proposeSessionBranch`. */
   sessionScope?: string;
+  /** LLM-derived commit identity. See `GitHubWorkspaceDeps.commitIdentity`. */
+  commitIdentity?: { name: string; email: string };
 }
 
 const authedEnv = (
@@ -263,6 +267,10 @@ interface GitLabScmDeps {
   project: string;
   resolveToken: () => Promise<string>;
   sessionScope: string;
+  /**
+   * Active LLM-derived commit identity. See `GitHubScmDeps.commitIdentity`.
+   */
+  commitIdentity?: { name: string; email: string };
   askpassPath?: string;
   spawnFn?: typeof spawn;
   fetchFn?: typeof fetch;
@@ -276,8 +284,6 @@ const GL_HEADERS = (token: string): Record<string, string> => ({
   "Content-Type": "application/json",
 });
 
-const COMMIT_AUTHOR = "Claude <claude@anthropic.com>";
-
 const projectIdEncoded = (d: GitLabScmDeps): string =>
   encodeURIComponent(`${d.namespace}/${d.project}`);
 
@@ -286,14 +292,31 @@ const glStateOut = (s: "open" | "closed" | "all"): string =>
   s === "open" ? "opened" : s;
 
 class GitLabWorkspaceSCM implements WorkspaceSCM {
+  private chosenBranch: string | null = null;
+
   constructor(private readonly deps: GitLabScmDeps) {}
 
   private get cwd(): string {
     return this.deps.cloneDir;
   }
 
+  setSessionBranch(branch: string): void {
+    this.chosenBranch = branch;
+  }
+
+  getSessionBranch(): string | null {
+    return this.chosenBranch;
+  }
+
+  setCommitIdentity(identity: { name: string; email: string }): void {
+    this.deps.commitIdentity = identity;
+  }
+
   private sessionBranch(): string {
-    return `claude/${this.deps.sessionScope}`;
+    if (!this.chosenBranch) {
+      throw new Error(NO_SESSION_BRANCH_ERROR);
+    }
+    return this.chosenBranch;
   }
 
   private apiBase(): string {
@@ -392,7 +415,13 @@ class GitLabWorkspaceSCM implements WorkspaceSCM {
     if (!staged) {
       return { sha: "", branch: this.sessionBranch(), filesChanged: 0 };
     }
-    await runGit(["commit", "-m", input.message, "--author", COMMIT_AUTHOR], {
+    if (!this.deps.commitIdentity) {
+      throw new Error(
+        "commit identity not configured; no LLM model bound to this workspace",
+      );
+    }
+    const author = `${this.deps.commitIdentity.name} <${this.deps.commitIdentity.email}>`;
+    await runGit(["commit", "-m", input.message, "--author", author], {
       cwd: this.cwd,
       spawnFn: this.deps.spawnFn,
     });
@@ -972,6 +1001,7 @@ export class GitLabWorkspace implements Workspace {
       project: ref.project,
       resolveToken: () => deps.resolveToken(ref.credentialId),
       sessionScope: deps.sessionScope ?? fallbackSessionScope(ref),
+      commitIdentity: deps.commitIdentity,
       askpassPath: deps.askpassPath,
       spawnFn: deps.spawnFn,
       fetchFn: deps.fetchFn,

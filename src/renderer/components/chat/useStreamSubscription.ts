@@ -413,7 +413,15 @@ export function useStreamSubscription({
     );
 
     const offToolApproval = window.filework.onStreamToolApproval(
-      ({ id, toolCallId, toolName, args, description, extraContext }) => {
+      ({
+        id,
+        toolCallId,
+        toolName,
+        args,
+        description,
+        extraContext,
+        richPreview,
+      }) => {
         if (id !== streamTaskIdRef.current) return;
         updateParts((parts) => {
           const existingIdx = parts.findIndex(
@@ -425,6 +433,7 @@ export function useStreamSubscription({
             description,
             state: "approval-requested",
             extraContext,
+            richPreview: richPreview as ToolApproval["richPreview"],
           };
           if (existingIdx !== -1) {
             parts[existingIdx] = {

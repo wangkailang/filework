@@ -14,8 +14,8 @@
  */
 
 import type { WebContents } from "electron";
-
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
+import { PROPOSE_SESSION_BRANCH_TOOL } from "../core/agent/tools/git-tools";
 import { requestApproval } from "./ai-tools";
 import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 
@@ -99,7 +99,7 @@ export const buildApprovalHook = ({
     }
 
     // ── User approval (whitelist short-circuit lives inside) ────────
-    const approved = await requestApproval(
+    const result = await requestApproval(
       sender,
       taskId,
       call.toolCallId,
@@ -107,7 +107,21 @@ export const buildApprovalHook = ({
       call.args,
       ctx.signal,
       extraContext,
+      call.richPreview,
     );
-    return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
+    if (!result.approved) {
+      return { allow: false, reason: DENIED_REASON };
+    }
+    // Multi-choice approvals (currently only proposeSessionBranch's
+    // branch picker) bake the user's pick into the tool's args via
+    // argsOverride, so the tool's `execute` sees the chosen value as
+    // `candidates[0]`.
+    if (call.toolName === PROPOSE_SESSION_BRANCH_TOOL && result.choice) {
+      return {
+        allow: true,
+        argsOverride: { ...(call.args as object), candidates: [result.choice] },
+      };
+    }
+    return { allow: true };
   };
 };

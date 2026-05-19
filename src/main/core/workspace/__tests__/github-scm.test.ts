@@ -69,6 +69,13 @@ const fakeRef: GitHubRef = {
   credentialId: "cred-1",
 };
 
+const TEST_BRANCH = "feature/test-branch";
+const TEST_IDENTITY = {
+  name: "TestModel-1",
+  email: "noreply+testprovider@filework.local",
+};
+const TEST_AUTHOR_STR = `${TEST_IDENTITY.name} <${TEST_IDENTITY.email}>`;
+
 const buildWorkspace = async (
   cacheDir: string,
   fakeSpawn: ReturnType<typeof buildFakeSpawn>["fake"],
@@ -82,7 +89,7 @@ const buildWorkspace = async (
     new Date().toISOString(),
     "utf8",
   );
-  return GitHubWorkspace.create(fakeRef, {
+  const ws = await GitHubWorkspace.create(fakeRef, {
     resolveToken: async () => "ghp_TESTTOKEN",
     cacheDir,
     freshnessTtlMs: 60_000,
@@ -90,7 +97,12 @@ const buildWorkspace = async (
     spawnFn: fakeSpawn as any,
     fetchFn,
     sessionScope,
+    commitIdentity: TEST_IDENTITY,
   });
+  // Mirror the runtime contract: proposeSessionBranch establishes the
+  // working branch before any commit / push / openPR call.
+  ws.scm.setSessionBranch?.(TEST_BRANCH);
+  return ws;
 };
 
 describe("GitHubWorkspaceSCM.commit", () => {
@@ -118,7 +130,7 @@ describe("GitHubWorkspaceSCM.commit", () => {
     const result = await ws.scm.commit({ message: "fix: thing" });
 
     expect(result.sha).toBe("abc1234deadbeef");
-    expect(result.branch).toBe("claude/abcd1234");
+    expect(result.branch).toBe("feature/test-branch");
     expect(result.filesChanged).toBe(2);
 
     const subs = calls.map((c) => c.args[0]);
@@ -130,7 +142,7 @@ describe("GitHubWorkspaceSCM.commit", () => {
     expect(checkoutCall?.args).toEqual([
       "checkout",
       "-B",
-      "claude/abcd1234",
+      "feature/test-branch",
       "origin/main",
     ]);
 
@@ -140,13 +152,13 @@ describe("GitHubWorkspaceSCM.commit", () => {
       "-m",
       "fix: thing",
       "--author",
-      "Claude <claude@anthropic.com>",
+      TEST_AUTHOR_STR,
     ]);
   });
 
   it("stages only specified files when `files` is provided", async () => {
     const { fake, calls } = buildFakeSpawn({
-      "rev-parse": [{ stdout: "claude/abcd1234" }, { stdout: "deadbeef" }],
+      "rev-parse": [{ stdout: "feature/test-branch" }, { stdout: "deadbeef" }],
       diff: { stdout: "only-this.ts" },
     });
     const ws = await buildWorkspace(cacheDir, fake);
@@ -157,7 +169,7 @@ describe("GitHubWorkspaceSCM.commit", () => {
 
   it("skips the session-branch checkout when already on it", async () => {
     const { fake, calls } = buildFakeSpawn({
-      "rev-parse": [{ stdout: "claude/abcd1234" }, { stdout: "abc" }],
+      "rev-parse": [{ stdout: "feature/test-branch" }, { stdout: "abc" }],
       diff: { stdout: "x.ts" },
     });
     const ws = await buildWorkspace(cacheDir, fake);
@@ -167,7 +179,7 @@ describe("GitHubWorkspaceSCM.commit", () => {
 
   it("returns sha:'' on a clean tree (no error)", async () => {
     const { fake } = buildFakeSpawn({
-      "rev-parse": [{ stdout: "claude/abcd1234" }],
+      "rev-parse": [{ stdout: "feature/test-branch" }],
       diff: { stdout: "" },
     });
     const ws = await buildWorkspace(cacheDir, fake);
@@ -194,7 +206,7 @@ describe("GitHubWorkspaceSCM.push", () => {
 
     const result = await ws.scm.push?.({});
 
-    expect(result).toEqual({ branch: "claude/abcd1234", remote: "origin" });
+    expect(result).toEqual({ branch: "feature/test-branch", remote: "origin" });
     const remoteCall = calls.find((c) => c.args[0] === "remote");
     expect(remoteCall?.args[0]).toBe("remote");
     expect(remoteCall?.args[1]).toBe("set-url");
@@ -204,7 +216,12 @@ describe("GitHubWorkspaceSCM.push", () => {
     );
     expect(remoteCall?.args[3]).not.toContain("ghp_TESTTOKEN");
     const pushCall = calls.find((c) => c.args[0] === "push");
-    expect(pushCall?.args).toEqual(["push", "-u", "origin", "claude/abcd1234"]);
+    expect(pushCall?.args).toEqual([
+      "push",
+      "-u",
+      "origin",
+      "feature/test-branch",
+    ]);
   });
 
   it("appends --force-with-lease when force=true", async () => {
@@ -229,7 +246,7 @@ describe("GitHubWorkspaceSCM.openPullRequest", () => {
 
   it("POSTs to /repos/<owner>/<repo>/pulls with the right body", async () => {
     const { fake } = buildFakeSpawn({
-      "ls-remote": { stdout: "abc1234\trefs/heads/claude/abcd1234" },
+      "ls-remote": { stdout: "abc1234\trefs/heads/feature/test-branch" },
     });
     const fetchMock = vi.fn(
       async () =>
@@ -258,7 +275,7 @@ describe("GitHubWorkspaceSCM.openPullRequest", () => {
         body: JSON.stringify({
           title: "Fix bug",
           body: "Detail",
-          head: "claude/abcd1234",
+          head: "feature/test-branch",
           base: "main",
           draft: true,
         }),
@@ -281,7 +298,7 @@ describe("GitHubWorkspaceSCM.openPullRequest", () => {
 
   it("propagates GitHub error responses", async () => {
     const { fake } = buildFakeSpawn({
-      "ls-remote": { stdout: "abc1234\trefs/heads/claude/abcd1234" },
+      "ls-remote": { stdout: "abc1234\trefs/heads/feature/test-branch" },
     });
     const fetchMock = vi.fn(
       async () => new Response("validation failed", { status: 422 }),
@@ -294,7 +311,7 @@ describe("GitHubWorkspaceSCM.openPullRequest", () => {
 
   it("uses the user-supplied base when provided", async () => {
     const { fake } = buildFakeSpawn({
-      "ls-remote": { stdout: "abc\trefs/heads/claude/abcd1234" },
+      "ls-remote": { stdout: "abc\trefs/heads/feature/test-branch" },
     });
     const fetchMock = vi.fn(
       async () =>

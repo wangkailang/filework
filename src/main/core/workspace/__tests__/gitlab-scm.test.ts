@@ -64,6 +64,13 @@ const fakeRef: GitLabRef = {
   credentialId: "cred-1",
 };
 
+const TEST_BRANCH = "feature/test-branch";
+const TEST_IDENTITY = {
+  name: "TestModel-1",
+  email: "noreply+testprovider@filework.local",
+};
+const TEST_AUTHOR_STR = `${TEST_IDENTITY.name} <${TEST_IDENTITY.email}>`;
+
 const buildWorkspace = async (
   cacheDir: string,
   fakeSpawn: ReturnType<typeof buildFakeSpawn>["fake"],
@@ -82,7 +89,7 @@ const buildWorkspace = async (
     new Date().toISOString(),
     "utf8",
   );
-  return GitLabWorkspace.create(fakeRef, {
+  const ws = await GitLabWorkspace.create(fakeRef, {
     resolveToken: async () => "glpat-TESTTOKEN",
     cacheDir,
     freshnessTtlMs: 60_000,
@@ -90,7 +97,12 @@ const buildWorkspace = async (
     spawnFn: fakeSpawn as any,
     fetchFn,
     sessionScope,
+    commitIdentity: TEST_IDENTITY,
   });
+  // Mirror the runtime contract: proposeSessionBranch establishes the
+  // working branch before any commit / push / openPR call.
+  ws.scm.setSessionBranch?.(TEST_BRANCH);
+  return ws;
 };
 
 const PROJECT_PATH = "acme%2Fsub%2Fapp";
@@ -105,7 +117,7 @@ describe("GitLabWorkspaceSCM.commit", () => {
     await rm(cacheDir, { recursive: true, force: true });
   });
 
-  it("auto-creates the session branch and commits with Claude author", async () => {
+  it("auto-creates the session branch and commits with model-derived author", async () => {
     const { fake, calls } = buildFakeSpawn({
       "rev-parse": [{ stdout: "main" }, { stdout: "abc1234" }],
       diff: { stdout: "src/a.ts" },
@@ -115,14 +127,14 @@ describe("GitLabWorkspaceSCM.commit", () => {
 
     expect(result).toEqual({
       sha: "abc1234",
-      branch: "claude/abcd1234",
+      branch: "feature/test-branch",
       filesChanged: 1,
     });
     const checkoutCall = calls.find((c) => c.args[0] === "checkout");
     expect(checkoutCall?.args).toEqual([
       "checkout",
       "-B",
-      "claude/abcd1234",
+      "feature/test-branch",
       "origin/main",
     ]);
     const commitCall = calls.find((c) => c.args[0] === "commit");
@@ -131,7 +143,7 @@ describe("GitLabWorkspaceSCM.commit", () => {
       "-m",
       "feat: x",
       "--author",
-      "Claude <claude@anthropic.com>",
+      TEST_AUTHOR_STR,
     ]);
   });
 });
@@ -149,7 +161,7 @@ describe("GitLabWorkspaceSCM.push", () => {
     const { fake, calls } = buildFakeSpawn();
     const ws = await buildWorkspace(cacheDir, fake);
     const result = await ws.scm.push?.({});
-    expect(result).toEqual({ branch: "claude/abcd1234", remote: "origin" });
+    expect(result).toEqual({ branch: "feature/test-branch", remote: "origin" });
     const remoteCall = calls.find((c) => c.args[0] === "remote");
     // M7: no token in the URL.
     expect(remoteCall?.args[3]).toBe(
@@ -157,7 +169,12 @@ describe("GitLabWorkspaceSCM.push", () => {
     );
     expect(remoteCall?.args[3]).not.toContain("glpat-TESTTOKEN");
     const pushCall = calls.find((c) => c.args[0] === "push");
-    expect(pushCall?.args).toEqual(["push", "-u", "origin", "claude/abcd1234"]);
+    expect(pushCall?.args).toEqual([
+      "push",
+      "-u",
+      "origin",
+      "feature/test-branch",
+    ]);
   });
 
   it("appends --force-with-lease when force=true", async () => {
@@ -180,7 +197,7 @@ describe("GitLabWorkspaceSCM.openPullRequest (creates MR)", () => {
 
   it("POSTs to /projects/:id/merge_requests with source_branch+target_branch", async () => {
     const { fake } = buildFakeSpawn({
-      "ls-remote": { stdout: "abc\trefs/heads/claude/abcd1234" },
+      "ls-remote": { stdout: "abc\trefs/heads/feature/test-branch" },
     });
     const fetchMock = vi.fn(
       async () =>
@@ -204,7 +221,7 @@ describe("GitLabWorkspaceSCM.openPullRequest (creates MR)", () => {
     );
     expect(callArgs[1].method).toBe("POST");
     expect(JSON.parse(String(callArgs[1].body))).toEqual({
-      source_branch: "claude/abcd1234",
+      source_branch: "feature/test-branch",
       target_branch: "main",
       title: "Fix",
       description: "B",

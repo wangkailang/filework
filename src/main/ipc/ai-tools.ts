@@ -26,6 +26,7 @@ import {
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
 import {
+  type ApprovalResult,
   isToolWhitelistedForTask,
   pendingApprovals,
   toolCallToTaskMap,
@@ -50,6 +51,10 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
  * pattern instead.
  */
 const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
+  // The branch picker and gitCommit are both high-risk — every commit
+  // is a separate decision, no whitelist after first OK.
+  "proposeSessionBranch",
+  "gitCommit",
   "gitPush",
   "openPullRequest",
   "githubCommentIssue",
@@ -93,6 +98,12 @@ export const dangerousToolDescriptions: Record<
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
+  proposeSessionBranch: (args) => {
+    const c = Array.isArray(args.candidates) ? args.candidates : [];
+    return c.length === 1
+      ? `选择会话分支: ${String(c[0])}`
+      : `选择会话分支 (${c.length} 个候选)`;
+  },
   gitCommit: (args) => `提交: ${String(args.message ?? "").slice(0, 80)}`,
   gitPush: (args) =>
     args.force ? "推送 (force-with-lease) 到 origin" : "推送到 origin",
@@ -478,7 +489,14 @@ export const requestApproval = (
    * M8 uses it to surface a failing-CI heads-up before openPullRequest.
    */
   extraContext?: string,
-): Promise<boolean> => {
+  /**
+   * Tool-specific structured preview (e.g. branch picker candidates,
+   * commit diff stats, PR title/body). The renderer narrows this via
+   * its discriminated `kind` field. When omitted, falls back to the
+   * plain `description` string from `dangerousToolDescriptions`.
+   */
+  richPreview?: unknown,
+): Promise<ApprovalResult> => {
   // If the user already approved this tool type during the current task,
   // skip the approval prompt and auto-approve.
   if (isToolWhitelistedForTask(taskId, toolName)) {
@@ -492,13 +510,15 @@ export const requestApproval = (
         toolName,
       });
     }
-    return Promise.resolve(true);
+    return Promise.resolve({ approved: true });
   }
 
   // Non-broadcast-effect destructive tools coalesce into a single
   // approval card per (task, toolName) so a wave of 14 concurrent
   // deleteFile calls becomes 1 click instead of 14. ALWAYS_PROMPT_TOOLS
   // (gitPush, openPullRequest, etc.) keep the single-card path below.
+  // The batch path does not support multi-choice — it returns boolean,
+  // which we lift to ApprovalResult here.
   if (!ALWAYS_PROMPT_TOOLS.has(toolName)) {
     const describeFn = dangerousToolDescriptions[toolName];
     const description = describeFn
@@ -512,16 +532,16 @@ export const requestApproval = (
       args,
       description,
       abortSignal,
-    });
+    }).then((approved) => ({ approved }));
   }
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<ApprovalResult>((resolve) => {
     let settled = false;
     const onAbort = () => {
       console.log("[Tool] Aborting tool approval request:", toolCallId);
-      settle(false);
+      settle({ approved: false });
     };
-    const settle = (approved: boolean) => {
+    const settle = (result: ApprovalResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -530,11 +550,12 @@ export const requestApproval = (
       toolCallToTaskMap.delete(toolCallId);
       // If approved, whitelist this tool type for the rest of the task —
       // EXCEPT for tools that are too remote-affecting to silently
-      // re-approve (gitPush, openPullRequest). Those always re-prompt.
-      if (approved && !ALWAYS_PROMPT_TOOLS.has(toolName)) {
+      // re-approve (gitPush, openPullRequest, gitCommit, ...). Those
+      // always re-prompt.
+      if (result.approved && !ALWAYS_PROMPT_TOOLS.has(toolName)) {
         whitelistToolForTask(taskId, toolName);
       }
-      resolve(approved);
+      resolve(result);
     };
 
     pendingApprovals.set(toolCallId, settle);
@@ -555,7 +576,7 @@ export const requestApproval = (
             timeoutMs: APPROVAL_TIMEOUT_MS,
           });
         }
-        settle(false);
+        settle({ approved: false });
       }
     }, APPROVAL_TIMEOUT_MS);
 
@@ -581,6 +602,7 @@ export const requestApproval = (
         args,
         description,
         extraContext,
+        richPreview,
       });
     }
   });

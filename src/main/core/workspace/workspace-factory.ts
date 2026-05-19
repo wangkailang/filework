@@ -45,11 +45,17 @@ export interface WorkspaceFactoryDeps {
 
 export interface CreateWorkspaceOpts {
   /**
-   * Per-session scope for SCM-backed auto-branching. The factory
-   * forwards this to GitHubWorkspace / GitLabWorkspace; commits land on
-   * `claude/<sessionScope>`. Local refs ignore it.
+   * Per-session scope for SCM workspaces — used as a stable identifier.
+   * The branch name itself is chosen by the agent via the
+   * `proposeSessionBranch` tool. Local refs ignore this entirely.
    */
   sessionScope?: string;
+  /**
+   * LLM-derived identity used as `git commit --author` for commits
+   * created in this workspace. Built by the IPC layer from the active
+   * `llmConfig` (model + provider). Local refs ignore this.
+   */
+  commitIdentity?: { name: string; email: string };
 }
 
 export const createWorkspace = async (
@@ -72,6 +78,7 @@ export const createWorkspace = async (
       fetchFn: deps.fetchFn,
       resolveProxy: deps.resolveProxy,
       sessionScope: opts.sessionScope,
+      commitIdentity: opts.commitIdentity,
     });
   }
   if (ref.kind === "gitlab") {
@@ -82,6 +89,7 @@ export const createWorkspace = async (
       fetchFn: deps.fetchFn,
       resolveProxy: deps.resolveProxy,
       sessionScope: opts.sessionScope,
+      commitIdentity: opts.commitIdentity,
     });
   }
   const _exhaustive: never = ref;
