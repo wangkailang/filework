@@ -49,12 +49,7 @@ const isHtml = (contentType: string): boolean =>
 export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
   name: "webFetch",
   description:
-    "Fetch a public URL and return clean reader-mode markdown plus the raw body. Use this FIRST for any concrete URL — articles, blog posts, READMEs, docs, RSS, JSON APIs. " +
-    "Read the `markdown` field for HTML pages (cheap on tokens); read `raw` for JSON/plain text or when `markdown` is empty. " +
-    "Side-channel fields: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos` (YouTube/Vimeo embeds + <video>), `structuredData` (schema.org subsets). " +
-    "Quote `meta.publishedTime` when freshness matters; cite via `meta.byline` / `meta.siteName`. " +
-    "If `markdown` is empty AND the page looked thin (JS-rendered SPA, x.com, etc.), retry with `webFetchRendered` for a real-browser load. " +
-    "If that also fails (anti-bot, captcha), escalate to `webScrape`.",
+    "Fetch a public URL and return clean reader-mode markdown plus the raw body, with side-channel fields: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos`, `structuredData`.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {

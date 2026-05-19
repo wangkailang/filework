@@ -43,11 +43,7 @@ const DEFAULT_MAX_BYTES = 200_000;
 export const buildWebFetchRenderedTool = (): ToolDefinition => ({
   name: "webFetchRendered",
   description:
-    "Render a URL in a real Chromium window (Electron's own, not Playwright) and return clean reader-mode markdown + raw HTML. " +
-    "Use ONLY after `webFetch` returned empty / very-thin markdown on a page that should have content (SPA, JS-rendered docs site, x.com/twitter, Notion). " +
-    "Same side-channel fields as `webFetch`: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos`, `structuredData`. " +
-    "Slower than `webFetch` (typically 2-4s) and capped at 2 parallel calls; don't use it as the default fetch. " +
-    "If this also returns empty markdown, escalate to `webScrape` (Firecrawl).",
+    "Like `webFetch` but renders the URL in a real Chromium window first, so JS-hydrated content lands in the HTML. Slower (typically 2-4s) and capped at 2 parallel calls — use only when `webFetch` returned empty/thin markdown.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {

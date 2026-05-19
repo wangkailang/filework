@@ -262,7 +262,7 @@ const moveFileTool: ToolDefinition<z.infer<typeof moveFileSchema>, unknown> = {
 const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
   name: "deleteFile",
   description:
-    "Delete a file or directory. Requires user approval. PREFER THIS over `runCommand` (rm, truncate, `: > file`, etc.) whenever the user asks to delete — it surfaces a clear single-operation approval dialog and matches user intent exactly. Do NOT use this tool to truncate / empty a file; use `writeFile` with empty content for that.",
+    "Delete a file or directory (recursive). Requires user approval. To empty a file without removing it, use `writeFile` with empty content.",
   safety: "destructive",
   inputSchema: pathSchema,
   execute: async (args, ctx) => {
