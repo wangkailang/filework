@@ -21,6 +21,7 @@ import type {
   PlanStep,
   PlanSubStep,
 } from "./plan-types";
+import { formatCurrentDate, formatLocaleContext } from "./system-prompt";
 
 // Re-export types for convenience for callers that previously imported via
 // the old `../planner` barrel.
@@ -112,6 +113,8 @@ export const planTask = async (
     abortSignal,
     system: `You are a task planner for a general-purpose AI Agent operating in the user's workspace.
 
+Current date: ${formatCurrentDate()}
+User locale: ${formatLocaleContext()}
 Current workspace: ${workspacePath}
 
 ## Your workflow

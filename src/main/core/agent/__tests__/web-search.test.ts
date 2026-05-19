@@ -96,6 +96,58 @@ describe("buildWebSearchTool", () => {
     expect(body.max_results).toBe(2);
   });
 
+  it("passes Tavily recency params through to the API body (topic/days/timeRange/dates)", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ answer: null, results: [] }),
+    );
+    const tool = buildWebSearchTool({
+      fetchImpl: fetchImpl as never,
+      resolveTavilyToken: async () => "tvly-test",
+    });
+    await tool.execute(
+      {
+        query: "today's AI news",
+        topic: "news",
+        days: 1,
+        timeRange: "day",
+        startDate: "2026-05-18",
+        endDate: "2026-05-19",
+      },
+      fakeCtx(),
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.topic).toBe("news");
+    expect(body.days).toBe(1);
+    expect(body.time_range).toBe("day");
+    expect(body.start_date).toBe("2026-05-18");
+    expect(body.end_date).toBe("2026-05-19");
+  });
+
+  it("does not include recency params when not provided (backward compatible)", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ answer: null, results: [] }),
+    );
+    const tool = buildWebSearchTool({
+      fetchImpl: fetchImpl as never,
+      resolveTavilyToken: async () => "tvly-test",
+    });
+    await tool.execute({ query: "evergreen query" }, fakeCtx());
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("topic");
+    expect(body).not.toHaveProperty("days");
+    expect(body).not.toHaveProperty("time_range");
+    expect(body).not.toHaveProperty("start_date");
+    expect(body).not.toHaveProperty("end_date");
+  });
+
   it("throws on non-2xx Tavily response", async () => {
     const fetchImpl = vi.fn(
       async () =>

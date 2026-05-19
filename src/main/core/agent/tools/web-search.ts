@@ -54,6 +54,37 @@ const inputSchema = z.object({
     .describe(
       "Only matters when includeImages is true. Adds Tavily-generated captions per image. Costs more credits.",
     ),
+  topic: z
+    .enum(["general", "news", "finance"])
+    .optional()
+    .describe(
+      "Tavily indexing topic (default 'general'). Use 'news' for recent-news queries (今天/最新/this week) — required to use the `days` parameter.",
+    ),
+  days: z
+    .number()
+    .int()
+    .positive()
+    .max(365)
+    .optional()
+    .describe(
+      "Restrict to results from the last N days. Only works with `topic: 'news'`. Examples: today/今天 → 1, this week/本周 → 7, recent month → 30.",
+    ),
+  timeRange: z
+    .enum(["day", "week", "month", "year"])
+    .optional()
+    .describe(
+      "Generic recency window that works with any topic (use instead of `days` when topic is not 'news'). 'day' ≈ last 24h.",
+    ),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe("Inclusive lower-bound date in YYYY-MM-DD."),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe("Inclusive upper-bound date in YYYY-MM-DD."),
 });
 
 interface RawTavilyResult {
@@ -77,6 +108,7 @@ export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
     "Search the web with a natural-language question. Returns ranked URLs + snippets + (often) a synthesized answer. " +
     "Use this when the user asks something and didn't supply a URL — the answer/snippets are usually enough; " +
     "deep-fetch via `webFetch` only when you need the full article. " +
+    "For time-sensitive queries (今天/最新/recent/this week/last month), constrain recency with: `topic: 'news'` + `days: 1` (today), `days: 7` (this week); or `timeRange: 'day'|'week'|'month'|'year'`; or explicit `startDate`/`endDate` (YYYY-MM-DD). Use the system-prompt's `Current date` line as the anchor. " +
     "When the user wants to SEE pictures (e.g. '搜几张...的图片', 'show me photos of ...'), pass `includeImages: true`; " +
     "the returned `images` array is rendered as a clickable gallery — you don't need to repeat the URLs in your text reply.",
   safety: "safe",
@@ -89,6 +121,11 @@ export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
       includeAnswer,
       includeImages,
       imageDescriptions,
+      topic,
+      days,
+      timeRange,
+      startDate,
+      endDate,
     } = args as z.infer<typeof inputSchema>;
     const token = await deps.resolveTavilyToken();
     if (!token) {
@@ -109,6 +146,11 @@ export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
         include_images: includeImages ?? false,
         include_image_descriptions:
           (includeImages ?? false) && (imageDescriptions ?? false),
+        ...(topic ? { topic } : {}),
+        ...(days !== undefined ? { days } : {}),
+        ...(timeRange ? { time_range: timeRange } : {}),
+        ...(startDate ? { start_date: startDate } : {}),
+        ...(endDate ? { end_date: endDate } : {}),
       }),
       signal: ctx.signal,
     });
