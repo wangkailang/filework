@@ -608,6 +608,25 @@ const handleTaskExecution = async (
             fullText += ev.deltaText;
             deltaBatcher.push(ev.deltaText);
             break;
+          case "reasoning_update":
+            // Reasoning deltas are typically slower than text deltas (model
+            // emits them as it thinks). No batching — they're already coarse.
+            if (!sender.isDestroyed()) {
+              sender.send("ai:stream-reasoning", {
+                id,
+                messageId: ev.messageId,
+                delta: ev.deltaText,
+              });
+            }
+            break;
+          case "reasoning_end":
+            if (!sender.isDestroyed()) {
+              sender.send("ai:stream-reasoning-end", {
+                id,
+                messageId: ev.messageId,
+              });
+            }
+            break;
           case "tool_execution_start":
             deltaBatcher.drain();
             sender.send("ai:stream-tool-call", {

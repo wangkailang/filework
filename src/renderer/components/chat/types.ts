@@ -22,6 +22,7 @@ export type {
   ImagePart,
   MessagePart,
   PlanMessagePart,
+  ReasoningPart,
   RecoveryAction,
   TextPart,
   ToolApproval,

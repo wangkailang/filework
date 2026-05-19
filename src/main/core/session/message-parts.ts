@@ -98,6 +98,19 @@ export interface TextPart {
   text: string;
 }
 
+/**
+ * Hidden reasoning / extended thinking from reasoning-capable models
+ * (OpenAI o-series, DeepSeek-Reasoner, Claude extended thinking). Rendered
+ * as a collapsible block above the assistant text. Persisted to JSONL so
+ * the user can re-open the chat and inspect the model's reasoning.
+ */
+export interface ReasoningPart {
+  type: "reasoning";
+  text: string;
+  /** True once `reasoning_end` fires — UI uses this to stop the spinner. */
+  done?: boolean;
+}
+
 export interface ToolPart {
   type: "tool";
   toolCallId: string;
@@ -304,6 +317,7 @@ export interface BatchApprovalPart {
 
 export type MessagePart =
   | TextPart
+  | ReasoningPart
   | ToolPart
   | PlanMessagePart
   | ErrorPart

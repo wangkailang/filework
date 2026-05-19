@@ -20,6 +20,8 @@ export interface TokenUsage {
   totalTokens: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  /** Tokens the model spent on hidden reasoning (o-series, DeepSeek-R1, Claude extended thinking). */
+  reasoningTokens?: number | null;
 }
 
 export interface ClassifiedAgentError {
@@ -63,6 +65,22 @@ export type AgentEvent =
       messageId: string;
       finalText: string;
       usage?: TokenUsage;
+    }
+  | {
+      type: "reasoning_update";
+      agentId: string;
+      messageId: string;
+      /**
+       * Raw reasoning text delta. AgentLoop emits one event per
+       * `reasoning-delta` chunk from the AI SDK fullStream, so consumers
+       * should batch / throttle if they want smooth UI updates.
+       */
+      deltaText: string;
+    }
+  | {
+      type: "reasoning_end";
+      agentId: string;
+      messageId: string;
     }
   | {
       type: "tool_execution_start";

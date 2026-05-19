@@ -279,6 +279,33 @@ export class AgentLoop {
             });
             break;
           }
+          case "reasoning-start": {
+            // No-op — the renderer creates a reasoning block lazily on the
+            // first delta. Emitting `start` would force every UI to keep
+            // its own flag; deltas are enough.
+            break;
+          }
+          case "reasoning-delta": {
+            const delta = part.text;
+            if (!delta) break;
+            emit({
+              type: "reasoning_update",
+              agentId,
+              messageId:
+                messageId || `${agentId}:msg:${Math.max(turnIndex, 0)}`,
+              deltaText: delta,
+            });
+            break;
+          }
+          case "reasoning-end": {
+            emit({
+              type: "reasoning_end",
+              agentId,
+              messageId:
+                messageId || `${agentId}:msg:${Math.max(turnIndex, 0)}`,
+            });
+            break;
+          }
           case "tool-call": {
             toolResults?.set(part.toolCallId, {
               name: part.toolName,
@@ -500,9 +527,14 @@ interface RawUsage {
   totalTokens?: number | null;
   cachedInputTokens?: number | null;
   reasoningTokens?: number | null;
+  /** AI SDK v6 nested form (preferred over the deprecated flat field). */
+  outputTokenDetails?: {
+    reasoningTokens?: number | null;
+    textTokens?: number | null;
+  } | null;
 }
 
-function mapUsage(raw: unknown): TokenUsage | undefined {
+export function mapUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const u = raw as RawUsage;
   const input = u.inputTokens ?? null;
@@ -510,11 +542,16 @@ function mapUsage(raw: unknown): TokenUsage | undefined {
   const total =
     u.totalTokens ??
     (input !== null || output !== null ? (input ?? 0) + (output ?? 0) : null);
+  // Prefer the v6 nested `outputTokenDetails.reasoningTokens`; fall back to
+  // the deprecated flat `reasoningTokens` field for older SDK responses.
+  const reasoning =
+    u.outputTokenDetails?.reasoningTokens ?? u.reasoningTokens ?? null;
   return {
     inputTokens: input,
     outputTokens: output,
     totalTokens: total,
     cacheReadTokens: u.cachedInputTokens ?? null,
+    reasoningTokens: reasoning,
   };
 }
 

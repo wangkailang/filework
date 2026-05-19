@@ -10,6 +10,7 @@ import type {
   ErrorPart,
   ImageGalleryPart,
   MessagePart,
+  ReasoningPart,
   ToolApproval,
   ToolPart,
   UsagePart,
@@ -285,6 +286,43 @@ export function useStreamSubscription({
           parts[parts.length - 1] = { ...last, text: last.text + delta };
         } else {
           parts.push({ type: "text", text: delta });
+        }
+        return parts;
+      });
+    });
+
+    const offReasoning = window.filework.onStreamReasoning(({ id, delta }) => {
+      if (id !== streamTaskIdRef.current) return;
+      updateParts((parts) => {
+        // Find the most recent reasoning part that hasn't been finalized yet.
+        // Once `done: true` lands (after `reasoning_end`), the next delta
+        // starts a fresh block — models can emit multiple reasoning passes
+        // (one before each tool call).
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          if (p.type === "reasoning" && !p.done) {
+            parts[i] = { ...p, text: p.text + delta };
+            return parts;
+          }
+          // Stop scanning past concrete output — reasoning belongs to the
+          // *current* thinking turn, not arbitrarily far back.
+          if (p.type === "text" || p.type === "tool") break;
+        }
+        parts.push({ type: "reasoning", text: delta });
+        return parts;
+      });
+    });
+
+    const offReasoningEnd = window.filework.onStreamReasoningEnd(({ id }) => {
+      if (id !== streamTaskIdRef.current) return;
+      updateParts((parts) => {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          if (p.type === "reasoning" && !p.done) {
+            parts[i] = { ...(p as ReasoningPart), done: true };
+            break;
+          }
+          if (p.type === "text" || p.type === "tool") break;
         }
         return parts;
       });
@@ -647,6 +685,8 @@ export function useStreamSubscription({
       offStart();
       offSkillActivated();
       offDelta();
+      offReasoning();
+      offReasoningEnd();
       offToolCall();
       offToolResult();
       offToolApproval();
