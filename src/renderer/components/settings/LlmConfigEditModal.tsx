@@ -8,7 +8,8 @@ type Provider =
   | "deepseek"
   | "ollama"
   | "custom"
-  | "minimax";
+  | "minimax"
+  | "xiaomi";
 
 export type Modality = "chat" | "image" | "video";
 
@@ -45,6 +46,7 @@ const PROVIDERS: { value: Provider; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "minimax", label: "MiniMax" },
+  { value: "xiaomi", label: "Xiaomi MiMo" },
   { value: "ollama", label: "Ollama" },
   { value: "custom", label: "Custom (OpenAI Compatible)" },
 ];
@@ -56,10 +58,13 @@ const MODALITIES: { value: Modality; label: string }[] = [
 ];
 
 function needsApiKey(p: Provider) {
-  return ["openai", "anthropic", "deepseek", "minimax"].includes(p);
+  return ["openai", "anthropic", "deepseek", "minimax", "xiaomi"].includes(p);
 }
 function needsBaseUrl(p: Provider) {
-  return ["ollama", "custom"].includes(p);
+  // Xiaomi requires an explicit baseUrl — there's no default endpoint
+  // baked into any SDK we depend on; users paste it from the Xiaomi
+  // developer console.
+  return ["ollama", "custom", "xiaomi"].includes(p);
 }
 /** Whether this provider exposes more than one modality in the picker. */
 function supportsImageVideo(p: Provider) {
@@ -168,7 +173,9 @@ export const LlmConfigEditModal = ({
       ? "http://localhost:11434"
       : form.provider === "minimax"
         ? "https://api.minimaxi.com/v1"
-        : "";
+        : form.provider === "xiaomi"
+          ? "https://example.xiaomi.com/v1"
+          : "";
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">

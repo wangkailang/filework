@@ -20,9 +20,11 @@ import { OpenAIAdapter } from "./openai";
 
 const openaiAdapter = new OpenAIAdapter();
 
+const deepseekAdapter = new DeepSeekAdapter();
+
 const adapters: Record<string, ProviderAdapter> = {
   anthropic: new AnthropicAdapter(),
-  deepseek: new DeepSeekAdapter(),
+  deepseek: deepseekAdapter,
   openai: openaiAdapter,
   // "custom", "ollama", and "minimax" share the OpenAI adapter — all expose
   // OpenAI-compatible /v1/chat/completions endpoints. baseUrl resolution
@@ -30,6 +32,11 @@ const adapters: Record<string, ProviderAdapter> = {
   custom: openaiAdapter,
   ollama: openaiAdapter,
   minimax: openaiAdapter,
+  // Xiaomi MiMo (reasoning model) returns `reasoning_content` in the same
+  // OpenAI-compatible chat schema DeepSeek-Reasoner does. Reuse the
+  // DeepSeek adapter — its `createDeepSeek({ baseURL })` is just a
+  // reasoning_content-aware OpenAI-compatible HTTP client.
+  xiaomi: deepseekAdapter,
 };
 
 /**

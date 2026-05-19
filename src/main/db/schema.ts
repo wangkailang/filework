@@ -137,7 +137,15 @@ export const llmConfigs = sqliteTable("llm_configs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   provider: text("provider", {
-    enum: ["openai", "anthropic", "deepseek", "ollama", "custom", "minimax"],
+    enum: [
+      "openai",
+      "anthropic",
+      "deepseek",
+      "ollama",
+      "custom",
+      "minimax",
+      "xiaomi",
+    ],
   }).notNull(),
   apiKey: text("api_key"),
   baseUrl: text("base_url"),
