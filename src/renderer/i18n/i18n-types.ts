@@ -472,6 +472,10 @@ type RootTranslation = {
 	 */
 	plan_verify: string
 	/**
+	 * R​e​a​s​o​n​i​n​g
+	 */
+	plan_reasoning: string
+	/**
 	 * C​l​a​r​i​f​i​c​a​t​i​o​n​ ​N​e​e​d​e​d
 	 */
 	clarification_title: string
@@ -1408,6 +1412,10 @@ export type TranslationFunctions = {
 	 * Verify
 	 */
 	plan_verify: () => LocalizedString
+	/**
+	 * Reasoning
+	 */
+	plan_reasoning: () => LocalizedString
 	/**
 	 * Clarification Needed
 	 */

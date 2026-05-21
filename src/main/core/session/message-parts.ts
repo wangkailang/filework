@@ -65,6 +65,15 @@ export interface PlanStepView {
   artifacts?: PlanStepArtifactView[];
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   error?: string;
+  /**
+   * Accumulated reasoning text emitted while this step was the active
+   * `running` step. Populated by `useStreamSubscription` from
+   * `ai:stream-reasoning` deltas — when a delta arrives and a plan step
+   * is currently `running`, the delta is appended here instead of being
+   * surfaced as a top-level `ReasoningPart`. Persisted to JSONL so the
+   * thinking trace stays attached to the step it produced.
+   */
+  reasoning?: string;
 }
 
 export interface PlanView {

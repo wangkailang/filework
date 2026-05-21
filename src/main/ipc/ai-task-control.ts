@@ -20,6 +20,55 @@ export const activeToolExecutions = new Map<string, Set<AbortController>>();
 export const pendingApprovals = new Map<string, (approved: boolean) => void>();
 
 /**
+ * Inline `createPlan` plan id convention. Written by the createPlan tool,
+ * parsed by the approve/reject/cancel IPC handlers to route back to the
+ * suspended Promise. Keep the prefix in sync between write + read sites
+ * — use the helpers below instead of hand-rolling `"inline-" + taskId`.
+ */
+export const INLINE_PLAN_PREFIX = "inline-";
+export const makeInlinePlanId = (taskId: string): string =>
+  `${INLINE_PLAN_PREFIX}${taskId}`;
+export const parseInlinePlanId = (planId: string): string | null =>
+  planId.startsWith(INLINE_PLAN_PREFIX)
+    ? planId.slice(INLINE_PLAN_PREFIX.length)
+    : null;
+
+/**
+ * Inline `createPlan` draft审批等待队列。
+ *
+ * createPlan 工具在每个 task 的首次调用时会以 status="draft" 发送 plan,
+ * 然后挂起一个 Promise 等待用户点击「开始」/「拒绝」。renderer 触发的
+ * ai:approvePlan / ai:rejectPlan 通过该 map 解锁 Promise:
+ *   - approved=true  → 工具返回成功,agent 继续后续步骤
+ *   - approved=false → 工具抛出 rejection,agent loop 视作错误并终止
+ *
+ * 同一 task 的后续 createPlan 调用(状态更新)不再走 draft 流程,直接返回。
+ */
+export const pendingPlanApprovals = new Map<
+  string,
+  (approved: boolean) => void
+>();
+
+/** 已通过用户审批的 inline plan 所属 taskId 集合(用于跳过后续 draft)。 */
+export const approvedInlinePlanTasks = new Set<string>();
+
+/**
+ * Atomically take + invoke the pending inline-plan resolver for a task.
+ * Use this instead of `get` then `delete` then `call` so concurrent
+ * cleanup/stop/reject sites can't double-resolve the Promise.
+ */
+export const drainPlanResolver = (
+  taskId: string,
+  approved: boolean,
+): boolean => {
+  const resolver = pendingPlanApprovals.get(taskId);
+  if (!resolver) return false;
+  pendingPlanApprovals.delete(taskId);
+  resolver(approved);
+  return true;
+};
+
+/**
  * Tasks running under an approved plan — writeFile skips individual
  * approval to avoid blocking plan execution.
  * deleteFile and moveFile still require approval (destructive).
@@ -133,6 +182,10 @@ export const cleanupTask = (taskId: string): void => {
       toolCallToTaskMap.delete(toolCallId);
     }
   }
+
+  // Clean up inline plan draft approval state for this task
+  drainPlanResolver(taskId, false);
+  approvedInlinePlanTasks.delete(taskId);
 };
 
 /**
@@ -198,6 +251,10 @@ export const stopTaskExecution = (taskId: string): boolean => {
   // this explicit sweep guards against orphaned entries whose signal
   // wasn't propagated.
   cancelBatchesForTask(taskId);
+
+  // Reject any pending inline createPlan draft approval — so the
+  // awaiting tool call settles instead of leaking the agent loop.
+  drainPlanResolver(taskId, false);
 
   return stopped;
 };

@@ -212,30 +212,38 @@ export function usePlanFlow({
     streamAssistantIdRef,
   ]);
 
+  const setPlanStatus = useCallback(
+    (planId: string, status: PlanView["status"]) => {
+      setMessages((prev) => {
+        const updated = [...prev];
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i];
+          if (!msg.parts) continue;
+          const idx = msg.parts.findIndex(
+            (p) =>
+              p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
+          );
+          if (idx === -1) continue;
+          const part = msg.parts[idx] as PlanMessagePart;
+          const newParts = [...msg.parts];
+          newParts[idx] = {
+            type: "plan",
+            plan: { ...part.plan, status },
+          };
+          updated[i] = { ...msg, parts: newParts };
+          break;
+        }
+        return updated;
+      });
+    },
+    [setMessages],
+  );
+
   const handleApprovePlan = async (planId: string) => {
     setActivePlanId(null);
     setIsLoading(true);
     pendingStopRef.current = false;
-    setMessages((prev) => {
-      const updated = [...prev];
-      for (let i = updated.length - 1; i >= 0; i--) {
-        const msg = updated[i];
-        if (!msg.parts) continue;
-        const planPartIdx = msg.parts.findIndex(
-          (p) => p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
-        );
-        if (planPartIdx === -1) continue;
-        const planPart = msg.parts[planPartIdx] as PlanMessagePart;
-        const newParts = [...msg.parts];
-        newParts[planPartIdx] = {
-          type: "plan",
-          plan: { ...planPart.plan, status: "executing" },
-        };
-        updated[i] = { ...msg, parts: newParts };
-        break;
-      }
-      return updated;
-    });
+    setPlanStatus(planId, "executing");
     window.filework.approvePlan(planId);
   };
 
@@ -243,30 +251,15 @@ export function usePlanFlow({
     setActivePlanId(null);
     setIsLoading(false);
     streamAssistantIdRef.current = null;
-    setMessages((prev) => {
-      const updated = [...prev];
-      for (let i = updated.length - 1; i >= 0; i--) {
-        const msg = updated[i];
-        if (!msg.parts) continue;
-        const planPartIdx = msg.parts.findIndex(
-          (p) => p.type === "plan" && (p as PlanMessagePart).plan.id === planId,
-        );
-        if (planPartIdx === -1) continue;
-        const planPart = msg.parts[planPartIdx] as PlanMessagePart;
-        const newParts = [...msg.parts];
-        newParts[planPartIdx] = {
-          type: "plan",
-          plan: { ...planPart.plan, status: "cancelled" },
-        };
-        updated[i] = { ...msg, parts: newParts };
-        break;
-      }
-      return updated;
-    });
+    setPlanStatus(planId, "cancelled");
     window.filework.rejectPlan(planId);
   };
 
   const handleCancelPlan = (planId: string) => {
+    // Inline createPlan path emits no further events after the agent loop
+    // aborts; the legacy plan-runner emits its own final status which will
+    // simply confirm this optimistic local update.
+    setPlanStatus(planId, "cancelled");
     window.filework.cancelPlan(planId);
   };
 

@@ -359,25 +359,16 @@ export function useChatSession(
       }
     }, 30_000);
 
+    // The agent decides whether to call createPlan — it has the full task
+    // context that a regex-based IPC gate could not see.
     window.filework
-      .checkNeedsPlanning({ prompt: userMessage.content })
-      .then(({ needsPlanning: needs }: { needsPlanning: boolean }) => {
-        if (needs) {
-          plan.setIsPlanGenerating(true);
-          return window.filework.generatePlan({
-            prompt: userMessage.content,
-            workspacePath,
-            llmConfigId: selectedLlmConfigId || undefined,
-          });
-        }
-        return window.filework.executeTask({
-          prompt: userMessage.content,
-          workspacePath,
-          workspaceRefJson,
-          sessionId,
-          llmConfigId: selectedLlmConfigId || undefined,
-          history,
-        });
+      .executeTask({
+        prompt: userMessage.content,
+        workspacePath,
+        workspaceRefJson,
+        sessionId,
+        llmConfigId: selectedLlmConfigId || undefined,
+        history,
       })
       .catch((error: unknown) => {
         if (stream.streamAssistantIdRef.current !== assistantId) return;

@@ -35,6 +35,11 @@ import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
+import {
+  approvedInlinePlanTasks,
+  makeInlinePlanId,
+  pendingPlanApprovals,
+} from "./ai-task-control";
 import { buildGitRunCommandProtocol } from "./system-prompt";
 
 interface BuildAgentToolRegistryOptions {
@@ -155,6 +160,119 @@ const askClarificationTool = (
   },
 });
 
+/**
+ * IPC-coupled tool that emits / refreshes a checklist plan in the chat UI.
+ *
+ * TodoWrite-style: model decides when a task warrants a visible breakdown
+ * (3+ discrete actions). Each call replaces the current plan for the task
+ * — the model re-sends the full step list with updated statuses as work
+ * progresses. Renderer matches on the deterministic `inline-<taskId>` id
+ * (one plan per task) and updates the existing `PlanMessagePart` in place,
+ * so the model does not need to track plan ids itself.
+ *
+ * `status: "executing"` suppresses the approval buttons in `plan-viewer.tsx`
+ * — those only render when `status === "draft"` (the legacy `ai:generatePlan`
+ * pathway). Does NOT pause the agent loop.
+ */
+const createPlanTool = (
+  sender: WebContents,
+  taskId: string,
+): ToolDefinition<
+  {
+    goal: string;
+    steps: Array<{
+      action: string;
+      description?: string;
+      status?: "pending" | "running" | "completed" | "failed" | "skipped";
+    }>;
+  },
+  unknown
+> => ({
+  name: "createPlan",
+  description: [
+    "Publish or update a checklist plan shown inline in the chat.",
+    "PLAN FIRST: call this BEFORE any other tool calls when the task has 3+",
+    "discrete steps or multiple deliverables — research, comparison, selection,",
+    "planning, multi-section writing all count. Do NOT run webSearch/runCommand",
+    "first and then plan retroactively.",
+    "Initial plan can be COARSE (e.g. 'research X / research Y / compare /",
+    "recommend') — subsequent calls may add, split, or refine steps as you",
+    "learn more.",
+    "FIRST call (initial plan, all steps pending) pauses until the user clicks",
+    "「开始」 — the tool returns once approved; on rejection the call fails and",
+    "you should stop. Subsequent status-update calls do NOT pause — call again",
+    "with the (possibly refined) step list and updated `status` fields as you",
+    "progress (pending → running → completed).",
+    "Skip this tool only for 1-2 step asks where plain narration is enough.",
+  ].join(" "),
+  safety: "safe",
+  inputSchema: z.object({
+    goal: z
+      .string()
+      .min(1)
+      .describe("One-sentence summary of what the plan accomplishes."),
+    steps: z
+      .array(
+        z.object({
+          action: z
+            .string()
+            .min(1)
+            .describe("Short verb-phrase label for the step."),
+          description: z
+            .string()
+            .optional()
+            .describe("Optional context — file/path/concern (one line)."),
+          status: z
+            .enum(["pending", "running", "completed", "failed", "skipped"])
+            .optional()
+            .describe("Default: pending. Update on subsequent calls."),
+        }),
+      )
+      .min(1)
+      .describe("Ordered list of steps. Re-send the full list to update."),
+  }),
+  execute: async ({ goal, steps }) => {
+    const alreadyApproved = approvedInlinePlanTasks.has(taskId);
+    const plan = {
+      id: makeInlinePlanId(taskId),
+      goal,
+      status: alreadyApproved ? ("executing" as const) : ("draft" as const),
+      steps: steps.map((s, i) => ({
+        id: i + 1,
+        action: s.action,
+        description: s.description ?? "",
+        status: s.status ?? ("pending" as const),
+      })),
+    };
+    if (!sender.isDestroyed()) {
+      sender.send("ai:stream-plan", { id: taskId, plan });
+    }
+
+    if (alreadyApproved) {
+      return { recorded: true, stepCount: steps.length };
+    }
+
+    // First call: pause until user approves or rejects via ai:approvePlan
+    // / ai:rejectPlan. cleanupTask / stopTaskExecution also resolve this
+    // with `approved=false` so the Promise never leaks.
+    return new Promise<{
+      recorded: boolean;
+      approved: boolean;
+      stepCount: number;
+    }>((resolve, reject) => {
+      pendingPlanApprovals.set(taskId, (approved) => {
+        pendingPlanApprovals.delete(taskId);
+        if (approved) {
+          approvedInlinePlanTasks.add(taskId);
+          resolve({ recorded: true, approved: true, stepCount: steps.length });
+        } else {
+          reject(new Error("User rejected the plan"));
+        }
+      });
+    });
+  },
+});
+
 export const buildAgentToolRegistry = ({
   sender,
   taskId,
@@ -179,6 +297,10 @@ export const buildAgentToolRegistry = ({
 
   if (allow("askClarification")) {
     registry.register(askClarificationTool(sender, taskId));
+  }
+
+  if (allow("createPlan")) {
+    registry.register(createPlanTool(sender, taskId));
   }
 
   // Web tools (Layer 0 search + Layer 1/2'/4 extraction). Registered

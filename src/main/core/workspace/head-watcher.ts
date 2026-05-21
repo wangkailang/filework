@@ -59,10 +59,25 @@ const broadcast = (cloneDir: string, branch: string): void => {
  * pre-watcher behavior of updating only on its own dropdown).
  */
 export const startHeadWatcher = async (cloneDir: string): Promise<void> => {
-  if (watchers.has(cloneDir)) return;
-
   const initial = await readBranch(cloneDir);
   if (initial === null) return;
+
+  // Initial reconciliation: announce the on-disk branch on every entry,
+  // not only first-time registration. `workspaceRef.ref` in the renderer
+  // is restored from `recent_workspaces` or set by the user's pick, and
+  // can drift from `.git/HEAD` between sessions (external terminal
+  // checkout, crash mid-switch, etc.). The fs.watch path only fires on
+  // *changes* — a stale ref.ref at open time would otherwise never be
+  // corrected and the LLM would read a different branch than the chip.
+  //
+  // Deferred so the IPC handler that triggered us has time to return
+  // and the renderer's setWorkspace runs first; otherwise the listener
+  // sees `workspaceRef.current === null` and drops the message. The
+  // renderer guard `if (curr.ref.ref === branch) return` makes this a
+  // no-op when ref and disk already agree.
+  setTimeout(() => broadcast(cloneDir, initial), 150);
+
+  if (watchers.has(cloneDir)) return;
 
   let debounce: NodeJS.Timeout | null = null;
   let lastBranch = initial;

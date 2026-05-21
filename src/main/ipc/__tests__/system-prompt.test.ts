@@ -91,6 +91,21 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("askClarification");
   });
 
+  it("default prompt requires Plan First for multi-step / multi-deliverable tasks", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    // The Plan First rule must mention createPlan and require it BEFORE other
+    // tool calls — a regression here means the model is free to scout with
+    // webSearch/runCommand before surfacing the plan, defeating the draft
+    // approval gate in agent-tools.ts createPlanTool.
+    expect(prompt).toMatch(/plan first/i);
+    expect(prompt).toContain("createPlan");
+    // Must require createPlan precede other tool calls (concrete listing of
+    // webSearch/runCommand etc.). Anchor on "BEFORE any" + a tool name so a
+    // weaker rewrite that drops the precedence requirement breaks the test.
+    expect(prompt).toMatch(/BEFORE any[^.]*webSearch/);
+    expect(prompt).toMatch(/retroactively/i);
+  });
+
   it("default prompt includes the four Karpathy operating principles", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toContain("Operating Principles");

@@ -70,63 +70,6 @@ export const buildRelevantSkillCatalog = (prompt: string): string => {
 };
 
 /**
- * Heuristic: should this prompt go through the planner?
- * Returns true for complex, multi-step tasks.
- *
- * Design principles:
- * - Simple single-intent prompts (summarize a file, search content) → direct execution
- * - Only trigger planning when there are genuinely multiple independent actions
- * - "tool" skills (pdf-processor, xlsx-processor) provide capabilities, not separate tasks
- * - Only count "task" skills (report-generator, file-organizer) as distinct task intents
- */
-export const needsPlanning = (prompt: string): boolean => {
-  const lower = prompt.toLowerCase();
-
-  // ── Fast exit: simple intent patterns should NEVER trigger planning ──
-  const simpleIntentPatterns = [
-    /^(总结|概括|概述|解释|翻译|阅读|读取|查看|打开|提取|转换).{0,80}(文件|内容|文本|pdf|xlsx|docx|csv)/i,
-    /^(summarize|explain|translate|read|extract|convert|open|view)\b/i,
-  ];
-  if (simpleIntentPatterns.some((p) => p.test(lower.trim()))) return false;
-
-  // ── Multi-action indicators (Chinese + English) ──
-  const multiActionPatterns = [
-    /并且|然后|之后|接着|同时|以及|再|还要|最后/,
-    /and then|after that|also|finally|next|then/i,
-  ];
-  if (multiActionPatterns.some((p) => p.test(lower))) return true;
-
-  // ── Long prompts with genuine complexity ──
-  if (prompt.length > 300) return true;
-
-  // ── Single-deliverable fast-exit ──
-  // "生成/导出 X" 型请求在长度可控、不含多动作连接词时视为单意图。
-  // 即使关键词同时命中多个 task skill（如 report-generator + data-processor），
-  // 也应直接执行而非进入 plan 流程。
-  const singleDeliverablePatterns = [
-    /^(帮我|请|麻烦)?\s*(生成|创建|制作|导出|输出|写|做)/,
-    /^(please\s+)?(generate|create|make|export|output|write|build|produce)\b/i,
-  ];
-  if (
-    prompt.length < 150 &&
-    singleDeliverablePatterns.some((p) => p.test(prompt.trim()))
-  ) {
-    return false;
-  }
-
-  // ── Multiple "task" skill hits → likely multi-step ──
-  let taskSkillHits = 0;
-  for (const skill of skills) {
-    if (skill.category !== "task") continue;
-    const hit = skill.keywords.some((kw) => lower.includes(kw.toLowerCase()));
-    if (hit) taskSkillHits++;
-  }
-  if (taskSkillHits >= 2) return true;
-
-  return false;
-};
-
-/**
  * Generate a plan from a user prompt.
  *
  * Uses a single LLM call with read-only tools to inspect the workspace,
