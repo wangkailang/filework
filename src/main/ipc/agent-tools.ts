@@ -26,27 +26,35 @@ import {
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
 import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
-import { buildGitTools } from "../core/agent/tools/git-tools";
-import { buildGithubTools } from "../core/agent/tools/github-tools";
-import { buildGitlabTools } from "../core/agent/tools/gitlab-tools";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
-import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
-import { ciWatcher } from "./ci-watcher";
+import { buildGitRunCommandProtocol } from "./system-prompt";
 
 interface BuildAgentToolRegistryOptions {
   sender: WebContents;
   taskId: string;
-  workspace: Workspace;
   /** Restrict to this allow-list when set (skill `allowed-tools` frontmatter). */
   allowedTools?: string[];
+  /**
+   * Resolved LLM identifier — flows into the L2 git protocol's
+   * `Co-Authored-By` trailer (embedded in `runCommand`'s description
+   * when `isGitWorkspace` is true). Falls back to "filework-agent".
+   */
+  modelName?: string;
+  /**
+   * True when the active workspace is git-backed. Gates whether the
+   * L2 git protocol (HEREDOC commit, `gh` / `glab` PR templates) is
+   * embedded in the `runCommand` tool description. See
+   * `system-prompt.buildGitRunCommandProtocol` for the rationale.
+   */
+  isGitWorkspace?: boolean;
 }
 
 /**
@@ -66,9 +74,6 @@ let agentRegistryDeps: AgentRegistryDeps = {};
 export const setAgentRegistryDeps = (deps: AgentRegistryDeps): void => {
   agentRegistryDeps = deps;
 };
-
-/** Workspace kinds that own a `WorkspaceSCM` with commit/push/openPullRequest. */
-const SCM_WRITE_KINDS = new Set(["github", "gitlab"]);
 
 /**
  * Adapter — the project's IncrementalScanner returns `FileEntry`-shaped
@@ -153,106 +158,23 @@ const askClarificationTool = (
 export const buildAgentToolRegistry = ({
   sender,
   taskId,
-  workspace,
   allowedTools,
+  modelName,
+  isGitWorkspace,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
     !allowedTools || allowedTools.includes(name);
 
-  for (const def of buildFileTools({ incrementalScanner: wrapScanner() })) {
+  const gitProtocol = isGitWorkspace
+    ? buildGitRunCommandProtocol(modelName ?? "filework-agent")
+    : undefined;
+
+  for (const def of buildFileTools({
+    incrementalScanner: wrapScanner(),
+    gitProtocol,
+  })) {
     if (allow(def.name)) registry.register(def);
-  }
-
-  // M12: after a rerun is approved + executed, auto-subscribe the run to
-  // the CI watcher so the user sees an inline notification when it
-  // finishes — without the agent having to poll. Wrapped at registration
-  // time because per-call sender/taskId context lives in this closure.
-  //
-  // M13: dispatch is also wrapped — GitHub `/dispatches` returns 204+empty
-  // so we don't have a runId, but `subscribeAfterDispatch` resolves it via
-  // a short retry loop on listCIRuns and then falls through to subscribe.
-  //
-  // M14: gitlabCreatePipeline joins the "direct" set — GitLab `POST
-  // /pipeline` returns the pipeline JSON synchronously (with id), so the
-  // tool returns {runId, queued} the same shape as rerun and the wrapper
-  // subscribes immediately without M13's resolve-retry dance.
-  const CI_WATCH_DIRECT_TOOLS = new Set([
-    "githubRerunWorkflowRun",
-    "githubRerunFailedJobs",
-    "gitlabRetryPipeline",
-    "gitlabCreatePipeline",
-  ]);
-  const CI_WATCH_DISPATCH_TOOLS = new Set(["githubDispatchWorkflow"]);
-  const maybeWrapWithWatcher = (def: ToolDefinition): ToolDefinition => {
-    if (CI_WATCH_DIRECT_TOOLS.has(def.name)) {
-      const original = def.execute;
-      return {
-        ...def,
-        execute: async (args, ctx) => {
-          const result = await original(args, ctx);
-          const r = result as { runId?: string; queued?: boolean } | undefined;
-          if (r?.queued && r.runId) {
-            ciWatcher.subscribe({
-              workspace: ctx.workspace,
-              runId: r.runId,
-              sender,
-              taskId,
-              signal: ctx.signal,
-            });
-          }
-          return result;
-        },
-      };
-    }
-    if (CI_WATCH_DISPATCH_TOOLS.has(def.name)) {
-      const original = def.execute;
-      return {
-        ...def,
-        execute: async (args, ctx) => {
-          const result = await original(args, ctx);
-          const r = result as
-            | { workflowFile?: string; ref?: string; queued?: boolean }
-            | undefined;
-          if (r?.queued && r.ref && r.workflowFile) {
-            // Fire and forget — the resolve loop runs up to ~6s; blocking
-            // here would stall the tool's return.
-            void ciWatcher.subscribeAfterDispatch({
-              workspace: ctx.workspace,
-              ref: r.ref,
-              workflowFile: r.workflowFile,
-              sender,
-              taskId,
-              signal: ctx.signal,
-            });
-          }
-          return result;
-        },
-      };
-    }
-    return def;
-  };
-
-  // Git write tools register only for SCM-write-capable workspaces
-  // (currently github + gitlab). Local workspaces deliberately don't
-  // get them — local git workflows have separate UX considerations
-  // (which remote, which auth) handled outside this PR. Native query /
-  // comment tools register per provider in the same conditional and
-  // rely on the workspace's stored PAT for auth.
-  if (SCM_WRITE_KINDS.has(workspace.kind)) {
-    for (const def of buildGitTools()) {
-      if (allow(def.name)) registry.register(def);
-    }
-    if (workspace.kind === "github") {
-      for (const def of buildGithubTools()) {
-        if (allow(def.name)) registry.register(maybeWrapWithWatcher(def));
-      }
-    }
-    if (workspace.kind === "gitlab") {
-      for (const def of buildGitlabTools()) {
-        if (allow(def.name)) registry.register(maybeWrapWithWatcher(def));
-      }
-    }
   }
 
   if (allow("askClarification")) {

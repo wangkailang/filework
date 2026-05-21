@@ -144,7 +144,6 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
-    fetchFn: fetchImpl,
     resolveProxy: deps.resolveProxy,
   };
 

@@ -96,6 +96,78 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - Use absolute paths based on the workspace path provided.
 - Respond in the same language as the user's prompt.`;
 
+/**
+ * Two-layer git guidance, modeled on how Claude Code splits attention
+ * between system prompt and tool descriptions:
+ *
+ *  - L1 (\`buildGitPrinciples\`) — hard red lines, ~5 lines. Injected into
+ *    the system prompt only when the workspace is git-backed, so safety
+ *    rules are always in working memory but quiet on non-git workspaces.
+ *
+ *  - L2 (\`buildGitRunCommandProtocol\`) — full operational manual
+ *    (HEREDOC commit, \`gh\` / \`glab\` PR templates, safety expansion).
+ *    Embedded in \`runCommandTool.description\` (see \`tools/index.ts\`).
+ *    Models attend to tool descriptions with high weight only when
+ *    considering that tool, so the protocol stays "on-demand": dormant
+ *    while the user is editing a React component, alive when they ask
+ *    for a commit.
+ *
+ * \`modelName\` flows in from \`ai-handlers.ts\` / \`plan-runner.ts\` via
+ * the active llmConfig. The \`Co-Authored-By\` trailer identifies which
+ * model produced the commit while the user's own git config owns the
+ * primary author. Falls back to "filework-agent" when unknown.
+ */
+export const buildGitPrinciples = (modelName: string): string => `## Git Safety
+- Only commit when the user explicitly asks. Never \`--amend\`, never \`--no-verify\`, never force-push to \`main\` / \`master\` / \`develop\`.
+- Stage files by name (no \`git add -A\` / \`.\`) to avoid committing secrets.
+- Don't push to remote unless the user asks. Don't touch \`git config\`.
+- Commit message trailer: \`Co-Authored-By: ${modelName} <noreply@filework.local>\`. Full HEREDOC template lives in the \`runCommand\` tool description.`;
+
+export const buildGitRunCommandProtocol = (
+  modelName: string,
+): string => `Git workflow (when running git / gh / glab through this tool — there are no dedicated git/PR tools)
+
+When to commit
+- Only when the user explicitly asks; if unclear, call \`askClarification\` first.
+- If a pre-commit hook fails, fix the cause and create a NEW commit — never \`--amend\`.
+
+Safety expansion
+- Never \`--no-verify\` / \`--no-gpg-sign\` unless the user explicitly asks.
+- For non-protected branches, prefer \`git push --force-with-lease\` over raw \`--force\`.
+- Never \`reset --hard\`, \`checkout -- .\`, \`clean -fdx\`, \`branch -D\` without explicit instruction.
+
+Commit message (HEREDOC keeps newlines through shell quoting)
+\`\`\`
+git commit -m "$(cat <<'EOF'
+<1–2 sentence summary, focus on WHY not WHAT>
+
+Co-Authored-By: ${modelName} <noreply@filework.local>
+EOF
+)"
+\`\`\`
+
+Branch naming: kebab-case with intent prefix (\`feature/\`, \`fix/\`, \`chore/\`, \`docs/\`). When unsure, propose 2–3 via \`askClarification\`.
+
+Pull requests via \`gh\` / \`glab\` (user is expected to have them installed + authenticated)
+- Title ≤ 70 chars; detail belongs in body.
+- Briefly verify CI before opening (\`gh run list --limit 3\` / \`glab ci list\`).
+\`\`\`
+gh pr create --title "..." --body "$(cat <<'EOF'
+## Summary
+- ...
+
+## Test plan
+- [ ] ...
+EOF
+)"
+\`\`\``;
+
+const DEFAULT_MODEL_NAME = "filework-agent";
+
+/** Resolve the model name with the default fallback. Single helper so the L1/L2 builders stay consistent with the call sites. */
+export const resolveModelName = (modelName?: string): string =>
+  modelName ?? DEFAULT_MODEL_NAME;
+
 interface BuildAgentSystemPromptOptions {
   workspacePath: string;
   skill?: UnifiedSkill;
@@ -103,6 +175,21 @@ interface BuildAgentSystemPromptOptions {
   skillArgs?: string;
   /** True when the user typed `/skill ...` explicitly. */
   isExplicitSkillCommand?: boolean;
+  /**
+   * Resolved LLM identifier (e.g. "claude-opus-4-7"). Threaded into the
+   * Git principles block as the Co-Authored-By trailer name so commits
+   * carry which model produced them. Falls back to "filework-agent".
+   */
+  modelName?: string;
+  /**
+   * True when the active workspace is git-backed (GitHub / GitLab / a
+   * LocalWorkspace pointing at a repo). Gates injection of the L1 git
+   * principles block — keeps non-git workspaces' prompts free of git
+   * noise. The L2 protocol lives in the runCommand tool description
+   * regardless and is only attended to when the model considers running
+   * a shell command.
+   */
+  isGitWorkspace?: boolean;
 }
 
 /**
@@ -118,6 +205,8 @@ export const buildAgentSystemPrompt = ({
   skill,
   skillArgs,
   isExplicitSkillCommand,
+  modelName,
+  isGitWorkspace,
 }: BuildAgentSystemPromptOptions): string => {
   const sections: string[] = [
     AGENT_IDENTITY,
@@ -128,6 +217,10 @@ export const buildAgentSystemPrompt = ({
     "",
     OPERATING_PRINCIPLES,
   ];
+
+  if (isGitWorkspace) {
+    sections.push("", buildGitPrinciples(resolveModelName(modelName)));
+  }
 
   if (skill) {
     if (isExplicitSkillCommand) {
@@ -162,6 +255,14 @@ interface BuildPlanStepSystemPromptOptions {
   /** Concatenated summaries of completed prior steps. */
   previousResults: string;
   skill?: SkillShape;
+  /** Resolved LLM identifier; threaded into the Git principles trailer. */
+  modelName?: string;
+  /**
+   * True when the active workspace is git-backed. Gates the L1 git
+   * principles block — see BuildAgentSystemPromptOptions for the
+   * two-layer rationale.
+   */
+  isGitWorkspace?: boolean;
 }
 
 /** Build the per-step system prompt for plan execution. */
@@ -171,6 +272,8 @@ export const buildPlanStepSystemPrompt = ({
   planContext,
   previousResults,
   skill,
+  modelName,
+  isGitWorkspace,
 }: BuildPlanStepSystemPromptOptions): string => {
   const skillPrompt = skill
     ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt ?? ""}`
@@ -184,11 +287,15 @@ export const buildPlanStepSystemPrompt = ({
     ? `\n\n## Verification\nAfter completing this step, verify: ${step.verification}\nThen briefly state whether the verification criterion was met.`
     : "";
 
+  const gitBlock = isGitWorkspace
+    ? `\n\n${buildGitPrinciples(resolveModelName(modelName))}`
+    : "";
+
   return `${AGENT_IDENTITY} You are executing step ${step.id}/${plan.steps.length} of a planned task.
 
 Current date: ${formatCurrentDate()}
 User locale: ${formatLocaleContext()}
-Current workspace: ${plan.workspacePath}
+Current workspace: ${plan.workspacePath}${gitBlock}
 
 ## Current Plan (from disk)
 ${planContext}

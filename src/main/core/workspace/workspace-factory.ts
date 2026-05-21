@@ -7,6 +7,8 @@
  * clone freshness on every entry point without a cache-invalidation dance.
  */
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { ProxyResolver } from "./git-proxy-env";
 import { GitHubWorkspace } from "./github-workspace";
 import { GitLabWorkspace } from "./gitlab-workspace";
@@ -29,39 +31,16 @@ export interface WorkspaceFactoryDeps {
    */
   askpassPath?: string;
   /**
-   * Per-request proxy-aware fetch (see `proxy-fetch.ts`). Forwarded to
-   * the GitHub/GitLab workspace REST calls so they honor split-routing
-   * PAC rules instead of inheriting the bootstrap's one-shot proxy.
-   * Optional — undefined falls back to global `fetch`.
-   */
-  fetchFn?: typeof fetch;
-  /**
    * Per-host proxy resolver for spawned `git` children (see
-   * `git-proxy-env.ts`). Same PAC source as `fetchFn` — wired by
-   * `index.ts` to `session.defaultSession.resolveProxy`.
+   * `git-proxy-env.ts`). Wired by `index.ts` to
+   * `session.defaultSession.resolveProxy`.
    */
   resolveProxy?: ProxyResolver;
-}
-
-export interface CreateWorkspaceOpts {
-  /**
-   * Per-session scope for SCM workspaces — used as a stable identifier.
-   * The branch name itself is chosen by the agent via the
-   * `proposeSessionBranch` tool. Local refs ignore this entirely.
-   */
-  sessionScope?: string;
-  /**
-   * LLM-derived identity used as `git commit --author` for commits
-   * created in this workspace. Built by the IPC layer from the active
-   * `llmConfig` (model + provider). Local refs ignore this.
-   */
-  commitIdentity?: { name: string; email: string };
 }
 
 export const createWorkspace = async (
   ref: WorkspaceRef,
   deps: WorkspaceFactoryDeps,
-  opts: CreateWorkspaceOpts = {},
 ): Promise<Workspace> => {
   if (ref.kind === "local") {
     // Idempotent — no-op for non-git directories (startHeadWatcher
@@ -75,10 +54,7 @@ export const createWorkspace = async (
       resolveToken: deps.resolveToken,
       cacheDir: deps.githubCacheDir,
       askpassPath: deps.askpassPath,
-      fetchFn: deps.fetchFn,
       resolveProxy: deps.resolveProxy,
-      sessionScope: opts.sessionScope,
-      commitIdentity: opts.commitIdentity,
     });
   }
   if (ref.kind === "gitlab") {
@@ -86,12 +62,29 @@ export const createWorkspace = async (
       resolveToken: deps.resolveToken,
       cacheDir: deps.gitlabCacheDir,
       askpassPath: deps.askpassPath,
-      fetchFn: deps.fetchFn,
       resolveProxy: deps.resolveProxy,
-      sessionScope: opts.sessionScope,
-      commitIdentity: opts.commitIdentity,
     });
   }
   const _exhaustive: never = ref;
   throw new Error(`Unsupported workspace kind: ${JSON.stringify(_exhaustive)}`);
+};
+
+/**
+ * True when the workspace is git-backed — either a remote-cloned GitHub /
+ * GitLab workspace, or a LocalWorkspace whose root contains a `.git`
+ * entry. Used by the prompt builders to gate injection of the L1 git
+ * principles block and by `buildAgentToolRegistry` to gate the L2
+ * protocol embedded in `runCommand`'s description.
+ *
+ * Sync `existsSync` is intentional: the check runs once per task on
+ * worktree paths the main process already trusts. An async check would
+ * force the call sites (system prompt + tool registry build) to become
+ * async without a real benefit.
+ *
+ * `.git` may be a file (worktree / submodule) instead of a directory,
+ * so this only tests for presence, not directory-ness.
+ */
+export const isGitBackedWorkspace = (workspace: Workspace): boolean => {
+  if (workspace.kind !== "local") return true;
+  return existsSync(path.join(workspace.root, ".git"));
 };

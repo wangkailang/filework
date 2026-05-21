@@ -56,6 +56,15 @@ export interface IncrementalScannerLike {
 
 export interface FileToolsDeps {
   incrementalScanner?: IncrementalScannerLike;
+  /**
+   * Optional git workflow manual embedded into `runCommand`'s
+   * description. When the active workspace is git-backed, the IPC
+   * layer (see `system-prompt.buildGitRunCommandProtocol`) builds this
+   * string so the agent gets HEREDOC / `gh` / `glab` templates with
+   * high attention weight only when considering a shell command.
+   * Non-git workspaces should leave this undefined.
+   */
+  gitProtocol?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,25 +281,41 @@ const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
   },
 };
 
-const runCommandTool: ToolDefinition<
-  z.infer<typeof runCommandSchema>,
-  unknown
-> = {
-  name: "runCommand",
-  description:
-    "Execute a shell command in the workspace. Requires user approval.",
-  safety: "destructive",
-  inputSchema: runCommandSchema,
-  execute: async (args, ctx) => {
-    const cwdRel = args.cwd
-      ? await resolveRel(ctx.workspace, args.cwd)
-      : undefined;
-    return ctx.workspace.exec.run(args.command, {
-      cwd: cwdRel,
-      signal: ctx.signal,
-    });
-  },
-};
+/**
+ * `runCommand` — host shell tool, factory-ized so the description can
+ * carry an optional git workflow protocol (HEREDOC commit message,
+ * `gh` / `glab` PR templates). Caller passes `gitProtocol` only when
+ * the active workspace is git-backed; otherwise the description stays
+ * minimal so non-git workspaces don't pay attention budget for rules
+ * that don't apply.
+ *
+ * The protocol lives in the tool description (not the system prompt)
+ * by design — LLMs allocate attention to tool descriptions with high
+ * weight only when considering that tool. This is the "on-demand"
+ * injection pattern used by Claude Code's `Bash` tool.
+ */
+function runCommandTool(
+  gitProtocol?: string,
+): ToolDefinition<z.infer<typeof runCommandSchema>, unknown> {
+  const description = gitProtocol
+    ? `Execute a shell command in the workspace. Requires user approval.\n\n${gitProtocol}`
+    : "Execute a shell command in the workspace. Requires user approval.";
+  return {
+    name: "runCommand",
+    description,
+    safety: "destructive",
+    inputSchema: runCommandSchema,
+    execute: async (args, ctx) => {
+      const cwdRel = args.cwd
+        ? await resolveRel(ctx.workspace, args.cwd)
+        : undefined;
+      return ctx.workspace.exec.run(args.command, {
+        cwd: cwdRel,
+        signal: ctx.signal,
+      });
+    },
+  };
+}
 
 const directoryStatsTool: ToolDefinition<
   z.infer<typeof directoryStatsSchema>,
@@ -395,7 +420,7 @@ export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
     writeFileTool as ToolDefinition,
     moveFileTool as ToolDefinition,
     deleteFileTool as ToolDefinition,
-    runCommandTool as ToolDefinition,
+    runCommandTool(deps?.gitProtocol) as ToolDefinition,
   ];
   if (deps?.incrementalScanner) {
     tools.push(getCacheStatsTool(deps.incrementalScanner) as ToolDefinition);

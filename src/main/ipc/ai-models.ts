@@ -46,12 +46,15 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
       ? "https://api.minimaxi.com/v1"
       : baseUrl;
 
-  return createModelWithAdapter({
-    provider,
-    apiKey: apiKey || "",
-    baseUrl: resolvedBaseUrl,
-    model: modelId,
-  });
+  return {
+    ...createModelWithAdapter({
+      provider,
+      apiKey: apiKey || "",
+      baseUrl: resolvedBaseUrl,
+      model: modelId,
+    }),
+    modelId,
+  };
 };
 
 /** Convenience wrapper — returns only the model (no adapter). */

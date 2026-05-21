@@ -409,15 +409,7 @@ export function useChatSession(
       });
   };
 
-  const handleApproval = (
-    toolCallId: string,
-    approved: boolean,
-    /**
-     * Optional user choice (e.g. branch name picked from candidates).
-     * The main process bakes this into the tool's args via `argsOverride`.
-     */
-    choice?: string,
-  ) => {
+  const handleApproval = (toolCallId: string, approved: boolean) => {
     crud.setMessages((prev) => {
       const assistantId = stream.streamAssistantIdRef.current;
       const idx = prev.findIndex((m) => m.id === assistantId);
@@ -440,7 +432,7 @@ export function useChatSession(
       updated[idx] = { ...msg, parts: newParts };
       return updated;
     });
-    window.filework.approveToolCall(toolCallId, approved, choice);
+    window.filework.approveToolCall(toolCallId, approved);
   };
 
   const handleBatchApproval = (batchId: string, approved: boolean) => {

@@ -5,7 +5,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  __test__,
   ensureClone,
   type GitLabRef,
   GitLabWorkspace,
@@ -236,73 +235,5 @@ describe("GitLabWorkspace.create", () => {
     expect(remoteUrl).toBe(
       "https://oauth2@gitlab.example.com/acme/sub/app.git",
     );
-  });
-
-  it("blocks `git push`-style commands via exec", async () => {
-    const cloneDir = path.join(
-      cacheDir,
-      "gitlab.example.com",
-      "acme/sub",
-      "app",
-    );
-    await mkdir(path.join(cloneDir, ".git"), { recursive: true });
-    await writeFile(
-      path.join(cloneDir, ".git/filework-last-fetch"),
-      new Date().toISOString(),
-      "utf8",
-    );
-
-    const { fake } = buildFakeSpawn();
-    const ws = await GitLabWorkspace.create(fakeRef, {
-      resolveToken: async () => "glpat-T",
-      cacheDir,
-      freshnessTtlMs: 60_000,
-      // biome-ignore lint/suspicious/noExplicitAny: test stub
-      spawnFn: fake as any,
-    });
-
-    const result = await ws.exec.run("git push origin main");
-    expect(result.exitCode).toBe(126);
-    expect(result.stderr).toContain("typed");
-  });
-});
-
-describe("__test__ helpers", () => {
-  it("projectIdEncoded escapes / in the namespace path", () => {
-    const id = __test__.projectIdEncoded({
-      cloneDir: "",
-      baseBranch: "main",
-      host: "gitlab.com",
-      namespace: "group/sub",
-      project: "myproj",
-      resolveToken: async () => "",
-      sessionScope: "",
-    });
-    expect(id).toBe("group%2Fsub%2Fmyproj");
-  });
-
-  it("glStateOut maps open→opened, others pass through", () => {
-    expect(__test__.glStateOut("open")).toBe("opened");
-    expect(__test__.glStateOut("closed")).toBe("closed");
-    expect(__test__.glStateOut("all")).toBe("all");
-  });
-
-  it("mapMrState derives merged from merged_at", () => {
-    expect(__test__.mapMrState("opened", null)).toBe("open");
-    expect(__test__.mapMrState("closed", null)).toBe("closed");
-    expect(__test__.mapMrState("locked", null)).toBe("closed");
-    expect(__test__.mapMrState("merged", "2026-05-01T00:00:00Z")).toBe(
-      "merged",
-    );
-    expect(__test__.mapMrState("closed", "2026-05-01T00:00:00Z")).toBe(
-      "merged",
-    );
-  });
-
-  it("fallbackSessionScope is deterministic per ref", () => {
-    const a = __test__.fallbackSessionScope(fakeRef);
-    const b = __test__.fallbackSessionScope(fakeRef);
-    expect(a).toBe(b);
-    expect(a).toMatch(/^[0-9a-f]{8}$/);
   });
 });

@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import type { Tool } from "ai";
 import { ipcMain } from "electron";
 import { classifyError } from "../ai/error-classifier";
-import { addTask, updateTask } from "../db";
+import { addTask, getDefaultLlmConfig, getLlmConfig, updateTask } from "../db";
 import { getAIModelByConfigId } from "./ai-models";
 import {
   abortControllers,
@@ -157,6 +157,9 @@ export const registerPlanHandlers = () => {
       }
 
       const model = getAIModelByConfigId(llmConfigId);
+      const llmConfig = llmConfigId
+        ? getLlmConfig(llmConfigId)
+        : getDefaultLlmConfig();
 
       plan.status = "approved";
       const finalPlan = await executePlan({
@@ -165,6 +168,7 @@ export const registerPlanHandlers = () => {
         sender,
         taskId: id,
         abortSignal: controller.signal,
+        modelName: llmConfig?.model,
       });
 
       updateTask(id, {

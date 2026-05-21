@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Plan, PlanStep } from "../plan-types";
 import {
   buildAgentSystemPrompt,
+  buildGitPrinciples,
+  buildGitRunCommandProtocol,
   buildPlanStepSystemPrompt,
   formatCurrentDate,
   formatLocaleContext,
@@ -39,6 +41,38 @@ describe("formatLocaleContext", () => {
 
   it("default invocation returns a non-empty `<locale> (<tz>)` string from the host runtime", () => {
     expect(formatLocaleContext()).toMatch(/^[A-Za-z-]+ \(.+\)$/);
+  });
+});
+
+describe("buildGitPrinciples / buildGitRunCommandProtocol", () => {
+  it("L1 principles are short (≤ 12 lines) and contain hard red-lines + trailer", () => {
+    const out = buildGitPrinciples("claude-opus-4-7");
+    expect(out.split("\n").length).toBeLessThanOrEqual(12);
+    expect(out).toContain("## Git Safety");
+    expect(out).toMatch(/--amend/);
+    expect(out).toMatch(/--no-verify/);
+    expect(out).toMatch(/force-push/);
+    expect(out).toContain(
+      "Co-Authored-By: claude-opus-4-7 <noreply@filework.local>",
+    );
+  });
+
+  it("L2 protocol carries the operational manual the L1 block deliberately omits", () => {
+    const out = buildGitRunCommandProtocol("claude-opus-4-7");
+    expect(out).toMatch(/HEREDOC/);
+    expect(out).toMatch(/git commit -m/);
+    expect(out).toMatch(/gh pr create/);
+    expect(out).toMatch(/glab/);
+    expect(out).toContain(
+      "Co-Authored-By: claude-opus-4-7 <noreply@filework.local>",
+    );
+  });
+
+  it("L1 and L2 trailers stay in sync — same modelName flows through both", () => {
+    const model = "test-model";
+    expect(buildGitPrinciples(model)).toContain(`<noreply@filework.local>`);
+    expect(buildGitPrinciples(model)).toContain(model);
+    expect(buildGitRunCommandProtocol(model)).toContain(model);
   });
 });
 
@@ -113,6 +147,38 @@ describe("buildAgentSystemPrompt", () => {
       expect(withoutSkill).toContain(heading);
       expect(withSkill).toContain(heading);
     }
+  });
+
+  it("git principles are absent when isGitWorkspace is not set", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).not.toMatch(/Git Safety/);
+    expect(prompt).not.toMatch(/Co-Authored-By/);
+  });
+
+  it("git principles are absent when isGitWorkspace is false", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      isGitWorkspace: false,
+    });
+    expect(prompt).not.toMatch(/Git Safety/);
+  });
+
+  it("git principles (L1) appear when isGitWorkspace is true; full protocol (L2) does NOT", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      isGitWorkspace: true,
+      modelName: "claude-opus-4-7",
+    });
+    expect(prompt).toContain("## Git Safety");
+    expect(prompt).toContain(
+      "Co-Authored-By: claude-opus-4-7 <noreply@filework.local>",
+    );
+    // L2 manual lives in the runCommand tool description, NOT here —
+    // we should not see the actual HEREDOC template or `gh pr create`
+    // in the system prompt itself. (L1 may reference HEREDOC in prose
+    // to point to where the template lives — that's intentional.)
+    expect(prompt).not.toMatch(/git commit -m "\$\(cat <<'EOF'/);
+    expect(prompt).not.toMatch(/gh pr create/);
   });
 
   it("allowed-tools restriction is announced when skill restricts tools", () => {
@@ -234,6 +300,32 @@ describe("buildPlanStepSystemPrompt", () => {
     expect(prompt).toContain(
       "Then briefly state whether the verification criterion was met.",
     );
+  });
+
+  it("step prompt omits Git Safety when isGitWorkspace is not set", () => {
+    const step: PlanStep = plan.steps[0];
+    const prompt = buildPlanStepSystemPrompt({
+      plan,
+      step,
+      planContext: "",
+      previousResults: "",
+    });
+    expect(prompt).not.toMatch(/Git Safety/);
+  });
+
+  it("step prompt injects Git Safety (L1 only) when isGitWorkspace is true", () => {
+    const step: PlanStep = plan.steps[0];
+    const prompt = buildPlanStepSystemPrompt({
+      plan,
+      step,
+      planContext: "",
+      previousResults: "",
+      isGitWorkspace: true,
+      modelName: "claude-opus-4-7",
+    });
+    expect(prompt).toContain("## Git Safety");
+    expect(prompt).toContain("Co-Authored-By: claude-opus-4-7");
+    expect(prompt).not.toMatch(/gh pr create/);
   });
 
   it("step prompt with skill appends Active Skill block", () => {

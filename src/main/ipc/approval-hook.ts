@@ -2,20 +2,16 @@
  * Build the `beforeToolCall` hook that AgentLoop uses to gate destructive
  * tools through the existing approval IPC flow.
  *
- * Replaces the per-tool wrapping that lived in the deleted
- * `ai-tool-permissions.ts:buildTools` (removed in M2 PR 4 after the
- * AgentLoop migration completed for both main and fork-mode paths).
- *
  * Approval logic precedence:
  *   1. writeFile + plan-approved task + path inside workspace → auto-approve
  *   2. tool already user-approved this task (whitelist) → auto-approve (inside requestApproval)
  *   3. moveFile/deleteFile/runCommand: workspace bounds check (deny if outside)
- *   4. Otherwise: send ai:stream-tool-approval, await user response
+ *   4. Otherwise: enqueue into the batched approval card (ai:stream-tool-batch-approval)
+ *      via requestApproval → approval-batcher, await user decision.
  */
 
 import type { WebContents } from "electron";
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
-import { PROPOSE_SESSION_BRANCH_TOOL } from "../core/agent/tools/git-tools";
 import { requestApproval } from "./ai-tools";
 import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 
@@ -31,7 +27,7 @@ export const buildApprovalHook = ({
   sender,
   taskId,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
-  return async (call, ctx) => {
+  return async (call) => {
     // ── Plan-approved writeFile fast path ───────────────────────────
     if (call.toolName === "writeFile") {
       const args = call.args as { path?: string };
@@ -73,55 +69,14 @@ export const buildApprovalHook = ({
       }
     }
 
-    // ── M8: pre-PR CI heads-up (best-effort, never blocks) ──────────
-    let extraContext: string | undefined;
-    if (call.toolName === "openPullRequest" && ctx.workspace.scm?.listCIRuns) {
-      try {
-        const branch = await ctx.workspace.scm.currentBranch?.();
-        if (branch) {
-          const runs = await ctx.workspace.scm.listCIRuns({
-            ref: branch,
-            limit: 1,
-          });
-          const latest = runs[0];
-          if (
-            latest &&
-            (latest.conclusion === "failure" ||
-              latest.conclusion === "cancelled")
-          ) {
-            extraContext = `⚠️ 最近的 CI 运行 (${latest.name}) 状态为 ${latest.conclusion}。继续打开 PR/MR 之前请确认。\n${latest.url}`;
-          }
-        }
-      } catch {
-        // Best-effort: a CI lookup failure (rate limit, no Actions, expired
-        // token) must never block the user from opening a PR.
-      }
-    }
-
     // ── User approval (whitelist short-circuit lives inside) ────────
-    const result = await requestApproval(
+    const approved = await requestApproval(
       sender,
       taskId,
       call.toolCallId,
       call.toolName,
       call.args,
-      ctx.signal,
-      extraContext,
-      call.richPreview,
     );
-    if (!result.approved) {
-      return { allow: false, reason: DENIED_REASON };
-    }
-    // Multi-choice approvals (currently only proposeSessionBranch's
-    // branch picker) bake the user's pick into the tool's args via
-    // argsOverride, so the tool's `execute` sees the chosen value as
-    // `candidates[0]`.
-    if (call.toolName === PROPOSE_SESSION_BRANCH_TOOL && result.choice) {
-      return {
-        allow: true,
-        argsOverride: { ...(call.args as object), candidates: [result.choice] },
-      };
-    }
-    return { allow: true };
+    return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
   };
 };

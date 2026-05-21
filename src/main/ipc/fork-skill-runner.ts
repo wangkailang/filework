@@ -35,6 +35,7 @@ import {
   type SubAgentStatus,
 } from "../core/agent/sub-agent-contract";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
+import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
 import { buildAgentToolRegistry } from "./agent-tools";
 import { getModelAndAdapterByConfigId } from "./ai-models";
 import { buildApprovalHook } from "./approval-hook";
@@ -119,17 +120,19 @@ export const createForkSkillRunner = (
     } else {
       resolved = getModelAndAdapterByConfigId(llmConfigId);
     }
-    const { model, adapter } = resolved;
+    const { model, adapter, modelId } = resolved;
 
     // ── Per-call pieces ─────────────────────────────────────────────
     const workspace = new LocalWorkspace(opts.workspacePath);
+    const isGitWorkspace = isGitBackedWorkspace(workspace);
     // Force [] when undefined so the registry's allow() filter (zero-tool
     // default) matches the legacy `executor.ts:395-397` behavior.
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId,
-      workspace,
       allowedTools: opts.allowedTools ?? [],
+      modelName: modelId,
+      isGitWorkspace,
     });
     const beforeToolCall = buildApprovalHook({ sender, taskId });
 
