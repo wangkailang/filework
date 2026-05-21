@@ -22,7 +22,6 @@ import {
   ConfirmationBatch,
   ConfirmationRejected,
   ConfirmationRequest,
-  ConfirmationRichPreview,
 } from "../ai-elements/confirmation";
 import {
   Conversation,
@@ -99,18 +98,11 @@ const renderApprovalRequest = ({
   LL,
 }: {
   approval: ToolApproval;
-  onDecide: (approved: boolean, choice?: string) => void;
+  onDecide: (approved: boolean) => void;
   LL: TranslationFunctions;
-}) => {
-  const extra = approval.extraContext && (
-    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-2">
-      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
-        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-        <span className="whitespace-pre-line">{approval.extraContext}</span>
-      </div>
-    </div>
-  );
-  const approveDenyRow = (
+}) => (
+  <>
+    <ConfirmationRequest>{approval.description}</ConfirmationRequest>
     <ConfirmationActions>
       <ConfirmationAction variant="outline" onClick={() => onDecide(false)}>
         {LL.chat_reject()}
@@ -119,46 +111,8 @@ const renderApprovalRequest = ({
         {LL.chat_approve()}
       </ConfirmationAction>
     </ConfirmationActions>
-  );
-
-  // branch-choice: rich preview owns its own buttons (chip picker + custom + deny).
-  if (approval.richPreview?.kind === "branch-choice") {
-    return (
-      <>
-        {extra}
-        <ConfirmationRichPreview
-          preview={approval.richPreview}
-          onPick={(choice) => onDecide(true, choice)}
-          onDeny={() => onDecide(false)}
-        />
-      </>
-    );
-  }
-
-  // commit / pr: rich preview is read-only; pair with standard Approve/Deny.
-  if (approval.richPreview) {
-    return (
-      <>
-        {extra}
-        <ConfirmationRichPreview
-          preview={approval.richPreview}
-          onPick={() => undefined}
-          onDeny={() => undefined}
-        />
-        {approveDenyRow}
-      </>
-    );
-  }
-
-  // Fallback for tools without a rich preview.
-  return (
-    <>
-      {extra}
-      <ConfirmationRequest>{approval.description}</ConfirmationRequest>
-      {approveDenyRow}
-    </>
-  );
-};
+  </>
+);
 
 const getErrorTypeLabels = (
   LL: TranslationFunctions,
@@ -419,8 +373,8 @@ export const ChatPanel = ({
               {inv.approval.state === "approval-requested" &&
                 renderApprovalRequest({
                   approval: inv.approval,
-                  onDecide: (approved, choice) =>
-                    chat.handleApproval(inv.toolCallId, approved, choice),
+                  onDecide: (approved) =>
+                    chat.handleApproval(inv.toolCallId, approved),
                   LL,
                 })}
               {inv.approval.state === "approval-accepted" && (

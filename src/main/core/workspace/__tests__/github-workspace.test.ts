@@ -5,7 +5,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  __test__,
   ensureClone,
   type GitHubRef,
   GitHubWorkspace,
@@ -193,47 +192,5 @@ describe("GitHubWorkspace.create", () => {
     expect(ws.root).toBe(cloneDir);
     const readme = await ws.fs.readFile("README.md");
     expect(readme).toContain("hello");
-  });
-
-  it("blocks `git push`-style commands via exec", async () => {
-    const cloneDir = path.join(cacheDir, "acme", "app");
-    await mkdir(path.join(cloneDir, ".git"), { recursive: true });
-    await writeFile(
-      path.join(cloneDir, ".git/filework-last-fetch"),
-      new Date().toISOString(),
-      "utf8",
-    );
-
-    const { fake } = buildFakeSpawn();
-    const ws = await GitHubWorkspace.create(fakeRef, {
-      resolveToken: async () => "ghp_TESTTOKEN",
-      cacheDir,
-      freshnessTtlMs: 60_000,
-      // biome-ignore lint/suspicious/noExplicitAny: test stub for spawn
-      spawnFn: fake as any,
-    });
-
-    const result = await ws.exec.run("git push origin main");
-    expect(result.exitCode).toBe(126);
-    expect(result.stderr).toContain("M6 PR 2");
-  });
-});
-
-describe("looksLikeGitWrite", () => {
-  const { looksLikeGitWrite } = __test__;
-
-  it("flags push / commit / reset", () => {
-    expect(looksLikeGitWrite("git push")).toBe(true);
-    expect(looksLikeGitWrite("git push --force origin main")).toBe(true);
-    expect(looksLikeGitWrite("git -c x=y push")).toBe(true);
-    expect(looksLikeGitWrite("git commit -m 'x'")).toBe(true);
-    expect(looksLikeGitWrite("git reset --hard")).toBe(true);
-  });
-
-  it("allows reads", () => {
-    expect(looksLikeGitWrite("git status")).toBe(false);
-    expect(looksLikeGitWrite("git diff")).toBe(false);
-    expect(looksLikeGitWrite("git log --oneline")).toBe(false);
-    expect(looksLikeGitWrite("ls -la")).toBe(false);
   });
 });

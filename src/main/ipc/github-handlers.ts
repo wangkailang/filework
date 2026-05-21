@@ -136,7 +136,6 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
     resolveToken: deps.resolveToken,
     cacheDir: deps.cacheDir,
     askpassPath: deps.askpassPath,
-    fetchFn: fetchImpl,
     resolveProxy: deps.resolveProxy,
   };
 

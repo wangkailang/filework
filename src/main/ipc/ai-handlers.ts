@@ -35,6 +35,7 @@ import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
   createWorkspace,
+  isGitBackedWorkspace,
   type WorkspaceFactoryDeps,
 } from "../core/workspace/workspace-factory";
 import { decodeRef, type WorkspaceRef } from "../core/workspace/workspace-ref";
@@ -469,19 +470,6 @@ const handleTaskExecution = async (
     }
     const skillTools = skill?.tools ?? {};
 
-    const systemPrompt =
-      buildAgentSystemPrompt({
-        workspacePath: legacyWorkspacePath,
-        skill,
-        skillArgs,
-        isExplicitSkillCommand,
-      }) + skillPrompt;
-
-    console.log(
-      `[System Prompt] Generated for skill ${skill?.name || "none"}:`,
-      systemPrompt.substring(0, 200),
-    );
-
     // ── Build messages from history (if available) ──
     const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
 
@@ -511,29 +499,36 @@ const handleTaskExecution = async (
     let agentTotalTokens: number | null = null;
     let agentProviderMeta: Record<string, unknown> | undefined;
 
-    const sessionScope = (payload.sessionId ?? id).slice(0, 8);
-    // Derive a non-routable commit identity from the active LLM. This is
-    // what shows up as `--author` on every commit the agent creates.
-    // No fallback — if there's no llmConfig the SCM's commit() will
-    // throw rather than silently writing a "Claude" default.
-    const commitIdentity = llmConfig
-      ? {
-          name: llmConfig.model,
-          email: `noreply+${llmConfig.provider}@filework.local`,
-        }
-      : undefined;
     const workspace =
       ref.kind === "local"
         ? new LocalWorkspace(ref.path)
-        : await createWorkspace(ref, requireWorkspaceFactoryDeps(), {
-            sessionScope,
-            commitIdentity,
-          });
+        : await createWorkspace(ref, requireWorkspaceFactoryDeps());
 
     // For GitHub workspaces, register the clone dir for sandbox checks now.
     if (ref.kind !== "local") {
       setTaskWorkspace(id, workspace.root);
     }
+
+    // Detect whether the workspace is git-backed once per task. Used by
+    // both the system prompt (L1 git principles) and the tool registry
+    // (L2 git protocol embedded in `runCommand`'s description). See
+    // `system-prompt.buildGitPrinciples` / `buildGitRunCommandProtocol`.
+    const isGitWorkspace = isGitBackedWorkspace(workspace);
+
+    const systemPrompt =
+      buildAgentSystemPrompt({
+        workspacePath: legacyWorkspacePath,
+        skill,
+        skillArgs,
+        isExplicitSkillCommand,
+        modelName: llmConfig?.model,
+        isGitWorkspace,
+      }) + skillPrompt;
+
+    console.log(
+      `[System Prompt] Generated for skill ${skill?.name || "none"}:`,
+      systemPrompt.substring(0, 200),
+    );
 
     // ── Build the per-task ToolRegistry and merge with skill-specific tools ──
     // Registry tools (file ops + askClarification) flow through the
@@ -542,8 +537,9 @@ const handleTaskExecution = async (
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId: id,
-      workspace,
       allowedTools,
+      modelName: llmConfig?.model,
+      isGitWorkspace,
     });
     const beforeToolCall = buildApprovalHook({ sender, taskId: id });
     const registryTools = toolRegistry.toAiSdkTools({
@@ -872,13 +868,10 @@ const handleTaskExecution = async (
 export const registerAIHandlers = () => {
   ipcMain.handle(
     "ai:approveToolCall",
-    async (
-      _event,
-      payload: { toolCallId: string; approved: boolean; choice?: string },
-    ) => {
+    async (_event, payload: { toolCallId: string; approved: boolean }) => {
       const resolve = pendingApprovals.get(payload.toolCallId);
       if (resolve) {
-        resolve({ approved: payload.approved, choice: payload.choice });
+        resolve(payload.approved);
         pendingApprovals.delete(payload.toolCallId);
         toolCallToTaskMap.delete(payload.toolCallId);
       }

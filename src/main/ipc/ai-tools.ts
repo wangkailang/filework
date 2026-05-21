@@ -26,10 +26,7 @@ import {
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
 import {
-  type ApprovalResult,
   isToolWhitelistedForTask,
-  pendingApprovals,
-  toolCallToTaskMap,
   whitelistToolForTask,
 } from "./ai-task-control";
 import { enqueueForBatch } from "./approval-batcher";
@@ -42,51 +39,6 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
     return a.name.localeCompare(b.name);
   });
 
-/**
- * Tools that always require explicit approval — even after the user has
- * approved them once in this task. Reserved for actions with broad
- * remote effects (push, PR open, posting public comments) where silent
- * re-approval would be surprising. Local-only destructive tools
- * (writeFile, deleteFile, etc.) follow the whitelist-after-first-ok
- * pattern instead.
- */
-const ALWAYS_PROMPT_TOOLS: ReadonlySet<string> = new Set([
-  // The branch picker and gitCommit are both high-risk — every commit
-  // is a separate decision, no whitelist after first OK.
-  "proposeSessionBranch",
-  "gitCommit",
-  "gitPush",
-  "openPullRequest",
-  "githubCommentIssue",
-  "githubCommentPullRequest",
-  "gitlabCommentIssue",
-  "gitlabCommentMergeRequest",
-  // M9: re-runs consume CI minutes and may re-trigger deploys.
-  "githubRerunWorkflowRun",
-  "githubRerunFailedJobs",
-  "gitlabRetryPipeline",
-  // M10: PR/MR reviews post public, hard-to-undo content.
-  "githubReviewPullRequest",
-  "gitlabReviewMergeRequest",
-  // M11: dispatch starts a fresh CI run with arbitrary inputs and may deploy.
-  // Cancel tools are deliberately NOT here — they're idempotent and only
-  // ever reduce CI activity, so they follow the whitelist-after-first-OK
-  // pattern (see git-approval.test.ts for the regression guard).
-  "githubDispatchWorkflow",
-  // M14: gitlab createPipeline starts a fresh CI run with arbitrary
-  // variables and may deploy — same posture as dispatch / rerun.
-  "gitlabCreatePipeline",
-  // M15: PR review lifecycle ops mutate / dismiss already-public content.
-  "githubDismissReview",
-  "githubEditReviewBody",
-  // M16: GitLab MR Approve / Unapprove are public vote signals on the MR.
-  "gitlabApproveMergeRequest",
-  "gitlabUnapproveMergeRequest",
-  // M17: PR inline-comment edit / delete are public mutations on the PR.
-  "githubEditPullRequestReviewComment",
-  "githubDeletePullRequestReviewComment",
-]);
-
 /** Human-readable descriptions for dangerous operations */
 export const dangerousToolDescriptions: Record<
   string,
@@ -98,59 +50,6 @@ export const dangerousToolDescriptions: Record<
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
-  proposeSessionBranch: (args) => {
-    const c = Array.isArray(args.candidates) ? args.candidates : [];
-    return c.length === 1
-      ? `选择会话分支: ${String(c[0])}`
-      : `选择会话分支 (${c.length} 个候选)`;
-  },
-  gitCommit: (args) => `提交: ${String(args.message ?? "").slice(0, 80)}`,
-  gitPush: (args) =>
-    args.force ? "推送 (force-with-lease) 到 origin" : "推送到 origin",
-  openPullRequest: (args) =>
-    `创建 PR: ${String(args.title ?? "").slice(0, 80)}`,
-  githubCommentIssue: (args) =>
-    `评论 issue #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
-  githubCommentPullRequest: (args) =>
-    `评论 PR #${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
-  gitlabCommentIssue: (args) =>
-    `评论 issue !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
-  gitlabCommentMergeRequest: (args) =>
-    `评论 MR !${args.number}: ${String(args.body ?? "").slice(0, 60)}`,
-  githubRerunWorkflowRun: (args) => `重新运行整个 workflow run #${args.runId}`,
-  githubRerunFailedJobs: (args) =>
-    `仅重新运行 workflow run #${args.runId} 的失败 jobs`,
-  gitlabRetryPipeline: (args) => `重试 pipeline #${args.runId} 的失败 jobs`,
-  githubReviewPullRequest: (args) => {
-    const verdict = args.event ? ` (${args.event})` : "";
-    const comments = args.comments;
-    const n = Array.isArray(comments) ? comments.length : 0;
-    return `提交 PR #${args.number} review${verdict} (${n} 条行级评论)`;
-  },
-  gitlabReviewMergeRequest: (args) => {
-    const comments = args.comments;
-    const n = Array.isArray(comments) ? comments.length : 0;
-    return `提交 MR !${args.number} review (${n} 条行级评论)`;
-  },
-  githubCancelWorkflowRun: (args) => `取消 workflow run #${args.runId}`,
-  githubDispatchWorkflow: (args) =>
-    `手动触发 workflow ${args.workflowFile} on ${args.ref}`,
-  gitlabCancelPipeline: (args) => `取消 pipeline #${args.runId}`,
-  gitlabCreatePipeline: (args) => {
-    const vars = args.variables;
-    const n = vars && typeof vars === "object" ? Object.keys(vars).length : 0;
-    const varsHint = n > 0 ? ` (${n} 个变量)` : "";
-    return `在 ${args.ref} 上创建 pipeline${varsHint}`;
-  },
-  githubDismissReview: (args) => `撤回 PR #${args.number} 的 review`,
-  githubEditReviewBody: (args) => `编辑 PR #${args.number} 的 review summary`,
-  gitlabApproveMergeRequest: (args) => `批准 (approve) MR !${args.number}`,
-  gitlabUnapproveMergeRequest: (args) =>
-    `撤回批准 (unapprove) MR !${args.number}`,
-  githubEditPullRequestReviewComment: (args) =>
-    `编辑 PR 行评论 #${args.commentId}: ${String(args.body ?? "").slice(0, 60)}`,
-  githubDeletePullRequestReviewComment: (args) =>
-    `删除 PR 行评论 #${args.commentId}`,
 };
 
 /** Safe (read-only) tools — shared across all requests */
@@ -474,9 +373,6 @@ export const safeTools: Record<string, Tool> = {
 /**
  * Request approval from the renderer and wait for the response
  */
-/** Default approval timeout: 5 minutes */
-const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
-
 export const requestApproval = (
   sender: Electron.WebContents,
   taskId: string,
@@ -484,19 +380,7 @@ export const requestApproval = (
   toolName: string,
   args: unknown,
   abortSignal?: AbortSignal,
-  /**
-   * Optional contextual warning rendered above the approval card.
-   * M8 uses it to surface a failing-CI heads-up before openPullRequest.
-   */
-  extraContext?: string,
-  /**
-   * Tool-specific structured preview (e.g. branch picker candidates,
-   * commit diff stats, PR title/body). The renderer narrows this via
-   * its discriminated `kind` field. When omitted, falls back to the
-   * plain `description` string from `dangerousToolDescriptions`.
-   */
-  richPreview?: unknown,
-): Promise<ApprovalResult> => {
+): Promise<boolean> => {
   // If the user already approved this tool type during the current task,
   // skip the approval prompt and auto-approve.
   if (isToolWhitelistedForTask(taskId, toolName)) {
@@ -510,101 +394,28 @@ export const requestApproval = (
         toolName,
       });
     }
-    return Promise.resolve({ approved: true });
+    return Promise.resolve(true);
   }
 
-  // Non-broadcast-effect destructive tools coalesce into a single
-  // approval card per (task, toolName) so a wave of 14 concurrent
-  // deleteFile calls becomes 1 click instead of 14. ALWAYS_PROMPT_TOOLS
-  // (gitPush, openPullRequest, etc.) keep the single-card path below.
-  // The batch path does not support multi-choice — it returns boolean,
-  // which we lift to ApprovalResult here.
-  if (!ALWAYS_PROMPT_TOOLS.has(toolName)) {
-    const describeFn = dangerousToolDescriptions[toolName];
-    const description = describeFn
-      ? describeFn(args as Record<string, unknown>)
-      : toolName;
-    return enqueueForBatch({
-      sender,
-      taskId,
-      toolName,
-      toolCallId,
-      args,
-      description,
-      abortSignal,
-    }).then((approved) => ({ approved }));
-  }
-
-  return new Promise<ApprovalResult>((resolve) => {
-    let settled = false;
-    const onAbort = () => {
-      console.log("[Tool] Aborting tool approval request:", toolCallId);
-      settle({ approved: false });
-    };
-    const settle = (result: ApprovalResult) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      abortSignal?.removeEventListener("abort", onAbort);
-      pendingApprovals.delete(toolCallId);
-      toolCallToTaskMap.delete(toolCallId);
-      // If approved, whitelist this tool type for the rest of the task —
-      // EXCEPT for tools that are too remote-affecting to silently
-      // re-approve (gitPush, openPullRequest, gitCommit, ...). Those
-      // always re-prompt.
-      if (result.approved && !ALWAYS_PROMPT_TOOLS.has(toolName)) {
-        whitelistToolForTask(taskId, toolName);
-      }
-      resolve(result);
-    };
-
-    pendingApprovals.set(toolCallId, settle);
-    toolCallToTaskMap.set(toolCallId, taskId);
-
-    // Auto-deny after timeout to prevent indefinite hang
-    const timer = setTimeout(() => {
-      if (!settled) {
-        console.warn(
-          `[Tool] Approval timeout (${APPROVAL_TIMEOUT_MS}ms) for ${toolName}, auto-denying:`,
-          toolCallId,
-        );
-        if (!sender.isDestroyed()) {
-          sender.send("ai:approval-timeout", {
-            id: taskId,
-            toolCallId,
-            toolName,
-            timeoutMs: APPROVAL_TIMEOUT_MS,
-          });
-        }
-        settle({ approved: false });
-      }
-    }, APPROVAL_TIMEOUT_MS);
-
-    // Handle abort signal
-    if (abortSignal) {
-      if (abortSignal.aborted) {
-        onAbort();
-        return;
-      } else {
-        abortSignal.addEventListener("abort", onAbort, { once: true });
-      }
-    }
-
-    if (!sender.isDestroyed()) {
-      const describeFn = dangerousToolDescriptions[toolName];
-      const description = describeFn
-        ? describeFn(args as Record<string, unknown>)
-        : `${toolName}`;
-      sender.send("ai:stream-tool-approval", {
-        id: taskId,
-        toolCallId,
-        toolName,
-        args,
-        description,
-        extraContext,
-        richPreview,
-      });
-    }
+  // All destructive tools coalesce into a single approval card per
+  // (task, toolName) so a wave of N concurrent deleteFile calls becomes
+  // 1 click instead of N. First-ok approvals whitelist the tool for the
+  // rest of the task.
+  const describeFn = dangerousToolDescriptions[toolName];
+  const description = describeFn
+    ? describeFn(args as Record<string, unknown>)
+    : toolName;
+  return enqueueForBatch({
+    sender,
+    taskId,
+    toolName,
+    toolCallId,
+    args,
+    description,
+    abortSignal,
+  }).then((approved) => {
+    if (approved) whitelistToolForTask(taskId, toolName);
+    return approved;
   });
 };
 

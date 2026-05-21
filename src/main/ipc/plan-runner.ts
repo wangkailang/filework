@@ -30,6 +30,7 @@ import {
 import { AgentLoop } from "../core/agent/agent-loop";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
+import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { buildAgentToolRegistry } from "./agent-tools";
@@ -75,6 +76,8 @@ interface PlanRunnerOptions {
   sender: WebContents;
   taskId: string;
   abortSignal?: AbortSignal;
+  /** Resolved LLM identifier; surfaces in commit message Co-Authored-By trailers. */
+  modelName?: string;
 }
 
 /** Cancelled plan ids — set by the cancel handler. */
@@ -94,12 +97,14 @@ export const executePlan = async ({
   sender,
   taskId,
   abortSignal,
+  modelName,
 }: PlanRunnerOptions): Promise<Plan> => {
   plan.status = "executing";
   plan.updatedAt = new Date().toISOString();
   await writePlanFile(plan);
 
   const workspace = new LocalWorkspace(plan.workspacePath);
+  const isGitWorkspace = isGitBackedWorkspace(workspace);
 
   for (const step of plan.steps) {
     if (cancelledPlans.has(plan.id)) {
@@ -161,6 +166,8 @@ export const executePlan = async ({
         planContext,
         previousResults,
         skill,
+        modelName,
+        isGitWorkspace,
       });
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
@@ -180,7 +187,8 @@ export const executePlan = async ({
       const toolRegistry = buildAgentToolRegistry({
         sender,
         taskId,
-        workspace,
+        modelName,
+        isGitWorkspace,
       });
       const beforeToolCall = buildApprovalHook({ sender, taskId });
       const registryTools = toolRegistry.toAiSdkTools({

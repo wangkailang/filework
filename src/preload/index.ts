@@ -325,10 +325,6 @@ const api = {
       toolName: string;
       args: unknown;
       description: string;
-      /** Optional warning banner content (M8). */
-      extraContext?: string;
-      /** Tool-specific structured preview (branch picker / commit / pr). */
-      richPreview?: unknown;
     }) => void,
   ) => {
     const handler = (
@@ -339,8 +335,6 @@ const api = {
         toolName: string;
         args: unknown;
         description: string;
-        extraContext?: string;
-        richPreview?: unknown;
       },
     ) => callback(data);
     ipcRenderer.on("ai:stream-tool-approval", handler);
@@ -420,8 +414,8 @@ const api = {
     return () =>
       ipcRenderer.removeListener("ai:ci-dispatch-resolve-failed", handler);
   },
-  approveToolCall: (toolCallId: string, approved: boolean, choice?: string) =>
-    ipcRenderer.invoke("ai:approveToolCall", { toolCallId, approved, choice }),
+  approveToolCall: (toolCallId: string, approved: boolean) =>
+    ipcRenderer.invoke("ai:approveToolCall", { toolCallId, approved }),
   onStreamToolBatchApproval: (
     callback: (data: {
       id: string;

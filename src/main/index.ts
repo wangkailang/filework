@@ -197,7 +197,6 @@ app.whenReady().then(async () => {
     githubCacheDir,
     gitlabCacheDir,
     askpassPath,
-    fetchFn: proxyAwareFetch,
     resolveProxy,
   });
 

@@ -28,13 +28,6 @@ export interface BeforeToolCallDecision {
   allow: boolean;
   /** Optional reason surfaced to the model when allow=false. */
   reason?: string;
-  /**
-   * When set, the registry calls `execute(argsOverride)` instead of the
-   * original args. Used by approval flows that surface a multi-choice
-   * picker (e.g. `proposeSessionBranch`) and need to bake the user's
-   * pick into the tool's args.
-   */
-  argsOverride?: unknown;
 }
 
 export type BeforeToolCallHook = (
@@ -42,13 +35,6 @@ export type BeforeToolCallHook = (
     toolName: string;
     toolCallId: string;
     args: unknown;
-    /**
-     * Optional rich preview built by the tool's `previewBuilder`. The
-     * IPC layer (ai-tools.ts) narrows this to its concrete `RichPreview`
-     * discriminated union — keep it opaque here so the registry stays
-     * layer-agnostic.
-     */
-    richPreview?: unknown;
   },
   ctx: ToolContext,
 ) => Promise<BeforeToolCallDecision>;
@@ -63,14 +49,6 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
    */
   safety: "safe" | "destructive";
   execute: (args: TInput, ctx: ToolContext) => Promise<TOutput>;
-  /**
-   * Optional async builder of a rich approval preview. When set, runs
-   * before `beforeToolCall` and the result is passed in via `call.richPreview`.
-   * Errors during preview construction are swallowed (the approval
-   * still proceeds with `richPreview: undefined`) so a broken preview
-   * never blocks the user from deciding.
-   */
-  previewBuilder?: (args: TInput, ctx: ToolContext) => Promise<unknown>;
 }
 
 export interface ToolDeniedResult {
@@ -144,27 +122,11 @@ export class ToolRegistry {
         });
 
         if (def.safety === "destructive" && opts.beforeToolCall) {
-          let richPreview: unknown;
-          if (def.previewBuilder) {
-            try {
-              richPreview = await def.previewBuilder(args as never, ctx);
-            } catch (err) {
-              // Fail-safe: a broken previewBuilder must never block the
-              // user's approval flow — fall back to plain description.
-              // Warn so the bug is at least visible in the main-process log.
-              console.warn(
-                `[tool-registry] previewBuilder for ${def.name} threw:`,
-                err,
-              );
-              richPreview = undefined;
-            }
-          }
           const decision = await opts.beforeToolCall(
             {
               toolName: def.name,
               toolCallId: execOpts.toolCallId,
               args,
-              richPreview,
             },
             ctx,
           );
@@ -175,9 +137,6 @@ export class ToolRegistry {
               reason: decision.reason ?? "Tool call denied",
             };
             return denied;
-          }
-          if (decision.argsOverride !== undefined) {
-            return def.execute(decision.argsOverride as never, ctx);
           }
         }
 
