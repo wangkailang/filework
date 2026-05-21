@@ -1,4 +1,5 @@
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import type { PlanView } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { contentFromParts } from "./helpers";
@@ -10,6 +11,7 @@ import type {
   ErrorPart,
   ImageGalleryPart,
   MessagePart,
+  PlanMessagePart,
   ReasoningPart,
   ToolApproval,
   ToolPart,
@@ -294,7 +296,37 @@ export function useStreamSubscription({
     const offReasoning = window.filework.onStreamReasoning(({ id, delta }) => {
       if (id !== streamTaskIdRef.current) return;
       updateParts((parts) => {
-        // Find the most recent reasoning part that hasn't been finalized yet.
+        // If an inline plan currently has a `running` step, attach the
+        // reasoning delta to that step instead of surfacing it as a
+        // top-level ReasoningPart. This keeps the model's thinking
+        // scoped to the work it produced (one collapsible per step
+        // inside the PlanViewer).
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          if (p.type === "plan") {
+            const planPart = p as PlanMessagePart;
+            const runningIdx = planPart.plan.steps.findIndex(
+              (s) => s.status === "running",
+            );
+            if (runningIdx >= 0) {
+              const newSteps = planPart.plan.steps.map((s, idx) =>
+                idx === runningIdx
+                  ? { ...s, reasoning: (s.reasoning ?? "") + delta }
+                  : s,
+              );
+              parts[i] = {
+                type: "plan",
+                plan: { ...planPart.plan, steps: newSteps },
+              };
+              return parts;
+            }
+            // Plan exists but no running step yet — fall through to the
+            // top-level reasoning fallback so deltas aren't dropped.
+            break;
+          }
+          if (p.type === "text" || p.type === "tool") break;
+        }
+        // Fallback: most recent unfinished reasoning part, else push fresh.
         // Once `done: true` lands (after `reasoning_end`), the next delta
         // starts a fresh block — models can emit multiple reasoning passes
         // (one before each tool call).
@@ -304,8 +336,6 @@ export function useStreamSubscription({
             parts[i] = { ...p, text: p.text + delta };
             return parts;
           }
-          // Stop scanning past concrete output — reasoning belongs to the
-          // *current* thinking turn, not arbitrarily far back.
           if (p.type === "text" || p.type === "tool") break;
         }
         parts.push({ type: "reasoning", text: delta });
@@ -331,6 +361,10 @@ export function useStreamSubscription({
     const offToolCall = window.filework.onStreamToolCall(
       ({ id, toolCallId, toolName, args }) => {
         if (id !== streamTaskIdRef.current) return;
+        // `createPlan` is rendered as a single evolving PlanMessagePart
+        // (via `ai:stream-plan`). Suppress the generic tool bubble so N
+        // status-update calls don't stack as N "完成 createPlan" rows.
+        if (toolName === "createPlan") return;
         updateParts((parts) => {
           const existingIdx = parts.findIndex(
             (p) => p.type === "tool" && p.toolCallId === toolCallId,
@@ -622,6 +656,27 @@ export function useStreamSubscription({
       },
     );
 
+    // `createPlan` tool → upsert one PlanMessagePart per task (matched by
+    // the deterministic `inline-<taskId>` id from agent-tools.ts). First
+    // call appends, subsequent calls replace steps + status in place so
+    // the user sees a single evolving checklist, not stacked snapshots.
+    const offStreamPlan = window.filework.onStreamPlan(({ id, plan }) => {
+      if (id !== streamTaskIdRef.current) return;
+      const planView = plan as PlanView;
+      updateParts((parts) => {
+        const idx = parts.findIndex(
+          (p): p is PlanMessagePart =>
+            p.type === "plan" && p.plan.id === planView.id,
+        );
+        if (idx >= 0) {
+          parts[idx] = { type: "plan", plan: planView };
+        } else {
+          parts.push({ type: "plan", plan: planView });
+        }
+        return parts;
+      });
+    });
+
     const offRetry = window.filework.onStreamRetry(
       ({ id, attempt, type, maxRetries }) => {
         if (id !== streamTaskIdRef.current) return;
@@ -695,6 +750,7 @@ export function useStreamSubscription({
       offDone();
       offError();
       offClarification();
+      offStreamPlan();
       offSkillApprovalRequest();
       offCiRunDone();
       offCiRunTimeout();

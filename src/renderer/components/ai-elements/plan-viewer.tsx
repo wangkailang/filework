@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Brain,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   type HTMLAttributes,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -242,6 +244,155 @@ const ArtifactList = ({ artifacts }: { artifacts: PlanStepArtifactView[] }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Step reasoning (collapsible "thinking" text bound to a specific step)
+// ---------------------------------------------------------------------------
+
+const StepReasoning = ({
+  text,
+  defaultOpen,
+}: {
+  text: string;
+  defaultOpen: boolean;
+}) => {
+  const { LL } = useI18nContext();
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="ml-6 mt-1.5 border-l border-border/50 pl-2">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 w-full text-left bg-transparent border-none p-0 cursor-pointer select-none text-[11px] text-muted-foreground/80"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Brain className="size-3 shrink-0" />
+        <span className="font-medium">{LL.plan_reasoning()}</span>
+        {open ? (
+          <ChevronDown className="size-2.5 shrink-0 text-muted-foreground/50 ml-auto" />
+        ) : (
+          <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50 ml-auto" />
+        )}
+      </button>
+      {open && (
+        <div className="mt-0.5 px-2 py-1 rounded bg-muted/40 text-[10.5px] leading-relaxed text-foreground/70 whitespace-pre-wrap break-words max-h-60 overflow-auto">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Single step row — memoized so reasoning deltas on the currently-running
+// step (which produce a new `step` object for that step only) don't cause
+// sibling steps to re-render. The default React.memo shallow comparison is
+// sufficient: when reasoning is appended in `useStreamSubscription`, only
+// the running step's object reference changes; pending/completed steps
+// keep their identity and short-circuit here.
+// ---------------------------------------------------------------------------
+
+interface StepRowProps {
+  step: PlanStepView;
+  isExpanded: boolean;
+  isStalled: boolean;
+  onToggle: (stepId: number) => void;
+}
+
+const StepRowImpl = ({
+  step,
+  isExpanded,
+  isStalled,
+  onToggle,
+}: StepRowProps) => {
+  const { LL } = useI18nContext();
+  const hasSubSteps = step.subSteps && step.subSteps.length > 0;
+  const hasArtifacts = step.artifacts && step.artifacts.length > 0;
+  const hasReasoning = !!step.reasoning && step.reasoning.length > 0;
+  const hasExpandable = hasSubSteps || hasArtifacts || hasReasoning;
+  const stepFailed = step.status === "failed" || step.status === "skipped";
+  const subStepListId = `substeps-${step.id}`;
+
+  const stepContent = (
+    <>
+      <StepIcon status={step.status} />
+      <div className="flex-1 min-w-0">
+        <span
+          className={cn(
+            "text-xs",
+            step.status === "completed" && "text-muted-foreground line-through",
+            step.status === "running" && "text-foreground font-medium",
+            step.status === "failed" && "text-red-400",
+            step.status === "skipped" && "text-muted-foreground",
+            step.status === "pending" && "text-foreground/80",
+          )}
+        >
+          {step.action} — {step.description}
+          {step.status === "running" && (
+            <RunningStepTimer isStalled={isStalled} />
+          )}
+        </span>
+        {step.verification && (
+          <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+            {LL.plan_verify()}: {step.verification}
+          </div>
+        )}
+        {step.error && (
+          <div className="text-xs text-red-400 mt-0.5">
+            {LL.plan_stepError(step.error)}
+          </div>
+        )}
+      </div>
+      {hasExpandable &&
+        (isExpanded ? (
+          <ChevronDown className="size-3 shrink-0 mt-0.5 text-muted-foreground/60" />
+        ) : (
+          <ChevronRight className="size-3 shrink-0 mt-0.5 text-muted-foreground/60" />
+        ))}
+    </>
+  );
+
+  return (
+    <div>
+      {hasExpandable ? (
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          aria-controls={subStepListId}
+          className="flex items-start gap-2 w-full text-left cursor-pointer select-none bg-transparent border-none p-0"
+          onClick={() => onToggle(step.id)}
+        >
+          {stepContent}
+        </button>
+      ) : (
+        <div className="flex items-start gap-2">{stepContent}</div>
+      )}
+
+      {hasSubSteps && isExpanded && (
+        <SubStepList
+          id={subStepListId}
+          subSteps={step.subSteps ?? []}
+          stepStatus={step.status}
+          stepFailed={stepFailed}
+        />
+      )}
+
+      {/* Auto-open reasoning while the step is running; once it completes the
+          user can re-collapse, but we don't force-close on transition. */}
+      {hasReasoning && isExpanded && step.reasoning && (
+        <StepReasoning
+          text={step.reasoning}
+          defaultOpen={step.status === "running"}
+        />
+      )}
+
+      {hasArtifacts && isExpanded && (
+        <ArtifactList artifacts={step.artifacts ?? []} />
+      )}
+    </div>
+  );
+};
+
+const StepRow = memo(StepRowImpl);
+
+// ---------------------------------------------------------------------------
 // Plan Viewer (draft state — shows plan for approval)
 // ---------------------------------------------------------------------------
 
@@ -311,92 +462,21 @@ export const PlanViewer = ({
       {/* Steps */}
       <div className="px-3 py-2 space-y-1.5">
         {plan.steps.map((step) => {
-          const hasSubSteps = step.subSteps && step.subSteps.length > 0;
-          const hasArtifacts = step.artifacts && step.artifacts.length > 0;
-          const hasExpandable = hasSubSteps || hasArtifacts;
+          const hasSubSteps = !!(step.subSteps && step.subSteps.length > 0);
           const stepFailed =
             step.status === "failed" || step.status === "skipped";
           const isExpanded =
             expanded.has(step.id) ||
             step.status === "running" ||
             (stepFailed && hasSubSteps);
-
-          const stepContent = (
-            <>
-              <StepIcon status={step.status} />
-              <div className="flex-1 min-w-0">
-                <span
-                  className={cn(
-                    "text-xs",
-                    step.status === "completed" &&
-                      "text-muted-foreground line-through",
-                    step.status === "running" && "text-foreground font-medium",
-                    step.status === "failed" && "text-red-400",
-                    step.status === "skipped" && "text-muted-foreground",
-                    step.status === "pending" && "text-foreground/80",
-                  )}
-                >
-                  {step.action} — {step.description}
-                  {step.status === "running" && (
-                    <RunningStepTimer isStalled={isStalled} />
-                  )}
-                </span>
-                {step.verification && (
-                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">
-                    {LL.plan_verify()}: {step.verification}
-                  </div>
-                )}
-                {step.error && (
-                  <div className="text-xs text-red-400 mt-0.5">
-                    {LL.plan_stepError(step.error)}
-                  </div>
-                )}
-              </div>
-              {hasExpandable && (
-                <span className="shrink-0 mt-0.5 text-muted-foreground/60">
-                  {isExpanded ? (
-                    <ChevronDown className="size-3" />
-                  ) : (
-                    <ChevronRight className="size-3" />
-                  )}
-                </span>
-              )}
-            </>
-          );
-
-          const subStepListId = `substeps-${step.id}`;
-
           return (
-            <div key={step.id}>
-              {hasExpandable ? (
-                <button
-                  type="button"
-                  aria-expanded={isExpanded}
-                  aria-controls={subStepListId}
-                  className="flex items-start gap-2 w-full text-left cursor-pointer select-none bg-transparent border-none p-0"
-                  onClick={() => toggleExpand(step.id)}
-                >
-                  {stepContent}
-                </button>
-              ) : (
-                <div className="flex items-start gap-2">{stepContent}</div>
-              )}
-
-              {/* Sub-steps */}
-              {hasSubSteps && isExpanded && (
-                <SubStepList
-                  id={subStepListId}
-                  subSteps={step.subSteps ?? []}
-                  stepStatus={step.status}
-                  stepFailed={stepFailed}
-                />
-              )}
-
-              {/* Artifacts */}
-              {hasArtifacts && isExpanded && (
-                <ArtifactList artifacts={step.artifacts ?? []} />
-              )}
-            </div>
+            <StepRow
+              key={step.id}
+              step={step}
+              isExpanded={isExpanded}
+              isStalled={isStalled}
+              onToggle={toggleExpand}
+            />
           );
         })}
       </div>

@@ -150,6 +150,7 @@ const ja: Translation = {
   plan_cancelled: "計画キャンセル済み",
   plan_stepError: "エラー: {0}",
   plan_verify: "検証",
+  plan_reasoning: "推論",
 
   // Clarification
   clarification_title: "確認が必要",

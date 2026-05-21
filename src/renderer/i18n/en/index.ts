@@ -157,6 +157,7 @@ const en: BaseTranslation = {
   plan_cancelled: "Plan cancelled",
   plan_stepError: "Error: {0:string}",
   plan_verify: "Verify",
+  plan_reasoning: "Reasoning",
 
   // Clarification
   clarification_title: "Clarification Needed",

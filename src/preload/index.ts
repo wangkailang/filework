@@ -76,8 +76,6 @@ const api = {
     ipcRenderer.invoke("ai:stopGeneration", { taskId }),
 
   // Planner
-  checkNeedsPlanning: (payload: { prompt: string }) =>
-    ipcRenderer.invoke("ai:checkNeedsPlanning", payload),
   generatePlan: (payload: {
     prompt: string;
     workspacePath: string;
@@ -513,6 +511,20 @@ const api = {
     ) => callback(data);
     ipcRenderer.on("ai:stream-clarification", handler);
     return () => ipcRenderer.removeListener("ai:stream-clarification", handler);
+  },
+
+  /**
+   * In-agent `createPlan` tool stream. Carries an executing-state `PlanView`
+   * that the renderer pushes/upserts as a `PlanMessagePart` inline in chat.
+   * Distinct from `onPlanReady`, which feeds the legacy approval flow.
+   */
+  onStreamPlan: (callback: (data: { id: string; plan: unknown }) => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { id: string; plan: unknown },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-plan", handler);
+    return () => ipcRenderer.removeListener("ai:stream-plan", handler);
   },
 
   // Watchdog events (stall detection)

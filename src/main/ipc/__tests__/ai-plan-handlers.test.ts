@@ -18,7 +18,6 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("../plan-generator", () => ({
-  needsPlanning: vi.fn(() => false),
   planTask: planTaskMock,
 }));
 

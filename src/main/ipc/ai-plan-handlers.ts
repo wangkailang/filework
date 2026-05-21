@@ -14,10 +14,13 @@ import { getAIModelByConfigId } from "./ai-models";
 import {
   abortControllers,
   cleanupTask,
+  drainPlanResolver,
   markPlanApproved,
+  parseInlinePlanId,
+  stopTaskExecution,
 } from "./ai-task-control";
 import { safeTools } from "./ai-tools";
-import { needsPlanning, planTask } from "./plan-generator";
+import { planTask } from "./plan-generator";
 import { cancelPlan, executePlan } from "./plan-runner";
 import type { Plan } from "./plan-types";
 
@@ -42,15 +45,9 @@ const buildReadOnlyTools = (): Record<string, Tool> => {
  * Register all plan-related IPC handlers
  */
 export const registerPlanHandlers = () => {
-  /** Check if a prompt needs planning (used by renderer to decide UI flow) */
-  ipcMain.handle(
-    "ai:checkNeedsPlanning",
-    async (_event, payload: { prompt: string }) => {
-      return { needsPlanning: needsPlanning(payload.prompt) };
-    },
-  );
-
-  /** Generate a plan without executing it */
+  /** Generate a plan without executing it. Invoked only when the renderer
+   *  explicitly opts in (e.g. future `/plan` slash command or a planning
+   *  tool call from the agent). No automatic regex gate. */
   ipcMain.handle(
     "ai:generatePlan",
     async (
@@ -215,6 +212,11 @@ export const registerPlanHandlers = () => {
     }
   };
 
+  // Inline `createPlan` plans use deterministic id `inline-<taskId>` (see
+  // makeInlinePlanId in ai-task-control.ts). The draft pause lives inside
+  // the agent-tool execute() — approve/reject/cancel here just resolve the
+  // pending Promise so the AgentLoop continues.
+
   /** Execute an approved plan */
   ipcMain.handle(
     "ai:executePlan",
@@ -223,14 +225,31 @@ export const registerPlanHandlers = () => {
   );
 
   /** Approve a plan (alias for executePlan without llmConfigId) */
-  ipcMain.handle("ai:approvePlan", async (event, payload: { planId: string }) =>
-    runApprovedPlan(event, payload.planId),
+  ipcMain.handle(
+    "ai:approvePlan",
+    async (event, payload: { planId: string }) => {
+      const inlineTaskId = parseInlinePlanId(payload.planId);
+      if (inlineTaskId !== null) {
+        drainPlanResolver(inlineTaskId, true);
+        return { ok: true };
+      }
+      return runApprovedPlan(event, payload.planId);
+    },
   );
 
   /** User rejected a plan */
   ipcMain.handle(
     "ai:rejectPlan",
     async (_event, payload: { planId: string }) => {
+      const inlineTaskId = parseInlinePlanId(payload.planId);
+      if (inlineTaskId !== null) {
+        // Resolve the pending tool with rejection (tool throws → agent loop
+        // surfaces the error) and halt the task so no in-flight work
+        // continues. drainPlanResolver is a no-op if already settled.
+        drainPlanResolver(inlineTaskId, false);
+        stopTaskExecution(inlineTaskId);
+        return { ok: true };
+      }
       pendingPlans.delete(payload.planId);
       return { ok: true };
     },
@@ -240,6 +259,12 @@ export const registerPlanHandlers = () => {
   ipcMain.handle(
     "ai:cancelPlan",
     async (_event, payload: { planId: string }) => {
+      const inlineTaskId = parseInlinePlanId(payload.planId);
+      if (inlineTaskId !== null) {
+        drainPlanResolver(inlineTaskId, false);
+        stopTaskExecution(inlineTaskId);
+        return { ok: true };
+      }
       cancelPlan(payload.planId);
       return { ok: true };
     },
