@@ -54,6 +54,8 @@ import {
   ToolInput,
   ToolOutput,
 } from "../ai-elements/tool";
+import { getToolLabels } from "../ai-elements/tool-labels";
+import { toolPresenters } from "../ai-elements/tool-presenters";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
 import { migrateToParts } from "./helpers";
@@ -348,6 +350,7 @@ export const ChatPanel = ({
 
   const ERROR_TYPE_LABELS = useMemo(() => getErrorTypeLabels(LL), [LL]);
   const RETRY_TYPE_LABELS = useMemo(() => getRetryTypeLabels(LL), [LL]);
+  const toolLabels = useMemo(() => getToolLabels(LL), [LL]);
   const suggestions = [
     LL.suggestion_organize(),
     LL.suggestion_report(),
@@ -358,57 +361,153 @@ export const ChatPanel = ({
   // ---------------------------------------------------------------------------
   // Render helpers
   // ---------------------------------------------------------------------------
-  const renderToolPart = (inv: ToolPart) => (
-    <Tool
-      key={inv.toolCallId}
-      defaultOpen={inv.state === "output-available"}
-      forceOpen={inv.approval?.state === "approval-requested"}
-    >
-      <ToolHeader toolName={inv.toolName} state={inv.state} />
-      <ToolContent>
-        <ToolInput input={inv.args} />
-        {inv.approval && (
-          <div className="px-3 py-2 border-b border-border">
-            <Confirmation state={inv.approval.state}>
-              {inv.approval.state === "approval-requested" &&
-                renderApprovalRequest({
-                  approval: inv.approval,
-                  onDecide: (approved) =>
-                    chat.handleApproval(inv.toolCallId, approved),
-                  LL,
-                })}
-              {inv.approval.state === "approval-accepted" && (
-                <ConfirmationAccepted>
-                  {LL.chat_approved()}
-                </ConfirmationAccepted>
-              )}
-              {inv.approval.state === "approval-rejected" && (
-                <ConfirmationRejected>
-                  {LL.chat_rejected()}
-                </ConfirmationRejected>
-              )}
-            </Confirmation>
-          </div>
-        )}
-        {inv.state === "output-available" && (
-          <ToolOutput
-            output={
-              <pre className="font-mono whitespace-pre-wrap break-all">
-                {typeof inv.result === "string"
+  const renderToolPart = (inv: ToolPart) => {
+    const presenter = toolPresenters[inv.toolName];
+    const presenterCtx = { LL, workspacePath, toolCallId: inv.toolCallId };
+    const summary = presenter?.summary?.(
+      inv.args,
+      inv.result,
+      inv.state,
+      presenterCtx,
+    );
+    const customInput = presenter?.input?.(inv.args, presenterCtx);
+    const customOutput =
+      inv.state === "output-available"
+        ? presenter?.output?.(inv.result, inv.args, inv.state, presenterCtx)
+        : null;
+
+    return (
+      <Tool
+        key={inv.toolCallId}
+        defaultOpen={inv.state === "output-error"}
+        forceOpen={inv.approval?.state === "approval-requested"}
+      >
+        <ToolHeader
+          toolName={inv.toolName}
+          state={inv.state}
+          summary={summary}
+        />
+        <ToolContent>
+          {customInput ?? <ToolInput input={inv.args} />}
+          {inv.approval && (
+            <div className="px-3 py-2 border-b border-border">
+              <Confirmation state={inv.approval.state}>
+                {inv.approval.state === "approval-requested" &&
+                  renderApprovalRequest({
+                    approval: inv.approval,
+                    onDecide: (approved) =>
+                      chat.handleApproval(inv.toolCallId, approved),
+                    LL,
+                  })}
+                {inv.approval.state === "approval-accepted" && (
+                  <ConfirmationAccepted>
+                    {LL.chat_approved()}
+                  </ConfirmationAccepted>
+                )}
+                {inv.approval.state === "approval-rejected" && (
+                  <ConfirmationRejected>
+                    {LL.chat_rejected()}
+                  </ConfirmationRejected>
+                )}
+              </Confirmation>
+            </div>
+          )}
+          {inv.state === "output-available" &&
+            (customOutput ? (
+              <ToolOutput output={customOutput} />
+            ) : (
+              <ToolOutput
+                output={
+                  <pre className="font-mono whitespace-pre-wrap break-all">
+                    {typeof inv.result === "string"
+                      ? inv.result
+                      : JSON.stringify(inv.result, null, 2)}
+                  </pre>
+                }
+              />
+            ))}
+          {inv.state === "output-error" && (
+            <ToolOutput
+              errorText={
+                typeof inv.result === "string"
                   ? inv.result
-                  : JSON.stringify(inv.result, null, 2)}
-              </pre>
-            }
-          />
-        )}
-      </ToolContent>
-    </Tool>
-  );
+                  : JSON.stringify(inv.result, null, 2)
+              }
+            />
+          )}
+        </ToolContent>
+      </Tool>
+    );
+  };
+
+  const TOOL_GROUP_THRESHOLD = 3;
+
+  const renderToolGroup = (items: ToolPart[]) => {
+    const head = items[0];
+    if (!head) return null;
+    const label = toolLabels[head.toolName] || head.toolName;
+    const summary = LL.tool_summary_group_label(items.length, label);
+    return (
+      <Tool key={`group-${head.toolCallId}`} defaultOpen={false}>
+        <ToolHeader
+          toolName={head.toolName}
+          state="output-available"
+          summary={summary}
+        />
+        <ToolContent>
+          <div className="divide-y divide-border">
+            {items.map((inv) => (
+              <div key={inv.toolCallId} className="p-2">
+                {renderToolPart(inv)}
+              </div>
+            ))}
+          </div>
+        </ToolContent>
+      </Tool>
+    );
+  };
+
+  type RenderUnit = MessagePart | { type: "tool-group"; items: ToolPart[] };
+
+  const groupConsecutiveTools = (parts: MessagePart[]): RenderUnit[] => {
+    const out: RenderUnit[] = [];
+    let buf: ToolPart[] = [];
+    const flush = () => {
+      if (buf.length === 0) return;
+      if (buf.length >= TOOL_GROUP_THRESHOLD) {
+        out.push({ type: "tool-group", items: buf });
+      } else {
+        for (const inv of buf) out.push(inv);
+      }
+      buf = [];
+    };
+    for (const part of parts) {
+      const isTool = part.type === "tool";
+      const inv = isTool ? (part as ToolPart) : null;
+      const groupable =
+        inv &&
+        !inv.approval &&
+        inv.state !== "output-error" &&
+        (buf.length === 0 || buf[0]?.toolName === inv.toolName);
+      if (groupable && inv) {
+        buf.push(inv);
+      } else {
+        flush();
+        if (inv) buf.push(inv);
+        else out.push(part);
+      }
+    }
+    flush();
+    return out;
+  };
 
   const renderAssistantParts = (parts: MessagePart[]) => {
     const textKeyCounts = new Map<string, number>();
     let reasoningIdx = 0;
-    return parts.map((part) => {
+    return groupConsecutiveTools(parts).map((part) => {
+      if (part.type === "tool-group") {
+        return renderToolGroup(part.items);
+      }
       if (part.type === "reasoning") {
         reasoningIdx++;
         return (

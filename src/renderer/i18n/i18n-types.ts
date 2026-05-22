@@ -426,6 +426,57 @@ type RootTranslation = {
 	 */
 	toolName_runCommand: string
 	/**
+	 * {​0​}​ ​l​i​n​e​s
+	 * @param {number} 0
+	 */
+	tool_summary_lines: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​d​i​r​s​ ​/​ ​{​1​}​ ​f​i​l​e​s
+	 * @param {number} 0
+	 * @param {number} 1
+	 */
+	tool_summary_dirs_files: RequiredParams<'0' | '1'>
+	/**
+	 * …​ ​{​0​}​ ​m​o​r​e​ ​l​i​n​e​s
+	 * @param {number} 0
+	 */
+	tool_summary_more: RequiredParams<'0'>
+	/**
+	 * e​x​i​t​ ​{​0​}
+	 * @param {number} 0
+	 */
+	tool_summary_exitCode: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​{​1​}​ ​c​a​l​l​s
+	 * @param {number} 0
+	 * @param {string} 1
+	 */
+	tool_summary_group_label: RequiredParams<'0' | '1'>
+	/**
+	 * n​e​w​ ​f​i​l​e
+	 */
+	tool_summary_new_file: string
+	/**
+	 * D​i​f​f
+	 */
+	tool_diff_label: string
+	/**
+	 * s​t​d​o​u​t
+	 */
+	tool_stdout: string
+	/**
+	 * s​t​d​e​r​r
+	 */
+	tool_stderr: string
+	/**
+	 * S​h​o​w​ ​f​u​l​l​ ​c​o​n​t​e​n​t
+	 */
+	tool_show_full: string
+	/**
+	 * H​i​d​e
+	 */
+	tool_hide_full: string
+	/**
 	 * E​x​e​c​u​t​i​o​n​ ​P​l​a​n
 	 */
 	plan_title: string
@@ -1368,6 +1419,50 @@ export type TranslationFunctions = {
 	 * Run Command
 	 */
 	toolName_runCommand: () => LocalizedString
+	/**
+	 * {0} lines
+	 */
+	tool_summary_lines: (arg0: number) => LocalizedString
+	/**
+	 * {0} dirs / {1} files
+	 */
+	tool_summary_dirs_files: (arg0: number, arg1: number) => LocalizedString
+	/**
+	 * … {0} more lines
+	 */
+	tool_summary_more: (arg0: number) => LocalizedString
+	/**
+	 * exit {0}
+	 */
+	tool_summary_exitCode: (arg0: number) => LocalizedString
+	/**
+	 * {0} {1} calls
+	 */
+	tool_summary_group_label: (arg0: number, arg1: string) => LocalizedString
+	/**
+	 * new file
+	 */
+	tool_summary_new_file: () => LocalizedString
+	/**
+	 * Diff
+	 */
+	tool_diff_label: () => LocalizedString
+	/**
+	 * stdout
+	 */
+	tool_stdout: () => LocalizedString
+	/**
+	 * stderr
+	 */
+	tool_stderr: () => LocalizedString
+	/**
+	 * Show full content
+	 */
+	tool_show_full: () => LocalizedString
+	/**
+	 * Hide
+	 */
+	tool_hide_full: () => LocalizedString
 	/**
 	 * Execution Plan
 	 */
