@@ -1,0 +1,705 @@
+import { type Change, diffLines } from "diff";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { ToolState } from "../../../main/core/session/message-parts";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
+import { cn } from "../../lib/utils";
+
+const MAX_OUTPUT_LINES = 30;
+const MAX_LIST_ENTRIES = 50;
+const MAX_COMMAND_SHORT = 60;
+
+export interface PresenterCtx {
+  LL: TranslationFunctions;
+  workspacePath?: string;
+  toolCallId: string;
+}
+
+export interface ToolPresenter {
+  summary?: (
+    args: unknown,
+    result: unknown,
+    state: ToolState,
+    ctx: PresenterCtx,
+  ) => ReactNode | null;
+  input?: (args: unknown, ctx: PresenterCtx) => ReactNode | null;
+  output?: (
+    result: unknown,
+    args: unknown,
+    state: ToolState,
+    ctx: PresenterCtx,
+  ) => ReactNode | null;
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+function shortPath(p: string, max = 48): string {
+  if (!p || p.length <= max) return p;
+  const parts = p.split("/");
+  const last = parts[parts.length - 1] ?? p;
+  if (last.length >= max - 1) return `…${last.slice(-(max - 1))}`;
+  return `…/${last}`;
+}
+
+function countLines(s: string): number {
+  if (!s) return 0;
+  const n = s.split("\n").length;
+  return s.endsWith("\n") ? n - 1 : n;
+}
+
+function truncateLines(
+  s: string,
+  max: number,
+): { shown: string; remaining: number } {
+  const lines = s.split("\n");
+  if (lines.length <= max) return { shown: s, remaining: 0 };
+  return {
+    shown: lines.slice(0, max).join("\n"),
+    remaining: lines.length - max,
+  };
+}
+
+function resolvePath(p: string, workspacePath?: string): string {
+  if (!p) return p;
+  if (p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p)) return p;
+  if (!workspacePath) return p;
+  return `${workspacePath.replace(/\/$/, "")}/${p.replace(/^\.\//, "")}`;
+}
+
+// ---------------------------------------------------------------------------
+// runCommand
+// ---------------------------------------------------------------------------
+
+const runCommandPresenter: ToolPresenter = {
+  summary: (args, result, state, { LL }) => {
+    const a = asRecord(args);
+    const cmd = typeof a?.command === "string" ? a.command : "";
+    const cmdShort =
+      cmd.length > MAX_COMMAND_SHORT
+        ? `${cmd.slice(0, MAX_COMMAND_SHORT)}…`
+        : cmd;
+    const r = asRecord(result);
+    const exit =
+      state === "output-available" && typeof r?.exitCode === "number"
+        ? r.exitCode
+        : null;
+    return (
+      <>
+        <span className="text-foreground/80">$ {cmdShort}</span>
+        {exit !== null && (
+          <span
+            className={cn(
+              "ml-2",
+              exit === 0 ? "text-muted-foreground" : "text-red-400",
+            )}
+          >
+            {LL.tool_summary_exitCode(exit)}
+          </span>
+        )}
+      </>
+    );
+  },
+  input: (args) => {
+    const a = asRecord(args);
+    const cmd = typeof a?.command === "string" ? a.command : "";
+    if (!cmd) return null;
+    return (
+      <div className="px-3 py-2 border-b border-border">
+        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+          $ {cmd}
+        </pre>
+      </div>
+    );
+  },
+  output: (result, _args, _state, { LL }) => {
+    const r = asRecord(result);
+    if (!r) return null;
+    const stdout = typeof r.stdout === "string" ? r.stdout : "";
+    const stderr = typeof r.stderr === "string" ? r.stderr : "";
+    const exit = typeof r.exitCode === "number" ? r.exitCode : null;
+    if (!stdout && !stderr && exit === null) return null;
+    return (
+      <div className="px-3 py-2 text-xs space-y-2">
+        {stdout ? (
+          <CommandStream label={LL.tool_stdout()} body={stdout} LL={LL} />
+        ) : null}
+        {stderr ? (
+          <CommandStream
+            label={LL.tool_stderr()}
+            body={stderr}
+            LL={LL}
+            tone="error"
+          />
+        ) : null}
+        {exit !== null && (
+          <div
+            className={cn(
+              "font-mono",
+              exit === 0 ? "text-muted-foreground" : "text-red-400",
+            )}
+          >
+            {LL.tool_summary_exitCode(exit)}
+          </div>
+        )}
+      </div>
+    );
+  },
+};
+
+function CommandStream({
+  label,
+  body,
+  LL,
+  tone,
+}: {
+  label: string;
+  body: string;
+  LL: TranslationFunctions;
+  tone?: "error";
+}) {
+  const { shown, remaining } = truncateLines(body, MAX_OUTPUT_LINES);
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        {label}
+      </div>
+      <pre
+        className={cn(
+          "font-mono whitespace-pre-wrap break-all max-h-60 overflow-auto",
+          tone === "error" && "text-red-400",
+        )}
+      >
+        {shown}
+        {remaining > 0 && (
+          <span className="block text-muted-foreground italic mt-1">
+            {LL.tool_summary_more(remaining)}
+          </span>
+        )}
+      </pre>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// readFile
+// ---------------------------------------------------------------------------
+
+const readFilePresenter: ToolPresenter = {
+  summary: (args, result, state, { LL }) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    const lines = typeof result === "string" ? countLines(result) : 0;
+    return (
+      <>
+        <span className="text-foreground/80">{shortPath(p)}</span>
+        {state === "output-available" && lines > 0 && (
+          <span className="ml-2 text-muted-foreground">
+            {LL.tool_summary_lines(lines)}
+          </span>
+        )}
+      </>
+    );
+  },
+  input: (args) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    if (!p) return null;
+    return (
+      <div className="px-3 py-2 border-b border-border">
+        <pre className="text-xs font-mono text-muted-foreground break-all">
+          {p}
+        </pre>
+      </div>
+    );
+  },
+  output: (result, _args, _state, { LL }) => {
+    if (typeof result !== "string") return null;
+    return <FilePreview content={result} LL={LL} />;
+  },
+};
+
+function FilePreview({
+  content,
+  LL,
+}: {
+  content: string;
+  LL: TranslationFunctions;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { shown, remaining } = useMemo(
+    () => truncateLines(content, MAX_OUTPUT_LINES),
+    [content],
+  );
+  const body = expanded ? content : shown;
+  return (
+    <div className="px-3 py-2 text-xs">
+      <pre className="font-mono whitespace-pre-wrap break-all max-h-80 overflow-auto">
+        {body}
+      </pre>
+      {remaining > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((s) => !s)}
+          className="mt-1 text-xs text-blue-500 hover:underline"
+        >
+          {expanded
+            ? LL.tool_hide_full()
+            : `${LL.tool_show_full()} (${LL.tool_summary_more(remaining)})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// listDirectory
+// ---------------------------------------------------------------------------
+
+interface DirEntry {
+  name?: string;
+  path?: string;
+  isDirectory?: boolean;
+}
+
+function extractEntries(result: unknown): DirEntry[] {
+  if (Array.isArray(result)) return result as DirEntry[];
+  const r = asRecord(result);
+  if (r && Array.isArray(r.files)) return r.files as DirEntry[];
+  return [];
+}
+
+const listDirectoryPresenter: ToolPresenter = {
+  summary: (args, result, state, { LL }) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    const entries = extractEntries(result);
+    const dirs = entries.filter((e) => e?.isDirectory).length;
+    const files = entries.length - dirs;
+    return (
+      <>
+        <span className="text-foreground/80">{shortPath(p)}</span>
+        {state === "output-available" && entries.length > 0 && (
+          <span className="ml-2 text-muted-foreground">
+            {LL.tool_summary_dirs_files(dirs, files)}
+          </span>
+        )}
+      </>
+    );
+  },
+  input: (args) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    if (!p) return null;
+    return (
+      <div className="px-3 py-2 border-b border-border">
+        <pre className="text-xs font-mono text-muted-foreground break-all">
+          {p}
+        </pre>
+      </div>
+    );
+  },
+  output: (result, _args, _state, { LL }) => {
+    const entries = extractEntries(result);
+    if (!entries.length) return null;
+    const shown = entries.slice(0, MAX_LIST_ENTRIES);
+    const remaining = entries.length - shown.length;
+    return (
+      <div className="px-3 py-2 text-xs">
+        <ul className="font-mono space-y-0.5 max-h-60 overflow-auto">
+          {shown.map((e, i) => {
+            const key = `${e?.path ?? e?.name ?? i}`;
+            const label = e?.name ?? e?.path ?? "";
+            return (
+              <li
+                key={key}
+                className={cn("truncate", e?.isDirectory && "text-blue-500")}
+              >
+                {e?.isDirectory ? "📁 " : "📄 "}
+                {label}
+              </li>
+            );
+          })}
+        </ul>
+        {remaining > 0 && (
+          <div className="mt-1 text-muted-foreground italic">
+            {LL.tool_summary_more(remaining)}
+          </div>
+        )}
+      </div>
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// writeFile (with unified diff)
+//
+// Diff requires the file's **pre-image** content. We must read it BEFORE the
+// write executes — once state hits "output-available" the file on disk is
+// already the new content, and a fresh read would show +0/-0.
+//
+// Strategy: every render of the writeFile summary (mounted from input-
+// streaming onwards) triggers a one-shot read; we then **compute the diff
+// once** and cache only the resulting Change[] + stats, keyed by toolCallId.
+// If we ever observe the tool starting at "output-available" (e.g. session
+// reload), we mark it as cold-start and skip diff entirely.
+// ---------------------------------------------------------------------------
+
+interface WriteDiffPayload {
+  added: number;
+  removed: number;
+  changes: Change[];
+  isNew: boolean;
+}
+
+const WRITE_CACHE_MAX = 32;
+const writeDiffCache = new Map<string, WriteDiffPayload>();
+const writeColdStart = new Set<string>();
+const writeInFlight = new Map<string, Promise<void>>();
+
+function computeDiff(
+  oldText: string | null,
+  newText: string,
+): WriteDiffPayload {
+  if (oldText === null) {
+    const lines = countLines(newText);
+    return {
+      added: lines,
+      removed: 0,
+      changes: [{ value: newText, added: true, removed: false, count: lines }],
+      isNew: true,
+    };
+  }
+  const changes = diffLines(oldText, newText);
+  let added = 0;
+  let removed = 0;
+  for (const c of changes) {
+    const lines = c.count ?? countLines(c.value);
+    if (c.added) added += lines;
+    else if (c.removed) removed += lines;
+  }
+  return { added, removed, changes, isNew: false };
+}
+
+function setWriteCache(toolCallId: string, payload: WriteDiffPayload) {
+  if (
+    writeDiffCache.size >= WRITE_CACHE_MAX &&
+    !writeDiffCache.has(toolCallId)
+  ) {
+    const oldest = writeDiffCache.keys().next().value;
+    if (oldest !== undefined) writeDiffCache.delete(oldest);
+  }
+  writeDiffCache.set(toolCallId, payload);
+}
+
+function captureWriteDiff(
+  toolCallId: string,
+  path: string,
+  workspacePath: string | undefined,
+  state: ToolState,
+  newContent: string,
+): Promise<void> {
+  if (writeDiffCache.has(toolCallId) || writeColdStart.has(toolCallId)) {
+    return writeInFlight.get(toolCallId) ?? Promise.resolve();
+  }
+  if (state === "output-available") {
+    writeColdStart.add(toolCallId);
+    return Promise.resolve();
+  }
+  if (!path) {
+    setWriteCache(toolCallId, computeDiff(null, newContent));
+    return Promise.resolve();
+  }
+  let p = writeInFlight.get(toolCallId);
+  if (!p) {
+    const abs = resolvePath(path, workspacePath);
+    p = window.filework
+      .readFile(abs)
+      .then((c) => {
+        const oldText = typeof c === "string" ? c : null;
+        setWriteCache(toolCallId, computeDiff(oldText, newContent));
+      })
+      .catch(() => {
+        setWriteCache(toolCallId, computeDiff(null, newContent));
+      })
+      .finally(() => {
+        writeInFlight.delete(toolCallId);
+      });
+    writeInFlight.set(toolCallId, p);
+  }
+  return p;
+}
+
+interface WriteDiffSnap {
+  cold: boolean;
+  ready: boolean;
+  payload: WriteDiffPayload | null;
+}
+
+function readWriteDiffSnap(toolCallId: string): WriteDiffSnap {
+  return {
+    cold: writeColdStart.has(toolCallId),
+    ready: writeDiffCache.has(toolCallId),
+    payload: writeDiffCache.get(toolCallId) ?? null,
+  };
+}
+
+function useWriteDiff(
+  toolCallId: string,
+  path: string,
+  workspacePath: string | undefined,
+  state: ToolState,
+  newContent: string,
+): WriteDiffSnap {
+  const [, setTick] = useState(0);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    let active = true;
+    captureWriteDiff(toolCallId, path, workspacePath, state, newContent).then(
+      () => {
+        if (active && !firedRef.current) {
+          firedRef.current = true;
+          setTick((t) => t + 1);
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [toolCallId, path, workspacePath, state, newContent]);
+  return readWriteDiffSnap(toolCallId);
+}
+
+const writeFilePresenter: ToolPresenter = {
+  summary: (args, _result, state, { LL, workspacePath, toolCallId }) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    return (
+      <>
+        <span className="text-foreground/80">{shortPath(p)}</span>
+        <WriteSummary
+          args={args}
+          state={state}
+          LL={LL}
+          workspacePath={workspacePath}
+          toolCallId={toolCallId}
+        />
+      </>
+    );
+  },
+  input: (args) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    if (!p) return null;
+    return (
+      <div className="px-3 py-2 border-b border-border">
+        <pre className="text-xs font-mono text-muted-foreground break-all">
+          {p}
+        </pre>
+      </div>
+    );
+  },
+  output: (_result, args, state, { LL, workspacePath, toolCallId }) => (
+    <WriteDiff
+      args={args}
+      state={state}
+      LL={LL}
+      workspacePath={workspacePath}
+      toolCallId={toolCallId}
+    />
+  ),
+};
+
+function readWriteArgs(args: unknown): { path: string; content: string } {
+  const a = asRecord(args);
+  return {
+    path: typeof a?.path === "string" ? a.path : "",
+    content: typeof a?.content === "string" ? a.content : "",
+  };
+}
+
+function WriteSummary({
+  args,
+  state,
+  LL,
+  workspacePath,
+  toolCallId,
+}: {
+  args: unknown;
+  state: ToolState;
+  LL: TranslationFunctions;
+  workspacePath?: string;
+  toolCallId: string;
+}) {
+  const { path, content } = readWriteArgs(args);
+  const { cold, ready, payload } = useWriteDiff(
+    toolCallId,
+    path,
+    workspacePath,
+    state,
+    content,
+  );
+  if (state !== "output-available") return null;
+  if (cold) {
+    return (
+      <span className="ml-2 text-muted-foreground font-mono">
+        {LL.tool_summary_lines(countLines(content))}
+      </span>
+    );
+  }
+  if (!ready || !payload) return null;
+  if (payload.isNew) {
+    return (
+      <span className="ml-2 text-emerald-500 font-mono">
+        {LL.tool_summary_new_file()} · {LL.tool_summary_lines(payload.added)}
+      </span>
+    );
+  }
+  return (
+    <span className="ml-2 font-mono">
+      <span className="text-emerald-500">+{payload.added}</span>{" "}
+      <span className="text-red-400">-{payload.removed}</span>
+    </span>
+  );
+}
+
+function WriteDiff({
+  args,
+  state,
+  LL,
+  workspacePath,
+  toolCallId,
+}: {
+  args: unknown;
+  state: ToolState;
+  LL: TranslationFunctions;
+  workspacePath?: string;
+  toolCallId: string;
+}) {
+  const { path, content } = readWriteArgs(args);
+  const { cold, ready, payload } = useWriteDiff(
+    toolCallId,
+    path,
+    workspacePath,
+    state,
+    content,
+  );
+  if (!cold && !ready) {
+    return (
+      <div className="px-3 py-2 text-xs text-muted-foreground italic">…</div>
+    );
+  }
+  if (cold) {
+    return (
+      <div className="px-3 py-2 text-xs">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+          {LL.tool_summary_lines(countLines(content))}
+        </div>
+        <pre className="font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto rounded border border-border bg-background/40 p-2">
+          {content}
+        </pre>
+      </div>
+    );
+  }
+  const isNew = payload?.isNew ?? false;
+  const changes: Change[] = payload?.changes ?? [];
+  return (
+    <div className="px-3 py-2 text-xs">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        {LL.tool_diff_label()}
+        {isNew && (
+          <span className="ml-2 text-emerald-500 normal-case tracking-normal">
+            {LL.tool_summary_new_file()}
+          </span>
+        )}
+      </div>
+      <div className="font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto rounded border border-border bg-background/40">
+        {changes.map((c, i) => (
+          <DiffHunk
+            // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
+            key={`${i}-${c.value.slice(0, 8)}`}
+            change={c}
+            collapseContext={!isNew}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiffHunk({
+  change,
+  collapseContext,
+}: {
+  change: Change;
+  collapseContext: boolean;
+}) {
+  const lines = useMemo(() => {
+    const v = change.value.endsWith("\n")
+      ? change.value.slice(0, -1)
+      : change.value;
+    return v.split("\n");
+  }, [change.value]);
+  const tone = change.added
+    ? "bg-emerald-500/10 text-emerald-300 border-l-2 border-emerald-500/40"
+    : change.removed
+      ? "bg-red-500/10 text-red-300 border-l-2 border-red-500/40"
+      : "text-muted-foreground/70";
+  const prefix = change.added ? "+ " : change.removed ? "- " : "  ";
+
+  if (!change.added && !change.removed && collapseContext && lines.length > 6) {
+    const head = lines.slice(0, 2);
+    const tail = lines.slice(-2);
+    const hidden = lines.length - 4;
+    return (
+      <>
+        {head.map((l, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
+          <span key={`h-${i}`} className={cn("block px-2", tone)}>
+            {prefix}
+            {l}
+          </span>
+        ))}
+        <span className="block px-2 text-muted-foreground italic">
+          {`  … ${hidden} lines`}
+        </span>
+        {tail.map((l, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
+          <span key={`t-${i}`} className={cn("block px-2", tone)}>
+            {prefix}
+            {l}
+          </span>
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {lines.map((l, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
+        <span key={`l-${i}`} className={cn("block px-2", tone)}>
+          {prefix}
+          {l}
+        </span>
+      ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+export const toolPresenters: Record<string, ToolPresenter> = {
+  runCommand: runCommandPresenter,
+  readFile: readFilePresenter,
+  listDirectory: listDirectoryPresenter,
+  writeFile: writeFilePresenter,
+};

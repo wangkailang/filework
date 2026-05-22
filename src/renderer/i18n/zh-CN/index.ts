@@ -129,6 +129,19 @@ const zhCN: Translation = {
   toolName_findDuplicates: "查找重复文件",
   toolName_runCommand: "执行命令",
 
+  // Tool summary (folded one-liner)
+  tool_summary_lines: "{0} 行",
+  tool_summary_dirs_files: "{0} 目录 / {1} 文件",
+  tool_summary_more: "… 另有 {0} 行",
+  tool_summary_exitCode: "exit {0}",
+  tool_summary_group_label: "{0} 个 {1}",
+  tool_summary_new_file: "新建文件",
+  tool_diff_label: "差异",
+  tool_stdout: "标准输出",
+  tool_stderr: "错误输出",
+  tool_show_full: "查看完整内容",
+  tool_hide_full: "收起",
+
   // Plan viewer
   plan_title: "执行计划",
   plan_stalled: "响应缓慢",

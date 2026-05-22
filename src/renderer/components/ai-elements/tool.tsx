@@ -17,6 +17,7 @@ import {
   CollapsibleTrigger,
   useCollapsible,
 } from "./collapsible";
+import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
 // Types — re-exported from the shared core types so the JSONL session store
@@ -66,9 +67,9 @@ export const Tool = ({
 interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   toolName: string;
   state: ToolState;
+  /** Optional one-line summary rendered after the tool name (e.g. "src/index.ts · 142 lines") */
+  summary?: ReactNode;
 }
-
-import { getToolLabels } from "./tool-labels";
 
 const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   "input-streaming": {
@@ -101,6 +102,7 @@ const getStateLabels = (
 export const ToolHeader = ({
   toolName,
   state,
+  summary,
   className,
   ...props
 }: ToolHeaderProps) => {
@@ -116,21 +118,30 @@ export const ToolHeader = ({
     <CollapsibleTrigger asChild>
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-muted/60 transition-colors",
+          "flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-muted/60 transition-colors min-w-0",
           className,
         )}
         {...props}
       >
         {open ? (
-          <ChevronDown className="size-3.5 text-muted-foreground" />
+          <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="size-3.5 text-muted-foreground" />
+          <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
         )}
-        <span className={cn("flex items-center gap-1.5", config.color)}>
+        <span
+          className={cn("flex items-center gap-1.5 shrink-0", config.color)}
+        >
           {config.icon}
           <span className="text-xs font-medium">{stateLabel}</span>
         </span>
-        <span className="text-xs text-muted-foreground font-mono">{label}</span>
+        <span className="text-xs text-muted-foreground font-mono shrink-0">
+          {label}
+        </span>
+        {summary != null && (
+          <span className="text-xs text-muted-foreground/80 font-mono truncate min-w-0 flex-1">
+            {summary}
+          </span>
+        )}
       </div>
     </CollapsibleTrigger>
   );

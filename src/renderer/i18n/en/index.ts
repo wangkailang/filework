@@ -145,6 +145,19 @@ const en: BaseTranslation = {
   toolName_findDuplicates: "Find Duplicates",
   toolName_runCommand: "Run Command",
 
+  // Tool summary (folded one-liner)
+  tool_summary_lines: "{0:number} lines",
+  tool_summary_dirs_files: "{0:number} dirs / {1:number} files",
+  tool_summary_more: "… {0:number} more lines",
+  tool_summary_exitCode: "exit {0:number}",
+  tool_summary_group_label: "{0:number} {1:string} calls",
+  tool_summary_new_file: "new file",
+  tool_diff_label: "Diff",
+  tool_stdout: "stdout",
+  tool_stderr: "stderr",
+  tool_show_full: "Show full content",
+  tool_hide_full: "Hide",
+
   // Plan viewer
   plan_title: "Execution Plan",
   plan_stalled: "Slow Response",

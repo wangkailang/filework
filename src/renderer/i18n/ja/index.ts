@@ -138,6 +138,19 @@ const ja: Translation = {
   toolName_findDuplicates: "重複ファイル検出",
   toolName_runCommand: "コマンド実行",
 
+  // Tool summary (folded one-liner)
+  tool_summary_lines: "{0} 行",
+  tool_summary_dirs_files: "{0} ディレクトリ / {1} ファイル",
+  tool_summary_more: "… 残り {0} 行",
+  tool_summary_exitCode: "exit {0}",
+  tool_summary_group_label: "{1} {0} 件",
+  tool_summary_new_file: "新規ファイル",
+  tool_diff_label: "差分",
+  tool_stdout: "標準出力",
+  tool_stderr: "エラー出力",
+  tool_show_full: "全文を表示",
+  tool_hide_full: "折りたたむ",
+
   // Plan viewer
   plan_title: "実行計画",
   plan_stalled: "応答が遅い",
