@@ -106,13 +106,30 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toMatch(/retroactively/i);
   });
 
-  it("default prompt includes the four Karpathy operating principles", () => {
+  it("default prompt includes the Karpathy operating principles + deterministic-computation rule", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toContain("Operating Principles");
     expect(prompt).toContain("Think Before Acting");
     expect(prompt).toContain("Simplicity First");
+    expect(prompt).toContain("Deterministic Computation");
     expect(prompt).toContain("Surgical Changes");
     expect(prompt).toContain("Goal-Driven Execution");
+  });
+
+  it("deterministic-computation rule names a code-execution path and forbids in-prose math", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    // Must point the model to runCommand (anchor on the tool name so a
+    // generic rewrite that drops the actionable instruction breaks the test)
+    expect(prompt).toContain("runCommand");
+    // Must mention at least one concrete interpreter so the model has a
+    // ready-to-use invocation pattern
+    expect(prompt).toMatch(/python3 -c|node -e/);
+    // Must mention BigInt — without it, integers > 2^53 silently lose
+    // precision in node, which is exactly the failure mode this rule exists
+    // to prevent
+    expect(prompt).toContain("BigInt");
+    // Must rule out "I'll just reason about it" escape hatch
+    expect(prompt).toMatch(/reasoning/i);
   });
 
   it("default prompt separates project constraints from behavioral principles", () => {
@@ -156,6 +173,7 @@ describe("buildAgentSystemPrompt", () => {
     for (const heading of [
       "Think Before Acting",
       "Simplicity First",
+      "Deterministic Computation",
       "Surgical Changes",
       "Goal-Driven Execution",
     ]) {
