@@ -1,16 +1,17 @@
 import {
   AlertTriangle,
   Blocks,
-  ChevronRight,
   FolderOpen,
   GitCompareArrows,
   Github,
   Gitlab,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
 import {
@@ -89,7 +90,22 @@ interface SidebarProps {
   /** Bump from App when a destructive tool finishes, so the diff pill
    *  refreshes without waiting for the cache TTL. */
   diffInvalidator?: number;
+  /** Sidebar width in px when expanded. App owns this so it persists
+   *  across re-mounts (e.g. switching workspaces). */
+  width: number;
+  /** True = render the thin collapsed rail; false = full sidebar. */
+  collapsed: boolean;
+  /** Called repeatedly during a drag with the live width. */
+  onWidthChange: (width: number) => void;
+  /** Called once on mouseup with the final width — caller persists it. */
+  onCommitWidth: (width: number) => void;
+  /** Toggle collapsed ↔ expanded. */
+  onToggleCollapsed: () => void;
 }
+
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_COLLAPSED_WIDTH = 48;
 
 export const Sidebar = ({
   workspacePath,
@@ -103,11 +119,62 @@ export const Sidebar = ({
   branchDiffOpen,
   onToggleBranchDiff,
   diffInvalidator = 0,
+  width,
+  collapsed,
+  onWidthChange,
+  onCommitWidth,
+  onToggleCollapsed,
 }: SidebarProps) => {
   const { LL } = useI18nContext();
   const [files, setFiles] = useState<FileInfo[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Track the latest width inside the drag closure without re-binding
+  // listeners on every render. mouseup reads `.current` for commit.
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const startResize = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = widthRef.current;
+      const prevCursor = document.body.style.cursor;
+      const prevUserSelect = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: MouseEvent) => {
+        const next = Math.min(
+          SIDEBAR_MAX_WIDTH,
+          Math.max(SIDEBAR_MIN_WIDTH, startWidth + (ev.clientX - startX)),
+        );
+        onWidthChange(next);
+      };
+      const onUp = () => {
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevUserSelect;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        onCommitWidth(widthRef.current);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [onWidthChange, onCommitWidth],
+  );
+  const handleResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const step = e.shiftKey ? 20 : 5;
+      const delta = e.key === "ArrowLeft" ? -step : step;
+      const next = Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, widthRef.current + delta),
+      );
+      onWidthChange(next);
+      onCommitWidth(next);
+    },
+    [onWidthChange, onCommitWidth],
+  );
   const [skillsOpen, setSkillsOpen] = useState(false);
   // Surface the current branch's aggregate +/- counts on the trigger
   // pill. Cheap to keep open — the hook caches and uses the same IPC
@@ -246,14 +313,17 @@ export const Sidebar = ({
 
   if (collapsed) {
     return (
-      <div className="w-12 h-full bg-muted/50 border-r border-border flex flex-col items-center pt-14 gap-2">
+      <div
+        className="h-full bg-muted/50 border-r border-border flex flex-col items-center pt-14 gap-2 shrink-0"
+        style={{ width: SIDEBAR_COLLAPSED_WIDTH }}
+      >
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
-          className="p-2 rounded-md hover:bg-accent transition-colors"
-          title={LL.sidebar_collapse()}
+          onClick={onToggleCollapsed}
+          className="titlebar-no-drag p-2 rounded-md hover:bg-accent transition-colors"
+          title={LL.sidebar_expand()}
         >
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          <PanelLeftOpen className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
     );
@@ -261,7 +331,10 @@ export const Sidebar = ({
 
   return (
     <>
-      <aside className="w-64 h-full bg-muted/30 border-r border-border flex flex-col pt-12">
+      <aside
+        className="relative h-full bg-muted/30 border-r border-border flex flex-col pt-12 shrink-0"
+        style={{ width }}
+      >
         {/* Workspace header */}
         <div className="titlebar-no-drag flex flex-col px-3 py-2 border-b border-border gap-1">
           <div className="flex items-center justify-between">
@@ -290,6 +363,14 @@ export const Sidebar = ({
                 title={LL.sidebar_closeDir()}
               >
                 <X className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                className="p-1 rounded hover:bg-accent transition-colors"
+                title={LL.sidebar_collapse()}
+              >
+                <PanelLeftClose className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
             </div>
           </div>
@@ -434,6 +515,25 @@ export const Sidebar = ({
             {LL.sidebar_settings()}
           </button>
         </div>
+
+        {/* Resize handle — 4px hit area on the right edge. Cursor and
+            user-select are managed in startResize so the body class
+            persists even when the pointer briefly leaves the strip. */}
+        {/* biome-ignore lint/a11y/useSemanticElements: <hr> as a vertical
+            resize handle would require fighting its default block-level
+            styling; div + full ARIA + keyboard support is the standard
+            pattern for resizable split-panes. */}
+        <div
+          onMouseDown={startResize}
+          onKeyDown={handleResizeKey}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          tabIndex={0}
+          className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 focus:bg-primary/40 focus:outline-none transition-colors z-10"
+        />
       </aside>
 
       <SettingsModal

@@ -22,6 +22,7 @@ const zhCN: Translation = {
 
   sidebar_settings: "设置",
   sidebar_collapse: "折叠侧栏",
+  sidebar_expand: "展开侧栏",
 
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",

@@ -27,6 +27,7 @@ const en: BaseTranslation = {
   // Sidebar
   sidebar_settings: "Settings",
   sidebar_collapse: "Collapse sidebar",
+  sidebar_expand: "Expand sidebar",
 
   // Settings
   settings_title: "Settings",

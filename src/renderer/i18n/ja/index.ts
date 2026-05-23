@@ -22,6 +22,7 @@ const ja: Translation = {
 
   sidebar_settings: "設定",
   sidebar_collapse: "サイドバーを折りたたむ",
+  sidebar_expand: "サイドバーを展開",
 
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",
