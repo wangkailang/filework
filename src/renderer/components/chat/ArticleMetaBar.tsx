@@ -1,5 +1,6 @@
 import { Globe } from "lucide-react";
 import { useState } from "react";
+import { useLinkRouter } from "../browser/useLinkRouter";
 import { safeHostname } from "./helpers";
 import type { ArticleMetaPart } from "./types";
 
@@ -24,6 +25,7 @@ const formatTime = (iso: string, lang?: string): string => {
 export const ArticleMetaBar = ({ part }: ArticleMetaBarProps) => {
   const { meta, pageUrl } = part;
   const [iconBroken, setIconBroken] = useState(false);
+  const link = useLinkRouter();
 
   const siteLabel =
     meta.siteName ?? (pageUrl ? (safeHostname(pageUrl) ?? null) : null);
@@ -83,7 +85,8 @@ export const ArticleMetaBar = ({ part }: ArticleMetaBarProps) => {
       {pageUrl ? (
         <a
           href={pageUrl}
-          target="_blank"
+          onClick={link.onClick}
+          onAuxClick={link.onAuxClick}
           rel="noreferrer noopener"
           className="block hover:bg-background/40"
         >

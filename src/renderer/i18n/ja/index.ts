@@ -341,6 +341,16 @@ const ja: Translation = {
   error_unknown: "不明なエラーが発生しました",
   error_aiConnection: "AIプロバイダーに接続できません",
   error_fileAccess: "ファイルまたはディレクトリにアクセスできません",
+
+  // In-app browser panel
+  browser_back: "戻る",
+  browser_forward: "進む",
+  browser_reload: "再読み込み",
+  browser_stop: "停止",
+  browser_close: "ブラウザを閉じる",
+  browser_open_external: "システムブラウザで開く",
+  browser_url_placeholder: "URLを入力…",
+  browser_failed_to_load: "ページの読み込みに失敗しました",
 };
 
 export default ja;

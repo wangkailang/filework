@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { cn } from "../../lib/utils";
+import { useLinkRouter } from "../browser/useLinkRouter";
 
 interface CitationCtx {
   open: boolean;
@@ -143,16 +144,28 @@ export function InlineCitationSource({
   children,
   ...props
 }: InlineCitationSourceProps) {
+  const link = useLinkRouter();
   return (
     <div className={cn("space-y-0.5", className)} {...props}>
       {title && (
         <div className="font-medium text-foreground truncate">{title}</div>
       )}
-      {url && (
-        <div className="font-mono text-[10px] text-muted-foreground truncate">
-          {url}
-        </div>
-      )}
+      {url &&
+        (/^https?:/i.test(url) ? (
+          <a
+            href={url}
+            onClick={link.onClick}
+            onAuxClick={link.onAuxClick}
+            rel="noopener noreferrer"
+            className="block font-mono text-[10px] text-muted-foreground truncate hover:text-foreground hover:underline"
+          >
+            {url}
+          </a>
+        ) : (
+          <div className="font-mono text-[10px] text-muted-foreground truncate">
+            {url}
+          </div>
+        ))}
       {description && (
         <div className="text-muted-foreground">{description}</div>
       )}

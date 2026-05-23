@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BranchDiffPanel } from "./components/branch-diff/BranchDiffPanel";
+import { BrowserPanel } from "./components/browser/BrowserPanel";
+import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -80,6 +82,7 @@ export const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
     getInitialSidebarCollapsed,
   );
+  const [browserUrl, setBrowserUrl] = useState<string | null>(null);
   const handleCommitSidebarWidth = useCallback((w: number) => {
     localStorage.setItem("filework-sidebar-width", String(w));
   }, []);
@@ -326,36 +329,44 @@ export const App = () => {
               recordRecent(updatedRef, workspaceRefLabel(updatedRef));
             }}
           />
-          <main className="flex-1 flex pt-12 overflow-hidden">
-            {selectedFilePath && (
-              <div className="w-7/10 border-r border-border overflow-hidden">
-                <FilePreviewPanel
-                  filePath={selectedFilePath}
-                  onClose={() => setSelectedFilePath(null)}
+          <BrowserRouterProvider openInPanel={setBrowserUrl}>
+            <main className="flex-1 flex pt-12 overflow-hidden">
+              {selectedFilePath && (
+                <div className="w-7/10 border-r border-border overflow-hidden">
+                  <FilePreviewPanel
+                    filePath={selectedFilePath}
+                    onClose={() => setSelectedFilePath(null)}
+                  />
+                </div>
+              )}
+              <div
+                className={
+                  selectedFilePath
+                    ? "w-3/10 overflow-hidden"
+                    : "flex-1 overflow-hidden"
+                }
+              >
+                <ChatPanel
+                  workspacePath={workspace.localPath}
+                  workspaceRefJson={workspaceRefJson}
                 />
               </div>
-            )}
-            <div
-              className={
-                selectedFilePath
-                  ? "w-3/10 overflow-hidden"
-                  : "flex-1 overflow-hidden"
-              }
-            >
-              <ChatPanel
-                workspacePath={workspace.localPath}
-                workspaceRefJson={workspaceRefJson}
-              />
-            </div>
-            {branchDiffOpen && (
-              <BranchDiffPanel
-                workspaceRoot={workspace.localPath}
-                currentBranch={workspace.currentBranch}
-                invalidator={diffInvalidator}
-                onClose={() => setBranchDiffOpen(false)}
-              />
-            )}
-          </main>
+              {branchDiffOpen && (
+                <BranchDiffPanel
+                  workspaceRoot={workspace.localPath}
+                  currentBranch={workspace.currentBranch}
+                  invalidator={diffInvalidator}
+                  onClose={() => setBranchDiffOpen(false)}
+                />
+              )}
+              {browserUrl && (
+                <BrowserPanel
+                  url={browserUrl}
+                  onClose={() => setBrowserUrl(null)}
+                />
+              )}
+            </main>
+          </BrowserRouterProvider>
         </div>
       )}
     </TypesafeI18n>

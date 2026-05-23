@@ -236,6 +236,15 @@ class LocalWorkspaceExec implements WorkspaceExec {
         shell: true,
         detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
+        // BROWSER=none prevents dev servers (Vite / CRA / Next / Astro)
+        // from auto-launching the OS default browser. URLs surface in
+        // stdout and the user clicks them into the in-app BrowserPanel.
+        // Only set when the user hasn't explicitly chosen a BROWSER —
+        // respect personalised setups like `BROWSER=firefox-dev`.
+        env: {
+          ...process.env,
+          BROWSER: process.env.BROWSER ?? "none",
+        },
       });
 
       const terminate = (signal: NodeJS.Signals) => {

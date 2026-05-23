@@ -8,6 +8,7 @@ import type {
 import type { ToolState } from "../../../main/core/session/message-parts";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
+import { useLinkRouter } from "../browser/useLinkRouter";
 import { DiffHunkView } from "./preview/DiffHunkView";
 
 const MAX_OUTPUT_LINES = 30;
@@ -95,6 +96,8 @@ const runCommandPresenter: ToolPresenter = {
         ? `${cmd.slice(0, MAX_COMMAND_SHORT)}…`
         : cmd;
     const r = asRecord(result);
+    const shellId = typeof r?.shellId === "string" ? r.shellId : null;
+    const shellStatus = typeof r?.status === "string" ? r.status : null;
     const exit =
       state === "output-available" && typeof r?.exitCode === "number"
         ? r.exitCode
@@ -102,6 +105,14 @@ const runCommandPresenter: ToolPresenter = {
     return (
       <>
         <span className="text-foreground/80">$ {cmdShort}</span>
+        {shellId && (
+          <span className="ml-2 font-mono text-muted-foreground">
+            {shellId}
+          </span>
+        )}
+        {shellId && shellStatus === "running" && (
+          <span className="ml-1 text-blue-400">⏵ running</span>
+        )}
         {exit !== null && (
           <span
             className={cn(
@@ -119,10 +130,14 @@ const runCommandPresenter: ToolPresenter = {
     const a = asRecord(args);
     const cmd = typeof a?.command === "string" ? a.command : "";
     if (!cmd) return null;
+    const bg = a?.runInBackground === true;
     return (
       <div className="px-3 py-2 border-b border-border">
         <pre className="text-xs font-mono whitespace-pre-wrap break-all">
           $ {cmd}
+          {bg && (
+            <span className="text-muted-foreground"> {"  "}(background)</span>
+          )}
         </pre>
       </div>
     );
@@ -133,9 +148,16 @@ const runCommandPresenter: ToolPresenter = {
     const stdout = typeof r.stdout === "string" ? r.stdout : "";
     const stderr = typeof r.stderr === "string" ? r.stderr : "";
     const exit = typeof r.exitCode === "number" ? r.exitCode : null;
-    if (!stdout && !stderr && exit === null) return null;
+    const shellId = typeof r.shellId === "string" ? r.shellId : null;
+    const shellStatus = typeof r.status === "string" ? r.status : null;
+    if (!stdout && !stderr && exit === null && !shellId) return null;
     return (
       <div className="px-3 py-2 text-xs space-y-2">
+        {shellId && shellStatus === "running" && (
+          <div className="text-[10px] uppercase tracking-wider text-blue-400">
+            initial snapshot — use readShellOutput({shellId}) for more
+          </div>
+        )}
         {stdout ? (
           <CommandStream label={LL.tool_stdout()} body={stdout} LL={LL} />
         ) : null}
@@ -162,6 +184,96 @@ const runCommandPresenter: ToolPresenter = {
   },
 };
 
+const readShellOutputPresenter: ToolPresenter = {
+  summary: (args, result, state, { LL }) => {
+    const a = asRecord(args);
+    const r = asRecord(result);
+    const shellId = typeof a?.shellId === "string" ? a.shellId : "";
+    const status = typeof r?.status === "string" ? r.status : null;
+    const stdoutLen =
+      state === "output-available" && typeof r?.stdout === "string"
+        ? r.stdout.length
+        : 0;
+    return (
+      <>
+        <span className="font-mono text-foreground/80">{shellId}</span>
+        {status && (
+          <span
+            className={cn(
+              "ml-2",
+              status === "running" ? "text-blue-400" : "text-muted-foreground",
+            )}
+          >
+            {status}
+          </span>
+        )}
+        {stdoutLen > 0 && (
+          <span className="ml-2 text-muted-foreground">
+            +{stdoutLen} {LL.tool_stdout().toLowerCase()}
+          </span>
+        )}
+      </>
+    );
+  },
+  output: (result, _args, _state, { LL }) => {
+    const r = asRecord(result);
+    if (!r) return null;
+    if (typeof r.error === "string") {
+      return <div className="px-3 py-2 text-xs text-red-400">{r.error}</div>;
+    }
+    const stdout = typeof r.stdout === "string" ? r.stdout : "";
+    const stderr = typeof r.stderr === "string" ? r.stderr : "";
+    const truncated = r.truncated === true;
+    if (!stdout && !stderr && !truncated) {
+      return (
+        <div className="px-3 py-2 text-xs text-muted-foreground italic">
+          (no new output)
+        </div>
+      );
+    }
+    return (
+      <div className="px-3 py-2 text-xs space-y-2">
+        {truncated && (
+          <div className="text-[10px] text-amber-400">
+            buffer rolled — some intermediate output was dropped
+          </div>
+        )}
+        {stdout ? (
+          <CommandStream label={LL.tool_stdout()} body={stdout} LL={LL} />
+        ) : null}
+        {stderr ? (
+          <CommandStream
+            label={LL.tool_stderr()}
+            body={stderr}
+            LL={LL}
+            tone="error"
+          />
+        ) : null}
+      </div>
+    );
+  },
+};
+
+const killShellPresenter: ToolPresenter = {
+  summary: (args, result) => {
+    const a = asRecord(args);
+    const r = asRecord(result);
+    const shellId = typeof a?.shellId === "string" ? a.shellId : "";
+    const found = r?.found === true;
+    const killed = r?.killed === true;
+    let label = "pending";
+    if (r && !found) label = "not found";
+    else if (r && killed) label = "killed";
+    else if (r) label = "already exited";
+    return (
+      <>
+        <span className="font-mono text-foreground/80">{shellId}</span>
+        <span className="ml-2 text-muted-foreground">{label}</span>
+      </>
+    );
+  },
+};
+
 function CommandStream({
   label,
   body,
@@ -174,6 +286,7 @@ function CommandStream({
   tone?: "error";
 }) {
   const { shown, remaining } = truncateLines(body, MAX_OUTPUT_LINES);
+  const link = useLinkRouter();
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
@@ -185,7 +298,7 @@ function CommandStream({
           tone === "error" && "text-red-400",
         )}
       >
-        {shown}
+        {renderWithLinks(shown, link)}
         {remaining > 0 && (
           <span className="block text-muted-foreground italic mt-1">
             {LL.tool_summary_more(remaining)}
@@ -194,6 +307,84 @@ function CommandStream({
       </pre>
     </div>
   );
+}
+
+// Punctuation that almost always belongs to the surrounding prose
+// (sentence enders, brackets, quotes), not the URL itself. `)` `]`
+// `}` get bracket-balanced treatment below — they're only stripped
+// when unmatched, so Wikipedia-style `Foo_(bar)` survives.
+const URL_TRAILING_TEXT_PUNCT = /[.,;:!?'"]+$/;
+const URL_REGEX = /(https?:\/\/[^\s<>"'`]+)/g;
+
+/** If the URL ends with a closing bracket and the URL contains
+ *  fewer opening than closing brackets, strip the trailing one
+ *  (it was prose, not part of the URL). Repeats so e.g. `...))`
+ *  unbalanced by 2 strips both. */
+function stripUnbalancedBrackets(s: string): string {
+  const PAIRS: Array<[string, string]> = [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+  ];
+  let out = s;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [open, close] of PAIRS) {
+      if (!out.endsWith(close)) continue;
+      let opens = 0;
+      let closes = 0;
+      for (const ch of out) {
+        if (ch === open) opens++;
+        else if (ch === close) closes++;
+      }
+      if (closes > opens) {
+        out = out.slice(0, -1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Split free-form text into a sequence of text + clickable link spans. */
+function renderWithLinks(
+  text: string,
+  link: {
+    onClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+    onAuxClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+  },
+): ReactNode {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let i = 0;
+  for (const match of text.matchAll(URL_REGEX)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) nodes.push(text.slice(lastIndex, start));
+    const raw = match[0];
+    let href = raw;
+    const textTail = href.match(URL_TRAILING_TEXT_PUNCT)?.[0] ?? "";
+    if (textTail) href = href.slice(0, -textTail.length);
+    href = stripUnbalancedBrackets(href);
+    const trailing = raw.slice(href.length);
+    nodes.push(
+      <a
+        key={`u-${i++}-${start}`}
+        href={href}
+        onClick={link.onClick}
+        onAuxClick={link.onAuxClick}
+        rel="noopener noreferrer"
+        className="underline text-primary hover:opacity-80"
+      >
+        {href}
+      </a>,
+    );
+    if (trailing) nodes.push(trailing);
+    lastIndex = start + raw.length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes.length > 0 ? nodes : text;
 }
 
 // ---------------------------------------------------------------------------
@@ -710,4 +901,6 @@ export const toolPresenters: Record<string, ToolPresenter> = {
   readFile: readFilePresenter,
   listDirectory: listDirectoryPresenter,
   writeFile: writeFilePresenter,
+  readShellOutput: readShellOutputPresenter,
+  killShell: killShellPresenter,
 };
