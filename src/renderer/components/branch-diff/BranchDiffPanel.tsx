@@ -130,18 +130,24 @@ export function BranchDiffPanel({
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium truncate">
             {data && data.headBranch
-              ? LL.branch_diff_title(data.headBranch, data.baseBranch)
+              ? LL.branch_diff_title(
+                  data.headBranch,
+                  data.baseRef ?? data.baseBranch,
+                )
               : LL.branch_diff_open()}
           </div>
           {data && !data.notAvailable && (
-            <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-              <span className="text-emerald-500">+{data.totalAdded}</span>{" "}
-              <span className="text-red-400">-{data.totalRemoved}</span>
-              <span className="ml-2 text-muted-foreground/70">
+            <div className="text-[10px] font-mono text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <span>
+                <span className="text-emerald-500">+{data.totalAdded}</span>{" "}
+                <span className="text-red-400">-{data.totalRemoved}</span>
+              </span>
+              <span className="text-muted-foreground/70">
                 {data.base === data.head
                   ? `@${data.base.slice(0, 7)}`
                   : `${data.base.slice(0, 7)}…${data.head.slice(0, 7)}`}
               </span>
+              <StatusBadges data={data} LL={LL} />
             </div>
           )}
         </div>
@@ -186,6 +192,46 @@ function readStoredWidth(): number {
   } catch {
     return DEFAULT_WIDTH;
   }
+}
+
+interface StatusBadgesProps {
+  data: NonNullable<ReturnType<typeof useBranchDiff>["data"]>;
+  LL: ReturnType<typeof useI18nContext>["LL"];
+}
+
+function StatusBadges({ data, LL }: StatusBadgesProps) {
+  const items: ReactNode[] = [];
+  if (data.uncommitted !== undefined && data.uncommitted > 0) {
+    items.push(
+      <span
+        key="uncommitted"
+        className="px-1.5 rounded bg-amber-500/15 text-amber-400 normal-case"
+      >
+        {LL.branch_diff_uncommitted(data.uncommitted)}
+      </span>,
+    );
+  }
+  if (data.ahead !== undefined && data.ahead > 0) {
+    items.push(
+      <span
+        key="ahead"
+        className="px-1.5 rounded bg-emerald-500/15 text-emerald-400 normal-case"
+      >
+        {LL.branch_diff_ahead(data.ahead)}
+      </span>,
+    );
+  }
+  if (data.behind !== undefined && data.behind > 0) {
+    items.push(
+      <span
+        key="behind"
+        className="px-1.5 rounded bg-red-500/15 text-red-400 normal-case"
+      >
+        {LL.branch_diff_behind(data.behind)}
+      </span>,
+    );
+  }
+  return items.length > 0 ? <>{items}</> : null;
 }
 
 interface BodyArgs {

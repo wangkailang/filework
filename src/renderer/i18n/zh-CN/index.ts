@@ -169,6 +169,9 @@ const zhCN: Translation = {
   branch_diff_no_base: "找不到基线分支(main)",
   branch_diff_exec_failed: "git 命令执行失败",
   branch_diff_refresh: "刷新",
+  branch_diff_ahead: "未推送 {0}",
+  branch_diff_behind: "落后 {0}",
+  branch_diff_uncommitted: "未提交 {0}",
 
   // Plan viewer
   plan_title: "执行计划",

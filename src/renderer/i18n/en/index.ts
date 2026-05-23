@@ -185,6 +185,9 @@ const en: BaseTranslation = {
   branch_diff_no_base: "Base branch (main) not found",
   branch_diff_exec_failed: "git command failed",
   branch_diff_refresh: "Refresh",
+  branch_diff_ahead: "{0} unpushed",
+  branch_diff_behind: "{0} behind",
+  branch_diff_uncommitted: "{0} uncommitted",
 
   // Plan viewer
   plan_title: "Execution Plan",

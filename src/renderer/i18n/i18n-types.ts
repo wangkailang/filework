@@ -577,6 +577,21 @@ type RootTranslation = {
 	 */
 	branch_diff_refresh: string
 	/**
+	 * {​0​}​ ​u​n​p​u​s​h​e​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_ahead: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​b​e​h​i​n​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_behind: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​u​n​c​o​m​m​i​t​t​e​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_uncommitted: RequiredParams<'0'>
+	/**
 	 * E​x​e​c​u​t​i​o​n​ ​P​l​a​n
 	 */
 	plan_title: string
@@ -1659,6 +1674,18 @@ export type TranslationFunctions = {
 	 * Refresh
 	 */
 	branch_diff_refresh: () => LocalizedString
+	/**
+	 * {0} unpushed
+	 */
+	branch_diff_ahead: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} behind
+	 */
+	branch_diff_behind: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} uncommitted
+	 */
+	branch_diff_uncommitted: (arg0: unknown) => LocalizedString
 	/**
 	 * Execution Plan
 	 */

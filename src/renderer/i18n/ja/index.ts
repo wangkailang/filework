@@ -178,6 +178,9 @@ const ja: Translation = {
   branch_diff_no_base: "ベースブランチ(main)が見つかりません",
   branch_diff_exec_failed: "git コマンドが失敗しました",
   branch_diff_refresh: "更新",
+  branch_diff_ahead: "未プッシュ {0}",
+  branch_diff_behind: "{0} 遅れ",
+  branch_diff_uncommitted: "未コミット {0}",
 
   // Plan viewer
   plan_title: "実行計画",

@@ -80,12 +80,29 @@ async function computeBranchDiff(
     headBranchRes.exitCode === 0 ? headBranchRes.stdout.trim() : "";
   const headBranch = !rawBranch || rawBranch === "HEAD" ? head : rawBranch;
 
-  const mergeBase = await runGit(["merge-base", baseBranch, "HEAD"], { cwd });
+  // Prefer the remote tracking ref so the diff matches what a PR
+  // against `<baseBranch>` would show. Fall back to the local branch
+  // when origin isn't configured (eg fresh `git init`).
+  const remoteRef = `origin/${baseBranch}`;
+  const remoteProbe = await runGit(
+    ["rev-parse", "--verify", "--quiet", remoteRef],
+    { cwd },
+  );
+  const baseRef = remoteProbe.exitCode === 0 ? remoteRef : baseBranch;
+
+  const mergeBase = await runGit(["merge-base", baseRef, "HEAD"], { cwd });
   if (mergeBase.exitCode !== 0) {
     return makeNotAvailable("no-base", baseBranch, mergeBase.stderr.trim());
   }
   const base = mergeBase.stdout.trim().slice(0, 12);
   const baseFull = mergeBase.stdout.trim();
+
+  // Status badges. All best-effort — handler still returns a usable
+  // BranchDiff if any of these git invocations fail.
+  const [aheadBehind, uncommitted] = await Promise.all([
+    collectAheadBehind(cwd, headBranch),
+    collectUncommitted(cwd),
+  ]);
 
   // --name-status drives rename detection (R100  oldPath\tnewPath).
   // Single-arg form (no `...HEAD`) compares base → working tree.
@@ -137,14 +154,65 @@ async function computeBranchDiff(
 
   return {
     base,
+    baseRef,
     baseBranch,
     head,
     headBranch,
     files,
     totalAdded,
     totalRemoved,
+    ...(aheadBehind.ahead !== undefined ? { ahead: aheadBehind.ahead } : {}),
+    ...(aheadBehind.behind !== undefined
+      ? { behind: aheadBehind.behind }
+      : {}),
+    ...(uncommitted !== undefined ? { uncommitted } : {}),
     ...(truncated ? { truncated: true } : {}),
   };
+}
+
+interface AheadBehind {
+  ahead?: number;
+  behind?: number;
+}
+
+async function collectAheadBehind(
+  cwd: string,
+  headBranch: string,
+): Promise<AheadBehind> {
+  // Detached HEAD / no upstream → silently skip badges.
+  if (!headBranch || headBranch === "HEAD" || /^[0-9a-f]+$/.test(headBranch)) {
+    return {};
+  }
+  const upstream = `origin/${headBranch}`;
+  const probe = await runGit(
+    ["rev-parse", "--verify", "--quiet", upstream],
+    { cwd },
+  );
+  if (probe.exitCode !== 0) {
+    // Branch hasn't been pushed yet — surfacing 0 here would imply
+    // "everything is pushed", so leave undefined.
+    return {};
+  }
+  const res = await runGit(
+    ["rev-list", "--left-right", "--count", `${upstream}...HEAD`],
+    { cwd },
+  );
+  if (res.exitCode !== 0) return {};
+  // Format: "<behind>\t<ahead>" (left side is upstream, right is HEAD).
+  const [behindStr, aheadStr] = res.stdout.trim().split(/\s+/);
+  const behind = Number.parseInt(behindStr ?? "", 10);
+  const ahead = Number.parseInt(aheadStr ?? "", 10);
+  return {
+    ahead: Number.isFinite(ahead) ? ahead : undefined,
+    behind: Number.isFinite(behind) ? behind : undefined,
+  };
+}
+
+async function collectUncommitted(cwd: string): Promise<number | undefined> {
+  const res = await runGit(["status", "--porcelain"], { cwd });
+  if (res.exitCode !== 0) return undefined;
+  if (!res.stdout) return 0;
+  return res.stdout.split("\n").filter((l) => l.length > 0).length;
 }
 
 interface NameStatusEntry {
@@ -232,9 +300,7 @@ function mapToFileDiff(
       // When the run gets sliced we can no longer count every line —
       // the rendered text only contains the leading bytes. Estimate
       // kept lines as `value.slice(0, MAX_HUNK_BYTES).split("\n").length`.
-      const slicedValue = overSized
-        ? sliceUtf8(value, MAX_HUNK_BYTES)
-        : value;
+      const slicedValue = overSized ? sliceUtf8(value, MAX_HUNK_BYTES) : value;
       const keptLineCount = overSized
         ? Math.max(0, slicedValue.split("\n").length - 2) // minus the "…\n" sentinel
         : run.lines.length;

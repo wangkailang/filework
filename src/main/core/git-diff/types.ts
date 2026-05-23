@@ -37,12 +37,22 @@ export type BranchDiffNotAvailable =
 export interface BranchDiff {
   /** Short SHA of the merge-base used to compute the diff. */
   base: string;
+  /** User-facing label for the base — `"origin/main"` when the remote
+   *  ref is reachable, otherwise the plain local branch name. */
+  baseRef?: string;
   baseBranch: string;
   head: string;
   headBranch: string;
   files: GitFileDiff[];
   totalAdded: number;
   totalRemoved: number;
+  /** Commits on HEAD that aren't on `origin/<currentBranch>` (i.e.
+   *  unpushed). Undefined when the local branch has no upstream. */
+  ahead?: number;
+  /** Commits on `origin/<currentBranch>` that aren't on HEAD (need pull). */
+  behind?: number;
+  /** Files with staged or unstaged changes (git status --porcelain). */
+  uncommitted?: number;
   /** True when the result was capped (>200 files or aggregate size). */
   truncated?: boolean;
   /** Set when the diff couldn't be produced. UI shows a matching empty state. */
