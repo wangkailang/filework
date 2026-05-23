@@ -76,6 +76,10 @@ type RootTranslation = {
 	 */
 	sidebar_collapse: string
 	/**
+	 * E​x​p​a​n​d​ ​s​i​d​e​b​a​r
+	 */
+	sidebar_expand: string
+	/**
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
@@ -1186,6 +1190,10 @@ export type TranslationFunctions = {
 	 * Collapse sidebar
 	 */
 	sidebar_collapse: () => LocalizedString
+	/**
+	 * Expand sidebar
+	 */
+	sidebar_expand: () => LocalizedString
 	/**
 	 * Settings
 	 */

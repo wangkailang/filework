@@ -29,6 +29,23 @@ const getInitialLocale = (): Locales => {
   return "en";
 };
 
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 256;
+
+const clampSidebarWidth = (n: number): number =>
+  Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, n));
+
+const getInitialSidebarWidth = (): number => {
+  const saved = localStorage.getItem("filework-sidebar-width");
+  if (!saved) return SIDEBAR_DEFAULT_WIDTH;
+  const n = Number.parseInt(saved, 10);
+  return Number.isFinite(n) ? clampSidebarWidth(n) : SIDEBAR_DEFAULT_WIDTH;
+};
+
+const getInitialSidebarCollapsed = (): boolean =>
+  localStorage.getItem("filework-sidebar-collapsed") === "1";
+
 interface ResolvedWorkspace {
   ref: WorkspaceRef;
   /** On-disk path the file tree / sandbox uses (clone dir for github/gitlab). */
@@ -57,6 +74,22 @@ export const App = () => {
   // uses this as its invalidator so the sidebar pill and panel reflect
   // post-write reality without waiting for the 30 s TTL.
   const [diffInvalidator, setDiffInvalidator] = useState(0);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(
+    getInitialSidebarWidth,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    getInitialSidebarCollapsed,
+  );
+  const handleCommitSidebarWidth = useCallback((w: number) => {
+    localStorage.setItem("filework-sidebar-width", String(w));
+  }, []);
+  const handleToggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("filework-sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
@@ -270,6 +303,11 @@ export const App = () => {
             branchDiffOpen={branchDiffOpen}
             diffInvalidator={diffInvalidator}
             onToggleBranchDiff={() => setBranchDiffOpen((v) => !v)}
+            width={sidebarWidth}
+            collapsed={sidebarCollapsed}
+            onWidthChange={setSidebarWidth}
+            onCommitWidth={handleCommitSidebarWidth}
+            onToggleCollapsed={handleToggleSidebarCollapsed}
             onBranchSwitched={(branch) => {
               if (workspace.ref.kind === "local") {
                 // Local: just patch the live chip state. No persist —
