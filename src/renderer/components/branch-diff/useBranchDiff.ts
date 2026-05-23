@@ -84,10 +84,18 @@ export function useBranchDiff({
     setData(null);
   }, [path, baseBranch, currentBranch]);
 
+  // Track the last invalidator value we acted on. `invalidator` is a
+  // monotonic counter — once bumped, it's never 0 again, so the old
+  // `invalidator === 0` short-circuit broke the TTL fast-path forever
+  // and turned the effect into an unbounded refetch loop.
+  const lastSeenInvalidator = useRef(invalidator);
+
   useEffect(() => {
     if (!path) return;
     const age = Date.now() - fetchedAt.current;
-    if (data && age < ttlMs && invalidator === 0) return;
+    const invalidatorChanged = invalidator !== lastSeenInvalidator.current;
+    lastSeenInvalidator.current = invalidator;
+    if (data && age < ttlMs && !invalidatorChanged) return;
     void fetchNow();
   }, [path, invalidator, ttlMs, data, fetchNow]);
 
