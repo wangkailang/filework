@@ -1,6 +1,7 @@
 import { FileCodeIcon, FileIcon, FileTextIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { localFileUrl } from "../../lib/local-file-url";
+import { ImageLightbox } from "./ImageLightbox";
 import type { AttachmentKind, AttachmentPart } from "./types";
 
 const formatBytes = (bytes: number): string => {
@@ -21,7 +22,8 @@ const KindIcon = ({ kind }: { kind: AttachmentKind }) => {
 /**
  * Composer-side chips row: above the textarea, each chip has a ✕ that
  * calls onRemove. Image kinds show a 40×40 thumbnail via the
- * `local-file://` protocol; pdf/text show a colored lucide icon.
+ * `local-file://` protocol — click the thumb to open the lightbox.
+ * pdf/text show a colored lucide icon (no preview surface).
  */
 export const AttachmentChips = ({
   attachments,
@@ -30,7 +32,11 @@ export const AttachmentChips = ({
   attachments: ChipData[];
   onRemove: (id: string) => void;
 }) => {
+  const [previewId, setPreviewId] = useState<string | null>(null);
   if (attachments.length === 0) return null;
+  const previewing = previewId
+    ? (attachments.find((a) => a.attachmentId === previewId) ?? null)
+    : null;
   return (
     <div className="flex flex-wrap gap-2 px-3 pt-2">
       {attachments.map((a) => (
@@ -39,11 +45,18 @@ export const AttachmentChips = ({
           className="group relative flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
         >
           {a.kind === "image" ? (
-            <img
-              src={localFileUrl(a.path)}
-              alt={a.name}
-              className="size-8 rounded object-cover"
-            />
+            <button
+              type="button"
+              onClick={() => setPreviewId(a.attachmentId)}
+              aria-label={`预览 ${a.name}`}
+              className="focus:outline-none focus:ring-2 focus:ring-primary rounded"
+            >
+              <img
+                src={localFileUrl(a.path)}
+                alt={a.name}
+                className="size-8 rounded object-cover cursor-zoom-in"
+              />
+            </button>
           ) : (
             <KindIcon kind={a.kind} />
           )}
@@ -66,39 +79,74 @@ export const AttachmentChips = ({
           </button>
         </div>
       ))}
+      {previewing && previewing.kind === "image" && (
+        <ImageLightbox
+          src={localFileUrl(previewing.path)}
+          alt={previewing.name}
+          caption={previewing.name}
+          revealPath={previewing.path}
+          onClose={() => setPreviewId(null)}
+        />
+      )}
     </div>
   );
 };
 
 /**
- * History-side read-only chips on a user message bubble. Clicking a
- * chip reveals the underlying file in Finder via `showInFinder`.
+ * History-side read-only chips on a user message bubble. Image chips
+ * open a lightbox; non-image chips reveal the file in Finder.
  */
 export const AttachmentList = ({
   attachments,
 }: {
   attachments: ChipData[];
 }) => {
+  const [previewId, setPreviewId] = useState<string | null>(null);
   if (attachments.length === 0) return null;
+  const previewing = previewId
+    ? (attachments.find((a) => a.attachmentId === previewId) ?? null)
+    : null;
   return (
     <div className="flex flex-wrap gap-2 mb-2">
-      {attachments.map((a) => (
-        <button
-          key={a.attachmentId}
-          type="button"
-          onClick={() => window.filework.showInFinder(a.path)}
-          title={`${a.name} — click to reveal in Finder`}
-          className="group flex items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5 text-xs hover:bg-accent"
-        >
-          <HistoryThumb a={a} />
-          <div className="flex flex-col items-start">
-            <span className="max-w-[14rem] truncate font-medium text-foreground">
-              {a.name}
-            </span>
-            <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-          </div>
-        </button>
-      ))}
+      {attachments.map((a) => {
+        const isImage = a.kind === "image";
+        return (
+          <button
+            key={a.attachmentId}
+            type="button"
+            onClick={() =>
+              isImage
+                ? setPreviewId(a.attachmentId)
+                : window.filework.showInFinder(a.path)
+            }
+            title={
+              isImage
+                ? `${a.name} — 点击查看`
+                : `${a.name} — click to reveal in Finder`
+            }
+            className="group flex items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5 text-xs hover:bg-accent"
+          >
+            <HistoryThumb a={a} />
+            <div className="flex flex-col items-start">
+              <span className="max-w-[14rem] truncate font-medium text-foreground">
+                {a.name}
+              </span>
+              <span className="text-muted-foreground">
+                {formatBytes(a.size)}
+              </span>
+            </div>
+          </button>
+        );
+      })}
+      {previewing && previewing.kind === "image" && (
+        <ImageLightbox
+          src={localFileUrl(previewing.path)}
+          alt={previewing.name}
+          caption={previewing.name}
+          revealPath={previewing.path}
+          onClose={() => setPreviewId(null)}
+        />
+      )}
     </div>
   );
 };

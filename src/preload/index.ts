@@ -42,6 +42,12 @@ const api = {
     sourcePath: string;
     originalName?: string;
   }) => ipcRenderer.invoke("chat:attachFile", payload),
+  chatAttachBlob: (payload: {
+    sessionId: string;
+    bytes: Uint8Array;
+    mimeType: string;
+    name?: string;
+  }) => ipcRenderer.invoke("chat:attachBlob", payload),
 
   // AI
   getAIConfig: () => ipcRenderer.invoke("ai:getConfig"),
