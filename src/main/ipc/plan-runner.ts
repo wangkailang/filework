@@ -28,6 +28,7 @@ import {
   StreamWatchdog,
 } from "../ai/stream-watchdog";
 import { AgentLoop } from "../core/agent/agent-loop";
+import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
@@ -251,18 +252,21 @@ export const executePlan = async ({
                 delta: ev.deltaText,
               });
               break;
-            case "tool_execution_start":
+            case "tool_execution_start": {
+              const previewSnapshot = consumePreview(ev.toolCallId);
               sender.send("ai:stream-tool-call", {
                 id: taskId,
                 toolCallId: ev.toolCallId,
                 toolName: ev.toolName,
                 args: ev.args,
+                previewSnapshot,
               });
               pendingToolCalls.set(ev.toolCallId, {
                 toolName: ev.toolName,
                 args: ev.args as Record<string, unknown>,
               });
               break;
+            }
             case "tool_execution_end": {
               sender.send("ai:stream-tool-result", {
                 id: taskId,

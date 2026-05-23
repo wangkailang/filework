@@ -54,9 +54,12 @@ export async function computeDeleteFilePreview(
     try {
       const entries = await workspace.fs.list(rel, { recursive: true });
       childCount = entries.length;
-      for (const e of entries) {
-        totalBytes += e.size;
-        if (childCount >= CHILD_COUNT_CAP) break;
+      // Cap how many entries we account for so the byte sum stays
+      // bounded for huge trees; the cap matches `Math.min(...)` below
+      // so the displayed `+N` and the size add up.
+      const limit = Math.min(entries.length, CHILD_COUNT_CAP);
+      for (let i = 0; i < limit; i++) {
+        totalBytes += entries[i].size;
       }
     } catch {
       // Best-effort — keep partial counts.

@@ -58,21 +58,22 @@ export function WriteFilePreviewCard({
         <div className="mt-1 ml-4">
           {preview.isBinary ? (
             <div className="px-3 py-2 text-muted-foreground italic">
-              ({LL.tool_diff_label()}) binary file, diff skipped
+              ({LL.tool_diff_label()}) {LL.preview_binary_skipped()}
             </div>
           ) : preview.truncated ? (
             <div className="px-3 py-2 text-muted-foreground italic">
+              ({LL.tool_diff_label()}){" "}
               {preview.truncated === "oldTooLarge" ||
               preview.truncated === "newTooLarge"
-                ? `(${LL.tool_diff_label()}) file too large (>1 MB); line counts only`
-                : `(${LL.tool_diff_label()}) diff truncated`}
+                ? LL.preview_too_large()
+                : LL.preview_diff_truncated()}
               <div className="mt-0.5 font-mono text-foreground/70">
                 old: {preview.oldLines} → new: {preview.newLines}
               </div>
             </div>
           ) : preview.hunks.length === 0 ? (
             <div className="px-3 py-2 text-muted-foreground italic">
-              no changes
+              {LL.preview_no_changes()}
             </div>
           ) : (
             <>

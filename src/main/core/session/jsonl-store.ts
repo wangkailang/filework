@@ -28,6 +28,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import type { MessagePart } from "./message-parts";
 import type {
   ChatMessage,
   ChatSession,
@@ -49,6 +50,35 @@ const stripForkFields = (line: SessionLine): ChatSession => ({
   createdAt: line.createdAt,
   updatedAt: line.updatedAt,
 });
+
+/**
+ * Drop transient fields that must never reach disk:
+ *   - `ToolPart.previewSnapshot`  — process-local snapshot used to
+ *     hydrate the post-execute diff; stale on reload, so persisting
+ *     it would mislead the renderer next session.
+ *   - `BatchApprovalEntry.preview` — same rationale; only relevant
+ *     between flush and settle, never afterwards.
+ *
+ * Idempotent: parts without these fields pass through unchanged.
+ */
+const stripTransientPreview = (parts: MessagePart[]): MessagePart[] =>
+  parts.map((part) => {
+    if (part.type === "tool" && "previewSnapshot" in part) {
+      const { previewSnapshot: _drop, ...rest } = part;
+      return rest;
+    }
+    if (part.type === "batch-approval") {
+      return {
+        ...part,
+        entries: part.entries.map((e) => {
+          if (!("preview" in e) || e.preview === undefined) return e;
+          const { preview: _p, ...rest } = e;
+          return rest;
+        }),
+      };
+    }
+    return part;
+  });
 
 const lineToMessage = (line: MessageLine): ChatMessage => ({
   id: line.id,
@@ -289,7 +319,7 @@ export class JsonlSessionStore {
       role: m.role,
       content: m.content,
       timestamp: m.timestamp,
-      parts: m.parts,
+      parts: m.parts ? stripTransientPreview(m.parts) : m.parts,
     }));
 
     await this.atomicWrite(

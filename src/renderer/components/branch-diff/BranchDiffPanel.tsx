@@ -15,6 +15,9 @@ import { useBranchDiff } from "./useBranchDiff";
 interface BranchDiffPanelProps {
   /** Workspace root absolute path. Empty/undefined → empty state. */
   workspaceRoot?: string;
+  /** Current checked-out branch. Threaded into the hook so a
+   *  BranchSwitcher checkout invalidates the cache immediately. */
+  currentBranch?: string | null;
   /** Close button. Parent owns the open state — when closed, parent
    *  simply unmounts this panel. */
   onClose: () => void;
@@ -35,12 +38,14 @@ const MIN_WIDTH = 320;
  */
 export function BranchDiffPanel({
   workspaceRoot,
+  currentBranch,
   onClose,
   invalidator,
 }: BranchDiffPanelProps) {
   const { LL } = useI18nContext();
   const { data, loading, error, refresh } = useBranchDiff({
     path: workspaceRoot,
+    currentBranch,
     invalidator,
   });
 

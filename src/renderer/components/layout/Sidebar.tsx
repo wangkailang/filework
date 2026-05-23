@@ -107,9 +107,10 @@ export const Sidebar = ({
   const [skillsOpen, setSkillsOpen] = useState(false);
   // Surface the current branch's aggregate +/- counts on the trigger
   // pill. Cheap to keep open — the hook caches and uses the same IPC
-  // path the panel does.
+  // path the panel does. `currentBranch` busts the cache on checkout.
   const { data: diffSummary } = useBranchDiff({
     path: workspacePath,
+    currentBranch,
     invalidator: 0,
   });
   const [childrenMap, setChildrenMap] = useState<Record<string, FileInfo[]>>(

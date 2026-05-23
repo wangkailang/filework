@@ -286,6 +286,7 @@ export const App = () => {
             {branchDiffOpen && (
               <BranchDiffPanel
                 workspaceRoot={workspace.localPath}
+                currentBranch={workspace.currentBranch}
                 onClose={() => setBranchDiffOpen(false)}
               />
             )}

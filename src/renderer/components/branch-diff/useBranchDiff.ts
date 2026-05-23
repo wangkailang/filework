@@ -5,6 +5,13 @@ interface UseBranchDiffOptions {
   /** Workspace root absolute path. */
   path?: string;
   baseBranch?: string;
+  /**
+   * Current checked-out branch. Threaded only as a cache key — the IPC
+   * handler always reads HEAD from git itself. When the value changes
+   * (eg after BranchSwitcher), the hook resets and refetches instead
+   * of waiting for the TTL to expire.
+   */
+  currentBranch?: string | null;
   /** Cache window in ms — refetch when older. Default 30 s. */
   ttlMs?: number;
   /** Bump externally (eg on tool completion) to force a refetch. */
@@ -21,6 +28,7 @@ interface UseBranchDiffResult {
 export function useBranchDiff({
   path,
   baseBranch = "main",
+  currentBranch,
   ttlMs = 30_000,
   invalidator = 0,
 }: UseBranchDiffOptions): UseBranchDiffResult {
@@ -47,15 +55,20 @@ export function useBranchDiff({
     }
   }, [path, baseBranch]);
 
+  // Reset cache when any cache-key dimension changes (path, baseBranch,
+  // or the live currentBranch). Without this, a BranchSwitcher checkout
+  // would keep showing the prior branch's diff until the 30 s TTL.
   useEffect(() => {
-    if (!path) {
-      setData(null);
-      return;
-    }
+    fetchedAt.current = 0;
+    setData(null);
+  }, [path, baseBranch, currentBranch]);
+
+  useEffect(() => {
+    if (!path) return;
     const age = Date.now() - fetchedAt.current;
     if (data && age < ttlMs && invalidator === 0) return;
     void fetchNow();
-  }, [path, baseBranch, invalidator, ttlMs, data, fetchNow]);
+  }, [path, invalidator, ttlMs, data, fetchNow]);
 
   const refresh = useCallback(() => {
     fetchedAt.current = 0;
