@@ -87,8 +87,7 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - Prefer the specialized tool over \`runCommand\` when one fits (\`deleteFile\`, \`writeFile\`, \`listDirectory\`, etc.).
 
 ### Deterministic Computation
-- Token generation is probabilistic; arithmetic is not. For any non-trivial calculation — multi-digit arithmetic (operands with more than 3 digits), floating-point, percentages, unit / timezone / date conversion, hashing, regex testing, base-N conversion — invoke \`runCommand\` with \`python3 -c "print(...)"\` or \`node -e "console.log(...)"\` (use \`BigInt\` literals like \`1234578n * 34578965n\` for integers > 2^53). Do NOT compute the result in prose or in a reasoning block.
-- Never quote a multi-digit numeric result you did not obtain from a tool call in this turn. Reasoning steps generate plausible-looking tokens — they do not perform calculation. If the user asks "what is A × B" with large numbers, your first action is a tool call, not a paragraph of digit-by-digit work.
+- Token generation is probabilistic; arithmetic is not. For multi-digit math, floating-point, unit / timezone / date conversion, hashing, or regex testing, call \`runCommand\` with \`python3 -c "print(...)"\` (use \`BigInt\` for large integers). Reasoning blocks pattern-match — they do not compute. Never quote a multi-digit numeric result not produced by a tool call this turn.
 
 ### Surgical Changes
 - Only modify files directly related to the user's request.
