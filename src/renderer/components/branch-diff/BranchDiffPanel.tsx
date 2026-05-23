@@ -123,13 +123,12 @@ export function BranchDiffPanel({
       <div
         onMouseDown={startResize}
         className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-10"
-        aria-label="resize panel"
-        role="separator"
+        aria-hidden="true"
       />
       <header className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium truncate">
-            {data && data.headBranch
+            {data?.headBranch
               ? LL.branch_diff_title(
                   data.headBranch,
                   data.baseRef ?? data.baseBranch,
@@ -231,7 +230,7 @@ function StatusBadges({ data, LL }: StatusBadgesProps) {
       </span>,
     );
   }
-  return items.length > 0 ? <>{items}</> : null;
+  return items.length > 0 ? items : null;
 }
 
 interface BodyArgs {

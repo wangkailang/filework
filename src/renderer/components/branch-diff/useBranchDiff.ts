@@ -77,12 +77,17 @@ export function useBranchDiff({
   );
 
   // Reset cache when any cache-key dimension changes (path, baseBranch,
-  // or the live currentBranch). Without this, a BranchSwitcher checkout
-  // would keep showing the prior branch's diff until the 30 s TTL.
+  // or the live currentBranch). Composed into a single string so the
+  // effect deps array stays minimal and the lint rule for
+  // exhaustive-deps doesn't trip on values the body doesn't read.
+  const cacheKey = `${path ?? ""}::${baseBranch}::${currentBranch ?? ""}`;
+  const lastCacheKey = useRef(cacheKey);
   useEffect(() => {
+    if (lastCacheKey.current === cacheKey) return;
+    lastCacheKey.current = cacheKey;
     fetchedAt.current = 0;
     setData(null);
-  }, [path, baseBranch, currentBranch]);
+  }, [cacheKey]);
 
   // Track the last invalidator value we acted on. `invalidator` is a
   // monotonic counter — once bumped, it's never 0 again, so the old
