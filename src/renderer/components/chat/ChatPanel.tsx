@@ -309,6 +309,68 @@ export const ChatPanel = ({
     if (ok.length > 0) setPendingAttachments((prev) => [...prev, ...ok]);
   };
 
+  // Mirror the main-process 25 MB cap. Checked against `blob.size` BEFORE
+  // calling `arrayBuffer()` so a huge clipboard image doesn't decode in
+  // the renderer (double-allocates: ArrayBuffer + Uint8Array view) and
+  // get IPC-cloned only to be rejected on the other side.
+  const MAX_PASTE_BYTES = 25 * 1024 * 1024;
+
+  const attachBlob = async (
+    blob: Blob,
+    name?: string,
+  ): Promise<ComposerAttachment | null> => {
+    if (blob.size > MAX_PASTE_BYTES) {
+      chat.setLastError({
+        message: `Attach failed: File too large (${(blob.size / 1024 / 1024).toFixed(1)} MB > 25 MB)`,
+      });
+      return null;
+    }
+    const sessionId = chat.activeSessionId ?? "draft";
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const result = await window.filework.chatAttachBlob({
+      sessionId,
+      bytes,
+      mimeType: blob.type,
+      name,
+    });
+    if (result && typeof result === "object" && "error" in result) {
+      chat.setLastError({ message: `Attach failed: ${result.error}` });
+      return null;
+    }
+    return result;
+  };
+
+  const onPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const blobs: Array<{ blob: Blob; name?: string }> = [];
+    for (const item of Array.from(items)) {
+      if (item.kind !== "file") continue;
+      const isImage = item.type.startsWith("image/");
+      const isPdf = item.type === "application/pdf";
+      if (!isImage && !isPdf) continue;
+      const f = item.getAsFile();
+      if (f) blobs.push({ blob: f, name: f.name || undefined });
+    }
+    if (blobs.length === 0) return;
+    // Consumed paste — stop the textarea from receiving binary garbage as text.
+    e.preventDefault();
+    // `preventDefault` has already fired, so any silent rejection past
+    // this point leaves the textarea blank with no user feedback —
+    // funnel errors into chat.setLastError instead of dropping them.
+    try {
+      const results = await Promise.all(
+        blobs.map(({ blob, name }) => attachBlob(blob, name)),
+      );
+      const ok = results.filter((r): r is ComposerAttachment => r !== null);
+      if (ok.length > 0) setPendingAttachments((prev) => [...prev, ...ok]);
+    } catch (err) {
+      chat.setLastError({
+        message: `Paste failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  };
+
   const handlePickFiles = async () => {
     const paths = await window.filework.openFiles();
     await attachMany(paths.map((p) => ({ path: p })));
@@ -942,6 +1004,7 @@ export const ChatPanel = ({
                 <PromptInputTextarea
                   value={chat.input}
                   onChange={(e) => chat.setInput(e.target.value)}
+                  onPaste={onPaste}
                   placeholder={LL.chat_inputPlaceholder()}
                 />
               </div>

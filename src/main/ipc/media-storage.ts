@@ -89,3 +89,31 @@ export const saveAttachmentToDisk = async (
   await copyFile(sourcePath, path);
   return { path, shortId };
 };
+
+/**
+ * Write a renderer-supplied byte buffer (clipboard paste, in-memory blob)
+ * into the same attachments directory as `saveAttachmentToDisk`. Caller
+ * picks the extension so the on-disk file matches the MIME the renderer
+ * already classified — keeps `local-file://` MIME sniffing consistent.
+ */
+export const saveBytesAttachmentToDisk = async (
+  bytes: Uint8Array,
+  sessionId: string,
+  ext: string,
+): Promise<SavedAttachment> => {
+  // Defense in depth: even though today's only caller (`chat:attachBlob`)
+  // sources ext from extFromMime's 11-entry whitelist + "bin", strip any
+  // non-alphanumerics + cap length so a future caller can't traverse via
+  // ext or produce an invalid filename ("png?v=1", "../evil", etc.).
+  const cleanExt =
+    ext
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 10) || "bin";
+  const shortId = crypto.randomBytes(4).toString("hex");
+  const dir = join(ATTACHMENTS_ROOT, sessionId || "default");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `${tsSlug()}-${shortId}.${cleanExt}`);
+  await writeFile(path, bytes);
+  return { path, shortId };
+};

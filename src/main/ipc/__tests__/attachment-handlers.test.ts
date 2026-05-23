@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyKind, sniffMimeType } from "../attachment-handlers";
+import {
+  classifyKind,
+  extFromMime,
+  sniffMimeType,
+} from "../attachment-handlers";
 
 describe("sniffMimeType", () => {
   it("recognises image extensions", () => {
@@ -9,6 +13,16 @@ describe("sniffMimeType", () => {
     expect(sniffMimeType("a.jpeg")).toBe("image/jpeg");
     expect(sniffMimeType("a.webp")).toBe("image/webp");
     expect(sniffMimeType("a.gif")).toBe("image/gif");
+  });
+
+  it("recognises modern image extensions for local-file:// round-trip", () => {
+    expect(sniffMimeType("a.avif")).toBe("image/avif");
+    expect(sniffMimeType("a.heic")).toBe("image/heic");
+    expect(sniffMimeType("a.heif")).toBe("image/heif");
+    expect(sniffMimeType("a.bmp")).toBe("image/bmp");
+    expect(sniffMimeType("a.tiff")).toBe("image/tiff");
+    expect(sniffMimeType("a.tif")).toBe("image/tiff");
+    expect(sniffMimeType("a.svg")).toBe("image/svg+xml");
   });
 
   it("recognises pdf", () => {
@@ -47,5 +61,46 @@ describe("classifyKind", () => {
     expect(classifyKind("text/x-typescript")).toBe("text");
     expect(classifyKind("application/json")).toBe("text");
     expect(classifyKind("application/octet-stream")).toBe("text");
+  });
+});
+
+describe("extFromMime", () => {
+  it("maps the image MIMEs the composer accepts", () => {
+    expect(extFromMime("image/png")).toBe("png");
+    expect(extFromMime("image/jpeg")).toBe("jpg");
+    expect(extFromMime("image/gif")).toBe("gif");
+    expect(extFromMime("image/webp")).toBe("webp");
+  });
+  it("maps modern image MIMEs (avif/heic/bmp/tiff/svg)", () => {
+    expect(extFromMime("image/avif")).toBe("avif");
+    expect(extFromMime("image/heic")).toBe("heic");
+    expect(extFromMime("image/heif")).toBe("heif");
+    expect(extFromMime("image/bmp")).toBe("bmp");
+    expect(extFromMime("image/tiff")).toBe("tiff");
+    expect(extFromMime("image/svg+xml")).toBe("svg");
+  });
+  it("maps pdf", () => {
+    expect(extFromMime("application/pdf")).toBe("pdf");
+  });
+  it("normalizes case and strips ;params before lookup", () => {
+    expect(extFromMime("Image/PNG")).toBe("png");
+    expect(extFromMime("IMAGE/JPEG")).toBe("jpg");
+    expect(extFromMime("image/jpeg; charset=binary")).toBe("jpg");
+    expect(extFromMime("APPLICATION/PDF;version=1.7")).toBe("pdf");
+  });
+  it("falls back to bin for unknown", () => {
+    expect(extFromMime("application/x-weird")).toBe("bin");
+    expect(extFromMime("")).toBe("bin");
+  });
+});
+
+describe("classifyKind normalization", () => {
+  it("strips MIME parameters before classifying", () => {
+    expect(classifyKind("image/png; charset=binary")).toBe("image");
+    expect(classifyKind("application/pdf; version=1.7")).toBe("pdf");
+  });
+  it("lowercases MIME before classifying", () => {
+    expect(classifyKind("Image/PNG")).toBe("image");
+    expect(classifyKind("Application/PDF")).toBe("pdf");
   });
 });

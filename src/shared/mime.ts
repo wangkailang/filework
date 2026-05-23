@@ -17,6 +17,13 @@ const MIME_BY_EXT: Record<string, string> = {
   jpeg: "image/jpeg",
   gif: "image/gif",
   webp: "image/webp",
+  avif: "image/avif",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  heic: "image/heic",
+  heif: "image/heif",
+  svg: "image/svg+xml",
   // documents
   pdf: "application/pdf",
   // video (used by local-file:// protocol for inline preview)
@@ -132,8 +139,47 @@ export const sniffMimeType = (filenameOrPath: string): string => {
 
 export type AttachmentKind = "image" | "pdf" | "text";
 
+/**
+ * RFC 6838 makes MIME types case-insensitive and allows trailing
+ * `;param=value` parameters. Clipboards on different platforms / older
+ * Electron builds sometimes hand over decorated MIMEs like
+ * `image/jpeg; charset=binary` or `Image/PNG`. Normalize at every entry
+ * point so EXT_BY_MIME / classifyKind exact-match lookups don't miss.
+ */
+const normalizeMime = (mimeType: string): string => {
+  const semi = mimeType.indexOf(";");
+  const base = (semi === -1 ? mimeType : mimeType.slice(0, semi)).trim();
+  return base.toLowerCase();
+};
+
 export const classifyKind = (mimeType: string): AttachmentKind => {
-  if (mimeType.startsWith("image/")) return "image";
-  if (mimeType === "application/pdf") return "pdf";
+  const m = normalizeMime(mimeType);
+  if (m.startsWith("image/")) return "image";
+  if (m === "application/pdf") return "pdf";
   return "text";
 };
+
+/**
+ * Reverse of {@link sniffMimeType} for callers that have a MIME but no
+ * filename — e.g. clipboard paste, where `ClipboardItem.types` gives the
+ * MIME but the blob has no name. Falls back to `bin` so callers always
+ * get a usable extension. Covers image/PDF MIMEs the chat composer
+ * accepts (incl. avif/heic/bmp/svg/tiff so modern macOS + Safari pastes
+ * round-trip through `local-file://` MIME sniffing).
+ */
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/svg+xml": "svg",
+  "application/pdf": "pdf",
+};
+
+export const extFromMime = (mimeType: string): string =>
+  EXT_BY_MIME[normalizeMime(mimeType)] ?? "bin";
