@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BranchDiffPanel } from "./components/branch-diff/BranchDiffPanel";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -51,6 +52,11 @@ export const App = () => {
   const [githubModalOpen, setGithubModalOpen] = useState(false);
   const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [branchDiffOpen, setBranchDiffOpen] = useState(false);
+  // Bumped whenever a destructive tool finishes; the branch-diff hook
+  // uses this as its invalidator so the sidebar pill and panel reflect
+  // post-write reality without waiting for the 30 s TTL.
+  const [diffInvalidator, setDiffInvalidator] = useState(0);
 
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
@@ -103,6 +109,27 @@ export const App = () => {
   useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
+
+  // Bump the branch-diff invalidator whenever a destructive tool
+  // finishes — refreshes both the sidebar +/- pill and the open panel
+  // without waiting for the cache TTL.
+  useEffect(() => {
+    const DESTRUCTIVE = new Set([
+      "writeFile",
+      "moveFile",
+      "deleteFile",
+      "createDirectory",
+      "runCommand",
+    ]);
+    const off = window.filework.onStreamToolResult(({ toolName }) => {
+      if (DESTRUCTIVE.has(toolName)) {
+        setDiffInvalidator((n) => n + 1);
+      }
+    });
+    return () => {
+      off();
+    };
+  }, []);
   useEffect(() => {
     const unsubscribe = window.filework.onWorkspaceBranchChanged(
       ({ cloneDir, branch }) => {
@@ -240,6 +267,9 @@ export const App = () => {
             onCloseDirectory={() => setWorkspace(null)}
             onLocaleChange={setLocale}
             onSelectFile={setSelectedFilePath}
+            branchDiffOpen={branchDiffOpen}
+            diffInvalidator={diffInvalidator}
+            onToggleBranchDiff={() => setBranchDiffOpen((v) => !v)}
             onBranchSwitched={(branch) => {
               if (workspace.ref.kind === "local") {
                 // Local: just patch the live chip state. No persist —
@@ -279,6 +309,14 @@ export const App = () => {
                 workspaceRefJson={workspaceRefJson}
               />
             </div>
+            {branchDiffOpen && (
+              <BranchDiffPanel
+                workspaceRoot={workspace.localPath}
+                currentBranch={workspace.currentBranch}
+                invalidator={diffInvalidator}
+                onClose={() => setBranchDiffOpen(false)}
+              />
+            )}
           </main>
         </div>
       )}

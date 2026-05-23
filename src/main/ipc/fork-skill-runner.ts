@@ -24,6 +24,7 @@ import { classifyError } from "../ai/error-classifier";
 import { appendPattern } from "../ai/pattern-store";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { AgentLoop } from "../core/agent/agent-loop";
+import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import {
   buildReport,
@@ -134,7 +135,7 @@ export const createForkSkillRunner = (
       modelName: modelId,
       isGitWorkspace,
     });
-    const beforeToolCall = buildApprovalHook({ sender, taskId });
+    const beforeToolCall = buildApprovalHook({ sender, taskId, workspace });
 
     // Child AbortController so the runner can react to its own
     // failures without aborting the parent. Forward parent abort once.
@@ -236,16 +237,19 @@ export const createForkSkillRunner = (
             watchdog.activity();
             deltaBatcher.push(ev.deltaText);
             break;
-          case "tool_execution_start":
+          case "tool_execution_start": {
             deltaBatcher.drain();
             toolCallCount++;
+            const previewSnapshot = consumePreview(ev.toolCallId);
             sender.send("ai:stream-tool-call", {
               id: taskId,
               toolCallId: ev.toolCallId,
               toolName: ev.toolName,
               args: ev.args,
+              previewSnapshot,
             });
             break;
+          }
           case "tool_execution_end":
             sender.send("ai:stream-tool-result", {
               id: taskId,

@@ -477,6 +477,121 @@ type RootTranslation = {
 	 */
 	tool_hide_full: string
 	/**
+	 * W​i​l​l​ ​w​r​i​t​e​ ​f​i​l​e
+	 */
+	preview_card_title_write: string
+	/**
+	 * W​i​l​l​ ​o​v​e​r​w​r​i​t​e​ ​f​i​l​e
+	 */
+	preview_card_title_overwrite: string
+	/**
+	 * M​o​v​e​ ​/​ ​r​e​n​a​m​e
+	 */
+	preview_card_title_move: string
+	/**
+	 * D​e​l​e​t​e
+	 */
+	preview_card_title_delete: string
+	/**
+	 * C​r​e​a​t​e​ ​d​i​r​e​c​t​o​r​y
+	 */
+	preview_card_title_mkdir: string
+	/**
+	 * R​u​n​ ​c​o​m​m​a​n​d
+	 */
+	preview_card_title_run: string
+	/**
+	 * B​i​n​a​r​y​ ​f​i​l​e​,​ ​d​i​f​f​ ​s​k​i​p​p​e​d
+	 */
+	preview_binary_skipped: string
+	/**
+	 * F​i​l​e​ ​t​o​o​ ​l​a​r​g​e​ ​(​>​1​ ​M​B​)​;​ ​l​i​n​e​ ​c​o​u​n​t​s​ ​o​n​l​y
+	 */
+	preview_too_large: string
+	/**
+	 * D​i​f​f​ ​t​r​u​n​c​a​t​e​d
+	 */
+	preview_diff_truncated: string
+	/**
+	 * D​e​s​t​i​n​a​t​i​o​n​ ​e​x​i​s​t​s​,​ ​w​i​l​l​ ​b​e​ ​o​v​e​r​w​r​i​t​t​e​n
+	 */
+	preview_destination_exists: string
+	/**
+	 * S​o​u​r​c​e​ ​d​o​e​s​ ​n​o​t​ ​e​x​i​s​t
+	 */
+	preview_source_missing: string
+	/**
+	 * P​a​r​e​n​t​ ​d​i​r​e​c​t​o​r​y​ ​d​o​e​s​ ​n​o​t​ ​e​x​i​s​t
+	 */
+	preview_parent_missing: string
+	/**
+	 * W​o​r​k​i​n​g​ ​d​i​r​e​c​t​o​r​y​ ​d​o​e​s​ ​n​o​t​ ​e​x​i​s​t
+	 */
+	preview_cwd_missing: string
+	/**
+	 * D​i​r​e​c​t​o​r​y​ ​a​l​r​e​a​d​y​ ​e​x​i​s​t​s
+	 */
+	preview_already_exists: string
+	/**
+	 * {​0​}​ ​e​n​t​r​i​e​s
+	 * @param {unknown} 0
+	 */
+	preview_dir_children: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​b​y​t​e​s
+	 * @param {unknown} 0
+	 */
+	preview_size_bytes: RequiredParams<'0'>
+	/**
+	 * N​o​ ​c​h​a​n​g​e​s
+	 */
+	preview_no_changes: string
+	/**
+	 * V​i​e​w​ ​b​r​a​n​c​h​ ​c​h​a​n​g​e​s
+	 */
+	branch_diff_open: string
+	/**
+	 * {​0​}​ ​v​s​ ​{​1​}
+	 * @param {unknown} 0
+	 * @param {unknown} 1
+	 */
+	branch_diff_title: RequiredParams<'0' | '1'>
+	/**
+	 * N​o​ ​c​h​a​n​g​e​s
+	 */
+	branch_diff_empty: string
+	/**
+	 * W​o​r​k​s​p​a​c​e​ ​i​s​ ​n​o​t​ ​a​ ​g​i​t​ ​r​e​p​o​s​i​t​o​r​y
+	 */
+	branch_diff_not_git: string
+	/**
+	 * B​a​s​e​ ​b​r​a​n​c​h​ ​(​m​a​i​n​)​ ​n​o​t​ ​f​o​u​n​d
+	 */
+	branch_diff_no_base: string
+	/**
+	 * g​i​t​ ​c​o​m​m​a​n​d​ ​f​a​i​l​e​d
+	 */
+	branch_diff_exec_failed: string
+	/**
+	 * R​e​f​r​e​s​h
+	 */
+	branch_diff_refresh: string
+	/**
+	 * {​0​}​ ​u​n​p​u​s​h​e​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_ahead: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​b​e​h​i​n​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_behind: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​u​n​c​o​m​m​i​t​t​e​d
+	 * @param {unknown} 0
+	 */
+	branch_diff_uncommitted: RequiredParams<'0'>
+	/**
 	 * E​x​e​c​u​t​i​o​n​ ​P​l​a​n
 	 */
 	plan_title: string
@@ -1463,6 +1578,114 @@ export type TranslationFunctions = {
 	 * Hide
 	 */
 	tool_hide_full: () => LocalizedString
+	/**
+	 * Will write file
+	 */
+	preview_card_title_write: () => LocalizedString
+	/**
+	 * Will overwrite file
+	 */
+	preview_card_title_overwrite: () => LocalizedString
+	/**
+	 * Move / rename
+	 */
+	preview_card_title_move: () => LocalizedString
+	/**
+	 * Delete
+	 */
+	preview_card_title_delete: () => LocalizedString
+	/**
+	 * Create directory
+	 */
+	preview_card_title_mkdir: () => LocalizedString
+	/**
+	 * Run command
+	 */
+	preview_card_title_run: () => LocalizedString
+	/**
+	 * Binary file, diff skipped
+	 */
+	preview_binary_skipped: () => LocalizedString
+	/**
+	 * File too large (>1 MB); line counts only
+	 */
+	preview_too_large: () => LocalizedString
+	/**
+	 * Diff truncated
+	 */
+	preview_diff_truncated: () => LocalizedString
+	/**
+	 * Destination exists, will be overwritten
+	 */
+	preview_destination_exists: () => LocalizedString
+	/**
+	 * Source does not exist
+	 */
+	preview_source_missing: () => LocalizedString
+	/**
+	 * Parent directory does not exist
+	 */
+	preview_parent_missing: () => LocalizedString
+	/**
+	 * Working directory does not exist
+	 */
+	preview_cwd_missing: () => LocalizedString
+	/**
+	 * Directory already exists
+	 */
+	preview_already_exists: () => LocalizedString
+	/**
+	 * {0} entries
+	 */
+	preview_dir_children: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} bytes
+	 */
+	preview_size_bytes: (arg0: unknown) => LocalizedString
+	/**
+	 * No changes
+	 */
+	preview_no_changes: () => LocalizedString
+	/**
+	 * View branch changes
+	 */
+	branch_diff_open: () => LocalizedString
+	/**
+	 * {0} vs {1}
+	 */
+	branch_diff_title: (arg0: unknown, arg1: unknown) => LocalizedString
+	/**
+	 * No changes
+	 */
+	branch_diff_empty: () => LocalizedString
+	/**
+	 * Workspace is not a git repository
+	 */
+	branch_diff_not_git: () => LocalizedString
+	/**
+	 * Base branch (main) not found
+	 */
+	branch_diff_no_base: () => LocalizedString
+	/**
+	 * git command failed
+	 */
+	branch_diff_exec_failed: () => LocalizedString
+	/**
+	 * Refresh
+	 */
+	branch_diff_refresh: () => LocalizedString
+	/**
+	 * {0} unpushed
+	 */
+	branch_diff_ahead: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} behind
+	 */
+	branch_diff_behind: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} uncommitted
+	 */
+	branch_diff_uncommitted: (arg0: unknown) => LocalizedString
 	/**
 	 * Execution Plan
 	 */

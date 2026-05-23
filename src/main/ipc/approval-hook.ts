@@ -11,13 +11,23 @@
  */
 
 import type { WebContents } from "electron";
+import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
+import { rememberPreview } from "../core/agent/preview/snapshot-store";
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
+import type { Workspace } from "../core/workspace/types";
 import { requestApproval } from "./ai-tools";
 import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 
 interface BuildApprovalHookOptions {
   sender: WebContents;
   taskId: string;
+  /**
+   * Workspace that owns this task. Threaded into the approval batcher
+   * so it can read pre-image files and produce a structured change
+   * preview for the approval card. Optional for backward compat —
+   * absent workspaces fall back to a description-only card.
+   */
+  workspace?: Workspace;
 }
 
 const DENIED_REASON = "用户拒绝了此操作";
@@ -26,12 +36,30 @@ const OUTSIDE_WORKSPACE_REASON = "路径必须在当前 workspace 内";
 export const buildApprovalHook = ({
   sender,
   taskId,
+  workspace,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
   return async (call) => {
     // ── Plan-approved writeFile fast path ───────────────────────────
     if (call.toolName === "writeFile") {
       const args = call.args as { path?: string };
       if (args.path && (await canAutoApproveWrite(taskId, args.path))) {
+        // Plan-approved writes skip the batcher (and therefore the
+        // batch-level preview generation). Run it once here so the
+        // post-execute tool card still shows the diff straight from a
+        // snapshot, matching the manual approval path.
+        if (workspace) {
+          try {
+            const preview = await Promise.race([
+              dispatchPreview(call.toolName, call.args, workspace),
+              new Promise<undefined>((res) => {
+                setTimeout(() => res(undefined), PREVIEW_TIMEOUT_MS);
+              }),
+            ]);
+            if (preview) rememberPreview(call.toolCallId, preview);
+          } catch {
+            // Preview is best-effort.
+          }
+        }
         if (!sender.isDestroyed()) {
           sender.send("ai:tool-auto-approved", {
             id: taskId,
@@ -76,6 +104,8 @@ export const buildApprovalHook = ({
       call.toolCallId,
       call.toolName,
       call.args,
+      undefined,
+      workspace,
     );
     return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
   };

@@ -3,6 +3,7 @@ import {
   Blocks,
   ChevronRight,
   FolderOpen,
+  GitCompareArrows,
   Github,
   Gitlab,
   RefreshCw,
@@ -21,6 +22,7 @@ import {
   FileTreeFile,
   FileTreeFolder,
 } from "../ai-elements/file-tree";
+import { useBranchDiff } from "../branch-diff/useBranchDiff";
 import { SkillsModal } from "../skills/SkillsModal";
 import { BranchSwitcher } from "./BranchSwitcher";
 import { SettingsModal } from "./SettingsModal";
@@ -78,6 +80,15 @@ interface SidebarProps {
    * the new branch. Receives the new branch name.
    */
   onBranchSwitched?: (newBranch: string) => void;
+  /** True when the right-side branch-diff panel is currently visible.
+   *  Used so the trigger pill can render an "active" state. */
+  branchDiffOpen?: boolean;
+  /** Toggle the right-side panel. Owned by App so the panel lives in
+   *  the main flexbox row and can hold its own resize state. */
+  onToggleBranchDiff?: () => void;
+  /** Bump from App when a destructive tool finishes, so the diff pill
+   *  refreshes without waiting for the cache TTL. */
+  diffInvalidator?: number;
 }
 
 export const Sidebar = ({
@@ -89,12 +100,23 @@ export const Sidebar = ({
   onLocaleChange,
   onSelectFile,
   onBranchSwitched,
+  branchDiffOpen,
+  onToggleBranchDiff,
+  diffInvalidator = 0,
 }: SidebarProps) => {
   const { LL } = useI18nContext();
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  // Surface the current branch's aggregate +/- counts on the trigger
+  // pill. Cheap to keep open — the hook caches and uses the same IPC
+  // path the panel does. `currentBranch` busts the cache on checkout.
+  const { data: diffSummary } = useBranchDiff({
+    path: workspacePath,
+    currentBranch,
+    invalidator: diffInvalidator,
+  });
   const [childrenMap, setChildrenMap] = useState<Record<string, FileInfo[]>>(
     {},
   );
@@ -284,6 +306,14 @@ export const Sidebar = ({
                   : workspaceRef.kind === "github"
                     ? "GitHub"
                     : "GitLab";
+              const hasDiff =
+                diffSummary &&
+                !diffSummary.notAvailable &&
+                (diffSummary.totalAdded > 0 || diffSummary.totalRemoved > 0);
+              const diffButtonVisible =
+                workspaceRef.kind !== "local" ||
+                (diffSummary !== null &&
+                  diffSummary.notAvailable !== "not-git");
               return (
                 <div className="flex items-center gap-1.5 pl-6">
                   <BranchSwitcher
@@ -294,6 +324,30 @@ export const Sidebar = ({
                       await handleRefresh();
                     }}
                   />
+                  {diffButtonVisible && onToggleBranchDiff && (
+                    <button
+                      type="button"
+                      onClick={onToggleBranchDiff}
+                      title={LL.branch_diff_open()}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] hover:bg-accent hover:text-foreground ${
+                        branchDiffOpen
+                          ? "border-primary/50 bg-accent/50 text-foreground"
+                          : "border-border/60 text-muted-foreground"
+                      }`}
+                    >
+                      <GitCompareArrows className="size-3" />
+                      {hasDiff && diffSummary && (
+                        <span className="font-mono">
+                          <span className="text-emerald-500">
+                            +{diffSummary.totalAdded}
+                          </span>{" "}
+                          <span className="text-red-400">
+                            -{diffSummary.totalRemoved}
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  )}
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1.5 py-0.5 rounded bg-muted">
                     {kindBadge}
                   </span>

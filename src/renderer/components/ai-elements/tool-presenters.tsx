@@ -1,8 +1,14 @@
 import { type Change, diffLines } from "diff";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  PreviewDiffHunk,
+  ToolPreview,
+  WriteFilePreview,
+} from "../../../main/core/agent/preview/types";
 import type { ToolState } from "../../../main/core/session/message-parts";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
+import { DiffHunkView } from "./preview/DiffHunkView";
 
 const MAX_OUTPUT_LINES = 30;
 const MAX_LIST_ENTRIES = 50;
@@ -12,6 +18,9 @@ export interface PresenterCtx {
   LL: TranslationFunctions;
   workspacePath?: string;
   toolCallId: string;
+  /** Snapshot captured by the approval batcher before the tool ran.
+   *  Present writers prefer this over a fresh disk read. */
+  previewSnapshot?: ToolPreview;
 }
 
 export interface ToolPresenter {
@@ -450,16 +459,44 @@ function readWriteDiffSnap(toolCallId: string): WriteDiffSnap {
   };
 }
 
+function snapshotToPayload(snapshot: WriteFilePreview): WriteDiffPayload {
+  const changes: Change[] = snapshot.hunks.map((h) => ({
+    value: h.value,
+    added: h.kind === "added",
+    removed: h.kind === "removed",
+    count: h.lineCount,
+  }));
+  return {
+    added: snapshot.added,
+    removed: snapshot.removed,
+    changes,
+    isNew: snapshot.action === "create",
+  };
+}
+
 function useWriteDiff(
   toolCallId: string,
   path: string,
   workspacePath: string | undefined,
   state: ToolState,
   newContent: string,
+  snapshot: ToolPreview | undefined,
 ): WriteDiffSnap {
   const [, setTick] = useState(0);
   const firedRef = useRef(false);
+
+  const writeSnapshot =
+    snapshot && snapshot.kind === "write" ? snapshot : undefined;
+
   useEffect(() => {
+    if (writeSnapshot) {
+      // Hydrate the cache so summary/diff consumers see a `ready` snap
+      // even though we never read from disk.
+      if (!writeDiffCache.has(toolCallId)) {
+        setWriteCache(toolCallId, snapshotToPayload(writeSnapshot));
+      }
+      return;
+    }
     let active = true;
     captureWriteDiff(toolCallId, path, workspacePath, state, newContent).then(
       () => {
@@ -472,12 +509,17 @@ function useWriteDiff(
     return () => {
       active = false;
     };
-  }, [toolCallId, path, workspacePath, state, newContent]);
+  }, [toolCallId, path, workspacePath, state, newContent, writeSnapshot]);
   return readWriteDiffSnap(toolCallId);
 }
 
 const writeFilePresenter: ToolPresenter = {
-  summary: (args, _result, state, { LL, workspacePath, toolCallId }) => {
+  summary: (
+    args,
+    _result,
+    state,
+    { LL, workspacePath, toolCallId, previewSnapshot },
+  ) => {
     const a = asRecord(args);
     const p = typeof a?.path === "string" ? a.path : "";
     return (
@@ -489,6 +531,7 @@ const writeFilePresenter: ToolPresenter = {
           LL={LL}
           workspacePath={workspacePath}
           toolCallId={toolCallId}
+          previewSnapshot={previewSnapshot}
         />
       </>
     );
@@ -505,13 +548,19 @@ const writeFilePresenter: ToolPresenter = {
       </div>
     );
   },
-  output: (_result, args, state, { LL, workspacePath, toolCallId }) => (
+  output: (
+    _result,
+    args,
+    state,
+    { LL, workspacePath, toolCallId, previewSnapshot },
+  ) => (
     <WriteDiff
       args={args}
       state={state}
       LL={LL}
       workspacePath={workspacePath}
       toolCallId={toolCallId}
+      previewSnapshot={previewSnapshot}
     />
   ),
 };
@@ -530,12 +579,14 @@ function WriteSummary({
   LL,
   workspacePath,
   toolCallId,
+  previewSnapshot,
 }: {
   args: unknown;
   state: ToolState;
   LL: TranslationFunctions;
   workspacePath?: string;
   toolCallId: string;
+  previewSnapshot?: ToolPreview;
 }) {
   const { path, content } = readWriteArgs(args);
   const { cold, ready, payload } = useWriteDiff(
@@ -544,6 +595,7 @@ function WriteSummary({
     workspacePath,
     state,
     content,
+    previewSnapshot,
   );
   if (state !== "output-available") return null;
   if (cold) {
@@ -575,12 +627,14 @@ function WriteDiff({
   LL,
   workspacePath,
   toolCallId,
+  previewSnapshot,
 }: {
   args: unknown;
   state: ToolState;
   LL: TranslationFunctions;
   workspacePath?: string;
   toolCallId: string;
+  previewSnapshot?: ToolPreview;
 }) {
   const { path, content } = readWriteArgs(args);
   const { cold, ready, payload } = useWriteDiff(
@@ -589,6 +643,7 @@ function WriteDiff({
     workspacePath,
     state,
     content,
+    previewSnapshot,
   );
   if (!cold && !ready) {
     return (
@@ -601,7 +656,7 @@ function WriteDiff({
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
           {LL.tool_summary_lines(countLines(content))}
         </div>
-        <pre className="font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto rounded border border-border bg-background/40 p-2">
+        <pre className="font-mono whitespace-pre-wrap break-all rounded border border-border bg-background/40 p-2">
           {content}
         </pre>
       </div>
@@ -619,12 +674,12 @@ function WriteDiff({
           </span>
         )}
       </div>
-      <div className="font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto rounded border border-border bg-background/40">
+      <div className="font-mono whitespace-pre-wrap break-all rounded border border-border bg-background/40">
         {changes.map((c, i) => (
-          <DiffHunk
+          <DiffHunkView
             // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
             key={`${i}-${c.value.slice(0, 8)}`}
-            change={c}
+            hunk={changeToPreviewHunk(c)}
             collapseContext={!isNew}
           />
         ))}
@@ -633,64 +688,17 @@ function WriteDiff({
   );
 }
 
-function DiffHunk({
-  change,
-  collapseContext,
-}: {
-  change: Change;
-  collapseContext: boolean;
-}) {
-  const lines = useMemo(() => {
-    const v = change.value.endsWith("\n")
-      ? change.value.slice(0, -1)
-      : change.value;
-    return v.split("\n");
-  }, [change.value]);
-  const tone = change.added
-    ? "bg-emerald-500/10 text-emerald-300 border-l-2 border-emerald-500/40"
-    : change.removed
-      ? "bg-red-500/10 text-red-300 border-l-2 border-red-500/40"
-      : "text-muted-foreground/70";
-  const prefix = change.added ? "+ " : change.removed ? "- " : "  ";
-
-  if (!change.added && !change.removed && collapseContext && lines.length > 6) {
-    const head = lines.slice(0, 2);
-    const tail = lines.slice(-2);
-    const hidden = lines.length - 4;
-    return (
-      <>
-        {head.map((l, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
-          <span key={`h-${i}`} className={cn("block px-2", tone)}>
-            {prefix}
-            {l}
-          </span>
-        ))}
-        <span className="block px-2 text-muted-foreground italic">
-          {`  … ${hidden} lines`}
-        </span>
-        {tail.map((l, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
-          <span key={`t-${i}`} className={cn("block px-2", tone)}>
-            {prefix}
-            {l}
-          </span>
-        ))}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {lines.map((l, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: diff line index is the identity
-        <span key={`l-${i}`} className={cn("block px-2", tone)}>
-          {prefix}
-          {l}
-        </span>
-      ))}
-    </>
-  );
+function changeToPreviewHunk(c: Change): PreviewDiffHunk {
+  const kind: PreviewDiffHunk["kind"] = c.added
+    ? "added"
+    : c.removed
+      ? "removed"
+      : "context";
+  return {
+    kind,
+    value: c.value,
+    lineCount: c.count ?? countLines(c.value),
+  };
 }
 
 // ---------------------------------------------------------------------------

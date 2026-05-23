@@ -26,6 +26,7 @@ import {
 } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
 import type { AgentEvent } from "../core/agent/events";
+import { consumePreview } from "../core/agent/preview/snapshot-store";
 import {
   builtinRules,
   createReflectionGate,
@@ -541,7 +542,11 @@ const handleTaskExecution = async (
       modelName: llmConfig?.model,
       isGitWorkspace,
     });
-    const beforeToolCall = buildApprovalHook({ sender, taskId: id });
+    const beforeToolCall = buildApprovalHook({
+      sender,
+      taskId: id,
+      workspace,
+    });
     const registryTools = toolRegistry.toAiSdkTools({
       ctxFactory: ({ toolCallId }) => ({
         workspace,
@@ -634,13 +639,15 @@ const handleTaskExecution = async (
               });
             }
             break;
-          case "tool_execution_start":
+          case "tool_execution_start": {
             deltaBatcher.drain();
+            const previewSnapshot = consumePreview(ev.toolCallId);
             sender.send("ai:stream-tool-call", {
               id,
               toolCallId: ev.toolCallId,
               toolName: ev.toolName,
               args: ev.args,
+              previewSnapshot,
             });
             emitTaskTraceEvent(sender, {
               taskId: id,
@@ -651,6 +658,7 @@ const handleTaskExecution = async (
               detail: {},
             });
             break;
+          }
           case "tool_execution_end":
             sender.send("ai:stream-tool-result", {
               id,

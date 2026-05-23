@@ -151,6 +151,37 @@ const ja: Translation = {
   tool_show_full: "全文を表示",
   tool_hide_full: "折りたたむ",
 
+  // Approval-card preview (codex-style change preview)
+  preview_card_title_write: "ファイルに書き込み",
+  preview_card_title_overwrite: "ファイルを上書き",
+  preview_card_title_move: "移動 / 名前変更",
+  preview_card_title_delete: "削除",
+  preview_card_title_mkdir: "ディレクトリを作成",
+  preview_card_title_run: "コマンド実行",
+  preview_binary_skipped: "バイナリファイル(差分をスキップ)",
+  preview_too_large: "ファイルが大きすぎます(>1 MB)。行数のみ表示",
+  preview_diff_truncated: "差分が大きいため一部省略",
+  preview_destination_exists: "宛先が既に存在します。上書きされます",
+  preview_source_missing: "ソースが存在しません",
+  preview_parent_missing: "親ディレクトリが存在しません",
+  preview_cwd_missing: "作業ディレクトリが存在しません",
+  preview_already_exists: "ディレクトリは既に存在します",
+  preview_dir_children: "{0} 件",
+  preview_size_bytes: "{0} バイト",
+  preview_no_changes: "差分なし",
+
+  // Branch diff drawer (codex-style aggregate diff)
+  branch_diff_open: "ブランチ変更を表示",
+  branch_diff_title: "{0} vs {1}",
+  branch_diff_empty: "変更なし",
+  branch_diff_not_git: "現在のワークスペースは git リポジトリではありません",
+  branch_diff_no_base: "ベースブランチ(main)が見つかりません",
+  branch_diff_exec_failed: "git コマンドが失敗しました",
+  branch_diff_refresh: "更新",
+  branch_diff_ahead: "未プッシュ {0}",
+  branch_diff_behind: "{0} 遅れ",
+  branch_diff_uncommitted: "未コミット {0}",
+
   // Plan viewer
   plan_title: "実行計画",
   plan_stalled: "応答が遅い",

@@ -12,6 +12,10 @@
  * these shapes.
  */
 
+import type { ToolPreview } from "../agent/preview/types";
+
+export type { ToolPreview } from "../agent/preview/types";
+
 // ─── Confirmation / Approval ────────────────────────────────────────
 
 export type ApprovalState =
@@ -32,12 +36,21 @@ export interface ToolApproval {
   toolName: string;
   description: string;
   state: ApprovalState;
+  /**
+   * Structured preview of the pending change. Populated by the
+   * main-process preview generator during the approval phase. Not
+   * persisted to JSONL — stale on reload, so only kept in renderer
+   * memory. Renderer falls back to `description` when absent.
+   */
+  preview?: ToolPreview;
 }
 
 export interface BatchApprovalEntry {
   toolCallId: string;
   args: unknown;
   description: string;
+  /** See {@link ToolApproval.preview}. Not persisted. */
+  preview?: ToolPreview;
 }
 
 // ─── Plan viewer (data shape — UI lives in plan-viewer.tsx) ─────────
@@ -121,6 +134,12 @@ export interface ToolPart {
   result?: unknown;
   state: ToolState;
   approval?: ToolApproval;
+  /**
+   * Pre-execution preview captured by the approval batcher and threaded
+   * through `ai:stream-tool-call`. Renderer presenters prefer this over
+   * re-reading the (now overwritten) pre-image. Not persisted to JSONL.
+   */
+  previewSnapshot?: ToolPreview;
 }
 
 export interface PlanMessagePart {

@@ -36,6 +36,7 @@ import {
 } from "./ipc/credentials-handlers";
 import { batchTestCredentials } from "./ipc/credentials-monitor";
 import { registerFileHandlers } from "./ipc/file-handlers";
+import { registerGitDiffHandlers } from "./ipc/git-diff-handler";
 import {
   credentialResolver,
   registerGitHubHandlers,
@@ -221,6 +222,7 @@ app.whenReady().then(async () => {
   registerMediaHandlers({ fetchFn: proxyAwareFetch });
   registerWorkspaceHandlers();
   registerLocalGitHandlers();
+  registerGitDiffHandlers();
   registerChatHandlers(sessionStore);
   registerAttachmentHandlers();
   registerTaskTraceHandlers();
