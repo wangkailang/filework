@@ -162,9 +162,7 @@ async function computeBranchDiff(
     totalAdded,
     totalRemoved,
     ...(aheadBehind.ahead !== undefined ? { ahead: aheadBehind.ahead } : {}),
-    ...(aheadBehind.behind !== undefined
-      ? { behind: aheadBehind.behind }
-      : {}),
+    ...(aheadBehind.behind !== undefined ? { behind: aheadBehind.behind } : {}),
     ...(uncommitted !== undefined ? { uncommitted } : {}),
     ...(truncated ? { truncated: true } : {}),
   };
@@ -184,10 +182,9 @@ async function collectAheadBehind(
     return {};
   }
   const upstream = `origin/${headBranch}`;
-  const probe = await runGit(
-    ["rev-parse", "--verify", "--quiet", upstream],
-    { cwd },
-  );
+  const probe = await runGit(["rev-parse", "--verify", "--quiet", upstream], {
+    cwd,
+  });
   if (probe.exitCode !== 0) {
     // Branch hasn't been pushed yet — surfacing 0 here would imply
     // "everything is pushed", so leave undefined.
@@ -212,7 +209,13 @@ async function collectUncommitted(cwd: string): Promise<number | undefined> {
   const res = await runGit(["status", "--porcelain"], { cwd });
   if (res.exitCode !== 0) return undefined;
   if (!res.stdout) return 0;
-  return res.stdout.split("\n").filter((l) => l.length > 0).length;
+  // Only count tracked changes (modified / added / deleted / renamed).
+  // Untracked files (`??`) belong in a separate signal — including them
+  // here misleads users who say "I committed everything" but still have
+  // build artifacts or editor cache files lying around.
+  return res.stdout
+    .split("\n")
+    .filter((l) => l.length > 0 && !l.startsWith("??")).length;
 }
 
 interface NameStatusEntry {
@@ -320,13 +323,21 @@ function mapToFileDiff(
     if (truncated) break;
   }
 
+  // `git diff` emits `Binary files X and Y differ` for binary blobs,
+  // which parsePatch surfaces as a ParsedFile with valid filenames but
+  // an empty `hunks` array. Pure renames (no content change) also have
+  // empty hunks, but those carry the rename status from --name-status.
+  // Anything else with zero hunks is binary.
+  const isBinary =
+    hunks.length === 0 && status !== "renamed" && parsedHunks.length === 0;
+
   return {
     path: canonicalPath,
     ...(renamedFrom ? { oldPath: renamedFrom } : {}),
     status,
     added,
     removed,
-    isBinary: false,
+    isBinary,
     hunks,
     ...(truncated ? { truncated: true } : {}),
   };
