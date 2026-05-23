@@ -158,6 +158,34 @@ const en: BaseTranslation = {
   tool_show_full: "Show full content",
   tool_hide_full: "Hide",
 
+  // Approval-card preview (codex-style change preview)
+  preview_card_title_write: "Will write file",
+  preview_card_title_overwrite: "Will overwrite file",
+  preview_card_title_move: "Move / rename",
+  preview_card_title_delete: "Delete",
+  preview_card_title_mkdir: "Create directory",
+  preview_card_title_run: "Run command",
+  preview_binary_skipped: "Binary file, diff skipped",
+  preview_too_large: "File too large (>1 MB); line counts only",
+  preview_diff_truncated: "Diff truncated",
+  preview_destination_exists: "Destination exists, will be overwritten",
+  preview_source_missing: "Source does not exist",
+  preview_parent_missing: "Parent directory does not exist",
+  preview_cwd_missing: "Working directory does not exist",
+  preview_already_exists: "Directory already exists",
+  preview_dir_children: "{0} entries",
+  preview_size_bytes: "{0} bytes",
+  preview_no_changes: "No changes",
+
+  // Branch diff drawer (codex-style aggregate diff)
+  branch_diff_open: "View branch changes",
+  branch_diff_title: "{0} vs {1}",
+  branch_diff_empty: "No changes",
+  branch_diff_not_git: "Workspace is not a git repository",
+  branch_diff_no_base: "Base branch (main) not found",
+  branch_diff_exec_failed: "git command failed",
+  branch_diff_refresh: "Refresh",
+
   // Plan viewer
   plan_title: "Execution Plan",
   plan_stalled: "Slow Response",

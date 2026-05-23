@@ -190,7 +190,11 @@ export const executePlan = async ({
         modelName,
         isGitWorkspace,
       });
-      const beforeToolCall = buildApprovalHook({ sender, taskId });
+      const beforeToolCall = buildApprovalHook({
+        sender,
+        taskId,
+        workspace,
+      });
       const registryTools = toolRegistry.toAiSdkTools({
         ctxFactory: ({ toolCallId }) => ({
           workspace,

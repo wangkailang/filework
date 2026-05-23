@@ -359,7 +359,7 @@ export function useStreamSubscription({
     });
 
     const offToolCall = window.filework.onStreamToolCall(
-      ({ id, toolCallId, toolName, args }) => {
+      ({ id, toolCallId, toolName, args, previewSnapshot }) => {
         if (id !== streamTaskIdRef.current) return;
         // `createPlan` is rendered as a single evolving PlanMessagePart
         // (via `ai:stream-plan`). Suppress the generic tool bubble so N
@@ -370,7 +370,11 @@ export function useStreamSubscription({
             (p) => p.type === "tool" && p.toolCallId === toolCallId,
           );
           if (existingIdx !== -1) {
-            parts[existingIdx] = { ...(parts[existingIdx] as ToolPart), args };
+            parts[existingIdx] = {
+              ...(parts[existingIdx] as ToolPart),
+              args,
+              ...(previewSnapshot ? { previewSnapshot } : {}),
+            };
           } else {
             parts.push({
               type: "tool",
@@ -378,6 +382,7 @@ export function useStreamSubscription({
               toolName,
               args,
               state: "input-available",
+              ...(previewSnapshot ? { previewSnapshot } : {}),
             });
           }
           return parts;

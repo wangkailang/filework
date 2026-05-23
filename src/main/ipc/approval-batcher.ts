@@ -4,6 +4,10 @@
 
 import { randomUUID } from "node:crypto";
 import type { WebContents } from "electron";
+import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
+import { rememberPreview } from "../core/agent/preview/snapshot-store";
+import type { ToolPreview } from "../core/agent/preview/types";
+import type { Workspace } from "../core/workspace/types";
 import { whitelistToolForTask } from "./ai-task-control";
 
 /**
@@ -26,6 +30,12 @@ export interface BatchEntry {
   resolve: (approved: boolean) => void;
   abortSignal?: AbortSignal;
   onAbort?: () => void;
+  /**
+   * Structured change preview. Populated by PR2's preview generator
+   * during `flushBuffer`; PR1 only wires the field through (always
+   * undefined).
+   */
+  preview?: ToolPreview;
 }
 
 interface PendingBuffer {
@@ -35,6 +45,14 @@ interface PendingBuffer {
   entries: BatchEntry[];
   debounceTimer: ReturnType<typeof setTimeout>;
   capTimer: ReturnType<typeof setTimeout>;
+  /**
+   * Workspace that owns this task. Captured from the first enqueue with
+   * a workspace; used by `flushBuffer` to enrich entries with structured
+   * previews before the IPC event is sent. Unset → preview generation
+   * is skipped and the event is sent synchronously (legacy path used by
+   * unit tests and any caller that hasn't been threaded through yet).
+   */
+  workspace?: Workspace;
 }
 
 export interface PendingBatch {
@@ -60,6 +78,12 @@ export interface EnqueueParams {
   args: unknown;
   description: string;
   abortSignal?: AbortSignal;
+  /** Optional pre-computed preview. When omitted and `workspace` is
+   *  present, the batcher generates one in `flushBuffer`. */
+  preview?: ToolPreview;
+  /** Workspace that owns this task. Required for the batcher to
+   *  generate a preview when none is pre-computed. */
+  workspace?: Workspace;
 }
 
 /**
@@ -75,6 +99,7 @@ export function enqueueForBatch(params: EnqueueParams): Promise<boolean> {
       description: params.description,
       resolve,
       abortSignal: params.abortSignal,
+      preview: params.preview,
     };
 
     if (params.abortSignal) {
@@ -93,8 +118,15 @@ export function enqueueForBatch(params: EnqueueParams): Promise<boolean> {
     const key = bufferKey(params.taskId, params.toolName);
     let buf = buffers.get(key);
     if (!buf) {
-      buf = createBuffer(params.sender, params.taskId, params.toolName);
+      buf = createBuffer(
+        params.sender,
+        params.taskId,
+        params.toolName,
+        params.workspace,
+      );
       buffers.set(key, buf);
+    } else if (!buf.workspace && params.workspace) {
+      buf.workspace = params.workspace;
     }
     buf.entries.push(entry);
     // Bump debounce window — additional concurrent arrivals reset the
@@ -108,6 +140,7 @@ function createBuffer(
   sender: WebContents,
   taskId: string,
   toolName: string,
+  workspace?: Workspace,
 ): PendingBuffer {
   const key = bufferKey(taskId, toolName);
   const buf: PendingBuffer = {
@@ -117,6 +150,7 @@ function createBuffer(
     entries: [],
     debounceTimer: setTimeout(() => flushBuffer(key), DEBOUNCE_MS),
     capTimer: setTimeout(() => flushBuffer(key), MAX_BUFFER_AGE_MS),
+    workspace,
   };
   return buf;
 }
@@ -163,18 +197,57 @@ function flushBuffer(key: string): void {
     entries: buf.entries,
   });
 
-  if (!buf.sender.isDestroyed()) {
-    buf.sender.send("ai:stream-tool-batch-approval", {
-      id: buf.taskId,
-      batchId,
-      toolName: buf.toolName,
-      entries: buf.entries.map((e) => ({
-        toolCallId: e.toolCallId,
-        args: e.args,
-        description: e.description,
-      })),
-    });
+  // With a workspace, enrich entries asynchronously then send. Without
+  // one (eg unit tests, legacy callers), preserve the synchronous IPC
+  // path so existing fake-timer tests don't need microtask flushing.
+  if (buf.workspace) {
+    void enrichAndSend(buf, batchId);
+  } else {
+    sendBatchApproval(buf, batchId);
   }
+}
+
+function sendBatchApproval(buf: PendingBuffer, batchId: string): void {
+  if (buf.sender.isDestroyed()) return;
+  buf.sender.send("ai:stream-tool-batch-approval", {
+    id: buf.taskId,
+    batchId,
+    toolName: buf.toolName,
+    entries: buf.entries.map((e) => ({
+      toolCallId: e.toolCallId,
+      args: e.args,
+      description: e.description,
+      preview: e.preview,
+    })),
+  });
+}
+
+async function enrichAndSend(
+  buf: PendingBuffer,
+  batchId: string,
+): Promise<void> {
+  const workspace = buf.workspace;
+  if (!workspace) {
+    sendBatchApproval(buf, batchId);
+    return;
+  }
+  await Promise.all(
+    buf.entries.map(async (e) => {
+      if (e.preview !== undefined) return;
+      try {
+        const preview = await Promise.race([
+          dispatchPreview(buf.toolName, e.args, workspace),
+          new Promise<undefined>((resolve) => {
+            setTimeout(() => resolve(undefined), PREVIEW_TIMEOUT_MS);
+          }),
+        ]);
+        e.preview = preview;
+      } catch {
+        // dispatchPreview already swallows its own errors; nothing to do.
+      }
+    }),
+  );
+  sendBatchApproval(buf, batchId);
 }
 
 /**
@@ -192,6 +265,12 @@ export function settleBatch(batchId: string, approved: boolean): boolean {
   for (const entry of batch.entries) {
     if (entry.abortSignal && entry.onAbort) {
       entry.abortSignal.removeEventListener("abort", entry.onAbort);
+    }
+    if (approved && entry.preview) {
+      // Hand the freshly-generated preview off to the snapshot store so
+      // the upcoming `tool_execution_start` IPC can ship it to the
+      // renderer without a redundant disk read.
+      rememberPreview(entry.toolCallId, entry.preview);
     }
     entry.resolve(approved);
   }
@@ -219,6 +298,7 @@ function cascadeApproveSiblings(
       if (entry.abortSignal && entry.onAbort) {
         entry.abortSignal.removeEventListener("abort", entry.onAbort);
       }
+      if (entry.preview) rememberPreview(entry.toolCallId, entry.preview);
       entry.resolve(true);
     }
     if (!sender.isDestroyed()) {

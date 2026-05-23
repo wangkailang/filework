@@ -287,11 +287,18 @@ const api = {
       toolCallId: string;
       toolName: string;
       args: unknown;
+      previewSnapshot?: import("../main/core/agent/preview/types").ToolPreview;
     }) => void,
   ) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { id: string; toolCallId: string; toolName: string; args: unknown },
+      data: {
+        id: string;
+        toolCallId: string;
+        toolName: string;
+        args: unknown;
+        previewSnapshot?: import("../main/core/agent/preview/types").ToolPreview;
+      },
     ) => callback(data);
     ipcRenderer.on("ai:stream-tool-call", handler);
     return () => ipcRenderer.removeListener("ai:stream-tool-call", handler);
@@ -423,6 +430,7 @@ const api = {
         toolCallId: string;
         args: unknown;
         description: string;
+        preview?: import("../main/core/agent/preview/types").ToolPreview;
       }>;
     }) => void,
   ) => {
@@ -436,6 +444,7 @@ const api = {
           toolCallId: string;
           args: unknown;
           description: string;
+          preview?: import("../main/core/agent/preview/types").ToolPreview;
         }>;
       },
     ) => callback(data);
@@ -781,6 +790,13 @@ const api = {
     checkoutBranch: (payload: { path: string; branch: string }) =>
       ipcRenderer.invoke("local-git:checkoutBranch", payload),
   },
+
+  // Aggregate branch diff (codex-style "branch vs base" drawer).
+  getBranchDiff: (payload: {
+    path: string;
+    baseBranch?: string;
+  }): Promise<import("../main/core/git-diff/types").BranchDiff> =>
+    ipcRenderer.invoke("git:getBranchDiff", payload),
 
   // Workspace-level events
   onWorkspaceBranchChanged: (

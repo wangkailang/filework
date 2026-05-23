@@ -4,7 +4,9 @@ import type {
   ApprovalState,
   BatchApprovalEntry,
 } from "../../../main/core/session/message-parts";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import { PreviewEntryRow } from "./preview";
 
 // ---------------------------------------------------------------------------
 // Types — re-exported from the shared core types so the JSONL session store
@@ -174,6 +176,7 @@ export const ConfirmationBatch = ({
   previewLimit = 5,
   className,
 }: ConfirmationBatchProps) => {
+  const { LL } = useI18nContext();
   const count = entries.length;
   const visible = entries.slice(0, previewLimit);
   const hidden = Math.max(0, count - previewLimit);
@@ -185,16 +188,14 @@ export const ConfirmationBatch = ({
           <div className="font-medium">
             批准 {count} 个 {toolName} 操作？
           </div>
-          <ul className="ml-1 mt-0.5 space-y-0.5 text-foreground/70">
+          <div className="ml-1 mt-0.5 space-y-1 text-foreground/70">
             {visible.map((e) => (
-              <li key={e.toolCallId} className="truncate">
-                · {e.description}
-              </li>
+              <PreviewEntryRow key={e.toolCallId} entry={e} LL={LL} />
             ))}
             {hidden > 0 && (
-              <li className="text-foreground/50">…还有 {hidden} 个</li>
+              <div className="text-foreground/50">…还有 {hidden} 个</div>
             )}
-          </ul>
+          </div>
         </div>
       </ConfirmationRequest>
       {state === "approval-requested" && (

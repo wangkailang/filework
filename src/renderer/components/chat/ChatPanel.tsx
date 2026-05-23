@@ -363,7 +363,12 @@ export const ChatPanel = ({
   // ---------------------------------------------------------------------------
   const renderToolPart = (inv: ToolPart) => {
     const presenter = toolPresenters[inv.toolName];
-    const presenterCtx = { LL, workspacePath, toolCallId: inv.toolCallId };
+    const presenterCtx = {
+      LL,
+      workspacePath,
+      toolCallId: inv.toolCallId,
+      previewSnapshot: inv.previewSnapshot,
+    };
     const summary = presenter?.summary?.(
       inv.args,
       inv.result,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BranchDiffPanel } from "./components/branch-diff/BranchDiffPanel";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -51,6 +52,7 @@ export const App = () => {
   const [githubModalOpen, setGithubModalOpen] = useState(false);
   const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [branchDiffOpen, setBranchDiffOpen] = useState(false);
 
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
@@ -240,6 +242,8 @@ export const App = () => {
             onCloseDirectory={() => setWorkspace(null)}
             onLocaleChange={setLocale}
             onSelectFile={setSelectedFilePath}
+            branchDiffOpen={branchDiffOpen}
+            onToggleBranchDiff={() => setBranchDiffOpen((v) => !v)}
             onBranchSwitched={(branch) => {
               if (workspace.ref.kind === "local") {
                 // Local: just patch the live chip state. No persist —
@@ -279,6 +283,12 @@ export const App = () => {
                 workspaceRefJson={workspaceRefJson}
               />
             </div>
+            {branchDiffOpen && (
+              <BranchDiffPanel
+                workspaceRoot={workspace.localPath}
+                onClose={() => setBranchDiffOpen(false)}
+              />
+            )}
           </main>
         </div>
       )}

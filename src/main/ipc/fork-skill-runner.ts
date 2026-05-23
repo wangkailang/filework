@@ -134,7 +134,7 @@ export const createForkSkillRunner = (
       modelName: modelId,
       isGitWorkspace,
     });
-    const beforeToolCall = buildApprovalHook({ sender, taskId });
+    const beforeToolCall = buildApprovalHook({ sender, taskId, workspace });
 
     // Child AbortController so the runner can react to its own
     // failures without aborting the parent. Forward parent abort once.

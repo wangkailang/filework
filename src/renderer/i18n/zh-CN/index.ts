@@ -142,6 +142,34 @@ const zhCN: Translation = {
   tool_show_full: "查看完整内容",
   tool_hide_full: "收起",
 
+  // Approval-card preview (codex-style change preview)
+  preview_card_title_write: "将写入文件",
+  preview_card_title_overwrite: "将覆盖文件",
+  preview_card_title_move: "移动 / 重命名",
+  preview_card_title_delete: "删除",
+  preview_card_title_mkdir: "创建目录",
+  preview_card_title_run: "执行命令",
+  preview_binary_skipped: "二进制文件,跳过 diff",
+  preview_too_large: "文件过大(>1 MB),仅显示行数",
+  preview_diff_truncated: "差异过大,部分省略",
+  preview_destination_exists: "目标已存在,将被覆盖",
+  preview_source_missing: "源文件不存在",
+  preview_parent_missing: "父目录不存在",
+  preview_cwd_missing: "工作目录不存在",
+  preview_already_exists: "目录已存在",
+  preview_dir_children: "{0} 个子项",
+  preview_size_bytes: "{0} 字节",
+  preview_no_changes: "无差异",
+
+  // Branch diff drawer (codex-style aggregate diff)
+  branch_diff_open: "查看分支改动",
+  branch_diff_title: "{0} vs {1}",
+  branch_diff_empty: "无变更",
+  branch_diff_not_git: "当前工作区不是 git 仓库",
+  branch_diff_no_base: "找不到基线分支(main)",
+  branch_diff_exec_failed: "git 命令执行失败",
+  branch_diff_refresh: "刷新",
+
   // Plan viewer
   plan_title: "执行计划",
   plan_stalled: "响应缓慢",

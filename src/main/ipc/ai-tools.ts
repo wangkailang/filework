@@ -380,6 +380,7 @@ export const requestApproval = (
   toolName: string,
   args: unknown,
   abortSignal?: AbortSignal,
+  workspace?: import("../core/workspace/types").Workspace,
 ): Promise<boolean> => {
   // If the user already approved this tool type during the current task,
   // skip the approval prompt and auto-approve.
@@ -413,6 +414,7 @@ export const requestApproval = (
     args,
     description,
     abortSignal,
+    workspace,
   }).then((approved) => {
     if (approved) whitelistToolForTask(taskId, toolName);
     return approved;
