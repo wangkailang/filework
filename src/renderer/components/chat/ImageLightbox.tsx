@@ -51,11 +51,14 @@ export const ImageLightbox = ({
   // captured by Electron as window-drag instead of firing onClick.
   return createPortal(
     <div className="titlebar-no-drag fixed inset-0 z-50">
-      {/* Backdrop: presentation-only click target so screen readers
-          don't announce two "关闭" buttons and keyboard tabbing skips
-          the invisible full-screen target. */}
-      <div
-        role="presentation"
+      {/* Backdrop click target. `aria-hidden` + `tabIndex={-1}` keeps
+          screen readers from announcing a second "关闭" button (the
+          corner X covers that) and removes the invisible full-screen
+          element from the keyboard tab order. */}
+      <button
+        type="button"
+        aria-hidden="true"
+        tabIndex={-1}
         onClick={onClose}
         className="absolute inset-0 bg-black/80"
       />
