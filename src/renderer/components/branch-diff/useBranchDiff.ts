@@ -36,23 +36,25 @@ export function useBranchDiff({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetchedAt = useRef<number>(0);
-  const loadingRef = useRef(false);
+  // Count of in-flight fetches. We always decrement in finally (even
+  // for stale gens) so the spinner can't get stuck — old buggy version
+  // used a boolean that skipped the reset on stale, leaving loading
+  // stuck true after a forced refresh.
+  const inflight = useRef(0);
   // Monotonically increasing generation. Each fetchNow() captures its
-  // own value at start; on resolve we drop the result if a newer
-  // generation has been issued in the meantime (eg path changed, or
-  // refresh() was clicked mid-flight). Poor-man's AbortController for
-  // IPC promises.
+  // own value at start; on resolve we drop the *result write* if a
+  // newer generation has been issued in the meantime. Loading state
+  // is owned by `inflight` instead.
   const generation = useRef(0);
 
   const fetchNow = useCallback(
     async (force = false): Promise<void> => {
       if (!path) return;
-      // Idle fetch + in-flight already → defer to the running call.
-      // refresh() passes force=true to bypass and issue a fresh request,
-      // invalidating the in-flight one via the generation token.
-      if (!force && loadingRef.current) return;
+      // Idle fetch + already running → defer to the in-flight call.
+      // refresh() passes force=true to bypass and issue a fresh request.
+      if (!force && inflight.current > 0) return;
       const myGen = ++generation.current;
-      loadingRef.current = true;
+      inflight.current += 1;
       setLoading(true);
       setError(null);
       try {
@@ -67,10 +69,8 @@ export function useBranchDiff({
         if (myGen !== generation.current) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (myGen === generation.current) {
-          loadingRef.current = false;
-          setLoading(false);
-        }
+        inflight.current = Math.max(0, inflight.current - 1);
+        if (inflight.current === 0) setLoading(false);
       }
     },
     [path, baseBranch],
