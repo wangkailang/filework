@@ -348,6 +348,16 @@ const en: BaseTranslation = {
   error_unknown: "An unknown error occurred",
   error_aiConnection: "Failed to connect to AI provider",
   error_fileAccess: "Cannot access file or directory",
+
+  // In-app browser panel
+  browser_back: "Back",
+  browser_forward: "Forward",
+  browser_reload: "Reload",
+  browser_stop: "Stop",
+  browser_close: "Close browser",
+  browser_open_external: "Open in system browser",
+  browser_url_placeholder: "Enter URL…",
+  browser_failed_to_load: "Failed to load page",
 };
 
 export default en;

@@ -20,6 +20,7 @@ config({ path: join(__dirname, "../../.env") });
 
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
+import { killAllShells } from "./core/agent/shells";
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
@@ -89,6 +90,9 @@ const createWindow = () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Enables the in-app right-side BrowserPanel — webviews are
+      // chrome guest processes, fully sandboxed from the host renderer.
+      webviewTag: true,
     },
   });
 
@@ -101,6 +105,43 @@ const createWindow = () => {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+
+  // Trap any top-level navigation away from the app shell. This catches
+  // right-click → "Open Link" from the context menu (which bypasses
+  // React's onClick), drag-drop of URLs onto the window, and any
+  // would-be `<a>` default that slipped past the renderer-side
+  // useLinkRouter. Without this trap, those vectors replace the app UI
+  // with a remote page.
+  const APP_ORIGINS = new Set([process.env.ELECTRON_RENDERER_URL, "file://"]);
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const target = new URL(url);
+      // Allow same-origin navigation back to the app shell.
+      const isAppOrigin =
+        url.startsWith("file://") ||
+        Array.from(APP_ORIGINS).some((o) => o && url.startsWith(o));
+      if (isAppOrigin) return;
+      event.preventDefault();
+      if (["http:", "https:", "mailto:", "tel:"].includes(target.protocol)) {
+        void shell.openExternal(target.href);
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
+  // Same trap for window.open / target=_blank — never let a new
+  // BrowserWindow spawn from chat content; route to the OS browser.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const target = new URL(url);
+      if (["http:", "https:", "mailto:", "tel:"].includes(target.protocol)) {
+        void shell.openExternal(target.href);
+      }
+    } catch {
+      // Drop malformed URLs silently.
+    }
+    return { action: "deny" };
   });
 };
 
@@ -326,6 +367,31 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Hand a URL to the OS default browser. Used by the in-app BrowserPanel's
+  // "open in system browser" action and the Cmd/Ctrl-click fallback in
+  // the chat link router. Scheme allow-list keeps `file:` / `javascript:`
+  // out — renderer code is sandboxed but the IPC surface isn't.
+  //
+  // Throws on rejection so the renderer can surface "couldn't open" to
+  // the user instead of silently swallowing typos and malformed hrefs.
+  ipcMain.handle("shell:openExternal", async (_event, url: unknown) => {
+    if (typeof url !== "string") {
+      throw new Error("openExternal: url must be a string");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`openExternal: invalid URL: ${url.slice(0, 200)}`);
+    }
+    if (!["http:", "https:", "mailto:", "tel:"].includes(parsed.protocol)) {
+      throw new Error(`openExternal: scheme not allowed: ${parsed.protocol}`);
+    }
+    // Pass the normalized href, not the raw string — keeps any control
+    // chars / null bytes the URL parser stripped from reaching the OS.
+    await shell.openExternal(parsed.href);
+  });
+
   // Set Content-Security-Policy (production only — dev needs unsafe-eval for Vite HMR)
   if (!process.env.ELECTRON_RENDERER_URL) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -363,4 +429,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopAllHeadWatchers();
+  killAllShells();
 });

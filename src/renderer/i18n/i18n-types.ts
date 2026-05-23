@@ -1127,6 +1127,38 @@ type RootTranslation = {
 	 * C​a​n​n​o​t​ ​a​c​c​e​s​s​ ​f​i​l​e​ ​o​r​ ​d​i​r​e​c​t​o​r​y
 	 */
 	error_fileAccess: string
+	/**
+	 * B​a​c​k
+	 */
+	browser_back: string
+	/**
+	 * F​o​r​w​a​r​d
+	 */
+	browser_forward: string
+	/**
+	 * R​e​l​o​a​d
+	 */
+	browser_reload: string
+	/**
+	 * S​t​o​p
+	 */
+	browser_stop: string
+	/**
+	 * C​l​o​s​e​ ​b​r​o​w​s​e​r
+	 */
+	browser_close: string
+	/**
+	 * O​p​e​n​ ​i​n​ ​s​y​s​t​e​m​ ​b​r​o​w​s​e​r
+	 */
+	browser_open_external: string
+	/**
+	 * E​n​t​e​r​ ​U​R​L​…
+	 */
+	browser_url_placeholder: string
+	/**
+	 * F​a​i​l​e​d​ ​t​o​ ​l​o​a​d​ ​p​a​g​e
+	 */
+	browser_failed_to_load: string
 }
 
 export type TranslationFunctions = {
@@ -2210,6 +2242,38 @@ export type TranslationFunctions = {
 	 * Cannot access file or directory
 	 */
 	error_fileAccess: () => LocalizedString
+	/**
+	 * Back
+	 */
+	browser_back: () => LocalizedString
+	/**
+	 * Forward
+	 */
+	browser_forward: () => LocalizedString
+	/**
+	 * Reload
+	 */
+	browser_reload: () => LocalizedString
+	/**
+	 * Stop
+	 */
+	browser_stop: () => LocalizedString
+	/**
+	 * Close browser
+	 */
+	browser_close: () => LocalizedString
+	/**
+	 * Open in system browser
+	 */
+	browser_open_external: () => LocalizedString
+	/**
+	 * Enter URL…
+	 */
+	browser_url_placeholder: () => LocalizedString
+	/**
+	 * Failed to load page
+	 */
+	browser_failed_to_load: () => LocalizedString
 }
 
 export type Formatters = {}

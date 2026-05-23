@@ -17,6 +17,11 @@ import path from "node:path";
 import { z } from "zod/v4";
 
 import type { Workspace } from "../../workspace/types";
+import {
+  killShell as killShellById,
+  readShell,
+  spawnBackgroundShell,
+} from "../shells";
 import type { ToolContext, ToolDefinition } from "../tool-registry";
 
 // ---------------------------------------------------------------------------
@@ -127,6 +132,23 @@ const runCommandSchema = z.object({
     .string()
     .optional()
     .describe("Working directory (defaults to workspace root)"),
+  runInBackground: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Set true for any command that does not terminate on its own: dev servers (`*dev`, `*start`, `*serve`), watchers (`--watch`), TUIs, REPLs. Returns a shellId immediately with the first ~2s of output; use `readShellOutput` to poll for more and `killShell` to terminate.",
+    ),
+});
+
+const readShellOutputSchema = z.object({
+  shellId: z
+    .string()
+    .describe("Shell id returned by runCommand(runInBackground=true)"),
+});
+
+const killShellSchema = z.object({
+  shellId: z.string().describe("Shell id to terminate"),
 });
 
 const directoryStatsSchema = z.object({
@@ -294,21 +316,33 @@ const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
  * weight only when considering that tool. This is the "on-demand"
  * injection pattern used by Claude Code's `Bash` tool.
  */
+const BACKGROUND_GUIDANCE = `Long-running commands (dev servers, watchers, REPLs) MUST use \`runInBackground: true\`. Foreground mode buffers stdout in memory and only returns when the child closes — for a dev server that never happens, so the agent hangs. Background mode returns a shellId immediately plus the first ~2s of output; use \`readShellOutput(shellId)\` to poll until you see the ready marker (e.g., \`Local: http://localhost:PORT\`), then \`killShell(shellId)\` when done.`;
+
 function runCommandTool(
   gitProtocol?: string,
 ): ToolDefinition<z.infer<typeof runCommandSchema>, unknown> {
-  const description = gitProtocol
-    ? `Execute a shell command in the workspace. Requires user approval.\n\n${gitProtocol}`
-    : "Execute a shell command in the workspace. Requires user approval.";
+  const parts = [
+    "Execute a shell command in the workspace. Requires user approval.",
+    BACKGROUND_GUIDANCE,
+  ];
+  if (gitProtocol) parts.push(gitProtocol);
   return {
     name: "runCommand",
-    description,
+    description: parts.join("\n\n"),
     safety: "destructive",
     inputSchema: runCommandSchema,
     execute: async (args, ctx) => {
       const cwdRel = args.cwd
         ? await resolveRel(ctx.workspace, args.cwd)
         : undefined;
+      if (args.runInBackground) {
+        const cwdAbs = cwdRel
+          ? ctx.workspace.fs.resolve(cwdRel)
+          : ctx.workspace.root;
+        return spawnBackgroundShell(args.command, cwdAbs, {
+          env: { BROWSER: process.env.BROWSER ?? "none" },
+        });
+      }
       return ctx.workspace.exec.run(args.command, {
         cwd: cwdRel,
         signal: ctx.signal,
@@ -316,6 +350,39 @@ function runCommandTool(
     },
   };
 }
+
+const readShellOutputTool: ToolDefinition<
+  z.infer<typeof readShellOutputSchema>,
+  unknown
+> = {
+  name: "readShellOutput",
+  description:
+    "Read incremental stdout/stderr from a background shell. Returns only output produced since the previous call (per-stream offset is server-maintained). Use to poll a dev server until you see the ready marker like `Local: http://localhost:PORT`.",
+  safety: "safe",
+  inputSchema: readShellOutputSchema,
+  execute: async (args) => {
+    const result = readShell(args.shellId);
+    if (!result) {
+      return {
+        shellId: args.shellId,
+        error: "shell not found (already killed or never existed)",
+      };
+    }
+    return result;
+  },
+};
+
+const killShellTool: ToolDefinition<
+  z.infer<typeof killShellSchema>,
+  unknown
+> = {
+  name: "killShell",
+  description:
+    "Terminate a background shell. Sends SIGTERM then SIGKILL after 2 s. Idempotent — returns `found: false` if the shell was already cleaned up.",
+  safety: "destructive",
+  inputSchema: killShellSchema,
+  execute: async (args) => killShellById(args.shellId),
+};
 
 const directoryStatsTool: ToolDefinition<
   z.infer<typeof directoryStatsSchema>,
@@ -421,6 +488,8 @@ export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
     moveFileTool as ToolDefinition,
     deleteFileTool as ToolDefinition,
     runCommandTool(deps?.gitProtocol) as ToolDefinition,
+    readShellOutputTool as ToolDefinition,
+    killShellTool as ToolDefinition,
   ];
   if (deps?.incrementalScanner) {
     tools.push(getCacheStatsTool(deps.incrementalScanner) as ToolDefinition);

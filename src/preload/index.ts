@@ -15,6 +15,8 @@ const api = {
     ipcRenderer.invoke("shell:showInFinder", path),
   openFilesAndFoldersSettings: () =>
     ipcRenderer.invoke("shell:openFilesAndFoldersSettings"),
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke("shell:openExternal", url),
 
   // File system
   listDirectory: (path: string, depth?: number) =>

@@ -1,9 +1,14 @@
 import { cjk } from "@streamdown/cjk";
 import { math } from "@streamdown/math";
-import type { ComponentProps, HTMLAttributes } from "react";
-import { memo } from "react";
+import type {
+  AnchorHTMLAttributes,
+  ComponentProps,
+  HTMLAttributes,
+} from "react";
+import { memo, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
+import { useLinkRouter } from "../browser/useLinkRouter";
 import { MarkdownCodeBlock } from "./markdown-code-block";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -86,23 +91,45 @@ const streamdownControls: ComponentProps<typeof Streamdown>["controls"] = {
   mermaid: true,
 };
 
-const streamdownComponents: ComponentProps<typeof Streamdown>["components"] = {
-  code: MarkdownCodeBlock,
-};
+function RoutedAnchor({
+  children,
+  href,
+  ...props
+}: AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const link = useLinkRouter();
+  return (
+    <a
+      {...props}
+      href={href}
+      onClick={link.onClick}
+      onAuxClick={link.onAuxClick}
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className,
-      )}
-      plugins={streamdownPlugins}
-      controls={streamdownControls}
-      components={streamdownComponents}
-      {...props}
-    />
-  ),
+  ({ className, ...props }: MessageResponseProps) => {
+    // Built per-render so each <a> can call useLinkRouter (a hook).
+    const components = useMemo<ComponentProps<typeof Streamdown>["components"]>(
+      () => ({ code: MarkdownCodeBlock, a: RoutedAnchor }),
+      [],
+    );
+    return (
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className,
+        )}
+        plugins={streamdownPlugins}
+        controls={streamdownControls}
+        components={components}
+        {...props}
+      />
+    );
+  },
   (prevProps, nextProps) => prevProps.children === nextProps.children,
 );
 

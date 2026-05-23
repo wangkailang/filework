@@ -330,6 +330,16 @@ const zhCN: Translation = {
   error_unknown: "发生未知错误",
   error_aiConnection: "无法连接 AI 服务",
   error_fileAccess: "无法访问文件或目录",
+
+  // In-app browser panel
+  browser_back: "后退",
+  browser_forward: "前进",
+  browser_reload: "刷新",
+  browser_stop: "停止",
+  browser_close: "关闭浏览器",
+  browser_open_external: "在系统浏览器中打开",
+  browser_url_placeholder: "输入网址…",
+  browser_failed_to_load: "页面加载失败",
 };
 
 export default zhCN;
