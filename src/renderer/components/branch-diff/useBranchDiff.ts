@@ -36,24 +36,45 @@ export function useBranchDiff({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetchedAt = useRef<number>(0);
-  const inflight = useRef(false);
+  const loadingRef = useRef(false);
+  // Monotonically increasing generation. Each fetchNow() captures its
+  // own value at start; on resolve we drop the result if a newer
+  // generation has been issued in the meantime (eg path changed, or
+  // refresh() was clicked mid-flight). Poor-man's AbortController for
+  // IPC promises.
+  const generation = useRef(0);
 
-  const fetchNow = useCallback(async () => {
-    if (!path || inflight.current) return;
-    inflight.current = true;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await window.filework.getBranchDiff({ path, baseBranch });
-      setData(result);
-      fetchedAt.current = Date.now();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-      inflight.current = false;
-    }
-  }, [path, baseBranch]);
+  const fetchNow = useCallback(
+    async (force = false): Promise<void> => {
+      if (!path) return;
+      // Idle fetch + in-flight already → defer to the running call.
+      // refresh() passes force=true to bypass and issue a fresh request,
+      // invalidating the in-flight one via the generation token.
+      if (!force && loadingRef.current) return;
+      const myGen = ++generation.current;
+      loadingRef.current = true;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await window.filework.getBranchDiff({
+          path,
+          baseBranch,
+        });
+        if (myGen !== generation.current) return; // stale — newer fetch in flight
+        setData(result);
+        fetchedAt.current = Date.now();
+      } catch (err) {
+        if (myGen !== generation.current) return;
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (myGen === generation.current) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
+      }
+    },
+    [path, baseBranch],
+  );
 
   // Reset cache when any cache-key dimension changes (path, baseBranch,
   // or the live currentBranch). Without this, a BranchSwitcher checkout
@@ -72,7 +93,7 @@ export function useBranchDiff({
 
   const refresh = useCallback(() => {
     fetchedAt.current = 0;
-    void fetchNow();
+    void fetchNow(true);
   }, [fetchNow]);
 
   return { data, loading, error, refresh };

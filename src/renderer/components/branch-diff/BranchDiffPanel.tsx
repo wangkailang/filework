@@ -53,6 +53,26 @@ export function BranchDiffPanel({
   const draggingRef = useRef(false);
   const widthRef = useRef(width);
   widthRef.current = width;
+  // Stash currently-bound document listeners so unmount cleanup can
+  // remove them even mid-drag.
+  const activeListenersRef = useRef<{
+    onMove: (e: MouseEvent) => void;
+    onUp: () => void;
+  } | null>(null);
+
+  const stopResize = useCallback(() => {
+    const active = activeListenersRef.current;
+    if (active) {
+      document.removeEventListener("mousemove", active.onMove);
+      document.removeEventListener("mouseup", active.onUp);
+      activeListenersRef.current = null;
+    }
+    if (draggingRef.current) {
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+  }, []);
 
   const startResize = useCallback(() => {
     if (draggingRef.current) return;
@@ -65,20 +85,23 @@ export function BranchDiffPanel({
       setWidth(next);
     };
     const onUp = () => {
-      draggingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
       try {
         localStorage.setItem(WIDTH_STORAGE_KEY, String(widthRef.current));
       } catch {
         // ignore storage quota / disabled
       }
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      stopResize();
     };
+    activeListenersRef.current = { onMove, onUp };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  }, []);
+  }, [stopResize]);
+
+  // Final-stage cleanup: unmount mid-drag would otherwise leave the
+  // document listeners + body cursor hijack alive.
+  useEffect(() => {
+    return () => stopResize();
+  }, [stopResize]);
 
   // Clamp width on viewport resize so the panel never exceeds 80%.
   useEffect(() => {

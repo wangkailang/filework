@@ -74,8 +74,11 @@ async function computeBranchDiff(
   const headBranchRes = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
     cwd,
   });
-  const headBranch =
-    headBranchRes.exitCode === 0 ? headBranchRes.stdout.trim() : head;
+  // `--abbrev-ref` returns literal "HEAD" on detached HEAD (exit 0).
+  // Substitute the short SHA so the drawer doesn't read as "HEAD vs main".
+  const rawBranch =
+    headBranchRes.exitCode === 0 ? headBranchRes.stdout.trim() : "";
+  const headBranch = !rawBranch || rawBranch === "HEAD" ? head : rawBranch;
 
   const mergeBase = await runGit(["merge-base", baseBranch, "HEAD"], { cwd });
   if (mergeBase.exitCode !== 0) {
@@ -90,7 +93,12 @@ async function computeBranchDiff(
     ["diff", "--no-color", "--name-status", "--find-renames", baseFull],
     { cwd },
   );
-  const statusByPath = parseNameStatus(nameStatus.stdout);
+  // Tolerate a failed --name-status by parsing only valid stdout —
+  // renames degrade to add+delete pairs but the main diff still ships.
+  const statusByPath =
+    nameStatus.exitCode === 0
+      ? parseNameStatus(nameStatus.stdout)
+      : new Map<string, NameStatusEntry>();
 
   const diffRes = await runGit(
     ["diff", "--no-color", "-U3", "--find-renames", baseFull],
@@ -111,7 +119,16 @@ async function computeBranchDiff(
       truncated = true;
       break;
     }
-    const file = mapToFileDiff(p, statusByPath);
+    let file: GitFileDiff | null;
+    try {
+      file = mapToFileDiff(p, statusByPath);
+    } catch (err) {
+      console.warn(
+        "[git-diff] skipping malformed parsePatch entry:",
+        err instanceof Error ? err.message : err,
+      );
+      continue;
+    }
     if (!file) continue;
     totalAdded += file.added;
     totalRemoved += file.removed;
@@ -191,7 +208,8 @@ function mapToFileDiff(
   const hunks: PreviewDiffHunk[] = [];
   let totalBytes = 0;
 
-  for (const h of parsed.hunks) {
+  const parsedHunks = parsed.hunks ?? [];
+  for (const h of parsedHunks) {
     if (hunks.length >= MAX_HUNKS_PER_FILE) {
       truncated = true;
       break;
@@ -210,16 +228,25 @@ function mapToFileDiff(
     for (const run of runs) {
       const value = `${run.lines.join("\n")}\n`;
       const bytes = Buffer.byteLength(value, "utf8");
-      totalBytes += bytes;
-      if (run.kind === "added") added += run.lines.length;
-      else if (run.kind === "removed") removed += run.lines.length;
+      const overSized = bytes > MAX_HUNK_BYTES;
+      // When the run gets sliced we can no longer count every line —
+      // the rendered text only contains the leading bytes. Estimate
+      // kept lines as `value.slice(0, MAX_HUNK_BYTES).split("\n").length`.
+      const slicedValue = overSized
+        ? sliceUtf8(value, MAX_HUNK_BYTES)
+        : value;
+      const keptLineCount = overSized
+        ? Math.max(0, slicedValue.split("\n").length - 2) // minus the "…\n" sentinel
+        : run.lines.length;
+      totalBytes += overSized ? MAX_HUNK_BYTES : bytes;
+      if (run.kind === "added") added += keptLineCount;
+      else if (run.kind === "removed") removed += keptLineCount;
       hunks.push({
         kind: run.kind,
-        value:
-          bytes > MAX_HUNK_BYTES ? sliceUtf8(value, MAX_HUNK_BYTES) : value,
-        lineCount: run.lines.length,
+        value: slicedValue,
+        lineCount: keptLineCount,
       });
-      if (bytes > MAX_HUNK_BYTES) {
+      if (overSized) {
         truncated = true;
         break;
       }

@@ -86,6 +86,9 @@ interface SidebarProps {
   /** Toggle the right-side panel. Owned by App so the panel lives in
    *  the main flexbox row and can hold its own resize state. */
   onToggleBranchDiff?: () => void;
+  /** Bump from App when a destructive tool finishes, so the diff pill
+   *  refreshes without waiting for the cache TTL. */
+  diffInvalidator?: number;
 }
 
 export const Sidebar = ({
@@ -99,6 +102,7 @@ export const Sidebar = ({
   onBranchSwitched,
   branchDiffOpen,
   onToggleBranchDiff,
+  diffInvalidator = 0,
 }: SidebarProps) => {
   const { LL } = useI18nContext();
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -111,7 +115,7 @@ export const Sidebar = ({
   const { data: diffSummary } = useBranchDiff({
     path: workspacePath,
     currentBranch,
-    invalidator: 0,
+    invalidator: diffInvalidator,
   });
   const [childrenMap, setChildrenMap] = useState<Record<string, FileInfo[]>>(
     {},

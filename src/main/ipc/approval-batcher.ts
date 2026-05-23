@@ -228,11 +228,16 @@ async function enrichAndSend(
 ): Promise<void> {
   const workspace = buf.workspace;
   if (!workspace) {
-    sendBatchApproval(buf, batchId);
+    if (pendingBatches.has(batchId)) sendBatchApproval(buf, batchId);
     return;
   }
+  // Snapshot the entries array so a concurrent `removeEntry` splice
+  // doesn't mutate what we're iterating over. The entry objects
+  // themselves stay shared — preview assignment is still observed by
+  // sendBatchApproval, but the iteration shape is stable.
+  const snapshot = buf.entries.slice();
   await Promise.all(
-    buf.entries.map(async (e) => {
+    snapshot.map(async (e) => {
       if (e.preview !== undefined) return;
       try {
         const preview = await Promise.race([
@@ -247,6 +252,10 @@ async function enrichAndSend(
       }
     }),
   );
+  // Drop the IPC if the batch was cancelled / settled / re-flushed
+  // during the await window — otherwise the renderer would receive a
+  // ghost approval card whose buttons no-op against settleBatch.
+  if (!pendingBatches.has(batchId)) return;
   sendBatchApproval(buf, batchId);
 }
 
