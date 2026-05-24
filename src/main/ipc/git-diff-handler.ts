@@ -152,6 +152,22 @@ async function computeBranchDiff(
     files.push(file);
   }
 
+  // Append untracked files as synthesized "added" diffs. Tracked files
+  // get first claim on MAX_FILES so a noisy untracked area (e.g. a
+  // gitignore-missed cache dir) can't crowd out real edits.
+  if (!truncated) {
+    const untracked = await collectUntrackedDiffs(
+      cwd,
+      MAX_FILES - files.length,
+    );
+    for (const f of untracked.diffs) {
+      totalAdded += f.added;
+      totalRemoved += f.removed;
+      files.push(f);
+    }
+    if (untracked.truncated) truncated = true;
+  }
+
   return {
     base,
     baseRef,
@@ -206,16 +222,118 @@ async function collectAheadBehind(
 }
 
 async function collectUncommitted(cwd: string): Promise<number | undefined> {
-  const res = await runGit(["status", "--porcelain"], { cwd });
+  // `-uall` expands untracked directories so each file gets its own
+  // `??` row. Without it, an untracked directory like
+  // `src/games/NinjaRun/` collapses to a single line, and the badge
+  // would read `1` while the drawer (via ls-files) lists every file
+  // independently. Keeps the count in lock-step with the drawer.
+  const res = await runGit(["status", "--porcelain", "-uall"], { cwd });
   if (res.exitCode !== 0) return undefined;
   if (!res.stdout) return 0;
-  // Only count tracked changes (modified / added / deleted / renamed).
-  // Untracked files (`??`) belong in a separate signal — including them
-  // here misleads users who say "I committed everything" but still have
-  // build artifacts or editor cache files lying around.
-  return res.stdout
-    .split("\n")
-    .filter((l) => l.length > 0 && !l.startsWith("??")).length;
+  return res.stdout.split("\n").filter((l) => l.length > 0).length;
+}
+
+/**
+ * Collect untracked files (filtered by .gitignore) and synthesize a
+ * GitFileDiff per file by running `git diff --no-index /dev/null <path>`.
+ *
+ * Why: `git diff <merge-base>` only sees tracked content, so a new
+ * feature like `src/games/NinjaRun/*` is invisible in the branch-diff
+ * panel until first `git add`. This helper closes that gap.
+ *
+ * Caps: receives `capRemaining` (files MAX_FILES has not yet
+ * consumed) so the combined list stays under the global ceiling.
+ * `git diff --no-index` returns exit code 1 on the (normal) "files
+ * differ" case — we tolerate that explicitly. Binary blobs surface as
+ * empty-hunks ParsedFile and `mapToFileDiff`'s `isBinary` detection
+ * takes care of them.
+ */
+async function collectUntrackedDiffs(
+  cwd: string,
+  capRemaining: number,
+): Promise<{ diffs: GitFileDiff[]; truncated: boolean }> {
+  if (capRemaining <= 0) return { diffs: [], truncated: false };
+  // `-z` ⇒ NUL-separated paths, robust against spaces / unicode / quotes.
+  // `-c core.quotePath=false` keeps non-ASCII paths (e.g. `naïve.txt`)
+  // as readable UTF-8 rather than `na\303\257ve.txt` escape sequences,
+  // so the drawer's filename matches what the user sees on disk.
+  const ls = await runGit(
+    [
+      "-c",
+      "core.quotePath=false",
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "-z",
+    ],
+    { cwd },
+  );
+  if (ls.exitCode !== 0) return { diffs: [], truncated: false };
+  const paths = ls.stdout.split("\0").filter((p) => p.length > 0);
+
+  const diffs: GitFileDiff[] = [];
+  let truncated = false;
+  for (const p of paths) {
+    if (diffs.length >= capRemaining) {
+      truncated = true;
+      break;
+    }
+    const res = await runGit(
+      [
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--no-index",
+        "--no-color",
+        "-U3",
+        "--",
+        "/dev/null",
+        p,
+      ],
+      { cwd },
+    );
+    // 0-byte file is byte-identical to /dev/null, so `git diff
+    // --no-index` exits 0 with empty stdout. Without a synthesized
+    // entry the file vanishes from the panel — `touch foo.tsx` would
+    // be invisible. Render it as an empty "added" file so the user
+    // at least sees the path.
+    if (res.exitCode === 0 && !res.stdout) {
+      diffs.push({
+        path: p,
+        status: "added",
+        added: 0,
+        removed: 0,
+        isBinary: false,
+        hunks: [],
+      });
+      continue;
+    }
+    // exitCode 0 with non-empty stdout shouldn't happen vs /dev/null
+    // but tolerate; exitCode 1 = differ (the expected normal case);
+    // anything else = real error, skip this file but keep going.
+    if (res.exitCode !== 0 && res.exitCode !== 1) continue;
+    if (!res.stdout) continue;
+
+    for (const parsedEntry of parsePatch(res.stdout)) {
+      let file: GitFileDiff | null;
+      try {
+        file = mapToFileDiff(parsedEntry, new Map());
+      } catch (err) {
+        console.warn(
+          "[git-diff] skipping malformed untracked patch:",
+          err instanceof Error ? err.message : err,
+        );
+        continue;
+      }
+      if (!file) continue;
+      // Force status to "added": --no-index against /dev/null already
+      // yields this via mapToFileDiff's line-268 branch, but pin it so
+      // a future tweak to that logic can't silently flip the label.
+      file.status = "added";
+      diffs.push(file);
+    }
+  }
+  return { diffs, truncated };
 }
 
 interface NameStatusEntry {

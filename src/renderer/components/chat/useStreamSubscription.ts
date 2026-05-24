@@ -648,13 +648,15 @@ export function useStreamSubscription({
     );
 
     const offClarification = window.filework.onStreamClarification(
-      ({ id, question, options }) => {
+      ({ id, clarificationId, question, options }) => {
         if (id !== streamTaskIdRef.current) return;
         updateParts((parts) => {
           parts.push({
             type: "clarification",
             question,
             options: options?.filter(Boolean),
+            taskId: id,
+            clarificationId,
           });
           return parts;
         });

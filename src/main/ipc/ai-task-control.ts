@@ -69,6 +69,50 @@ export const drainPlanResolver = (
 };
 
 /**
+ * Pending `askClarification` tool calls keyed by a per-call UUID
+ * (`clarificationId`), not by taskId. Keying by taskId let a concurrent
+ * second clarification overwrite the first resolver via Map.set and the
+ * first Promise leaked forever; keying per-call makes each suspension
+ * independent.
+ *
+ * Each entry carries its owning taskId so `cleanupTask` /
+ * `stopTaskExecution` can sweep all clarifications for a task on
+ * teardown.
+ *
+ * `answer === null` ⇒ cancellation (task stopped / cleaned). The tool
+ * rejects so the agent loop surfaces an error rather than continuing
+ * with an empty string.
+ */
+export interface PendingClarification {
+  taskId: string;
+  resolve: (answer: string | null) => void;
+}
+export const pendingClarifications = new Map<string, PendingClarification>();
+
+export const drainClarificationResolver = (
+  clarificationId: string,
+  answer: string | null,
+): boolean => {
+  const entry = pendingClarifications.get(clarificationId);
+  if (!entry) return false;
+  pendingClarifications.delete(clarificationId);
+  entry.resolve(answer);
+  return true;
+};
+
+/** Drain every pending clarification belonging to the given task. Used
+ *  by cleanupTask / stopTaskExecution to settle (with null = cancelled)
+ *  any clarifications the task left in flight. */
+export const drainClarificationsForTask = (taskId: string): void => {
+  for (const [cid, entry] of pendingClarifications) {
+    if (entry.taskId === taskId) {
+      pendingClarifications.delete(cid);
+      entry.resolve(null);
+    }
+  }
+};
+
+/**
  * Tasks running under an approved plan — writeFile skips individual
  * approval to avoid blocking plan execution.
  * deleteFile and moveFile still require approval (destructive).
@@ -186,6 +230,12 @@ export const cleanupTask = (taskId: string): void => {
   // Clean up inline plan draft approval state for this task
   drainPlanResolver(taskId, false);
   approvedInlinePlanTasks.delete(taskId);
+
+  // Reject every pending askClarification suspension belonging to this
+  // task so awaiting tool calls settle (rejecting) instead of leaking
+  // the agent loop. Multiple clarifications can be in flight for one
+  // task — sweep them all.
+  drainClarificationsForTask(taskId);
 };
 
 /**
@@ -255,6 +305,9 @@ export const stopTaskExecution = (taskId: string): boolean => {
   // Reject any pending inline createPlan draft approval — so the
   // awaiting tool call settles instead of leaking the agent loop.
   drainPlanResolver(taskId, false);
+
+  // Same for every askClarification suspension belonging to this task.
+  drainClarificationsForTask(taskId);
 
   return stopped;
 };

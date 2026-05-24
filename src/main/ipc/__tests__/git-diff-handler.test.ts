@@ -84,9 +84,10 @@ describe("git diff against branch base", () => {
     expect(mb).toBe(head);
   });
 
-  it("picks up uncommitted working-tree changes (regression: base==HEAD)", async () => {
-    // Simulate: user creates a branch but has only working-tree edits,
-    // no commits yet. The drawer must still surface those edits.
+  it("git diff alone misses untracked files — handler must compose with ls-files", async () => {
+    // Documents *why* the handler needs `collectUntrackedDiffs`: plain
+    // `git diff <base>` is silent about untracked content. The
+    // ls-files + diff --no-index tests below cover the closure.
     await writeFile(path.join(root, "README.md"), "# Hello\nline\nedited\n");
     await writeFile(path.join(root, "new.txt"), "fresh\n");
 
@@ -106,9 +107,54 @@ describe("git diff against branch base", () => {
       .map((p) => p.newFileName?.replace(/^b\//, ""))
       .filter(Boolean);
     expect(paths).toContain("README.md");
-    // Untracked files are intentionally excluded from `git diff` —
-    // would need `git status` to surface them. Document the limitation.
-    expect(paths).not.toContain("new.txt");
+    expect(paths).not.toContain("new.txt"); // confirms diff blind spot
+  });
+
+  it("ls-files --others --exclude-standard surfaces untracked, respects .gitignore", async () => {
+    // The handler's `collectUntrackedDiffs` uses this command — pin
+    // behavior so a future flag change doesn't silently re-include
+    // gitignored noise (node_modules, dist, etc.).
+    await writeFile(path.join(root, ".gitignore"), "ignored.txt\n");
+    await git(["add", ".gitignore"]);
+    await git(["commit", "-q", "-m", "add gitignore"]);
+
+    await writeFile(path.join(root, "new.txt"), "fresh\n");
+    await writeFile(path.join(root, "ignored.txt"), "noise\n");
+
+    const ls = await git(["ls-files", "--others", "--exclude-standard", "-z"]);
+    const paths = ls.split("\0").filter((p) => p.length > 0);
+    expect(paths).toContain("new.txt");
+    expect(paths).not.toContain("ignored.txt");
+  });
+
+  it("git diff --no-index /dev/null <file> produces an added-file patch parsePatch can read", async () => {
+    // The synthesis step for untracked files. Exit code 1 is the
+    // normal "files differ" outcome — handler must tolerate it.
+    await writeFile(path.join(root, "fresh.txt"), "alpha\nbeta\ngamma\n");
+
+    const res = await runGit(
+      [
+        "diff",
+        "--no-index",
+        "--no-color",
+        "-U3",
+        "--",
+        "/dev/null",
+        "fresh.txt",
+      ],
+      { cwd: root },
+    );
+    expect(res.exitCode).toBe(1); // "they differ" — the expected non-zero
+    expect(res.stdout).toMatch(/--- a?\/?dev\/null/);
+    expect(res.stdout).toMatch(/\+\+\+ b\/fresh\.txt/);
+
+    const parsed = parsePatch(res.stdout);
+    expect(parsed).toHaveLength(1);
+    const hunks = parsed[0]?.hunks ?? [];
+    const addedLines = hunks
+      .flatMap((h) => h.lines)
+      .filter((l) => l.startsWith("+"));
+    expect(addedLines).toEqual(["+alpha", "+beta", "+gamma"]);
   });
 
   it("rev-parse exits non-zero outside a git repo", async () => {
