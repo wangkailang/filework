@@ -51,7 +51,8 @@ export interface BranchDiff {
   ahead?: number;
   /** Commits on `origin/<currentBranch>` that aren't on HEAD (need pull). */
   behind?: number;
-  /** Files with staged or unstaged changes (git status --porcelain). */
+  /** Files with staged / unstaged / untracked changes (git status
+   *  --porcelain; .gitignore'd paths excluded by porcelain itself). */
   uncommitted?: number;
   /** True when the result was capped (>200 files or aggregate size). */
   truncated?: boolean;
