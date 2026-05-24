@@ -105,7 +105,6 @@ interface SidebarProps {
 
 const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_COLLAPSED_WIDTH = 48;
 
 export const Sidebar = ({
   workspacePath,
@@ -311,23 +310,7 @@ export const Sidebar = ({
       ),
     );
 
-  if (collapsed) {
-    return (
-      <div
-        className="h-full bg-muted/50 border-r border-border flex flex-col items-center pt-14 gap-2 shrink-0"
-        style={{ width: SIDEBAR_COLLAPSED_WIDTH }}
-      >
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          className="titlebar-no-drag p-2 rounded-md hover:bg-accent transition-colors"
-          title={LL.sidebar_expand()}
-        >
-          <PanelLeftOpen className="w-4 h-4 text-muted-foreground" />
-        </button>
-      </div>
-    );
-  }
+  if (collapsed) return null;
 
   return (
     <>
@@ -544,5 +527,28 @@ export const Sidebar = ({
 
       <SkillsModal open={skillsOpen} onClose={() => setSkillsOpen(false)} />
     </>
+  );
+};
+
+/** Floating expand button rendered by App when the sidebar is collapsed.
+ *  Lives outside the layout flow (fixed top-left, offset past the macOS
+ *  traffic-light controls at x=16) so the collapsed state takes zero
+ *  horizontal space. `titlebar-no-drag` + z-60 keeps it clickable above
+ *  the titlebar drag region (z-50). */
+export const SidebarExpandFloatingButton = ({
+  onClick,
+}: {
+  onClick: () => void;
+}) => {
+  const { LL } = useI18nContext();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={LL.sidebar_expand()}
+      className="titlebar-no-drag fixed top-2 left-24 z-60 p-2 rounded-md hover:bg-accent transition-colors"
+    >
+      <PanelLeftOpen className="w-4 h-4 text-muted-foreground" />
+    </button>
   );
 };
