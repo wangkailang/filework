@@ -32,6 +32,7 @@ import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendere
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
+import { mcpManager } from "../mcp/manager";
 import {
   type FileEntry,
   getIncrementalScanner,
@@ -379,6 +380,16 @@ export const buildAgentToolRegistry = ({
       });
       if (allow(def.name)) registry.register(def);
     }
+  }
+
+  // MCP tools — one ToolDefinition per tool exposed by every currently-
+  // connected, enabled server. Safety is decided per-server via the
+  // `trusted` flag (see `mcp/tool-bridge.ts`); names are prefixed with
+  // `mcp__<serverSlug>__` so the `allowed-tools` allow-list mechanism
+  // and the agent loop's existing tool-result UI can route them like
+  // any built-in tool.
+  for (const def of mcpManager.getActiveToolDefs()) {
+    if (allow(def.name)) registry.register(def);
   }
 
   return registry;

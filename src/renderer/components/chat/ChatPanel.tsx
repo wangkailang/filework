@@ -274,9 +274,19 @@ const ClarificationCard = ({
   LL: TranslationFunctions;
 }) => {
   const [localPick, setLocalPick] = useState<string | null>(null);
+  const [freeText, setFreeText] = useState("");
   // Persisted answer beats local optimistic state once it lands.
   const picked = part.answeredOption ?? localPick;
   const isAnswered = picked !== null && picked !== undefined;
+  const hasOptions = !!part.options && part.options.length > 0;
+
+  const submitFreeText = () => {
+    const text = freeText.trim();
+    if (!text || isAnswered) return;
+    setLocalPick(text);
+    void onPick(text);
+  };
+
   return (
     <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 my-1">
       <div className="flex items-start gap-2">
@@ -286,9 +296,9 @@ const ClarificationCard = ({
             {LL.clarification_title()}
           </div>
           <div className="text-sm text-foreground mt-0.5">{part.question}</div>
-          {part.options && part.options.length > 0 && (
+          {hasOptions && (
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {part.options.map((opt) => {
+              {part.options?.map((opt) => {
                 const selected = picked === opt;
                 return (
                   <button
@@ -311,6 +321,39 @@ const ClarificationCard = ({
                   </button>
                 );
               })}
+            </div>
+          )}
+          {/* Free-text reply — only when the model didn't supply options.
+              Without this the agent loop would deadlock on a bare
+              question (the askClarification tool BLOCKS until answered). */}
+          {!hasOptions && !isAnswered && (
+            <div className="mt-2 flex items-end gap-2">
+              <textarea
+                value={freeText}
+                onChange={(e) => setFreeText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submitFreeText();
+                  }
+                }}
+                rows={2}
+                placeholder="输入回复…"
+                className="flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={submitFreeText}
+                disabled={!freeText.trim()}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                发送
+              </button>
+            </div>
+          )}
+          {!hasOptions && isAnswered && (
+            <div className="mt-2 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
+              {picked}
             </div>
           )}
         </div>

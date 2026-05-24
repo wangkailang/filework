@@ -930,6 +930,60 @@ const api = {
     }) => ipcRenderer.invoke("gitlab:checkoutBranch", payload),
   },
 
+  // MCP (Model Context Protocol) servers
+  mcp: {
+    listServers: () => ipcRenderer.invoke("mcp:listServers"),
+    addServer: (payload: {
+      name: string;
+      transport: "stdio" | "http";
+      command?: string | null;
+      args?: string[];
+      env?: Record<string, string>;
+      cwd?: string | null;
+      url?: string | null;
+      headers?: Record<string, string>;
+      enabled?: boolean;
+      trusted?: boolean;
+    }) => ipcRenderer.invoke("mcp:addServer", payload),
+    updateServer: (id: string, updates: Record<string, unknown>) =>
+      ipcRenderer.invoke("mcp:updateServer", { id, updates }),
+    deleteServer: (id: string) =>
+      ipcRenderer.invoke("mcp:deleteServer", { id }),
+    setEnabled: (id: string, enabled: boolean) =>
+      ipcRenderer.invoke("mcp:setEnabled", { id, enabled }),
+    setTrusted: (id: string, trusted: boolean) =>
+      ipcRenderer.invoke("mcp:setTrusted", { id, trusted }),
+    reconnect: (id: string) => ipcRenderer.invoke("mcp:reconnect", { id }),
+    listTools: (id: string) => ipcRenderer.invoke("mcp:listTools", { id }),
+    importJson: (json: string) =>
+      ipcRenderer.invoke("mcp:importJson", { json }),
+    testConnection: (payload: {
+      name: string;
+      transport: "stdio" | "http";
+      command?: string | null;
+      args?: string[];
+      env?: Record<string, string>;
+      cwd?: string | null;
+      url?: string | null;
+      headers?: Record<string, string>;
+    }) => ipcRenderer.invoke("mcp:testConnection", payload),
+    onStatusChanged: (
+      handler: (payload: { id: string; status: unknown }) => void,
+    ) => {
+      const wrapped = (_e: unknown, payload: { id: string; status: unknown }) =>
+        handler(payload);
+      ipcRenderer.on("mcp:server-status-changed", wrapped);
+      return () =>
+        ipcRenderer.removeListener("mcp:server-status-changed", wrapped);
+    },
+    onListChanged: (handler: () => void) => {
+      const wrapped = () => handler();
+      ipcRenderer.on("mcp:server-list-changed", wrapped);
+      return () =>
+        ipcRenderer.removeListener("mcp:server-list-changed", wrapped);
+    },
+  },
+
   // Chat sessions
   createChatSession: (workspacePath: string, title?: string) =>
     ipcRenderer.invoke("chat:createSession", workspacePath, title),

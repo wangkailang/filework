@@ -45,11 +45,13 @@ import {
 import { registerGitLabHandlers } from "./ipc/gitlab-handlers";
 import { registerLlmConfigHandlers } from "./ipc/llm-config-handlers";
 import { registerLocalGitHandlers } from "./ipc/local-git-handlers";
+import { registerMcpHandlers } from "./ipc/mcp-handlers";
 import { registerMediaHandlers } from "./ipc/media-handlers";
 import { mediaJobWatcher } from "./ipc/media-job-watcher";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
+import { mcpManager } from "./mcp/manager";
 import { bootstrapProxy } from "./proxy-bootstrap";
 import { createProxyAwareFetch } from "./proxy-fetch";
 import { skillRegistry } from "./skills";
@@ -268,6 +270,15 @@ app.whenReady().then(async () => {
   registerAttachmentHandlers();
   registerTaskTraceHandlers();
   registerCredentialsHandlers();
+
+  // MCP — load persisted server configs, register IPC, and open every
+  // enabled server in the background. Connection failures are isolated
+  // per server (the manager flips them to error state) so a misconfigured
+  // entry can't block app startup.
+  mcpManager.init();
+  registerMcpHandlers();
+  void mcpManager.connectAll();
+
   registerGitHubHandlers({
     resolveToken: credentialResolver,
     cacheDir: githubCacheDir,
@@ -430,4 +441,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   stopAllHeadWatchers();
   killAllShells();
+  // Disconnect MCP servers — stdio transports spawn child processes
+  // that would otherwise linger after the Electron process exits.
+  void mcpManager.disconnectAll();
 });
