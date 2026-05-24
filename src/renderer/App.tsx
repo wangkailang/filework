@@ -4,7 +4,10 @@ import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
-import { Sidebar } from "./components/layout/Sidebar";
+import {
+  Sidebar,
+  SidebarExpandFloatingButton,
+} from "./components/layout/Sidebar";
 import { GitHubConnectModal } from "./components/onboarding/GitHubConnectModal";
 import { GitLabConnectModal } from "./components/onboarding/GitLabConnectModal";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
@@ -295,6 +298,11 @@ export const App = () => {
       ) : (
         <div className="flex h-screen w-screen overflow-hidden">
           <div className="titlebar-drag fixed top-0 left-0 right-0 h-12 z-50" />
+          {sidebarCollapsed && (
+            <SidebarExpandFloatingButton
+              onClick={handleToggleSidebarCollapsed}
+            />
+          )}
           <Sidebar
             workspacePath={workspace.localPath}
             workspaceRef={workspace.ref}
