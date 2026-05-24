@@ -256,6 +256,69 @@ const ErrorBanner = ({
   </div>
 );
 
+/**
+ * Renders a single clarification prompt — question + multi-choice
+ * buttons — and tracks the user's pick locally so the buttons disable
+ * the moment a choice is dispatched (no waiting for the IPC round-trip
+ * + re-render through the messages array). Once the parent persists
+ * `answeredOption` on the part, the persisted value wins and survives
+ * re-mounts / session reload.
+ */
+const ClarificationCard = ({
+  part,
+  onPick,
+  LL,
+}: {
+  part: ClarificationPart;
+  onPick: (opt: string) => Promise<void>;
+  LL: TranslationFunctions;
+}) => {
+  const [localPick, setLocalPick] = useState<string | null>(null);
+  // Persisted answer beats local optimistic state once it lands.
+  const picked = part.answeredOption ?? localPick;
+  const isAnswered = picked !== null && picked !== undefined;
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 my-1">
+      <div className="flex items-start gap-2">
+        <HelpCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-medium text-primary">
+            {LL.clarification_title()}
+          </div>
+          <div className="text-sm text-foreground mt-0.5">{part.question}</div>
+          {part.options && part.options.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {part.options.map((opt) => {
+                const selected = picked === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    disabled={isAnswered}
+                    onClick={() => {
+                      setLocalPick(opt);
+                      void onPick(opt);
+                    }}
+                    className={
+                      selected
+                        ? "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-primary bg-primary/15 text-primary cursor-default"
+                        : isAnswered
+                          ? "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground opacity-60 cursor-default"
+                          : "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent hover:text-foreground transition-colors"
+                    }
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const ChatPanel = ({
   workspacePath,
   workspaceRefJson,
@@ -706,37 +769,19 @@ export const ChatPanel = ({
       }
       if (part.type === "clarification") {
         const cp = part as ClarificationPart;
+        // Keying by clarificationId (when present) lets React keep
+        // separate cards when the agent emits multiple clarifications
+        // with identical question text. Falls back to question for
+        // legacy parts persisted before the field existed.
         return (
-          <div
-            key={`clarify-${cp.question}`}
-            className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 my-1"
-          >
-            <div className="flex items-start gap-2">
-              <HelpCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-primary">
-                  {LL.clarification_title()}
-                </div>
-                <div className="text-sm text-foreground mt-0.5">
-                  {cp.question}
-                </div>
-                {cp.options && cp.options.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {cp.options.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => chat.handleSubmit({ text: opt })}
-                        className="inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent hover:text-foreground transition-colors"
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <ClarificationCard
+            key={`clarify-${cp.clarificationId ?? cp.question}`}
+            part={cp}
+            onPick={(opt) =>
+              chat.handleClarificationPick(cp.clarificationId, opt)
+            }
+            LL={LL}
+          />
         );
       }
       return null;

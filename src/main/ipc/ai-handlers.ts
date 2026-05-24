@@ -64,6 +64,7 @@ import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
   cleanupTask,
+  drainClarificationResolver,
   manualStopFlags,
   pendingApprovals,
   setTaskWorkspace,
@@ -1151,6 +1152,37 @@ export const registerAIHandlers = () => {
   });
 
   ipcMain.handle("ai:executeTask", handleTaskExecution);
+
+  /**
+   * Resolve a pending askClarification suspension with the user's reply.
+   * Renderer routes button clicks here keyed by the per-call
+   * `clarificationId` (not taskId — concurrent clarifications coexist).
+   * Returns `{ok:false}` when no matching suspension is registered, so
+   * the renderer can fall back to a fresh chat turn for stale parts
+   * (e.g. a clarification persisted across app restart).
+   */
+  ipcMain.handle(
+    "ai:answerClarification",
+    (_event, payload: unknown): { ok: boolean } => {
+      // Renderer payloads cross an unsafe boundary — typeof guards keep
+      // a misbehaving caller from corrupting the suspended tool result.
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        typeof (payload as { clarificationId?: unknown }).clarificationId !==
+          "string" ||
+        typeof (payload as { answer?: unknown }).answer !== "string"
+      ) {
+        return { ok: false };
+      }
+      const { clarificationId, answer } = payload as {
+        clarificationId: string;
+        answer: string;
+      };
+      const drained = drainClarificationResolver(clarificationId, answer);
+      return { ok: drained };
+    },
+  );
 
   registerPlanHandlers();
 

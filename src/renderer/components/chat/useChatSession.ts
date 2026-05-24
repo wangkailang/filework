@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { truncateTitle } from "./helpers";
-import type { AttachmentPart, ChatMessage, MessagePart } from "./types";
+import type {
+  AttachmentPart,
+  ChatMessage,
+  ClarificationPart,
+  MessagePart,
+} from "./types";
 import { usePlanFlow } from "./usePlanFlow";
 import { useSessionCrud } from "./useSessionCrud";
 import { useStreamSubscription } from "./useStreamSubscription";
@@ -448,6 +453,65 @@ export function useChatSession(
     window.filework.approveToolCallBatch(batchId, approved);
   };
 
+  /**
+   * Route a clarification button click back to the suspended
+   * `askClarification` tool via IPC, then persist the chosen option on
+   * the message part so the UI re-renders in the answered state.
+   *
+   * Falls back to `handleSubmit({ text: opt })` when the IPC reports
+   * `ok:false` — that happens for legacy parts without a
+   * `clarificationId`, and for any clarification persisted across a
+   * restart (the main-process pendingClarifications map is empty after
+   * reload). In those cases the user's pick at least lands as a fresh
+   * chat turn instead of silently no-op'ing.
+   */
+  const handleClarificationPick = async (
+    clarificationId: string | undefined,
+    opt: string,
+  ): Promise<void> => {
+    let answered = false;
+    if (clarificationId) {
+      try {
+        const res = await window.filework.answerClarification({
+          clarificationId,
+          answer: opt,
+        });
+        answered = !!res?.ok;
+      } catch {
+        answered = false;
+      }
+    }
+    if (answered) {
+      crud.setMessages((prev) => {
+        let touched = false;
+        const next = prev.map((m) => {
+          if (!m.parts) return m;
+          let mTouched = false;
+          const newParts = m.parts.map((p): MessagePart => {
+            if (
+              p.type === "clarification" &&
+              (p as ClarificationPart).clarificationId === clarificationId
+            ) {
+              mTouched = true;
+              touched = true;
+              return { ...p, answeredOption: opt } as ClarificationPart;
+            }
+            return p;
+          });
+          return mTouched ? { ...m, parts: newParts } : m;
+        });
+        if (touched && crud.activeSessionIdRef.current) {
+          crud.debouncedSave(next, crud.activeSessionIdRef.current);
+        }
+        return next;
+      });
+      return;
+    }
+    // Stale or no clarificationId — fall back to a fresh chat turn so
+    // the user's pick is at least visible and routable as a prompt.
+    handleSubmit({ text: opt });
+  };
+
   const handleStopGeneration = useCallback(() => {
     const taskId = stream.streamTaskIdRef.current;
     console.log(
@@ -531,6 +595,7 @@ export function useChatSession(
     handleSubmit,
     handleApproval,
     handleBatchApproval,
+    handleClarificationPick,
     handleSkillApproval,
     handleApprovePlan: plan.handleApprovePlan,
     handleRejectPlan: plan.handleRejectPlan,

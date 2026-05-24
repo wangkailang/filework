@@ -96,6 +96,16 @@ const api = {
   cancelPlan: (planId: string) =>
     ipcRenderer.invoke("ai:cancelPlan", { planId }),
 
+  /** Reply to a pending askClarification suspension. Keyed by the
+   *  per-call clarificationId emitted in `ai:stream-clarification`.
+   *  Resolves to `{ok:false}` when no matching suspension exists, so
+   *  the renderer can fall back to a fresh chat turn for stale parts. */
+  answerClarification: (payload: {
+    clarificationId: string;
+    answer: string;
+  }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("ai:answerClarification", payload),
+
   // Planner streaming events
   onPlanGenerating: (callback: (data: { prompt: string }) => void) => {
     const handler = (
@@ -518,13 +528,19 @@ const api = {
   onStreamClarification: (
     callback: (data: {
       id: string;
+      clarificationId: string;
       question: string;
       options?: string[];
     }) => void,
   ) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      data: { id: string; question: string; options?: string[] },
+      data: {
+        id: string;
+        clarificationId: string;
+        question: string;
+        options?: string[];
+      },
     ) => callback(data);
     ipcRenderer.on("ai:stream-clarification", handler);
     return () => ipcRenderer.removeListener("ai:stream-clarification", handler);

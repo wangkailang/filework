@@ -16,6 +16,7 @@
  * through this registry via `fork-skill-runner.ts`.)
  */
 
+import crypto from "node:crypto";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
 import { type ToolDefinition, ToolRegistry } from "../core/agent/tool-registry";
@@ -38,6 +39,7 @@ import {
 import {
   approvedInlinePlanTasks,
   makeInlinePlanId,
+  pendingClarifications,
   pendingPlanApprovals,
 } from "./ai-task-control";
 import { buildGitRunCommandProtocol } from "./system-prompt";
@@ -132,14 +134,27 @@ const wrapScanner = (): IncrementalScannerLike => {
   };
 };
 
-/** IPC-coupled tool that defers the next assistant turn until user replies. */
+/**
+ * IPC-coupled tool that defers the next assistant turn until the user
+ * replies. Mirrors the `createPlan` suspension pattern: emit a UI event,
+ * then await a `pendingClarifications` resolver that the
+ * `ai:answerClarification` IPC handler invokes when the user picks an
+ * option (or types a reply routed back to this taskId).
+ *
+ * Returning a Promise here is what actually pauses the agent loop — the
+ * previous implementation returned `{ asked: true }` synchronously and
+ * the model kept generating before the user could pick an option.
+ */
 const askClarificationTool = (
   sender: WebContents,
   taskId: string,
-): ToolDefinition<{ question: string; options?: string[] }, unknown> => ({
+): ToolDefinition<
+  { question: string; options?: string[] },
+  { answer: string }
+> => ({
   name: "askClarification",
   description:
-    "Ask the user a clarification question (optionally with multiple-choice options). Use this when the user's intent is ambiguous. After calling this tool, stop and wait for the user's reply.",
+    "Ask the user a clarification question (optionally with multiple-choice options). Use this when the user's intent is ambiguous. This tool BLOCKS — it does not return until the user replies, and the reply is given back to you as the `answer` field. Do NOT continue generating after calling it; wait for the result.",
   safety: "safe",
   inputSchema: z.object({
     question: z.string().describe("The clarification question to ask"),
@@ -149,14 +164,33 @@ const askClarificationTool = (
       .describe("Optional multiple-choice options for the user"),
   }),
   execute: async ({ question, options }) => {
+    // Per-call UUID so concurrent clarifications on the same task don't
+    // overwrite each other's resolver (the previous taskId-keyed Map.set
+    // dropped the first Promise on the floor).
+    const clarificationId = crypto.randomUUID();
     if (!sender.isDestroyed()) {
       sender.send("ai:stream-clarification", {
         id: taskId,
+        clarificationId,
         question,
         options: options?.filter(Boolean),
       });
     }
-    return { asked: true };
+    return new Promise<{ answer: string }>((resolve, reject) => {
+      pendingClarifications.set(clarificationId, {
+        taskId,
+        resolve: (answer) => {
+          // Map entry is already removed by drainClarificationResolver /
+          // drainClarificationsForTask before this callback fires; no
+          // need to delete again here.
+          if (answer === null) {
+            reject(new Error("User cancelled the clarification"));
+          } else {
+            resolve({ answer });
+          }
+        },
+      });
+    });
   },
 });
 
