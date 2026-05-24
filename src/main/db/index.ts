@@ -121,6 +121,21 @@ export const initDatabase = async () => {
       last_test_error TEXT,
       last_tested_host TEXT
     );
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      transport TEXT NOT NULL CHECK(transport IN ('stdio','http')),
+      command TEXT,
+      args TEXT,
+      env TEXT,
+      cwd TEXT,
+      url TEXT,
+      headers TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      trusted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Migrate: pre-Tavily DBs have a CHECK constraint limited to
@@ -1161,6 +1176,143 @@ export const listMediaJobsBySession = (sessionId: string): MediaJob[] => {
     .where(eq(schema.mediaJobs.sessionId, sessionId))
     .all()
     .map(mapRowToMediaJob);
+};
+
+// ============================================================================
+// MCP Servers
+// ============================================================================
+
+export type McpTransport = "stdio" | "http";
+
+export interface McpServer {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  command: string | null;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  url: string | null;
+  headers: Record<string, string>;
+  enabled: boolean;
+  trusted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const parseJsonArray = (raw: string | null): string[] => {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+const parseJsonRecord = (raw: string | null): Record<string, string> => {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === "string") out[k] = val;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+};
+
+const mapMcpRow = (row: typeof schema.mcpServers.$inferSelect): McpServer => ({
+  id: row.id,
+  name: row.name,
+  transport: row.transport,
+  command: row.command,
+  args: parseJsonArray(row.args),
+  env: parseJsonRecord(row.env),
+  cwd: row.cwd,
+  url: row.url,
+  headers: parseJsonRecord(row.headers),
+  enabled: row.enabled,
+  trusted: row.trusted,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+export const listMcpServers = (): McpServer[] =>
+  db.select().from(schema.mcpServers).all().map(mapMcpRow);
+
+export const getMcpServer = (id: string): McpServer | null => {
+  const row = db
+    .select()
+    .from(schema.mcpServers)
+    .where(eq(schema.mcpServers.id, id))
+    .get();
+  return row ? mapMcpRow(row) : null;
+};
+
+export interface McpServerInput {
+  name: string;
+  transport: McpTransport;
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string | null;
+  url?: string | null;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+  trusted?: boolean;
+}
+
+export const createMcpServer = (input: McpServerInput): McpServer => {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const row = {
+    id,
+    name: input.name,
+    transport: input.transport,
+    command: input.command ?? null,
+    args: input.args ? JSON.stringify(input.args) : null,
+    env: input.env ? JSON.stringify(input.env) : null,
+    cwd: input.cwd ?? null,
+    url: input.url ?? null,
+    headers: input.headers ? JSON.stringify(input.headers) : null,
+    enabled: input.enabled ?? true,
+    trusted: input.trusted ?? false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.insert(schema.mcpServers).values(row).run();
+  return mapMcpRow(row as typeof schema.mcpServers.$inferSelect);
+};
+
+export const updateMcpServer = (
+  id: string,
+  updates: Partial<McpServerInput>,
+): void => {
+  const mapped: Record<string, unknown> = {};
+  if (updates.name !== undefined) mapped.name = updates.name;
+  if (updates.transport !== undefined) mapped.transport = updates.transport;
+  if (updates.command !== undefined) mapped.command = updates.command;
+  if (updates.args !== undefined) mapped.args = JSON.stringify(updates.args);
+  if (updates.env !== undefined) mapped.env = JSON.stringify(updates.env);
+  if (updates.cwd !== undefined) mapped.cwd = updates.cwd;
+  if (updates.url !== undefined) mapped.url = updates.url;
+  if (updates.headers !== undefined)
+    mapped.headers = JSON.stringify(updates.headers);
+  if (updates.enabled !== undefined) mapped.enabled = updates.enabled;
+  if (updates.trusted !== undefined) mapped.trusted = updates.trusted;
+  mapped.updatedAt = new Date().toISOString();
+  db.update(schema.mcpServers)
+    .set(mapped)
+    .where(eq(schema.mcpServers.id, id))
+    .run();
+};
+
+export const deleteMcpServer = (id: string): void => {
+  db.delete(schema.mcpServers).where(eq(schema.mcpServers.id, id)).run();
 };
 
 export type { FileOperation, RecentWorkspace, Task, Workspace };

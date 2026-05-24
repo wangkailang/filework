@@ -133,6 +133,39 @@ export const mediaJobs = sqliteTable("media_jobs", {
   completedAt: text("completed_at"),
 });
 
+/**
+ * MCP (Model Context Protocol) servers configured by the user. Each row
+ * describes a server the main process spawns or connects to so its tools
+ * become available to the agent loop. Sensitive values in `env`/`headers`
+ * should use `${env:VAR}` placeholders — see `src/main/mcp/manager.ts`
+ * for runtime expansion (Claude Desktop / VS Code compatible).
+ */
+export const mcpServers = sqliteTable("mcp_servers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
+  // stdio fields (NULL when transport === "http")
+  command: text("command"),
+  /** JSON.stringify(string[]) — CLI args passed to `command`. */
+  args: text("args"),
+  /** JSON.stringify(Record<string,string>) — supports `${env:VAR}`. */
+  env: text("env"),
+  cwd: text("cwd"),
+  // http fields (NULL when transport === "stdio")
+  url: text("url"),
+  /** JSON.stringify(Record<string,string>) — supports `${env:VAR}`. */
+  headers: text("headers"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /**
+   * trusted=true treats every tool from this server as `safe` — bypasses
+   * the `beforeToolCall` approval gate. trusted=false routes calls
+   * through approval like any other `destructive` tool.
+   */
+  trusted: integer("trusted", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const llmConfigs = sqliteTable("llm_configs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

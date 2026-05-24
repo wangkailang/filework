@@ -6,6 +6,7 @@ import {
   KeyRound,
   Monitor,
   Moon,
+  Plug,
   Settings,
   Sun,
   X,
@@ -17,6 +18,7 @@ import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
 import { CredentialsPanel } from "../settings/CredentialsPanel";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
+import { McpConfigPanel } from "../settings/McpConfigPanel";
 import { MemoryDebugPanel } from "../settings/MemoryDebugPanel";
 import { TaskTracePanel } from "../settings/TaskTracePanel";
 import { UsagePanel } from "../settings/UsagePanel";
@@ -26,6 +28,7 @@ type Tab =
   | "general"
   | "llm"
   | "credentials"
+  | "mcp"
   | "usage"
   | "memory-debug"
   | "task-trace";
@@ -115,6 +118,7 @@ export const SettingsModal = ({
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "credentials", label: "Credentials", icon: KeyRound },
+    { id: "mcp", label: "MCP", icon: Plug },
     { id: "usage", label: LL.usage_title(), icon: BarChart3 },
     { id: "memory-debug", label: LL.memoryDebug_title(), icon: Brain },
     { id: "task-trace", label: "Task Trace", icon: Monitor },
@@ -225,6 +229,8 @@ export const SettingsModal = ({
           {activeTab === "llm" && <LlmConfigPanel />}
 
           {activeTab === "credentials" && <CredentialsPanel />}
+
+          {activeTab === "mcp" && <McpConfigPanel />}
 
           {activeTab === "usage" && <UsagePanel />}
 
