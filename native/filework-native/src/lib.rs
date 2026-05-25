@@ -1,4 +1,5 @@
 mod walker;
+mod dedup;
 
 use napi_derive::napi;
 
