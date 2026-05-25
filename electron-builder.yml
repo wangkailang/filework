@@ -6,6 +6,9 @@ directories:
 files:
   - out/**/*
   - package.json
+  - node_modules/@filework/native/**/*
+asarUnpack:
+  - "**/*.node"
 mac:
   category: public.app-category.productivity
   target:
