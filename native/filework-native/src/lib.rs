@@ -1,3 +1,5 @@
+mod walker;
+
 use napi_derive::napi;
 
 #[napi]
