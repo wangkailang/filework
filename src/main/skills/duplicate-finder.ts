@@ -1,15 +1,7 @@
-import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
+import { findDuplicates } from "../native";
 import type { Skill } from "./types";
-
-/** Compute MD5 hash of a file for duplicate detection */
-const hashFile = async (filePath: string): Promise<string> => {
-  const content = await readFile(filePath);
-  return createHash("md5").update(content).digest("hex");
-};
 
 const findDuplicatesTool: Tool = {
   description:
@@ -29,63 +21,7 @@ const findDuplicatesTool: Tool = {
   }: {
     path: string;
     extensions?: string[];
-  }) => {
-    const entries = await readdir(dirPath, {
-      withFileTypes: true,
-      recursive: true,
-    });
-    const hashMap: Record<string, { path: string; size: number }[]> = {};
-    let scanned = 0;
-    let skipped = 0;
-
-    for (const entry of entries) {
-      if (!entry.isFile() || entry.name.startsWith(".")) continue;
-      const fullPath = join(entry.parentPath || dirPath, entry.name);
-      if (
-        fullPath.includes("/.filework/") ||
-        fullPath.includes("/node_modules/")
-      )
-        continue;
-      const ext = extname(entry.name).toLowerCase();
-
-      if (extensions && extensions.length > 0 && !extensions.includes(ext))
-        continue;
-
-      try {
-        const s = await stat(fullPath);
-        // Skip files larger than 100MB to avoid memory issues
-        if (s.size > 100 * 1024 * 1024) {
-          skipped++;
-          continue;
-        }
-        if (s.size === 0) continue;
-
-        const hash = await hashFile(fullPath);
-        if (!hashMap[hash]) hashMap[hash] = [];
-        hashMap[hash].push({ path: fullPath, size: s.size });
-        scanned++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    const duplicates = Object.values(hashMap)
-      .filter((group) => group.length > 1)
-      .sort((a, b) => b[0].size * b.length - a[0].size * a.length);
-
-    const totalWasted = duplicates.reduce(
-      (sum, group) => sum + group[0].size * (group.length - 1),
-      0,
-    );
-
-    return {
-      scanned,
-      skipped,
-      duplicateGroups: duplicates.length,
-      totalWastedBytes: totalWasted,
-      groups: duplicates.slice(0, 50), // cap output
-    };
-  },
+  }) => findDuplicates(dirPath, extensions),
 };
 
 export const duplicateFinder: Skill = {
