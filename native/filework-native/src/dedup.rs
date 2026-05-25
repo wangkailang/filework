@@ -101,12 +101,16 @@ pub fn find_duplicates(
         .filter(|g| g.len() > 1)
         .collect();
 
-    // 按可回收字节数 (size * (count - 1)) 降序排序，
-    // 以便 MAX_GROUPS 截断后保留真正最浪费空间的分组。
+    // 先让每个分组内部按路径排序，再按「可回收字节数 (size * (count - 1)) 降序、
+    // 首路径升序」对分组排序。HashMap 的迭代顺序是随机的，因此加入路径作为决胜键，
+    // 保证同一目录的扫描结果可复现，也让 MAX_GROUPS 截断后保留确定的分组集合。
+    for g in groups.iter_mut() {
+        g.sort_by(|a, b| a.0.cmp(&b.0));
+    }
     groups.sort_by(|a, b| {
         let wa = a[0].1 as u128 * (a.len() as u128 - 1);
         let wb = b[0].1 as u128 * (b.len() as u128 - 1);
-        wb.cmp(&wa)
+        wb.cmp(&wa).then_with(|| a[0].0.cmp(&b[0].0))
     });
 
     let total_wasted_bytes: f64 = groups
@@ -160,6 +164,24 @@ mod tests {
         fs::write(root.join("y.bin"), b"BBBB").unwrap(); // 相同大小，不同内容
         let out = find_duplicates(root.to_str().unwrap(), None).unwrap();
         assert_eq!(out.duplicate_groups, 0);
+    }
+
+    #[test]
+    fn output_order_is_deterministic() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        // 两个内容不同但大小相同的重复分组（可回收字节数相同，需靠路径决胜排序）。
+        fs::write(root.join("aaa1.bin"), vec![b'X'; 100]).unwrap();
+        fs::write(root.join("aaa2.bin"), vec![b'X'; 100]).unwrap();
+        fs::write(root.join("bbb1.bin"), vec![b'Y'; 100]).unwrap();
+        fs::write(root.join("bbb2.bin"), vec![b'Y'; 100]).unwrap();
+
+        let out = find_duplicates(root.to_str().unwrap(), None).unwrap();
+        assert_eq!(out.duplicate_groups, 2);
+        // 分组按首路径升序排列；分组内部也按路径升序排列。
+        assert!(out.groups[0][0].0.ends_with("aaa1.bin"));
+        assert!(out.groups[0][1].0.ends_with("aaa2.bin"));
+        assert!(out.groups[1][0].0.ends_with("bbb1.bin"));
     }
 
     #[test]

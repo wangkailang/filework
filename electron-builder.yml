@@ -6,7 +6,15 @@ directories:
 files:
   - out/**/*
   - package.json
-  - node_modules/@filework/native/**/*
+  # @filework/native is a pnpm-symlinked workspace package. electron-builder
+  # auto-collects production deps in full (following the symlink), so exclude
+  # the ~255MB Cargo target/ build tree and the Rust sources — only the .node,
+  # index.js, and package.json are needed at runtime.
+  - "!node_modules/@filework/native/target/**/*"
+  - "!node_modules/@filework/native/src/**/*"
+  - "!node_modules/@filework/native/build.rs"
+  - "!node_modules/@filework/native/Cargo.toml"
+  - "!node_modules/@filework/native/Cargo.lock"
 asarUnpack:
   - "**/*.node"
 mac:
