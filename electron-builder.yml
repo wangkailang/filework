@@ -11,15 +11,17 @@ asarUnpack:
   - "**/*.node"
 mac:
   category: public.app-category.productivity
+  # arm64 only: the @filework/native addon is local-compiled for the host arch.
+  # x64 is deferred until cross-compiled .node binaries are produced (see
+  # docs/superpowers/specs/2026-05-25-filework-native-dedup-design.md). Shipping
+  # an x64 build now would crash on boot — the addon would fail to load.
   target:
     - target: dmg
       arch:
         - arm64
-        - x64
     - target: zip
       arch:
         - arm64
-        - x64
   icon: build/icon.icns
   darkModeSupport: true
 dmg:

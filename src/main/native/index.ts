@@ -30,14 +30,23 @@ interface NativeModule {
 // vitest's ESM, so we must not use it.
 const requireNative = createRequire(import.meta.url);
 
-let native: NativeModule;
-try {
-  native = requireNative("@filework/native") as NativeModule;
-} catch (error) {
-  const original = error instanceof Error ? error.message : String(error);
-  throw new Error(
-    `Failed to load @filework/native — run 'pnpm install' to rebuild (requires Rust toolchain). Original error: ${original}`,
-  );
+let native: NativeModule | undefined;
+
+// Load lazily and memoize: the addon is a hard dependency (no JS fallback),
+// but loading it on first use rather than at import time keeps a missing or
+// unbuildable addon from crashing app startup — only the duplicate-finder
+// feature fails, with an actionable message, when it is actually invoked.
+function loadNative(): NativeModule {
+  if (native) return native;
+  try {
+    native = requireNative("@filework/native") as NativeModule;
+  } catch (error) {
+    const original = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load @filework/native — run 'pnpm install' to rebuild (requires Rust toolchain). Original error: ${original}`,
+    );
+  }
+  return native;
 }
 
 /** Scan a directory for duplicate files using the native (Rust) implementation. */
@@ -45,5 +54,5 @@ export function findDuplicates(
   rootPath: string,
   extensions?: string[],
 ): Promise<NativeDuplicateResult> {
-  return native.findDuplicates(rootPath, extensions);
+  return loadNative().findDuplicates(rootPath, extensions);
 }
