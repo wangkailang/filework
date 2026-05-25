@@ -8,21 +8,27 @@ const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024; // 100 MB
 const MAX_GROUPS: usize = 50;
 
 /// Plain-Rust dedup result (converted to a napi object in lib.rs).
+///
+/// `scanned`, `skipped`, `duplicate_groups`, and `total_wasted_bytes` are
+/// corpus-wide totals over the whole scan. `groups` is capped at `MAX_GROUPS`
+/// for display, so `groups.len()` may be less than `duplicate_groups` and the
+/// sizes in `groups` will not sum to `total_wasted_bytes` on large corpora.
 #[derive(Debug)]
 pub struct DedupOutput {
     pub scanned: u32,
     pub skipped: u32,
     pub duplicate_groups: u32,
     pub total_wasted_bytes: f64,
-    /// Each group is a list of (path, size), groups sorted by wasted space desc.
+    /// Duplicate groups (path, size), sorted by reclaimable bytes descending.
     pub groups: Vec<Vec<(String, u64)>>,
 }
 
-/// Map an io error to a tagged message matching the renderer's FS_ERROR_TAG.
+/// Map an io error to a bracketed tag matching the renderer's FS_ERROR_TAG
+/// convention (see `src/main/ipc/file-handlers.ts`).
 fn tag_io_error(err: &io::Error, path: &str) -> String {
     match err.kind() {
-        io::ErrorKind::NotFound => format!("FS_NOT_FOUND {}", path),
-        io::ErrorKind::PermissionDenied => format!("FS_PERMISSION_DENIED {}", path),
+        io::ErrorKind::NotFound => format!("[FS_NOT_FOUND] {}", path),
+        io::ErrorKind::PermissionDenied => format!("[FS_PERMISSION_DENIED] {}", path),
         _ => err.to_string(),
     }
 }
@@ -41,7 +47,7 @@ pub fn find_duplicates(
     // Fail fast if the root is unusable.
     let meta = std::fs::metadata(root).map_err(|e| tag_io_error(&e, root))?;
     if !meta.is_dir() {
-        return Err(format!("FS_NOT_FOUND {} (not a directory)", root));
+        return Err(format!("[FS_NOT_FOUND] {} (not a directory)", root));
     }
 
     let (walked, walk_skipped) = walk_files(root, extensions);
@@ -74,9 +80,9 @@ pub fn find_duplicates(
 
     // Hash candidates in parallel; read errors count as skipped.
     let hashed: Vec<(blake3::Hash, String, u64)> = to_hash
-        .par_iter()
-        .filter_map(|(path, size)| match hash_file(path) {
-            Ok(h) => Some((h, path.clone(), *size)),
+        .into_par_iter()
+        .filter_map(|(path, size)| match hash_file(&path) {
+            Ok(h) => Some((h, path, size)),
             Err(_) => {
                 skipped.fetch_add(1, Ordering::Relaxed);
                 None
@@ -95,10 +101,11 @@ pub fn find_duplicates(
         .filter(|g| g.len() > 1)
         .collect();
 
-    // Sort by wasted space (size * count) descending.
+    // Sort by reclaimable bytes (size * (count - 1)) descending, so the
+    // MAX_GROUPS cap keeps the groups that actually waste the most space.
     groups.sort_by(|a, b| {
-        let wa = a[0].1 as u128 * a.len() as u128;
-        let wb = b[0].1 as u128 * b.len() as u128;
+        let wa = a[0].1 as u128 * (a.len() as u128 - 1);
+        let wb = b[0].1 as u128 * (b.len() as u128 - 1);
         wb.cmp(&wa)
     });
 
@@ -158,6 +165,6 @@ mod tests {
     #[test]
     fn missing_root_returns_tagged_error() {
         let err = find_duplicates("/no/such/path/xyz", None).unwrap_err();
-        assert!(err.starts_with("FS_NOT_FOUND"), "got: {}", err);
+        assert!(err.starts_with("[FS_NOT_FOUND]"), "got: {}", err);
     }
 }
