@@ -8,9 +8,12 @@
 
 - 🤖 **通用 Agent** — 默认就具备读 / 写 / 列文件、运行 shell、向用户追问的能力，不局限于文件场景
 - 🗂️ **文件类技能内置** — 文件整理、PDF / Excel / Word 解析、报告生成等以扩展形式开箱即用
+- ⚡ **原生加速** — 重复文件检测、目录统计、增量扫描等 IO/CPU 密集操作由 Rust 原生插件(`@filework/native`)处理，大目录下并行扫描不阻塞界面
+- 🌿 **Git 项目管理** — 本地 Git 分支切换与 diff 预览，GitHub / GitLab 仓库克隆、PR / MR、CI 状态与日志查看
+- 🔗 **MCP 支持** — 接入任意 Model Context Protocol 服务器，把其工具桥接给 Agent 调用
 - 📋 **计划执行** — 复杂任务自动拆步、可视化每步进度、敏感操作前用户审批
 - 🔒 **数据本地** — 会话历史 / 配置 / 缓存全部在本地，模型 API 是唯一可选的外部依赖
-- 🤖 **多 LLM 后端** — OpenAI / Claude / DeepSeek / Ollama / 任何 OpenAI-兼容端点
+- 🔌 **多 LLM 后端** — OpenAI / Claude / DeepSeek / Ollama / 任何 OpenAI-兼容端点
 
 ## Tech Stack
 
