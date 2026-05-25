@@ -1,22 +1,22 @@
 use jwalk::WalkDir;
 use std::path::Path;
 
-/// A file discovered by the walker, with its size in bytes.
+/// 遍历器发现的一个文件，附带其字节大小。
 pub struct Walked {
     pub path: String,
     pub size: u64,
 }
 
-/// Walk `root` recursively, returning regular files that pass the filters,
-/// plus a count of entries skipped due to traversal/metadata errors.
+/// 递归遍历 `root`，返回通过过滤条件的常规文件，
+/// 以及因遍历/元数据错误而跳过的条目数。
 ///
-/// Filters applied:
-/// - skip files whose own name starts with `.`. Note: hidden *directories*
-///   are still descended into, and their non-hidden files ARE returned. This
-///   deliberately mirrors the TS duplicate-finder behavior being replaced.
-/// - skip any path containing `/.filework/` or `/node_modules/`
-/// - if `extensions` is `Some` and non-empty, keep only matching extensions
-///   (compared lowercase, with leading dot, e.g. `.jpg`)
+/// 应用的过滤规则：
+/// - 跳过文件名以 `.` 开头的文件。注意：隐藏*目录*仍会被深入遍历，
+///   其中非隐藏的文件仍会被返回。这是为了刻意保持与被替换的 TS
+///   duplicate-finder 行为一致。
+/// - 跳过路径中包含 `/.filework/` 或 `/node_modules/` 的条目
+/// - 若 `extensions` 为 `Some` 且非空，仅保留扩展名匹配的文件
+///   （转小写后比较，带前导点，例如 `.jpg`）
 pub fn walk_files(root: &str, extensions: Option<&[String]>) -> (Vec<Walked>, u32) {
     let mut files = Vec::new();
     let mut skipped: u32 = 0;
@@ -47,9 +47,8 @@ pub fn walk_files(root: &str, extensions: Option<&[String]>) -> (Vec<Walked>, u3
 
         let path = entry.path();
 
-        // The extension filter only needs the path's extension, so run it
-        // before allocating the full path string — files rejected here never
-        // pay for the `to_string_lossy` allocation below.
+        // 扩展名过滤只需要路径的扩展名，因此在分配完整路径字符串之前先做，
+        // 这样被这里拒绝的文件就不必承担下面 `to_string_lossy` 的分配开销。
         if let Some(ref exts) = exts_lower {
             if !exts.is_empty() && !match_extension(&path, exts) {
                 continue;
