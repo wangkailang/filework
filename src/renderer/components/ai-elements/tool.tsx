@@ -49,7 +49,10 @@ export const Tool = ({
     <Collapsible open={isOpen} onOpenChange={setOpen}>
       <div
         className={cn(
-          "rounded-lg border border-border bg-muted/40 text-sm overflow-hidden",
+          // 收起态:无边框密集单行,几乎不占视觉空间
+          // 展开态:才显示边框 + 背景,凸显出当前查看的调用
+          "rounded-md text-sm overflow-hidden transition-colors",
+          isOpen && "border border-border bg-muted/30",
           className,
         )}
         {...props}
@@ -118,7 +121,7 @@ export const ToolHeader = ({
     <CollapsibleTrigger asChild>
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-muted/60 transition-colors min-w-0",
+          "flex items-center gap-1.5 px-2 py-1 cursor-pointer select-none rounded-md hover:bg-muted/50 transition-colors min-w-0",
           className,
         )}
         {...props}

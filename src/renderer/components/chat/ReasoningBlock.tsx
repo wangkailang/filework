@@ -1,5 +1,6 @@
 import { Brain, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { cn } from "../../lib/utils";
 import type { ReasoningPart } from "./types";
 
 interface Props {
@@ -20,11 +21,17 @@ export function ReasoningBlock({ part }: Props) {
   const open = manualOpen ?? streaming;
 
   return (
-    <div className="my-2 rounded-md border border-border/60 bg-muted/30">
+    <div
+      className={cn(
+        // 收起态:无边框单行;展开态:才成卡片
+        "rounded-md transition-colors",
+        open && "border border-border/60 bg-muted/30",
+      )}
+    >
       <button
         type="button"
         onClick={() => setManualOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground/70 transition-colors hover:bg-muted/50 hover:text-foreground"
       >
         {streaming ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -43,7 +50,7 @@ export function ReasoningBlock({ part }: Props) {
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-2 pt-1 text-xs font-mono whitespace-pre-wrap text-muted-foreground/90">
+        <div className="px-2 pb-2 pt-1 text-xs font-mono whitespace-pre-wrap text-muted-foreground/90">
           {part.text}
         </div>
       )}

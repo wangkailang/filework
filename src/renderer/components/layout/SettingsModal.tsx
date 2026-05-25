@@ -8,6 +8,7 @@ import {
   Moon,
   Plug,
   Settings,
+  Shield,
   Sun,
   X,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import { LlmConfigPanel } from "../settings/LlmConfigPanel";
 import { McpConfigPanel } from "../settings/McpConfigPanel";
 import { MemoryDebugPanel } from "../settings/MemoryDebugPanel";
 import { TaskTracePanel } from "../settings/TaskTracePanel";
+import { ToolWhitelistPanel } from "../settings/ToolWhitelistPanel";
 import { UsagePanel } from "../settings/UsagePanel";
 
 type Theme = "dark" | "light" | "system";
@@ -29,6 +31,7 @@ type Tab =
   | "llm"
   | "credentials"
   | "mcp"
+  | "tool-whitelist"
   | "usage"
   | "memory-debug"
   | "task-trace";
@@ -119,6 +122,7 @@ export const SettingsModal = ({
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "credentials", label: "Credentials", icon: KeyRound },
     { id: "mcp", label: "MCP", icon: Plug },
+    { id: "tool-whitelist", label: "工具白名单", icon: Shield },
     { id: "usage", label: LL.usage_title(), icon: BarChart3 },
     { id: "memory-debug", label: LL.memoryDebug_title(), icon: Brain },
     { id: "task-trace", label: "Task Trace", icon: Monitor },
@@ -231,6 +235,8 @@ export const SettingsModal = ({
           {activeTab === "credentials" && <CredentialsPanel />}
 
           {activeTab === "mcp" && <McpConfigPanel />}
+
+          {activeTab === "tool-whitelist" && <ToolWhitelistPanel />}
 
           {activeTab === "usage" && <UsagePanel />}
 
