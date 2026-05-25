@@ -11,7 +11,9 @@ pub struct Walked {
 /// plus a count of entries skipped due to traversal/metadata errors.
 ///
 /// Filters applied:
-/// - skip entries whose name starts with `.`
+/// - skip files whose own name starts with `.`. Note: hidden *directories*
+///   are still descended into, and their non-hidden files ARE returned. This
+///   deliberately mirrors the TS duplicate-finder behavior being replaced.
 /// - skip any path containing `/.filework/` or `/node_modules/`
 /// - if `extensions` is `Some` and non-empty, keep only matching extensions
 ///   (compared lowercase, with leading dot, e.g. `.jpg`)
@@ -39,21 +41,24 @@ pub fn walk_files(root: &str, extensions: Option<&[String]>) -> (Vec<Walked>, u3
             continue;
         }
 
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
+        if entry.file_name().to_string_lossy().starts_with('.') {
             continue;
         }
 
         let path = entry.path();
-        let path_str = path.to_string_lossy().to_string();
-        if path_str.contains("/.filework/") || path_str.contains("/node_modules/") {
-            continue;
-        }
 
+        // The extension filter only needs the path's extension, so run it
+        // before allocating the full path string — files rejected here never
+        // pay for the `to_string_lossy` allocation below.
         if let Some(ref exts) = exts_lower {
             if !exts.is_empty() && !match_extension(&path, exts) {
                 continue;
             }
+        }
+
+        let path_str = path.to_string_lossy().into_owned();
+        if path_str.contains("/.filework/") || path_str.contains("/node_modules/") {
+            continue;
         }
 
         let size = match entry.metadata() {
@@ -95,11 +100,12 @@ mod tests {
         fs::create_dir(root.join("node_modules")).unwrap();
         fs::write(root.join("node_modules").join("pkg.txt"), b"x").unwrap();
 
-        let (files, _skipped) = walk_files(root.to_str().unwrap(), None);
+        let (files, skipped) = walk_files(root.to_str().unwrap(), None);
         let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(files.len(), 1, "only a.txt should pass, got {:?}", names);
         assert!(files[0].path.ends_with("a.txt"));
         assert_eq!(files[0].size, 5);
+        assert_eq!(skipped, 0, "clean tree should skip nothing");
     }
 
     #[test]
