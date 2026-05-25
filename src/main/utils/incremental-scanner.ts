@@ -5,9 +5,10 @@
  * and only scanning changed files on subsequent requests.
  */
 
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
+import { type NativeDirEntry, scanDirectoryLevel } from "../native";
 
 export interface FileEntry {
   name: string;
@@ -317,43 +318,40 @@ export class IncrementalScanner {
   }
 
   /**
-   * Scan directory and return all files
+   * 单层扫描目录并返回所有文件。
+   *
+   * 下沉到 native (Rust):readdir + 并行 stat 在 native 完成,过滤
+   * (shouldIgnore)、扩展名计算、路径拼接与 mtime 转换仍留在此处,
+   * 以保持与旧实现完全一致的行为。
    */
   private async scanDirectory(
     dirPath: string,
   ): Promise<Map<string, FileMetadata>> {
     const files = new Map<string, FileMetadata>();
 
+    let entries: NativeDirEntry[];
     try {
-      const entries = await readdir(dirPath, { withFileTypes: true });
-
-      for (const entry of entries) {
-        if (this.shouldIgnore(entry.name)) continue;
-
-        const fullPath = join(dirPath, entry.name);
-
-        try {
-          const stats = await stat(fullPath);
-          const fileMetadata: FileMetadata = {
-            name: entry.name,
-            path: fullPath,
-            isDirectory: entry.isDirectory(),
-            size: stats.size,
-            extension: entry.isDirectory() ? "" : extname(entry.name),
-            mtime: stats.mtime,
-            mtimeMs: stats.mtimeMs,
-          };
-
-          files.set(entry.name, fileMetadata);
-        } catch {
-          // Skip inaccessible files
-        }
-      }
+      entries = await scanDirectoryLevel(dirPath);
     } catch (error) {
       console.error(
         `[IncrementalScanner] Failed to scan directory ${dirPath}:`,
         error,
       );
+      return files;
+    }
+
+    for (const entry of entries) {
+      if (this.shouldIgnore(entry.name)) continue;
+
+      files.set(entry.name, {
+        name: entry.name,
+        path: join(dirPath, entry.name),
+        isDirectory: entry.isDirectory,
+        size: entry.size,
+        extension: entry.isDirectory ? "" : extname(entry.name),
+        mtime: new Date(entry.mtimeMs),
+        mtimeMs: entry.mtimeMs,
+      });
     }
 
     return files;

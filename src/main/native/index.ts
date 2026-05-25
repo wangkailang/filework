@@ -24,12 +24,22 @@ export interface NativeDirectoryStats {
   extensions: Record<string, number>;
 }
 
+/** native 单层目录扫描返回的一个条目元数据。 */
+export interface NativeDirEntry {
+  name: string;
+  isDirectory: boolean;
+  size: number;
+  /** 修改时间(毫秒),跟随符号链接;用于增量扫描的变更比对。 */
+  mtimeMs: number;
+}
+
 interface NativeModule {
   findDuplicates(
     rootPath: string,
     extensions?: string[] | null,
   ): Promise<NativeDuplicateResult>;
   directoryStats(rootPath: string): Promise<NativeDirectoryStats>;
+  scanDirectoryLevel(dirPath: string): Promise<NativeDirEntry[]>;
 }
 
 // createRequire works in BOTH environments:
@@ -72,4 +82,12 @@ export function directoryStats(
   rootPath: string,
 ): Promise<NativeDirectoryStats> {
   return loadNative().directoryStats(rootPath);
+}
+
+/**
+ * 用 native (Rust) 单层(非递归)扫描目录,并行 stat 每个条目。
+ * 不做 ignore 过滤,过滤与元数据加工由调用方负责。
+ */
+export function scanDirectoryLevel(dirPath: string): Promise<NativeDirEntry[]> {
+  return loadNative().scanDirectoryLevel(dirPath);
 }

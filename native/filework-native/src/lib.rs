@@ -1,4 +1,5 @@
 mod dedup;
+mod scan;
 mod stats;
 mod walker;
 
@@ -115,4 +116,45 @@ impl Task for DirectoryStatsTask {
 #[napi(ts_return_type = "Promise<DirectoryStats>")]
 pub fn directory_stats(root_path: String) -> AsyncTask<DirectoryStatsTask> {
     AsyncTask::new(DirectoryStatsTask { root: root_path })
+}
+
+#[napi(object)]
+pub struct DirEntryInfo {
+    pub name: String,
+    pub is_directory: bool,
+    pub size: f64,
+    pub mtime_ms: f64,
+}
+
+impl From<scan::DirEntry> for DirEntryInfo {
+    fn from(e: scan::DirEntry) -> Self {
+        DirEntryInfo {
+            name: e.name,
+            is_directory: e.is_directory,
+            size: e.size as f64,
+            mtime_ms: e.mtime_ms,
+        }
+    }
+}
+
+pub struct ScanDirLevelTask {
+    dir: String,
+}
+
+impl Task for ScanDirLevelTask {
+    type Output = Vec<scan::DirEntry>;
+    type JsValue = Vec<DirEntryInfo>;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        scan::scan_dir_level(&self.dir).map_err(|msg| Error::new(Status::GenericFailure, msg))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output.into_iter().map(Into::into).collect())
+    }
+}
+
+#[napi(ts_return_type = "Promise<Array<DirEntryInfo>>")]
+pub fn scan_directory_level(dir_path: String) -> AsyncTask<ScanDirLevelTask> {
+    AsyncTask::new(ScanDirLevelTask { dir: dir_path })
 }

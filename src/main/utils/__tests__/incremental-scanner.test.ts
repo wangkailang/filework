@@ -78,6 +78,30 @@ describe("IncrementalScanner", () => {
   });
 });
 
+it("reports unchanged files on a second scan within TTL", async () => {
+  const fakeHome = await mkdtemp(join(tmpdir(), "filework-home-"));
+  process.env.HOME = fakeHome;
+
+  const workspaceDir = await mkdtemp(join(tmpdir(), "filework-scan-"));
+  await writeFile(join(workspaceDir, "stable.txt"), "content", "utf-8");
+
+  const scanner = new IncrementalScanner({
+    ttlMs: 60_000,
+    maxDirectories: 100,
+    maxTotalFiles: 10000,
+  });
+
+  const first = await scanner.scanIncremental(workspaceDir, false);
+  expect(first.added.length).toBe(1);
+
+  // 文件未改动:第二次扫描应判定为 unchanged(依赖 native mtimeMs 在两次
+  // 扫描间稳定,且经磁盘缓存往返后仍可比对)。
+  const second = await scanner.scanIncremental(workspaceDir, false);
+  expect(second.unchanged.length).toBe(1);
+  expect(second.added.length).toBe(0);
+  expect(second.modified.length).toBe(0);
+});
+
 it("expires cached snapshots after TTL", async () => {
   const fakeHome = await mkdtemp(join(tmpdir(), "filework-home-"));
   process.env.HOME = fakeHome;
