@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { ipcMain } from "electron";
+import { directoryStats } from "../native";
 
 export interface FileInfo {
   name: string;
@@ -92,42 +93,9 @@ export const registerFileHandlers = () => {
     return buffer.toString("base64");
   });
 
-  // Get directory stats
-  ipcMain.handle("fs:directoryStats", async (_event, dirPath: string) => {
-    const entries = await readdir(dirPath, {
-      withFileTypes: true,
-      recursive: true,
-    }).catch((err: unknown) => {
-      throw wrapFsError(err, dirPath);
-    });
-    let totalFiles = 0;
-    let totalDirs = 0;
-    let totalSize = 0;
-    const extensions: Record<string, number> = {};
-
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-      const fullPath = join(entry.parentPath || dirPath, entry.name);
-      if (
-        fullPath.includes("/.filework/") ||
-        fullPath.includes("/node_modules/")
-      )
-        continue;
-      try {
-        if (entry.isDirectory()) {
-          totalDirs++;
-        } else {
-          totalFiles++;
-          const stats = await stat(fullPath);
-          totalSize += stats.size;
-          const ext = extname(entry.name) || "(no ext)";
-          extensions[ext] = (extensions[ext] || 0) + 1;
-        }
-      } catch {
-        // Skip inaccessible entries
-      }
-    }
-
-    return { totalFiles, totalDirs, totalSize, extensions };
-  });
+  // 获取目录统计:下沉到 native (Rust) 实现,复刻原 TS 的过滤与计数语义,
+  // 返回结构保持不变 { totalFiles, totalDirs, totalSize, extensions }。
+  ipcMain.handle("fs:directoryStats", (_event, dirPath: string) =>
+    directoryStats(dirPath),
+  );
 };

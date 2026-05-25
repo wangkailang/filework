@@ -1,8 +1,10 @@
 mod dedup;
+mod stats;
 mod walker;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::collections::HashMap;
 
 #[napi(object)]
 pub struct FileEntry {
@@ -71,4 +73,46 @@ pub fn find_duplicates(
         root: root_path,
         extensions,
     })
+}
+
+#[napi(object)]
+pub struct DirectoryStats {
+    pub total_files: u32,
+    pub total_dirs: u32,
+    pub total_size: f64,
+    pub extensions: HashMap<String, u32>,
+}
+
+impl From<stats::DirStats> for DirectoryStats {
+    fn from(s: stats::DirStats) -> Self {
+        DirectoryStats {
+            total_files: s.total_files,
+            total_dirs: s.total_dirs,
+            total_size: s.total_size as f64,
+            extensions: s.extensions,
+        }
+    }
+}
+
+pub struct DirectoryStatsTask {
+    root: String,
+}
+
+impl Task for DirectoryStatsTask {
+    type Output = stats::DirStats;
+    type JsValue = DirectoryStats;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        stats::compute_dir_stats(&self.root)
+            .map_err(|msg| Error::new(Status::GenericFailure, msg))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output.into())
+    }
+}
+
+#[napi(ts_return_type = "Promise<DirectoryStats>")]
+pub fn directory_stats(root_path: String) -> AsyncTask<DirectoryStatsTask> {
+    AsyncTask::new(DirectoryStatsTask { root: root_path })
 }

@@ -56,7 +56,7 @@ pub fn walk_files(root: &str, extensions: Option<&[String]>) -> (Vec<Walked>, u3
         }
 
         let path_str = path.to_string_lossy().into_owned();
-        if path_str.contains("/.filework/") || path_str.contains("/node_modules/") {
+        if is_ignored_path(&path_str) {
             continue;
         }
 
@@ -72,6 +72,15 @@ pub fn walk_files(root: &str, extensions: Option<&[String]>) -> (Vec<Walked>, u3
     }
 
     (files, skipped)
+}
+
+/// 判断路径是否落在需要忽略的子目录内。
+///
+/// 刻意使用前后带斜杠的子串匹配，复刻 TS 端
+/// （`src/main/ipc/file-handlers.ts`）的语义：忽略 `.filework` /
+/// `node_modules` 目录**内部**的条目，但目录自身（路径无尾部斜杠）不被此规则排除。
+pub(crate) fn is_ignored_path(path: &str) -> bool {
+    path.contains("/.filework/") || path.contains("/node_modules/")
 }
 
 fn match_extension(path: &Path, exts_lower: &[String]) -> bool {

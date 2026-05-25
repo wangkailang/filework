@@ -15,11 +15,21 @@ export interface NativeDuplicateResult {
   groups: NativeFileEntry[][];
 }
 
+/** native 目录统计的聚合结果。 */
+export interface NativeDirectoryStats {
+  totalFiles: number;
+  totalDirs: number;
+  totalSize: number;
+  /** 扩展名直方图，区分大小写;无扩展名记为 "(no ext)"。 */
+  extensions: Record<string, number>;
+}
+
 interface NativeModule {
   findDuplicates(
     rootPath: string,
     extensions?: string[] | null,
   ): Promise<NativeDuplicateResult>;
+  directoryStats(rootPath: string): Promise<NativeDirectoryStats>;
 }
 
 // createRequire works in BOTH environments:
@@ -55,4 +65,11 @@ export function findDuplicates(
   extensions?: string[],
 ): Promise<NativeDuplicateResult> {
   return loadNative().findDuplicates(rootPath, extensions);
+}
+
+/** 用 native (Rust) 实现递归统计目录的文件/目录数、总大小与扩展名分布。 */
+export function directoryStats(
+  rootPath: string,
+): Promise<NativeDirectoryStats> {
+  return loadNative().directoryStats(rootPath);
 }
