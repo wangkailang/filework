@@ -149,34 +149,8 @@ export const setTaskWorkspace = (
 export const getTaskWorkspace = (taskId: string): string | undefined =>
   taskWorkspaces.get(taskId);
 
-/**
- * Per-task tool whitelist: once a user approves a dangerous tool (e.g.
- * writeFile) during a task, subsequent calls of the same tool type are
- * auto-approved for the remainder of that task. This reduces approval
- * fatigue without compromising security across tasks.
- */
-const taskToolWhitelist = new Map<string, Set<string>>();
-
-/** Record that `toolName` was user-approved for `taskId`. */
-export const whitelistToolForTask = (
-  taskId: string,
-  toolName: string,
-): void => {
-  let set = taskToolWhitelist.get(taskId);
-  if (!set) {
-    set = new Set();
-    taskToolWhitelist.set(taskId, set);
-  }
-  set.add(toolName);
-};
-
-/** Check if `toolName` has been previously approved for `taskId`. */
-export const isToolWhitelistedForTask = (
-  taskId: string,
-  toolName: string,
-): boolean => {
-  return taskToolWhitelist.get(taskId)?.has(toolName) ?? false;
-};
+// 注:工具白名单已迁移到持久化的 `./tool-whitelist`(跨任务/会话生效、
+// 可在设置面板管理),不再使用「按任务、内存态」的临时白名单。
 
 /**
  * Initialize task execution tracking for a given task ID
@@ -199,9 +173,6 @@ export const cleanupTask = (taskId: string): void => {
 
   // Clean up plan-approved mapping
   planApprovedTasks.delete(taskId);
-
-  // Clean up per-task tool whitelist
-  taskToolWhitelist.delete(taskId);
 
   // Clean up task workspace mapping
   taskWorkspaces.delete(taskId);

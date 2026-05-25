@@ -431,7 +431,11 @@ export function useChatSession(
     window.filework.approveToolCall(toolCallId, approved);
   };
 
-  const handleBatchApproval = (batchId: string, approved: boolean) => {
+  const handleBatchApproval = (
+    batchId: string,
+    approved: boolean,
+    remember = false,
+  ) => {
     crud.setMessages((prev) => {
       const assistantId = stream.streamAssistantIdRef.current;
       const idx = prev.findIndex((m) => m.id === assistantId);
@@ -450,7 +454,7 @@ export function useChatSession(
       updated[idx] = { ...msg, parts: newParts };
       return updated;
     });
-    window.filework.approveToolCallBatch(batchId, approved);
+    window.filework.approveToolCallBatch(batchId, approved, remember);
   };
 
   /**

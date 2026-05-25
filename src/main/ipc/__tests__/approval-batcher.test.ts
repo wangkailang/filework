@@ -1,10 +1,5 @@
 import type { WebContents } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import {
-  isToolWhitelistedForTask,
-  whitelistToolForTask,
-} from "../ai-task-control";
 import {
   __getBatcherState,
   __resetBatcherForTests,
@@ -13,6 +8,10 @@ import {
   enqueueForBatch,
   settleBatch,
 } from "../approval-batcher";
+import {
+  __resetToolWhitelistCacheForTests,
+  isToolPersistentlyWhitelisted,
+} from "../tool-whitelist";
 
 interface StubSender {
   isDestroyed: () => boolean;
@@ -50,11 +49,13 @@ const lastBatchEvent = (sender: StubSender) => {
 describe("approval-batcher", () => {
   beforeEach(() => {
     __resetBatcherForTests();
+    __resetToolWhitelistCacheForTests();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     __resetBatcherForTests();
+    __resetToolWhitelistCacheForTests();
   });
 
   it("coalesces N concurrent calls into one IPC event with N entries", async () => {
@@ -83,10 +84,11 @@ describe("approval-batcher", () => {
     expect(__getBatcherState().bufferCount).toBe(0);
     expect(__getBatcherState().pendingBatchCount).toBe(1);
 
-    settleBatch(ev?.batchId as string, true);
+    // 带「始终允许」(remember=true)批准,顺带验证白名单写入。
+    settleBatch(ev?.batchId as string, true, true);
     const results = await Promise.all(promises);
     expect(results.every((r) => r === true)).toBe(true);
-    expect(isToolWhitelistedForTask("coalesce-test", toolName)).toBe(true);
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(true);
   });
 
   it("debounce splits late arrivals into a separate batch", async () => {
@@ -170,7 +172,7 @@ describe("approval-batcher", () => {
     settleBatch(ev?.batchId as string, false);
     const results = await Promise.all(promises);
     expect(results).toEqual([false, false, false]);
-    expect(isToolWhitelistedForTask("deny-test", toolName)).toBe(false);
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(false);
   });
 
   it("groups by (taskId, toolName) — different toolNames produce separate batches", async () => {
@@ -270,14 +272,26 @@ describe("approval-batcher", () => {
     expect(results[2]).toBe(true);
   });
 
-  it("preserves whitelist semantics for downstream callers", () => {
-    whitelistToolForTask("whitelisted-task", "deleteFile");
-    expect(isToolWhitelistedForTask("whitelisted-task", "deleteFile")).toBe(
-      true,
-    );
+  it("remember=true persists the tool to the global whitelist", async () => {
+    vi.useFakeTimers();
+    const sender = makeSender();
+    enqueueForBatch({
+      sender: sender as unknown as WebContents,
+      taskId: "persist-test",
+      toolName,
+      toolCallId: "p-0",
+      args: { path: "/a/0" },
+      description: "rm a0",
+    });
+    vi.advanceTimersByTime(300);
+    const ev = lastBatchEvent(sender);
+
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(false);
+    settleBatch(ev?.batchId as string, true, true);
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(true);
   });
 
-  it("cascade-approves sibling batches when one batch is approved", async () => {
+  it("cascade-approves sibling batches when approved with remember=true", async () => {
     vi.useFakeTimers();
     const sender = makeSender();
 
@@ -315,8 +329,8 @@ describe("approval-batcher", () => {
       (c) => c[1] as { batchId: string; entries: unknown[] },
     );
 
-    // User approves batch A only.
-    settleBatch(aEvent.batchId, true);
+    // User approves batch A with "始终允许" (remember=true).
+    settleBatch(aEvent.batchId, true, true);
 
     // Batch B should auto-resolve via cascade.
     const aResults = await Promise.all(promisesA);
@@ -333,7 +347,59 @@ describe("approval-batcher", () => {
       bEvent.batchId,
     );
 
-    expect(isToolWhitelistedForTask("cascade-test", toolName)).toBe(true);
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(true);
+  });
+
+  it("plain approve (remember=false) neither whitelists nor cascades", async () => {
+    vi.useFakeTimers();
+    const sender = makeSender();
+
+    // Batch A
+    const promisesA = [0].map((i) =>
+      enqueueForBatch({
+        sender: sender as unknown as WebContents,
+        taskId: "plain-approve-test",
+        toolName,
+        toolCallId: `pa-${i}`,
+        args: { path: `/a/${i}` },
+        description: `rm a${i}`,
+      }),
+    );
+    vi.advanceTimersByTime(300); // flush A
+
+    // Batch B (sibling, flushed separately)
+    enqueueForBatch({
+      sender: sender as unknown as WebContents,
+      taskId: "plain-approve-test",
+      toolName,
+      toolCallId: "pb-0",
+      args: { path: "/b/0" },
+      description: "rm b0",
+    });
+    vi.advanceTimersByTime(300); // flush B
+
+    const events = sender.send.mock.calls.filter(
+      (c) => c[0] === "ai:stream-tool-batch-approval",
+    );
+    const [aEvent] = events.map((c) => c[1] as { batchId: string });
+
+    // Plain 批准:只放行 A 显示的操作,不写白名单、不级联到 B。
+    settleBatch(aEvent.batchId, true);
+
+    const aResults = await Promise.all(promisesA);
+    expect(aResults).toEqual([true]);
+    // 未级联:B 仍待处理
+    expect(__getBatcherState().pendingBatchCount).toBe(1);
+    // 未级联通知
+    const cascadeEvents = sender.send.mock.calls.filter(
+      (c) => c[0] === "ai:stream-tool-batch-auto-approved",
+    );
+    expect(cascadeEvents).toHaveLength(0);
+    // 未写白名单:后续同类调用仍需批准
+    expect(isToolPersistentlyWhitelisted(toolName)).toBe(false);
+
+    // 清理:取消 B 的未决 promise
+    cancelBatchesForTask("plain-approve-test");
   });
 
   it("does NOT cascade-approve sibling batches when first is denied", async () => {

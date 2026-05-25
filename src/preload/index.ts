@@ -470,8 +470,16 @@ const api = {
     return () =>
       ipcRenderer.removeListener("ai:stream-tool-batch-approval", handler);
   },
-  approveToolCallBatch: (batchId: string, approved: boolean) =>
-    ipcRenderer.invoke("ai:approveToolCallBatch", { batchId, approved }),
+  approveToolCallBatch: (
+    batchId: string,
+    approved: boolean,
+    remember = false,
+  ) =>
+    ipcRenderer.invoke("ai:approveToolCallBatch", {
+      batchId,
+      approved,
+      remember,
+    }),
   onStreamToolBatchAutoApproved: (
     callback: (data: { id: string; batchId: string }) => void,
   ) => {
@@ -635,6 +643,14 @@ const api = {
   setSetting: (key: string, value: string) =>
     ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:getAll"),
+
+  // 危险工具白名单(持久化,可在设置面板管理)
+  toolWhitelist: {
+    getState: (): Promise<{ tools: string[]; enabled: string[] }> =>
+      ipcRenderer.invoke("tool-whitelist:getState"),
+    set: (toolName: string, enabled: boolean) =>
+      ipcRenderer.invoke("tool-whitelist:set", { toolName, enabled }),
+  },
 
   // LLM Config
   llmConfig: {

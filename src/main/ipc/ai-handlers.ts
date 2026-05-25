@@ -890,8 +890,15 @@ export const registerAIHandlers = () => {
 
   ipcMain.handle(
     "ai:approveToolCallBatch",
-    async (_event, payload: { batchId: string; approved: boolean }) => {
-      const settled = settleBatch(payload.batchId, payload.approved);
+    async (
+      _event,
+      payload: { batchId: string; approved: boolean; remember?: boolean },
+    ) => {
+      const settled = settleBatch(
+        payload.batchId,
+        payload.approved,
+        payload.remember ?? false,
+      );
       return { ok: settled };
     },
   );

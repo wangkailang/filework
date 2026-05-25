@@ -7,6 +7,7 @@ import type {
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { PreviewEntryRow } from "./preview";
+import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
 // Types — re-exported from the shared core types so the JSONL session store
@@ -160,8 +161,12 @@ interface ConfirmationBatchProps {
   state: ApprovalState;
   toolName: string;
   entries: BatchApprovalEntry[];
-  onApproveAll: () => void;
-  onDenyAll: () => void;
+  /**
+   * 用户批准。`remember=true` 表示选择了「始终允许该工具」——把工具加入
+   * 任务白名单,后续同类调用自动放行;`false` 只批准当前显示的这些操作。
+   */
+  onApprove: (remember: boolean) => void;
+  onDeny: () => void;
   /** Max entries shown before "+N more" collapse. Default 5. */
   previewLimit?: number;
   className?: string;
@@ -171,8 +176,8 @@ export const ConfirmationBatch = ({
   state,
   toolName,
   entries,
-  onApproveAll,
-  onDenyAll,
+  onApprove,
+  onDeny,
   previewLimit = 5,
   className,
 }: ConfirmationBatchProps) => {
@@ -180,13 +185,16 @@ export const ConfirmationBatch = ({
   const count = entries.length;
   const visible = entries.slice(0, previewLimit);
   const hidden = Math.max(0, count - previewLimit);
+  // 用本地化工具名(如「删除文件」)而非原始 toolName(deleteFile)
+  const label = getToolLabels(LL)[toolName] || toolName;
+  const single = count === 1;
 
   return (
     <Confirmation state={state} className={className}>
       <ConfirmationRequest>
         <div className="flex flex-col gap-1">
           <div className="font-medium">
-            批准 {count} 个 {toolName} 操作？
+            {single ? `批准${label}操作？` : `批准 ${count} 个${label}操作？`}
           </div>
           <div className="ml-1 mt-0.5 space-y-1 text-foreground/70">
             {visible.map((e) => (
@@ -200,19 +208,29 @@ export const ConfirmationBatch = ({
       </ConfirmationRequest>
       {state === "approval-requested" && (
         <ConfirmationActions>
-          <ConfirmationAction variant="default" onClick={onApproveAll}>
-            批准全部 {count} 个
+          <ConfirmationAction
+            variant="default"
+            onClick={() => onApprove(false)}
+          >
+            {single ? "批准" : `批准全部 ${count} 个`}
           </ConfirmationAction>
-          <ConfirmationAction variant="destructive" onClick={onDenyAll}>
-            拒绝全部
+          <ConfirmationAction variant="outline" onClick={() => onApprove(true)}>
+            始终允许{label}
+          </ConfirmationAction>
+          <ConfirmationAction variant="destructive" onClick={onDeny}>
+            {single ? "拒绝" : "拒绝全部"}
           </ConfirmationAction>
         </ConfirmationActions>
       )}
       {state === "approval-accepted" && (
-        <ConfirmationAccepted>已批准 {count} 个操作</ConfirmationAccepted>
+        <ConfirmationAccepted>
+          {single ? "已批准" : `已批准 ${count} 个操作`}
+        </ConfirmationAccepted>
       )}
       {state === "approval-rejected" && (
-        <ConfirmationRejected>已拒绝 {count} 个操作</ConfirmationRejected>
+        <ConfirmationRejected>
+          {single ? "已拒绝" : `已拒绝 ${count} 个操作`}
+        </ConfirmationRejected>
       )}
     </Confirmation>
   );

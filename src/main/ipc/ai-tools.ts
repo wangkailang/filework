@@ -25,11 +25,8 @@ import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
-import {
-  isToolWhitelistedForTask,
-  whitelistToolForTask,
-} from "./ai-task-control";
 import { enqueueForBatch } from "./approval-batcher";
+import { isToolPersistentlyWhitelisted } from "./tool-whitelist";
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
@@ -51,6 +48,11 @@ export const dangerousToolDescriptions: Record<
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
 };
+
+/** 需要审批的危险工具名——白名单管理面板据此列出可「始终允许」的工具。 */
+export const dangerousToolNames: string[] = Object.keys(
+  dangerousToolDescriptions,
+);
 
 /** Safe (read-only) tools — shared across all requests */
 export const safeTools: Record<string, Tool> = {
@@ -382,11 +384,10 @@ export const requestApproval = (
   abortSignal?: AbortSignal,
   workspace?: import("../core/workspace/types").Workspace,
 ): Promise<boolean> => {
-  // If the user already approved this tool type during the current task,
-  // skip the approval prompt and auto-approve.
-  if (isToolWhitelistedForTask(taskId, toolName)) {
+  // 工具已在持久白名单里(用户选过「始终允许」或在设置里开启)→ 跳过审批。
+  if (isToolPersistentlyWhitelisted(toolName)) {
     console.log(
-      `[Tool] Auto-approved ${toolName} via task whitelist for taskId: ${taskId}`,
+      `[Tool] Auto-approved ${toolName} via persistent whitelist for taskId: ${taskId}`,
     );
     if (!sender.isDestroyed()) {
       sender.send("ai:tool-auto-approved", {
@@ -400,8 +401,8 @@ export const requestApproval = (
 
   // All destructive tools coalesce into a single approval card per
   // (task, toolName) so a wave of N concurrent deleteFile calls becomes
-  // 1 click instead of N. First-ok approvals whitelist the tool for the
-  // rest of the task.
+  // 1 click instead of N. 普通批准只放行卡片里显示的操作;白名单(后续自动
+  // 放行)仅在用户显式选「始终允许」时由 settleBatch 写入,这里不再自动写。
   const describeFn = dangerousToolDescriptions[toolName];
   const description = describeFn
     ? describeFn(args as Record<string, unknown>)
@@ -415,9 +416,6 @@ export const requestApproval = (
     description,
     abortSignal,
     workspace,
-  }).then((approved) => {
-    if (approved) whitelistToolForTask(taskId, toolName);
-    return approved;
   });
 };
 

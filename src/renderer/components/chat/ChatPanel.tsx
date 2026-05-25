@@ -70,6 +70,7 @@ import { SkillMenu } from "./SkillMenu";
 import type {
   ArticleMetaPart,
   AttachmentPart,
+  BatchApprovalEntry,
   BatchApprovalPart,
   ClarificationPart,
   ErrorPart,
@@ -615,60 +616,133 @@ export const ChatPanel = ({
 
   const TOOL_GROUP_THRESHOLD = 3;
 
-  const renderToolGroup = (items: ToolPart[]) => {
-    const head = items[0];
-    if (!head) return null;
-    const label = toolLabels[head.toolName] || head.toolName;
-    const summary = LL.tool_summary_group_label(items.length, label);
+  type ToolGroupUnit = {
+    type: "tool-group";
+    items: MessagePart[];
+    toolName: string;
+    toolCount: number;
+  };
+
+  const renderToolGroup = (unit: ToolGroupUnit) => {
+    const { items, toolName, toolCount } = unit;
+    const label = toolLabels[toolName] || toolName;
+    const summary = LL.tool_summary_group_label(toolCount, label);
+    const head = items.find((p) => p.type === "tool") as ToolPart | undefined;
+    let groupReasoningIdx = 0;
     return (
-      <Tool key={`group-${head.toolCallId}`} defaultOpen={false}>
+      <Tool key={`group-${head?.toolCallId ?? toolName}`} defaultOpen={false}>
         <ToolHeader
-          toolName={head.toolName}
+          toolName={toolName}
           state="output-available"
           summary={summary}
         />
         <ToolContent>
           <div className="divide-y divide-border">
-            {items.map((inv) => (
-              <div key={inv.toolCallId} className="p-2">
-                {renderToolPart(inv)}
-              </div>
-            ))}
+            {items.map((p) => {
+              if (p.type === "reasoning") {
+                groupReasoningIdx++;
+                return (
+                  <div key={`g-reasoning-${groupReasoningIdx}`} className="p-2">
+                    <ReasoningBlock part={p as ReasoningPart} />
+                  </div>
+                );
+              }
+              const inv = p as ToolPart;
+              return (
+                <div key={inv.toolCallId} className="p-2">
+                  {renderToolPart(inv)}
+                </div>
+              );
+            })}
           </div>
         </ToolContent>
       </Tool>
     );
   };
 
-  type RenderUnit = MessagePart | { type: "tool-group"; items: ToolPart[] };
+  type RenderUnit = MessagePart | ToolGroupUnit;
 
+  // 把连续的同名工具调用聚成一组。reasoning 不打断连续段(会被并入组内,
+  // 在展开时按原顺序穿插显示),这样"思考→扫描→思考→扫描…"的交错流也能折叠。
   const groupConsecutiveTools = (parts: MessagePart[]): RenderUnit[] => {
     const out: RenderUnit[] = [];
-    let buf: ToolPart[] = [];
+    let buf: MessagePart[] = [];
+    let groupToolName: string | null = null;
+
+    const emitEach = (items: MessagePart[]) => {
+      for (const p of items) out.push(p);
+    };
+
     const flush = () => {
       if (buf.length === 0) return;
-      if (buf.length >= TOOL_GROUP_THRESHOLD) {
-        out.push({ type: "tool-group", items: buf });
-      } else {
-        for (const inv of buf) out.push(inv);
+      const firstToolIdx = buf.findIndex((p) => p.type === "tool");
+      if (firstToolIdx === -1) {
+        // 缓冲里只有 reasoning,没有工具:原样输出
+        emitEach(buf);
+        buf = [];
+        groupToolName = null;
+        return;
       }
+      let lastToolIdx = firstToolIdx;
+      for (let i = buf.length - 1; i > firstToolIdx; i--) {
+        if (buf[i]?.type === "tool") {
+          lastToolIdx = i;
+          break;
+        }
+      }
+      // 把首个工具之前 / 末个工具之后的 reasoning 留在组外
+      // (它们通常分别属于"开场思考"和"最终回答前的思考")
+      const leading = buf.slice(0, firstToolIdx);
+      const core = buf.slice(firstToolIdx, lastToolIdx + 1);
+      const trailing = buf.slice(lastToolIdx + 1);
+      const toolCount = core.filter((p) => p.type === "tool").length;
+
+      emitEach(leading);
+      if (toolCount >= TOOL_GROUP_THRESHOLD && groupToolName) {
+        out.push({
+          type: "tool-group",
+          items: core,
+          toolName: groupToolName,
+          toolCount,
+        });
+      } else {
+        emitEach(core);
+      }
+      emitEach(trailing);
+
       buf = [];
+      groupToolName = null;
     };
+
     for (const part of parts) {
-      const isTool = part.type === "tool";
-      const inv = isTool ? (part as ToolPart) : null;
-      const groupable =
-        inv &&
-        !inv.approval &&
-        inv.state !== "output-error" &&
-        (buf.length === 0 || buf[0]?.toolName === inv.toolName);
-      if (groupable && inv) {
-        buf.push(inv);
-      } else {
-        flush();
-        if (inv) buf.push(inv);
-        else out.push(part);
+      if (part.type === "reasoning") {
+        // reasoning 不打断同名工具的连续段
+        buf.push(part);
+        continue;
       }
+      if (part.type === "tool") {
+        const inv = part as ToolPart;
+        const groupable = !inv.approval && inv.state !== "output-error";
+        if (!groupable) {
+          flush();
+          out.push(part);
+          continue;
+        }
+        if (groupToolName === null) {
+          groupToolName = inv.toolName;
+          buf.push(part);
+        } else if (groupToolName === inv.toolName) {
+          buf.push(part);
+        } else {
+          flush();
+          groupToolName = inv.toolName;
+          buf.push(part);
+        }
+        continue;
+      }
+      // 其它部件(text / plan / usage / …)打断分组
+      flush();
+      out.push(part);
     }
     flush();
     return out;
@@ -677,9 +751,55 @@ export const ChatPanel = ({
   const renderAssistantParts = (parts: MessagePart[]) => {
     const textKeyCounts = new Map<string, number>();
     let reasoningIdx = 0;
-    return groupConsecutiveTools(parts).map((part) => {
+
+    // 把多张「同名工具 + 待批准」的批量卡合并成一张:模型可能分多步顺序
+    // 发起删除,后端会拆成多个批次,这里按 toolName 收集所有 batchId 与条目,
+    // 只在第一张的位置渲染合并卡,其余跳过。批准/拒绝时对全部 batchId 生效。
+    const pendingBatchGroups = new Map<
+      string,
+      {
+        batchIds: string[];
+        entries: BatchApprovalEntry[];
+        firstBatchId: string;
+      }
+    >();
+    // 待批准批次已在审批卡里逐条列出的 toolCallId——对应的「执行中」工具行
+    // 会被隐藏,避免审批阶段同一批删除既出现在卡片里又刷出一堆独立行。
+    const pendingBatchToolCallIds = new Set<string>();
+    for (const p of parts) {
+      if (p.type !== "batch-approval" || p.state !== "approval-requested")
+        continue;
+      const bp = p as BatchApprovalPart;
+      for (const e of bp.entries) pendingBatchToolCallIds.add(e.toolCallId);
+      const g = pendingBatchGroups.get(bp.toolName);
+      if (g) {
+        g.batchIds.push(bp.batchId);
+        g.entries.push(...bp.entries);
+      } else {
+        pendingBatchGroups.set(bp.toolName, {
+          batchIds: [bp.batchId],
+          entries: [...bp.entries],
+          firstBatchId: bp.batchId,
+        });
+      }
+    }
+
+    // 隐藏「正等待批准」且已被审批卡收录的工具行;批准后状态转为
+    // output-available,会重新显示并按 groupConsecutiveTools 正常折叠。
+    const visibleParts =
+      pendingBatchToolCallIds.size === 0
+        ? parts
+        : parts.filter((p) => {
+            if (p.type !== "tool") return true;
+            const tp = p as ToolPart;
+            const awaiting =
+              tp.state === "input-available" || tp.state === "input-streaming";
+            return !(awaiting && pendingBatchToolCallIds.has(tp.toolCallId));
+          });
+
+    return groupConsecutiveTools(visibleParts).map((part) => {
       if (part.type === "tool-group") {
-        return renderToolGroup(part.items);
+        return renderToolGroup(part);
       }
       if (part.type === "reasoning") {
         reasoningIdx++;
@@ -798,14 +918,38 @@ export const ChatPanel = ({
       }
       if (part.type === "batch-approval") {
         const bp = part as BatchApprovalPart;
+        if (bp.state === "approval-requested") {
+          const group = pendingBatchGroups.get(bp.toolName);
+          // 只在该组第一张的位置渲染合并卡,其余跳过,避免出现多张
+          if (!group || group.firstBatchId !== bp.batchId) return null;
+          const { batchIds, entries } = group;
+          return (
+            <ConfirmationBatch
+              key={`batch-${bp.batchId}`}
+              state="approval-requested"
+              toolName={bp.toolName}
+              entries={entries}
+              onApprove={(remember) => {
+                for (const id of batchIds)
+                  chat.handleBatchApproval(id, true, remember);
+              }}
+              onDeny={() => {
+                for (const id of batchIds) chat.handleBatchApproval(id, false);
+              }}
+              className="my-1"
+            />
+          );
+        }
         return (
           <ConfirmationBatch
             key={`batch-${bp.batchId}`}
             state={bp.state}
             toolName={bp.toolName}
             entries={bp.entries}
-            onApproveAll={() => chat.handleBatchApproval(bp.batchId, true)}
-            onDenyAll={() => chat.handleBatchApproval(bp.batchId, false)}
+            onApprove={(remember) =>
+              chat.handleBatchApproval(bp.batchId, true, remember)
+            }
+            onDeny={() => chat.handleBatchApproval(bp.batchId, false)}
             className="my-1"
           />
         );

@@ -8,7 +8,7 @@ import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
 import { rememberPreview } from "../core/agent/preview/snapshot-store";
 import type { ToolPreview } from "../core/agent/preview/types";
 import type { Workspace } from "../core/workspace/types";
-import { whitelistToolForTask } from "./ai-task-control";
+import { addPersistentToolWhitelist } from "./tool-whitelist";
 
 /**
  * Time to wait for additional entries after the latest arrival, before
@@ -260,14 +260,18 @@ async function enrichAndSend(
 }
 
 /**
- * Resolve every entry in the batch with the given decision. When
- * approved, whitelist the toolName so future single-shot calls in the
- * same task bypass the dialog (matches existing whitelist semantics)
- * AND cascade-approve any sibling batches for the same (task, toolName)
- * that flushed separately due to timing jitter — user clicked once,
- * shouldn't have to click again.
+ * Resolve every entry in the batch with the given decision.
+ *
+ * 普通批准(`remember` 为 false)只放行**这一批显示出来的操作**,不写白名单、
+ * 不级联——对齐 Claude Code「Yes」只批准当前这一次的语义。只有用户显式选择
+ * 「始终允许」(`remember` 为 true)时,才把该工具加入任务白名单,让后续同类
+ * 调用自动放行,并级联批准因抖动而单独 flush 的兄弟批次(点一次即可)。
  */
-export function settleBatch(batchId: string, approved: boolean): boolean {
+export function settleBatch(
+  batchId: string,
+  approved: boolean,
+  remember = false,
+): boolean {
   const batch = pendingBatches.get(batchId);
   if (!batch) return false;
   pendingBatches.delete(batchId);
@@ -283,8 +287,10 @@ export function settleBatch(batchId: string, approved: boolean): boolean {
     }
     entry.resolve(approved);
   }
-  if (approved) {
-    whitelistToolForTask(batch.taskId, batch.toolName);
+  if (approved && remember) {
+    // 写入持久白名单(跨任务/会话生效,可在设置面板里管理),
+    // 并级联放行因抖动单独 flush 的同类兄弟批次。
+    addPersistentToolWhitelist(batch.toolName);
     cascadeApproveSiblings(batch.taskId, batch.toolName, batch.sender);
   }
   return true;

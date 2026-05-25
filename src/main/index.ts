@@ -50,6 +50,7 @@ import { registerMediaHandlers } from "./ipc/media-handlers";
 import { mediaJobWatcher } from "./ipc/media-job-watcher";
 import { registerSettingsHandlers } from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
+import { registerToolWhitelistHandlers } from "./ipc/tool-whitelist-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
 import { mcpManager } from "./mcp/manager";
 import { bootstrapProxy } from "./proxy-bootstrap";
@@ -269,6 +270,7 @@ app.whenReady().then(async () => {
   registerChatHandlers(sessionStore);
   registerAttachmentHandlers();
   registerTaskTraceHandlers();
+  registerToolWhitelistHandlers();
   registerCredentialsHandlers();
 
   // MCP — load persisted server configs, register IPC, and open every
