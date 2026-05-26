@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { decodeRef, type WorkspaceRef } from "../../types/workspace-ref";
+import { Logo } from "../Logo";
 
 interface RecentWorkspace {
   path: string;
@@ -68,9 +69,7 @@ export const WelcomeScreen = ({
 
       <div className="flex flex-col items-center gap-8 w-full max-w-2xl px-6 text-center">
         {/* Logo */}
-        <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <FolderOpen className="w-10 h-10 text-primary" />
-        </div>
+        <Logo size={80} className="rounded-2xl" />
 
         <div>
           <h1 className="text-2xl font-semibold text-foreground mb-2">

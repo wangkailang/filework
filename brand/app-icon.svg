@@ -1,0 +1,24 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="120" x2="904" y2="904" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#23233a"/>
+      <stop offset="1" stop-color="#14141f"/>
+    </linearGradient>
+    <linearGradient id="w" x1="300" y1="320" x2="760" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.34" r="0.5">
+      <stop stop-color="#4f46e5" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#4f46e5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- macOS squircle 母版,~8% 透明边距 -->
+  <rect x="88" y="88" width="848" height="848" rx="196" fill="url(#bg)"/>
+  <rect x="88" y="88" width="848" height="848" rx="196" fill="url(#glow)"/>
+  <rect x="89.5" y="89.5" width="845" height="845" rx="194.5" stroke="#3b3a7a" stroke-width="3" opacity="0.6"/>
+  <!-- W 笔画,顶点收成 A 的尖 = Workspace Agent -->
+  <path d="M300 360 L408 712 L512 460 L616 712 L724 360" stroke="url(#w)" stroke-width="74" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- A 顶点琥珀火花 -->
+  <circle cx="512" cy="384" r="44" fill="#f59e0b"/>
+</svg>

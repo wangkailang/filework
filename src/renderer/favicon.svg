@@ -1,0 +1,14 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fav" x1="56" y1="80" x2="200" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角方块底:工作区 -->
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="#1e1e2e"/>
+  <!-- W 形:顶点收成 A 的尖 = Workspace Agent -->
+  <path d="M64 80 L96 180 L128 108 L160 180 L192 80" stroke="url(#fav)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- A 顶点琥珀火花 -->
+  <circle cx="128" cy="86" r="13" fill="#f59e0b"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg width="540" height="128" viewBox="0 0 540 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lw" x1="22" y1="34" x2="100" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- 图标:圆角方块 + WA 字母组合 -->
+  <rect x="16" y="16" width="96" height="96" rx="22" fill="#1e1e2e"/>
+  <rect x="17" y="17" width="94" height="94" rx="21" stroke="#312e6e" stroke-width="1.5"/>
+  <path d="M40 43 L53 85 L64 55 L75 85 L88 43" stroke="url(#lw)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="64" cy="46" r="5.5" fill="#f59e0b"/>
+  <!-- 文字 -->
+  <text x="138" y="76" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="40" font-weight="650" letter-spacing="-1.2" fill="#1e1e2e">Workspace<tspan fill="#4f46e5"> Agent</tspan></text>
+</svg>
