@@ -7,6 +7,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  nativeImage,
   protocol,
   session,
   shell,
@@ -149,6 +150,29 @@ const createWindow = () => {
 };
 
 app.whenReady().then(async () => {
+  // 开发模式下 macOS dock 显示默认 Electron 图标(build/icon.icns 仅在
+  // electron-builder 打包时生效)。手动设置 dock 图标,让 `pnpm dev` 也能
+  // 看到品牌 logo;打包后的应用走 .icns,无需此分支。
+  if (!app.isPackaged && process.platform === "darwin") {
+    const devIcon = nativeImage.createFromPath(
+      join(app.getAppPath(), "brand/png/icon-512.png"),
+    );
+    if (!devIcon.isEmpty()) {
+      app.dock?.setIcon(devIcon);
+    }
+  }
+
+  // 系统「关于」面板:设置名称与版本。
+  // iconPath 仅在 Linux/Windows 生效;macOS 的关于面板图标取自 app bundle
+  // 图标(打包后即 build/icon.icns),运行时无法覆盖。
+  app.setAboutPanelOptions({
+    applicationName: "Workspace Agent",
+    applicationVersion: app.getVersion(),
+    ...(process.platform === "darwin"
+      ? {}
+      : { iconPath: join(app.getAppPath(), "brand/png/icon-512.png") }),
+  });
+
   // Pattern capture sink. Opt-in by initializing before any task runs;
   // appendPattern is a no-op until this fires.
   initPatternStore(join(app.getPath("userData"), "patterns.jsonl"));

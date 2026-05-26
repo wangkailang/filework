@@ -1,0 +1,15 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="m3grad" x1="56" y1="80" x2="200" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角方块底:工作区 -->
+  <rect x="32" y="32" width="192" height="192" rx="44" fill="#1e1e2e"/>
+  <rect x="33" y="33" width="190" height="190" rx="43" stroke="#312e6e" stroke-width="2"/>
+  <!-- W 形:两个 V 笔画,顶点向上收成 A 的尖 = Workspace Agent -->
+  <path d="M72 86 L98 170 L128 110 L158 170 L184 86" stroke="url(#m3grad)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- A 顶点火花 -->
+  <circle cx="128" cy="92" r="11" fill="#f59e0b"/>
+</svg>
