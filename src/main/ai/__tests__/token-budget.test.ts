@@ -124,8 +124,8 @@ describe("truncateToFit", () => {
   // Tool result compression
   // -------------------------------------------------------------------------
 
-  it("compresses large tool results (> 2000 chars)", () => {
-    const largeValue = "x".repeat(3000);
+  it("compresses large tool results (> 2000 chars) while preserving useful context", () => {
+    const largeValue = `BEGIN-IMPORTANT-${"x".repeat(3000)}-END-IMPORTANT`;
     const msgs: ModelMessage[] = [
       assistantWithToolCall("tc1", "readFile"),
       toolResultMsg("tc1", "readFile", largeValue),
@@ -134,16 +134,21 @@ describe("truncateToFit", () => {
     const originalTokens = estimateTokens(msgs);
     const result = truncateToFit(msgs, originalTokens - 1);
 
-    // Should have compressed the tool result
+    // Should have compressed the tool result without erasing all semantic content
     const toolMsg = result.messages.find((m) => m.role === "tool");
     expect(toolMsg).toBeDefined();
     if (toolMsg && Array.isArray(toolMsg.content)) {
       const toolResult = toolMsg.content[0];
       if (toolResult.type === "tool-result") {
-        expect(toolResult.output).toEqual({
-          type: "text",
-          value: "[工具结果已压缩]",
-        });
+        expect(toolResult.output.type).toBe("text");
+        if (toolResult.output.type === "text") {
+          expect(toolResult.output.value).toContain("工具结果已压缩");
+          expect(toolResult.output.value).toContain("BEGIN-IMPORTANT");
+          expect(toolResult.output.value).toContain("END-IMPORTANT");
+          expect(toolResult.output.value.length).toBeLessThan(
+            largeValue.length,
+          );
+        }
       }
     }
   });
