@@ -7,6 +7,7 @@
 
 import crypto from "node:crypto";
 import { ipcMain } from "electron";
+import { resolveAdapterName } from "../ai/adapters";
 import { compressContext } from "../ai/context-compressor";
 import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError } from "../ai/error-classifier";
@@ -272,7 +273,14 @@ const handleTaskExecution = async (
       try {
         const coreMessages = await convertToCoreMessages(
           payload.history as HistoryMessage[],
-          { providerId: llmConfig?.provider },
+          {
+            // 用「解析后的 adapter 名」做能力查表:MiMo 常以 host 覆盖路由到
+            // xiaomi adapter,而 llmConfig.provider 未必是 "xiaomi"。对其它
+            // provider,resolveAdapterName 原样返回,行为不变。
+            providerId: llmConfig?.provider
+              ? resolveAdapterName(llmConfig.provider, llmConfig.baseUrl)
+              : undefined,
+          },
         );
 
         let compressorCalled = false;

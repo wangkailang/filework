@@ -53,6 +53,10 @@ const PROVIDER_CAPS: Record<string, ProviderCaps> = {
   deepseek: { image: true, pdf: false },
   minimax: { image: true, pdf: false },
   ollama: { image: false, pdf: false },
+  // Xiaomi MiMo(经 deepseek 兼容协议接入)是纯文本推理模型,不接受图像内容。
+  // 注意:此 key 须是「解析后的 adapter 名」(见 resolveAdapterName)——MiMo 常以
+  // host 覆盖路由,llmConfig.provider 未必等于 "xiaomi",故调用方需传解析后的名字。
+  xiaomi: { image: false, pdf: false },
   custom: { image: true, pdf: false },
 };
 
