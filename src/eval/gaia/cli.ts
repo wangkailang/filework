@@ -40,7 +40,8 @@ const HELP = `gaia-eval — run the GAIA benchmark against the local filework ag
 
 Required flags:
   --dataset <dir>         GAIA validation directory (contains metadata.jsonl + attachments)
-  --provider <name>       LLM provider: anthropic / openai / deepseek / minimax / custom
+  --provider <name>       LLM provider: anthropic / openai / deepseek / minimax / xiaomi / custom
+                          (xiaomi requires --base-url, e.g. https://api.xiaomimimo.com/v1)
   --api-key <key>         API key for the provider  (or env GAIA_EVAL_API_KEY)
   --model <id>            Model identifier, e.g. claude-sonnet-4-6, gpt-4o-2024-08-06
 
@@ -49,7 +50,7 @@ Optional:
   --level 1|2|3|all       Difficulty filter        (default: 1)
   --limit <N>             First N questions only   (default: all)
   --smoke                 Equivalent to --level 1 --limit 5
-  --base-url <url>        Override provider endpoint (OpenAI-compatible providers)
+  --base-url <url>        Override provider endpoint (OpenAI-compatible providers and xiaomi)
   --temperature <n>       Sampling temperature      (default: 0 for deterministic runs)
                           Pass 'none' to omit the parameter — required for
                           OpenAI reasoning models (o1/o3/o5/gpt-5 reasoning)
@@ -65,6 +66,13 @@ Example:
     --dataset ~/datasets/gaia/2023/validation \\
     --provider anthropic \\
     --model claude-sonnet-4-6 \\
+    --level 1 --limit 5
+
+  pnpm gaia-eval \\
+    --dataset ~/datasets/gaia/2023/validation \\
+    --provider xiaomi \\
+    --base-url https://api.xiaomimimo.com/v1 \\
+    --model mimo-v2.5-pro \\
     --level 1 --limit 5
 `;
 
