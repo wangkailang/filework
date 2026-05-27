@@ -106,16 +106,28 @@ export const WorkspaceMemoryPanel = ({
             </button>
           )}
         </div>
-        <p className="text-[10px] text-muted-foreground break-all">
-          {info?.agentMemoryPath}
-        </p>
+        {agentMemory && info ? (
+          <button
+            type="button"
+            onClick={() => window.filework.showInFinder(info.agentMemoryPath)}
+            title="在访达中显示该文件"
+            className="block text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline break-all transition-colors"
+          >
+            {info.agentMemoryPath}
+          </button>
+        ) : (
+          <p className="text-[10px] text-muted-foreground break-all">
+            {info?.agentMemoryPath}
+          </p>
+        )}
         {agentMemory ? (
           <pre className="text-[11px] whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto rounded-md border border-border bg-muted px-3 py-2 text-muted-foreground">
             {agentMemory}
           </pre>
         ) : (
           <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-            暂无机器记忆 —— Agent 会在探索项目后自动写入
+            暂无机器记忆 —— Agent
+            在工作中学到可复用信息时会记录到这里;你也可以直接让它「记住…」
           </div>
         )}
       </section>
