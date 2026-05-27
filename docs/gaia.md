@@ -115,7 +115,7 @@ pnpm gaia-eval-diff ~/gaia-runs/baseline-2026-05-17 ~/gaia-runs/after-tuning
 | 参数 | 必填 | 默认 | 说明 |
 |---|---|---|---|
 | `--dataset <dir>` | ✅ | — | GAIA validation 目录路径（含 `metadata.parquet` 或 `metadata.jsonl`） |
-| `--provider <name>` | ✅ | — | `anthropic` / `openai` / `deepseek` / `minimax` / `custom` |
+| `--provider <name>` | ✅ | — | `anthropic` / `openai` / `deepseek` / `minimax` / `xiaomi` / `custom` |
 | `--model <id>` | ✅ | — | 模型 ID，e.g. `deepseek-chat`, `claude-sonnet-4-6`, `gpt-4o` |
 | `--api-key <key>` | — | env `GAIA_EVAL_API_KEY` | provider 的 API key |
 | `--base-url <url>` | — | — | 覆盖默认 endpoint（OpenAI 兼容 provider 用） |
@@ -303,6 +303,13 @@ System prompt 端的配合：
 
 ---
 
+## Xiaomi MiMo 注意事项
+
+- `--base-url` 必传（如 `https://api.xiaomimimo.com/v1`），否则会落到 DeepSeek 默认 endpoint 认证失败。
+- 模型 ID 形如 `mimo-v2.5-pro`、`mimo-v2.5`，token budget 已在 [`token-budget.ts`](../src/main/ai/token-budget.ts) 注册 128K 上下文。
+- MiMo 要求 `reasoning_content` 在每一轮 assistant 消息中回传，[`xiaomi.ts`](../src/main/ai/adapters/xiaomi.ts) 的 fetch 拦截器自动维护，无需关心。
+- 价格表暂未收录 MiMo，`summary.json` 的 `cost` 列会显示 `—`。
+
 ## Provider 选型
 
 L1 全集（53 题）成本估算：
@@ -315,8 +322,11 @@ L1 全集（53 题）成本估算：
 | anthropic | `claude-sonnet-4-6` | 3 / 15 | ~$3–5 | 论文标准对照点 |
 | anthropic | `claude-opus-4-7` | 15 / 75 | ~$15–25 | 上限验证用 |
 | openai | `gpt-4o` | 2.5 / 10 | ~$3–5 | OpenAI 标准 |
+| xiaomi | `mimo-v2.5-pro` | — / — | — | reasoning 模型；价格表暂未收录，见下方脚注 |
 
 价格表硬编码在 [`pricing.ts`](../src/eval/gaia/pricing.ts) 的 `MODEL_PRICES`。新模型加一行即可。
+
+> **MiMo 价格**：上表暂未收录 Xiaomi MiMo 的报价，`summary.json` 的 `cost` 列对 MiMo 行为 `—`。待官方报价稳定后回填 `src/eval/gaia/pricing.ts` 的 `MODEL_PRICES` 即可。
 
 注：上表是裸 agent 调用的成本估算。reflection gate 的 LLM verifier 会在每个有 `FINAL ANSWER` 的题上多花一次小 LLM 调用（输入 ~500–1200 tokens，输出 < 100 tokens），按 DeepSeek 价格 L1 全集追加约 $0.05。如果 verifier 用更贵的模型（gate 默认复用 agent model）就按比例放大。
 
