@@ -188,17 +188,15 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toMatch(/Co-Authored-By/);
   });
 
-  it("with NO memory, instructs the agent to capture an overview via updateMemory", () => {
+  it("omits the Workspace Memory section entirely when there is no memory (minimal prompt)", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    expect(prompt).toContain("## Workspace Memory");
-    expect(prompt).toMatch(/NO saved memory/i);
-    expect(prompt).toContain("updateMemory");
-    expect(prompt).toMatch(/MUST call/);
-    // The "trust existing memory" directive must NOT appear when there is none.
-    expect(prompt).not.toMatch(/Trust the Workspace Memory above/);
+    // No always-on memory section / capture nag — capture guidance lives in the
+    // updateMemory tool description instead (L2), keeping the base prompt minimal.
+    expect(prompt).not.toContain("## Workspace Memory");
+    expect(prompt).not.toContain("updateMemory");
   });
 
-  it("with memory present, injects it and tells the agent to trust it (no capture nag)", () => {
+  it("with memory present, injects it and tells the agent to trust it", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,
       workspaceMemory: "- package manager: pnpm\n- tests live in __tests__",
@@ -206,16 +204,14 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("## Workspace Memory");
     expect(prompt).toContain("package manager: pnpm");
     expect(prompt).toMatch(/Trust the Workspace Memory above/);
-    expect(prompt).not.toMatch(/NO saved memory/i);
   });
 
-  it("treats blank/whitespace-only memory as absent (capture directive)", () => {
+  it("treats blank/whitespace-only memory as absent (no section injected)", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,
       workspaceMemory: "   \n  ",
     });
-    expect(prompt).toMatch(/NO saved memory/i);
-    expect(prompt).not.toMatch(/Trust the Workspace Memory above/);
+    expect(prompt).not.toContain("## Workspace Memory");
   });
 
   it("git principles are absent when isGitWorkspace is false", () => {

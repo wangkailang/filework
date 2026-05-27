@@ -173,30 +173,23 @@ export const resolveModelName = (modelName?: string): string =>
   modelName ?? DEFAULT_MODEL_NAME;
 
 /**
- * 工作目录记忆指令块。按「是否已有记忆」分支,闭合「扫一次 → 以后复用」的回路:
- *  - 有记忆:贴出记忆,并强制信任它、不要重复探索。
- *  - 无记忆:强制「探索后必须调用 `updateMemory` 落盘一份概览」—— 这是修复
- *    “每次新对话都重新扫描”的关键(此前只有一句很弱的泛化提示,模型会忽略)。
+ * 工作目录记忆指令块 —— 遵循最小化:**仅在确实有记忆时**才注入。
  *
- * `forPlanStep` 为真时省略「无记忆」分支的落盘指令:计划每一步都会重建提示词,
- * 逐步催写会造成重复写入;落盘交给 ad-hoc 任务路径负责。
+ * 有记忆:贴出记忆,并让模型就其覆盖范围信任、未覆盖处仍可探索。
+ * 无记忆:返回空串,不在系统提示词里常驻任何「请落盘」的催写语
+ * (那会给每个无关任务都加料,违背最小化)。「何时/记什么」的指引改放
+ * 在 `updateMemory` 工具的 description 里(L2 按需关注),与 git 指引的
+ * 两层做法一致 —— 见 `buildGitPrinciples` / `buildGitRunCommandProtocol`。
  */
 export const buildWorkspaceMemoryGuidance = (
   workspaceMemory?: string | null,
-  forPlanStep = false,
 ): string => {
-  if (workspaceMemory?.trim()) {
-    return [
-      "## Workspace Memory (consult before exploring)",
-      workspaceMemory.trim(),
-      "",
-      "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. If it is stale or wrong, call `updateMemory` to correct it.",
-    ].join("\n");
-  }
-  if (forPlanStep) return "";
+  if (!workspaceMemory?.trim()) return "";
   return [
-    "## Workspace Memory",
-    "This workspace has NO saved memory yet. If answering this task requires exploring the project's structure, stack, or commands (listing directories, reading config / manifests, etc.), you MUST call `updateMemory` ONCE before finishing — record a concise, durable overview (what the project is, tech stack, directory layout, how to build / test / run) so future tasks skip this exploration. Do not store transient task details.",
+    "## Workspace Memory (consult before exploring)",
+    workspaceMemory.trim(),
+    "",
+    "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. If it is stale or wrong, call `updateMemory` to correct it.",
   ].join("\n");
 };
 
@@ -256,7 +249,8 @@ export const buildAgentSystemPrompt = ({
     `Current workspace: ${workspacePath}`,
   ];
 
-  sections.push("", buildWorkspaceMemoryGuidance(workspaceMemory));
+  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory);
+  if (memoryGuidance) sections.push("", memoryGuidance);
   sections.push("", OPERATING_PRINCIPLES);
 
   if (isGitWorkspace) {
@@ -323,7 +317,7 @@ export const buildPlanStepSystemPrompt = ({
   isGitWorkspace,
   workspaceMemory,
 }: BuildPlanStepSystemPromptOptions): string => {
-  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory, true);
+  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory);
   const memoryBlock = memoryGuidance ? `\n\n${memoryGuidance}` : "";
   const skillPrompt = skill
     ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt ?? ""}`
