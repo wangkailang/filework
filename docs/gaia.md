@@ -322,11 +322,12 @@ L1 全集（53 题）成本估算：
 | anthropic | `claude-sonnet-4-6` | 3 / 15 | ~$3–5 | 论文标准对照点 |
 | anthropic | `claude-opus-4-7` | 15 / 75 | ~$15–25 | 上限验证用 |
 | openai | `gpt-4o` | 2.5 / 10 | ~$3–5 | OpenAI 标准 |
-| xiaomi | `mimo-v2.5-pro` | — / — | — | reasoning 模型；价格表暂未收录，见下方脚注 |
+| xiaomi | `mimo-v2.5` | 0.14 / 0.29 | ~$0.20 | reasoning 模型；与 DeepSeek-chat 同档定价 |
+| xiaomi | `mimo-v2.5-pro` | 0.43 / 0.86 | ~$0.50–1 | reasoning 重题用；公告价 ¥3/¥6 per MTok |
 
 价格表硬编码在 [`pricing.ts`](../src/eval/gaia/pricing.ts) 的 `MODEL_PRICES`。新模型加一行即可。
 
-> **MiMo 价格**：上表暂未收录 Xiaomi MiMo 的报价，`summary.json` 的 `cost` 列对 MiMo 行为 `—`。待官方报价稳定后回填 `src/eval/gaia/pricing.ts` 的 `MODEL_PRICES` 即可。
+> **MiMo 价格折算**：Xiaomi MiMo 官方报价为 CNY（V2.5 ¥1/¥2 per MTok、V2.5-Pro ¥3/¥6 per MTok、命中缓存 ¥0.02/¥0.025），上表按 $1 ≈ ¥7 折算入 [`pricing.ts`](../src/eval/gaia/pricing.ts) 的 `MODEL_PRICES`。汇率漂移以后只需调整该表。V2.1-TTS 限时免费、V2 系列官方建议迁移到 V2.5，均未录入。
 
 注：上表是裸 agent 调用的成本估算。reflection gate 的 LLM verifier 会在每个有 `FINAL ANSWER` 的题上多花一次小 LLM 调用（输入 ~500–1200 tokens，输出 < 100 tokens），按 DeepSeek 价格 L1 全集追加约 $0.05。如果 verifier 用更贵的模型（gate 默认复用 agent model）就按比例放大。
 

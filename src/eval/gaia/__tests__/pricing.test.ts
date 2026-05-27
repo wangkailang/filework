@@ -51,6 +51,21 @@ describe("getModelPrice", () => {
   it("returns null for unknown models", () => {
     expect(getModelPrice("nonexistent-model")).toBeNull();
   });
+
+  // Xiaomi MiMo V2.5 系列在 2026-05-27 调价公告之后被收录。把折算后的
+  // USD 数字钉在测试里，避免未来无意中删表或漂错汇率。
+  it("prices Xiaomi MiMo V2.5 series (CNY→USD @ ¥7/$1)", () => {
+    expect(getModelPrice("mimo-v2.5-pro")).toEqual({
+      inputUsdPerMTok: 0.43,
+      outputUsdPerMTok: 0.86,
+      cacheReadUsdPerMTok: 0.0036,
+    });
+    expect(getModelPrice("mimo-v2.5")).toEqual({
+      inputUsdPerMTok: 0.14,
+      outputUsdPerMTok: 0.29,
+      cacheReadUsdPerMTok: 0.0029,
+    });
+  });
 });
 
 // ─── calculateCost ───────────────────────────────────────────────────
