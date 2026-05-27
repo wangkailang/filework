@@ -61,6 +61,14 @@ describe("workspace-memory (zero repo footprint)", () => {
       expect(mem).toContain("workspace memory truncated");
       expect((mem ?? "").length).toBeLessThan(20_000);
     });
+
+    it("keeps agent memory even when the human file exceeds the budget", async () => {
+      // 大体量人写文件不应把机器记忆挤出上限(否则 saved memory 永不进提示词)。
+      await ws.fs.writeFile("AGENTS.md", "H".repeat(9000));
+      await updateWorkspaceMemory(ws, "- agent fact kept");
+      const mem = await readWorkspaceMemory(ws);
+      expect(mem).toContain("- agent fact kept");
+    });
   });
 
   describe("updateWorkspaceMemory — never touches the repo", () => {
@@ -92,6 +100,13 @@ describe("workspace-memory (zero repo footprint)", () => {
       mem = await readWorkspaceMemory(ws);
       expect(mem).toContain("- only");
       expect(mem).not.toContain("- one");
+    });
+
+    it("dedups identical append content (no unbounded growth)", async () => {
+      await updateWorkspaceMemory(ws, "- dup");
+      await updateWorkspaceMemory(ws, "- dup");
+      const mem = (await readWorkspaceMemory(ws)) ?? "";
+      expect(mem.split("- dup").length - 1).toBe(1);
     });
 
     it("keys memory by workspace path — two dirs are independent", async () => {
@@ -132,6 +147,15 @@ describe("workspace-memory (zero repo footprint)", () => {
       await readWorkspaceMemory(ws);
       const agents = (await ws.fs.readFile("AGENTS.md")) as string;
       expect(agents).toBe("# Clean human file");
+    });
+
+    it("removes AGENTS.md entirely if it contained only the legacy block", async () => {
+      const block = `${LEGACY_START}\n- solo fact\n${LEGACY_END}`;
+      await ws.fs.writeFile("AGENTS.md", block);
+      const mem = await readWorkspaceMemory(ws);
+      // 原本只有块的文件不应留下空文件
+      expect(await ws.fs.exists("AGENTS.md")).toBe(false);
+      expect(mem).toContain("solo fact");
     });
   });
 });

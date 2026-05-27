@@ -187,10 +187,10 @@ export const buildWorkspaceMemoryGuidance = (
 ): string => {
   if (workspaceMemory?.trim()) {
     return [
-      "## Workspace Memory (authoritative project memory — consult before exploring)",
+      "## Workspace Memory (consult before exploring)",
       workspaceMemory.trim(),
       "",
-      "Trust the Workspace Memory above: do NOT re-list directories or re-read files it already describes — answer from it directly. If it is stale or wrong, call `updateMemory` to correct it.",
+      "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. If it is stale or wrong, call `updateMemory` to correct it.",
     ].join("\n");
   }
   if (forPlanStep) return "";
