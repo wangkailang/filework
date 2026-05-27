@@ -188,6 +188,36 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toMatch(/Co-Authored-By/);
   });
 
+  it("with NO memory, instructs the agent to capture an overview via updateMemory", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("## Workspace Memory");
+    expect(prompt).toMatch(/NO saved memory/i);
+    expect(prompt).toContain("updateMemory");
+    expect(prompt).toMatch(/MUST call/);
+    // The "trust existing memory" directive must NOT appear when there is none.
+    expect(prompt).not.toMatch(/Trust the Workspace Memory above/);
+  });
+
+  it("with memory present, injects it and tells the agent to trust it (no capture nag)", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      workspaceMemory: "- package manager: pnpm\n- tests live in __tests__",
+    });
+    expect(prompt).toContain("## Workspace Memory");
+    expect(prompt).toContain("package manager: pnpm");
+    expect(prompt).toMatch(/Trust the Workspace Memory above/);
+    expect(prompt).not.toMatch(/NO saved memory/i);
+  });
+
+  it("treats blank/whitespace-only memory as absent (capture directive)", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      workspaceMemory: "   \n  ",
+    });
+    expect(prompt).toMatch(/NO saved memory/i);
+    expect(prompt).not.toMatch(/Trust the Workspace Memory above/);
+  });
+
   it("git principles are absent when isGitWorkspace is false", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,

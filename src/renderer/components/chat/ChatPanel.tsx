@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Brain,
   CopyIcon,
   GitBranch,
   HelpCircle,
@@ -56,6 +57,7 @@ import {
 } from "../ai-elements/tool";
 import { getToolLabels } from "../ai-elements/tool-labels";
 import { toolPresenters } from "../ai-elements/tool-presenters";
+import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
 import { migrateToParts } from "./helpers";
@@ -372,6 +374,7 @@ export const ChatPanel = ({
 }) => {
   const { LL } = useI18nContext();
   const [showHistory, setShowHistory] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const chat = useChatSession(workspacePath, workspaceRefJson);
 
   // Composer-side pending attachments — lifted out of PromptInput so the
@@ -1032,6 +1035,12 @@ export const ChatPanel = ({
         </div>
       )}
 
+      <WorkspaceMemoryModal
+        open={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        workspacePath={workspacePath}
+      />
+
       <Conversation className="group">
         <ConversationContent>
           {!hasMessages ? (
@@ -1247,6 +1256,15 @@ export const ChatPanel = ({
                   onClick={handlePickFiles}
                   disabled={chat.isLoading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setMemoryOpen(true)}
+                  aria-label="工作目录记忆"
+                  title="工作目录记忆"
+                  className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Brain className="size-4" />
+                </button>
                 <ModelSelector
                   selectedConfigId={chat.selectedLlmConfigId}
                   onSelect={chat.setSelectedLlmConfigId}

@@ -172,6 +172,34 @@ const DEFAULT_MODEL_NAME = "filework-agent";
 export const resolveModelName = (modelName?: string): string =>
   modelName ?? DEFAULT_MODEL_NAME;
 
+/**
+ * 工作目录记忆指令块。按「是否已有记忆」分支,闭合「扫一次 → 以后复用」的回路:
+ *  - 有记忆:贴出记忆,并强制信任它、不要重复探索。
+ *  - 无记忆:强制「探索后必须调用 `updateMemory` 落盘一份概览」—— 这是修复
+ *    “每次新对话都重新扫描”的关键(此前只有一句很弱的泛化提示,模型会忽略)。
+ *
+ * `forPlanStep` 为真时省略「无记忆」分支的落盘指令:计划每一步都会重建提示词,
+ * 逐步催写会造成重复写入;落盘交给 ad-hoc 任务路径负责。
+ */
+export const buildWorkspaceMemoryGuidance = (
+  workspaceMemory?: string | null,
+  forPlanStep = false,
+): string => {
+  if (workspaceMemory?.trim()) {
+    return [
+      "## Workspace Memory (authoritative project memory — consult before exploring)",
+      workspaceMemory.trim(),
+      "",
+      "Trust the Workspace Memory above: do NOT re-list directories or re-read files it already describes — answer from it directly. If it is stale or wrong, call `updateMemory` to correct it.",
+    ].join("\n");
+  }
+  if (forPlanStep) return "";
+  return [
+    "## Workspace Memory",
+    "This workspace has NO saved memory yet. If answering this task requires exploring the project's structure, stack, or commands (listing directories, reading config / manifests, etc.), you MUST call `updateMemory` ONCE before finishing — record a concise, durable overview (what the project is, tech stack, directory layout, how to build / test / run) so future tasks skip this exploration. Do not store transient task details.",
+  ].join("\n");
+};
+
 interface BuildAgentSystemPromptOptions {
   workspacePath: string;
   skill?: UnifiedSkill;
@@ -194,6 +222,13 @@ interface BuildAgentSystemPromptOptions {
    * a shell command.
    */
   isGitWorkspace?: boolean;
+  /**
+   * Per-workspace memory (AGENTS.md / CLAUDE.md content) read by
+   * `readWorkspaceMemory`. Injected so the agent reuses known facts instead
+   * of re-exploring the directory each task. Undefined/null when no memory
+   * file exists. See `core/workspace/workspace-memory.ts`.
+   */
+  workspaceMemory?: string | null;
 }
 
 /**
@@ -211,6 +246,7 @@ export const buildAgentSystemPrompt = ({
   isExplicitSkillCommand,
   modelName,
   isGitWorkspace,
+  workspaceMemory,
 }: BuildAgentSystemPromptOptions): string => {
   const sections: string[] = [
     AGENT_IDENTITY,
@@ -218,9 +254,10 @@ export const buildAgentSystemPrompt = ({
     `Current date: ${formatCurrentDate()}`,
     `User locale: ${formatLocaleContext()}`,
     `Current workspace: ${workspacePath}`,
-    "",
-    OPERATING_PRINCIPLES,
   ];
+
+  sections.push("", buildWorkspaceMemoryGuidance(workspaceMemory));
+  sections.push("", OPERATING_PRINCIPLES);
 
   if (isGitWorkspace) {
     sections.push("", buildGitPrinciples(resolveModelName(modelName)));
@@ -267,6 +304,12 @@ interface BuildPlanStepSystemPromptOptions {
    * two-layer rationale.
    */
   isGitWorkspace?: boolean;
+  /**
+   * Per-workspace memory (AGENTS.md / CLAUDE.md). See
+   * BuildAgentSystemPromptOptions; injected so planned steps also reuse
+   * known facts instead of re-exploring.
+   */
+  workspaceMemory?: string | null;
 }
 
 /** Build the per-step system prompt for plan execution. */
@@ -278,7 +321,10 @@ export const buildPlanStepSystemPrompt = ({
   skill,
   modelName,
   isGitWorkspace,
+  workspaceMemory,
 }: BuildPlanStepSystemPromptOptions): string => {
+  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory, true);
+  const memoryBlock = memoryGuidance ? `\n\n${memoryGuidance}` : "";
   const skillPrompt = skill
     ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt ?? ""}`
     : "";
@@ -299,7 +345,7 @@ export const buildPlanStepSystemPrompt = ({
 
 Current date: ${formatCurrentDate()}
 User locale: ${formatLocaleContext()}
-Current workspace: ${plan.workspacePath}${gitBlock}
+Current workspace: ${plan.workspacePath}${gitBlock}${memoryBlock}
 
 ## Current Plan (from disk)
 ${planContext}

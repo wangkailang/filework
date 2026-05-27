@@ -39,6 +39,7 @@ import {
   isGitBackedWorkspace,
   type WorkspaceFactoryDeps,
 } from "../core/workspace/workspace-factory";
+import { readWorkspaceMemory } from "../core/workspace/workspace-memory";
 import { decodeRef, type WorkspaceRef } from "../core/workspace/workspace-ref";
 import {
   addTask,
@@ -77,6 +78,7 @@ import { createForkSkillRunner } from "./fork-skill-runner";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
+import { registerWorkspaceMemoryHandlers } from "./workspace-memory-handlers";
 
 // buildSystemPrompt extracted to ./system-prompt.ts (M2 PR 2 — domain-neutral).
 
@@ -517,6 +519,10 @@ const handleTaskExecution = async (
     // `system-prompt.buildGitPrinciples` / `buildGitRunCommandProtocol`.
     const isGitWorkspace = isGitBackedWorkspace(workspace);
 
+    // 读取工作目录记忆（AGENTS.md / CLAUDE.md），注入系统提示词，
+    // 让 Agent 复用已知事实、避免重复探索目录。
+    const workspaceMemory = await readWorkspaceMemory(workspace);
+
     const systemPrompt =
       buildAgentSystemPrompt({
         workspacePath: legacyWorkspacePath,
@@ -525,6 +531,7 @@ const handleTaskExecution = async (
         isExplicitSkillCommand,
         modelName: llmConfig?.model,
         isGitWorkspace,
+        workspaceMemory,
       }) + skillPrompt;
 
     console.log(
@@ -1196,4 +1203,5 @@ export const registerAIHandlers = () => {
   registerUsageHandlers();
 
   registerMemoryDebugHandlers();
+  registerWorkspaceMemoryHandlers();
 };
