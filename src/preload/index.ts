@@ -789,6 +789,21 @@ const api = {
     },
   },
 
+  // 工作目录记忆(查看 / 清空)。机器记忆存于 ~/.filework/workspace-memory。
+  workspaceMemory: {
+    get: (
+      workspacePath: string,
+    ): Promise<{
+      agentMemory: string | null;
+      agentMemoryPath: string;
+      humanFile: string | null;
+      humanContent: string | null;
+      combined: string | null;
+    } | null> => ipcRenderer.invoke("workspace-memory:get", { workspacePath }),
+    clear: (workspacePath: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("workspace-memory:clear", { workspacePath }),
+  },
+
   // Task trace (durable execution trace)
   taskTrace: {
     getEvents: (taskId: string, limit?: number) =>

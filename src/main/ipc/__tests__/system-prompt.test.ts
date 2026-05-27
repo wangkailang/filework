@@ -188,6 +188,32 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toMatch(/Co-Authored-By/);
   });
 
+  it("omits the Workspace Memory section entirely when there is no memory (minimal prompt)", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    // No always-on memory section / capture nag — capture guidance lives in the
+    // updateMemory tool description instead (L2), keeping the base prompt minimal.
+    expect(prompt).not.toContain("## Workspace Memory");
+    expect(prompt).not.toContain("updateMemory");
+  });
+
+  it("with memory present, injects it and tells the agent to trust it", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      workspaceMemory: "- package manager: pnpm\n- tests live in __tests__",
+    });
+    expect(prompt).toContain("## Workspace Memory");
+    expect(prompt).toContain("package manager: pnpm");
+    expect(prompt).toMatch(/Trust the Workspace Memory above/);
+  });
+
+  it("treats blank/whitespace-only memory as absent (no section injected)", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      workspaceMemory: "   \n  ",
+    });
+    expect(prompt).not.toContain("## Workspace Memory");
+  });
+
   it("git principles are absent when isGitWorkspace is false", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,

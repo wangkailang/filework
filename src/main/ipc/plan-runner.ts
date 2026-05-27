@@ -32,6 +32,7 @@ import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
+import { readWorkspaceMemory } from "../core/workspace/workspace-memory";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
 import { buildAgentToolRegistry } from "./agent-tools";
@@ -107,6 +108,9 @@ export const executePlan = async ({
   const workspace = new LocalWorkspace(plan.workspacePath);
   const isGitWorkspace = isGitBackedWorkspace(workspace);
 
+  // 计划执行同样注入工作目录记忆（AGENTS.md / CLAUDE.md），各步骤复用同一份。
+  const workspaceMemory = await readWorkspaceMemory(workspace);
+
   for (const step of plan.steps) {
     if (cancelledPlans.has(plan.id)) {
       step.status = "skipped";
@@ -169,6 +173,7 @@ export const executePlan = async ({
         skill,
         modelName,
         isGitWorkspace,
+        workspaceMemory,
       });
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;

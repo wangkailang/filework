@@ -27,6 +27,7 @@ import {
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
 import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
+import { updateMemoryTool } from "../core/agent/tools/memory";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
@@ -336,6 +337,11 @@ export const buildAgentToolRegistry = ({
 
   if (allow("createPlan")) {
     registry.register(createPlanTool(sender, taskId));
+  }
+
+  // 工作目录记忆：允许 Agent 把可复用事实写入 AGENTS.md，后续任务直接读取。
+  if (allow("updateMemory")) {
+    registry.register(updateMemoryTool);
   }
 
   // Web tools (Layer 0 search + Layer 1/2'/4 extraction). Registered
