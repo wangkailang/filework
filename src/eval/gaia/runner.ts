@@ -26,6 +26,7 @@ import {
   builtinRules,
   createReflectionGate,
   missingFinalAnswer,
+  type ReflectionRule,
 } from "../../main/core/agent/reflection-gate";
 
 import { filterQuestions, loadGaiaDataset } from "./dataset";
@@ -100,6 +101,53 @@ const buildAnswerVerifierPrompt = (
     "MODEL'S FINAL RESPONSE (tail):",
     tail,
   ].join("\n");
+};
+
+// KEEP IN SYNC with FINAL_ANSWER_LINE_RE in reflection-gate.ts / scorer.ts.
+const FINAL_ANSWER_LINE_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
+
+const hasValidFinalAnswer = (text: string): boolean =>
+  text.split(/\r?\n/).some((line) => {
+    const m = line.match(FINAL_ANSWER_LINE_RE);
+    return m !== null && m[1].trim().length > 0;
+  });
+
+/**
+ * GAIA 专用 reflection 规则：当本轮某次 `deepResearch` 已返回 high/medium 置信的
+ * 非空 directAnswer，但模型尚未给出合格 `FINAL ANSWER` 时，强制收口——`retry`
+ * + `forceNoTools`，并把具体 directAnswer 直接喂回，逼模型输出最终答案。
+ *
+ * 动机：弱模型（Xiaomi MiMo）实测会在 deepResearch 第 1 次就拿到正确答案后仍继续
+ * 调工具重研究，直到墙钟耗尽、never 收口。本规则替它把答案"逼"出来。必须排在
+ * `missingFinalAnswer` 之前，以便给出具体答案而非泛化"commit to best guess"。
+ */
+export const deepResearchAnswerReady: ReflectionRule = (turn) => {
+  // 取本轮最后一个带 high/medium 置信、非空 directAnswer 的 deepResearch 结果。
+  let ready: { directAnswer: string; confidence: string } | null = null;
+  for (const call of turn.toolCalls) {
+    if (call.name !== "deepResearch" || !call.success) continue;
+    const r = call.result as
+      | { directAnswer?: unknown; confidence?: unknown }
+      | null
+      | undefined;
+    const da =
+      r && typeof r.directAnswer === "string" ? r.directAnswer.trim() : "";
+    const conf = r && typeof r.confidence === "string" ? r.confidence : "";
+    if (da.length > 0 && (conf === "high" || conf === "medium")) {
+      ready = { directAnswer: da, confidence: conf };
+    }
+  }
+  if (!ready) return null;
+  if (hasValidFinalAnswer(turn.finalText)) return null;
+  return {
+    kind: "retry",
+    forceNoTools: true,
+    feedback:
+      `deepResearch 已返回答案：directAnswer="${ready.directAnswer}"（confidence=${ready.confidence}）。` +
+      "不要再调用任何工具。立即输出最终响应，最后一行且仅为：\n\n" +
+      `    FINAL ANSWER: ${ready.directAnswer}\n\n` +
+      "若该答案需按问题要求的格式/单位微调，可微调后再作为 FINAL ANSWER 输出。",
+  };
 };
 
 const buildSystemPrompt = (
@@ -433,7 +481,7 @@ const runOneQuestion = async (
       deps.temperature === null ? undefined : deps.temperature;
     const reflectGate = createReflectionGate({
       model,
-      rules: [missingFinalAnswer, ...builtinRules()],
+      rules: [deepResearchAnswerReady, missingFinalAnswer, ...builtinRules()],
       llmFallback: true,
       llmPromptBuilder: (turn) =>
         buildAnswerVerifierPrompt(question.question, turn.finalText),
