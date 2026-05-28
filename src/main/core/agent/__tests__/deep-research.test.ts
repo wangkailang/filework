@@ -2,8 +2,8 @@
  * deepResearch 多跳子代理工具测试。
  *
  * 三个外部依赖全部注入，故循环完全可测：
- *  - mock `ai` 的 generateText（内层 LLM 调用：decompose / extract 返回 JSON
- *    文本，synthesis 返回散文）。
+ *  - mock `ai` 的 generateText（内层 LLM 调用：decompose / extract / synthesis
+ *    都返回 JSON 文本，经宽容解析）。
  *  - mock webSearch / webFetch 的 execute（网络）。
  *
  * 仿 web-search.test.ts 的 fakeCtx + vi.fn 结构。
@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod/v4";
 
 // 与 reflection-gate.test.ts 一致：保留 ai 的真实导出，只替换 generateText。
-// deepResearch 内层已从 generateObject 改为 generateText + 宽容 JSON 解析。
+// deepResearch 内层（含 synthesis）已统一为 generateText + 宽容 JSON 解析。
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return { ...actual, generateText: vi.fn() };
@@ -69,24 +69,29 @@ const makeDeps = (
   webFetch: mkTool("webFetch", webFetchExec),
 });
 
-// decompose / extract 内层用 generateText，模型应返回 JSON 文本；
-// synthesis 返回散文。两个 helper 都解析为 { text }。
+// decompose / extract / synthesis 内层都用 generateText，模型应返回 JSON 文本。
 const jsonText = (o: unknown) => ({ text: JSON.stringify(o) }) as never;
 const proseText = (t: string) => ({ text: t }) as never;
+// 合成产出 { directAnswer, confidence, findings }。
+const synthText = (
+  directAnswer: string,
+  confidence: string,
+  findings: string,
+) => jsonText({ directAnswer, confidence, findings });
 
 beforeEach(() => {
   mockedGenText.mockReset();
 });
 
 describe("buildDeepResearchTool", () => {
-  it("第 1 轮判定 sufficient 后停止，返回合成结论与引用", async () => {
+  it("第 1 轮判定 sufficient 后停止，返回 directAnswer/confidence/findings 与引用", async () => {
     mockedGenText
       .mockResolvedValueOnce(
         jsonText({ subQueries: ["q1"], sufficient: false }),
       ) // hop0 分解
       .mockResolvedValueOnce(jsonText({ relevant: true, facts: ["fact A"] })) // 抽取 A
       .mockResolvedValueOnce(jsonText({ subQueries: [], sufficient: true })) // hop1 分解 → 停
-      .mockResolvedValueOnce(proseText("Answer.")); // 合成
+      .mockResolvedValueOnce(synthText("Answer.", "high", "因为 A。")); // 合成
 
     const webSearchExec = vi.fn(async () => ({
       results: [{ title: "A", url: "https://a", snippet: "", score: 1 }],
@@ -100,12 +105,16 @@ describe("buildDeepResearchTool", () => {
 
     const tool = buildDeepResearchTool(makeDeps(webSearchExec, webFetchExec));
     const out = (await tool.execute({ question: "Q" }, fakeCtx())) as {
+      directAnswer: string;
+      confidence: string;
       findings: string;
       citations: Array<{ title: string; url: string }>;
       hopsUsed: number;
     };
 
-    expect(out.findings).toBe("Answer.");
+    expect(out.directAnswer).toBe("Answer.");
+    expect(out.confidence).toBe("high");
+    expect(out.findings).toBe("因为 A。");
     expect(out.citations).toEqual([{ url: "https://a", title: "A" }]);
     expect(out.hopsUsed).toBe(2);
     expect(webSearchExec).toHaveBeenCalledTimes(1); // hop1 在搜索前 break
@@ -121,7 +130,7 @@ describe("buildDeepResearchTool", () => {
         jsonText({ subQueries: ["q2"], sufficient: false }),
       )
       .mockResolvedValueOnce(jsonText({ relevant: true, facts: ["fB"] }))
-      .mockResolvedValueOnce(proseText("Synth"));
+      .mockResolvedValueOnce(synthText("D", "high", "Synth"));
 
     const webSearchExec = vi.fn(async ({ query }: { query: string }) =>
       query === "q1"
@@ -155,7 +164,7 @@ describe("buildDeepResearchTool", () => {
         jsonText({ subQueries: ["q1", "q2"], sufficient: false }),
       )
       .mockResolvedValueOnce(jsonText({ relevant: true, facts: ["f"] }))
-      .mockResolvedValueOnce(proseText("x"));
+      .mockResolvedValueOnce(synthText("x", "medium", "x"));
 
     const webSearchExec = vi.fn(async () => ({
       results: [{ title: "A", url: "https://a", snippet: "", score: 1 }],
@@ -207,7 +216,7 @@ describe("buildDeepResearchTool", () => {
     mockedGenText
       .mockRejectedValueOnce(new Error("boom")) // 分解抛错 → fallback [question]
       .mockResolvedValueOnce(proseText("这不是 JSON，只是一段解释")) // 抽取解析失败 → excerpt fallback
-      .mockResolvedValueOnce(proseText("synth from fallback")); // 合成
+      .mockResolvedValueOnce(synthText("", "low", "synth from fallback")); // 合成
 
     const webSearchExec = vi.fn(async () => ({
       results: [{ title: "A", url: "https://a", snippet: "", score: 1 }],
@@ -229,17 +238,13 @@ describe("buildDeepResearchTool", () => {
     expect(out.citations).toHaveLength(1);
   });
 
-  it("内层输出被 ```json 围栏包裹时仍能解析（弱模型常见）", async () => {
+  it("合成输出无法解析时降级为事实列表（confidence=low）", async () => {
     mockedGenText
       .mockResolvedValueOnce(
-        proseText(
-          '这是我的判断：\n```json\n{"subQueries":["q1"],"sufficient":false}\n```',
-        ),
+        jsonText({ subQueries: ["q1"], sufficient: false }),
       )
-      .mockResolvedValueOnce(
-        proseText('```\n{"relevant":true,"facts":["围栏里的事实"]}\n```'),
-      )
-      .mockResolvedValueOnce(proseText("Fenced answer."));
+      .mockResolvedValueOnce(jsonText({ relevant: true, facts: ["事实甲"] }))
+      .mockResolvedValueOnce(proseText("一段无法解析为 JSON 的合成输出")); // 合成解析失败
 
     const webSearchExec = vi.fn(async () => ({
       results: [{ title: "A", url: "https://a", snippet: "", score: 1 }],
@@ -255,8 +260,42 @@ describe("buildDeepResearchTool", () => {
     const out = (await tool.execute(
       { question: "Q", maxHops: 1 },
       fakeCtx(),
-    )) as { findings: string; citations: unknown[] };
+    )) as { directAnswer: string; confidence: string; findings: string };
 
+    expect(out.confidence).toBe("low");
+    expect(out.directAnswer).toBe("");
+    expect(out.findings).toContain("事实甲"); // 事实列表兜底
+  });
+
+  it("内层输出被 ```json 围栏包裹时仍能解析（弱模型常见）", async () => {
+    mockedGenText
+      .mockResolvedValueOnce(
+        proseText(
+          '这是我的判断：\n```json\n{"subQueries":["q1"],"sufficient":false}\n```',
+        ),
+      )
+      .mockResolvedValueOnce(
+        proseText('```\n{"relevant":true,"facts":["围栏里的事实"]}\n```'),
+      )
+      .mockResolvedValueOnce(synthText("FA", "high", "Fenced answer."));
+
+    const webSearchExec = vi.fn(async () => ({
+      results: [{ title: "A", url: "https://a", snippet: "", score: 1 }],
+    }));
+    const webFetchExec = vi.fn(async () => ({
+      url: "https://a",
+      title: "A",
+      markdown: "body",
+      excerpt: "e",
+    }));
+
+    const tool = buildDeepResearchTool(makeDeps(webSearchExec, webFetchExec));
+    const out = (await tool.execute(
+      { question: "Q", maxHops: 1 },
+      fakeCtx(),
+    )) as { directAnswer: string; findings: string; citations: unknown[] };
+
+    expect(out.directAnswer).toBe("FA");
     expect(out.findings).toBe("Fenced answer.");
     expect(out.citations).toHaveLength(1); // 围栏内 JSON 被正确解析出 fact
   });
@@ -271,11 +310,13 @@ describe("buildDeepResearchTool", () => {
     const out = (await tool.execute({ question: "Q" }, fakeCtx(ac.signal))) as {
       findings: string;
       hopsUsed: number;
+      confidence: string;
     };
 
     expect(webSearchExec).not.toHaveBeenCalled();
     expect(mockedGenText).not.toHaveBeenCalled();
     expect(out.hopsUsed).toBe(0);
+    expect(out.confidence).toBe("insufficient");
     expect(out.findings).toMatch(/未能检索/);
   });
 
@@ -287,7 +328,7 @@ describe("buildDeepResearchTool", () => {
       .mockResolvedValueOnce(
         jsonText({ relevant: true, facts: ["short fact"] }),
       )
-      .mockResolvedValueOnce(proseText("y".repeat(10_000)));
+      .mockResolvedValueOnce(synthText("y", "high", "y".repeat(10_000)));
 
     const hugeMarkdown = "x".repeat(300_000);
     const webSearchExec = vi.fn(async () => ({
@@ -308,5 +349,29 @@ describe("buildDeepResearchTool", () => {
 
     expect(out.findings.length).toBe(6_000); // MAX_FINDINGS_CHARS
     expect(JSON.stringify(out)).not.toContain("x".repeat(1_000));
+  });
+
+  it("同一任务调用超过 MAX_DEEP_RESEARCH_CALLS 后短路，不再检索", async () => {
+    // 每次运行：decompose → 搜索空结果 → 无事实 → finish 早返回（无 synthesis）。
+    mockedGenText.mockResolvedValue(
+      jsonText({ subQueries: ["q"], sufficient: false }),
+    );
+    const webSearchExec = vi.fn(async () => ({ results: [] }));
+    const webFetchExec = vi.fn();
+
+    const tool = buildDeepResearchTool(makeDeps(webSearchExec, webFetchExec));
+    await tool.execute({ question: "Q", maxHops: 1 }, fakeCtx()); // 第 1 次
+    await tool.execute({ question: "Q", maxHops: 1 }, fakeCtx()); // 第 2 次
+    const searchCallsBefore = webSearchExec.mock.calls.length;
+
+    const out3 = (await tool.execute(
+      { question: "Q", maxHops: 1 },
+      fakeCtx(),
+    )) as { confidence: string; findings: string }; // 第 3 次 → 短路
+
+    expect(out3.confidence).toBe("insufficient");
+    expect(out3.findings).toMatch(/已在本任务内调用 deepResearch/);
+    // 第 3 次不应再发起任何搜索
+    expect(webSearchExec.mock.calls.length).toBe(searchCallsBefore);
   });
 });

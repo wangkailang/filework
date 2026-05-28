@@ -49,7 +49,9 @@ import type {
 } from "./types";
 import { setupQuestionWorkspace } from "./workspace";
 
-const DEFAULT_PER_QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
+// deepResearch 被强制时内部多跳 + 慢推理模型（如 MiMo，单次内层调用可达
+// 数十秒）会吃掉不少墙钟；5 分钟偏紧，放宽到 10 分钟。
+const DEFAULT_PER_QUESTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 const MAX_ANSWER_TAIL_FOR_VERIFIER = 1200;
 
@@ -157,18 +159,22 @@ const buildSystemPrompt = (
           "## Web research (FORCED deepResearch mode)",
           "Raw webSearch / webFetch are not available. For ANY question needing web",
           "information, call `deepResearch` with the FULL original question. It internally",
-          "decomposes, searches, fetches, extracts, and returns compact findings + citations.",
-          "- Trust its findings as your evidence source; do not try to re-fetch pages yourself.",
-          "- If findings are insufficient, call `deepResearch` again with a refined question",
-          "  (e.g. add the entity you just learned), rather than narrating that you're stuck.",
+          "decomposes, searches, fetches, extracts, and returns",
+          "{ directAnswer, confidence, findings, citations }.",
+          "- When confidence is `high` or `medium`, USE `directAnswer` as your FINAL ANSWER",
+          "  directly. Do NOT re-research to double-check — trust it.",
+          "- Call deepResearch AT MOST twice. Only call again (with a refined question that",
+          "  adds the entity you just learned) when confidence is `low`/`insufficient`.",
+          "- Never loop deepResearch repeatedly; each call is expensive and the budget is finite.",
         ]
       : [
           "## Multi-step research strategy (CRITICAL for GAIA L2/L3)",
           'Many GAIA questions chain facts across multiple sources — e.g. "find X (paper / person',
           '/ event), then use a property of X to answer about Y". For ANY such question:',
-          "- Use `deepResearch` FIRST — pass the FULL original question. It will internally",
-          "  decompose, run parallel sub-queries, fetch pages, and synthesize an answer with",
-          "  citations. Raw pages never enter your context, so it scales better than manual loops.",
+          "- Use `deepResearch` FIRST — pass the FULL original question. It returns",
+          "  { directAnswer, confidence, findings, citations }. When confidence is high/medium,",
+          "  use directAnswer as your answer; do NOT re-research to double-check.",
+          "- Call deepResearch AT MOST twice; only call again when confidence is low/insufficient.",
           "- ONLY use raw `webSearch` + `webFetch` when the question (a) names a specific URL or",
           "  page to read, or (b) is a single trivial lookup you can settle in one search.",
           "- If you find yourself looping `webSearch`+`webFetch` more than twice without",

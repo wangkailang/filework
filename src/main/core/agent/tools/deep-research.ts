@@ -46,14 +46,25 @@ export interface DeepResearchDeps {
 const MAX_TOTAL_FETCHES = 12;
 /** 单跳内并发抓取上限。 */
 const FETCH_CONCURRENCY = 4;
+/** 单跳内并发抽取上限（逐页 extract 的内层 LLM 调用）。 */
+const EXTRACT_CONCURRENCY = 4;
 /** 每条子查询取多少搜索结果。 */
 const RESULTS_PER_QUERY = 4;
 /** 截给逐页抽取的页面字符数上限（避免把整页喂给小模型）。 */
 const PER_PAGE_EXTRACT_INPUT = 40_000;
-/** 每次内层 LLM 调用的超时。 */
-const INNER_CALL_TIMEOUT_MS = 30_000;
+/**
+ * 每次内层 LLM 调用的超时。设 90s：快模型（Claude/GPT 2-5s）远低于此、碰不到；
+ * 慢推理模型（如 Xiaomi MiMo，单次带 thinking 常 >30s）才能真正跑完，避免被过短
+ * 上限误判为超时而降级成垃圾 fallback。
+ */
+const INNER_CALL_TIMEOUT_MS = 90_000;
 /** 最终结论的防御性字符上限（返回主 loop 必须紧凑）。 */
 const MAX_FINDINGS_CHARS = 6_000;
+/**
+ * 同一任务内 deepResearch 的最大调用次数。超过后短路返回，提示外层基于已有
+ * findings 作答——防止弱模型反复重研究把墙钟耗尽（实测 MiMo 一题调 8 次）。
+ */
+const MAX_DEEP_RESEARCH_CALLS = 2;
 
 const inputSchema = z.object({
   question: z
@@ -69,7 +80,7 @@ const inputSchema = z.object({
     .max(5)
     .optional()
     .describe(
-      "最多检索轮数（默认 3）。每轮 = 一次分解 + 并行搜索 + 抓取 + 抽取。",
+      "最多检索轮数（默认 2）。每轮 = 一次分解 + 并行搜索 + 抓取 + 抽取。",
     ),
   maxSubQueries: z
     .number()
@@ -77,7 +88,7 @@ const inputSchema = z.object({
     .min(1)
     .max(6)
     .optional()
-    .describe("每轮并行发出的子查询数上限（默认 3）。"),
+    .describe("每轮并行发出的子查询数上限（默认 2）。"),
   recency: z
     .enum(["day", "week", "month", "year"])
     .optional()
@@ -103,6 +114,16 @@ const extractSchema = z.object({
   facts: z
     .array(z.string())
     .describe("从页面中抽取的、有助于回答问题的具体事实（每条自包含）。"),
+});
+
+const synthesisSchema = z.object({
+  directAnswer: z
+    .string()
+    .describe("对原问题最直接、最简短的答案；若证据不足以确定则为空串。"),
+  confidence: z
+    .enum(["high", "medium", "low", "insufficient"])
+    .describe("对 directAnswer 的把握度。"),
+  findings: z.string().describe("支撑结论的简要说明（几句话即可）。"),
 });
 
 // ---------------------------------------------------------------------------
@@ -137,7 +158,13 @@ interface WebFetchOutput {
   error?: string;
 }
 
+type Confidence = "high" | "medium" | "low" | "insufficient";
+
 interface DeepResearchOutput {
+  /** 对原问题最直接的答案；无法确定时为空串。外层可在 confidence 高时直接采用。 */
+  directAnswer: string;
+  /** 对 directAnswer 的把握度。high/medium → 外层应直接采用，不要反复重研究。 */
+  confidence: Confidence;
   findings: string;
   citations: Array<{ title: string; url: string }>;
   hopsUsed: number;
@@ -299,8 +326,11 @@ const extractPrompt = (question: string, page: WebFetchOutput): string =>
   `${(page.markdown && page.markdown.length > 0 ? page.markdown : (page.raw ?? "")).slice(0, PER_PAGE_EXTRACT_INPUT)}`;
 
 const synthesisPrompt = (question: string, facts: Fact[]): string =>
-  `根据下列已核实的事实，简洁、直接地回答问题。只用这些事实，不要编造；` +
-  `若事实不足以回答，明说缺口。用与问题相同的语言作答。\n\n` +
+  `根据下列已核实的事实回答问题。只用这些事实，不要编造。\n` +
+  `- directAnswer：对原问题最直接、最简短的答案（如人名/地名/数字/词），证据不足则空串。\n` +
+  `- confidence：high=事实足以确定；medium=较可能；low=证据薄弱；insufficient=基本无据。\n` +
+  `- findings：几句话支撑说明。用与问题相同的语言。\n\n` +
+  `示例输出：{"directAnswer":"egalitarian","confidence":"high","findings":"..."}\n\n` +
   `问题：\n${question}\n\n事实（含来源）：\n` +
   facts
     .map((f, i) => `${i + 1}. ${f.claim}　[来源: ${f.sourceUrl}]`)
@@ -312,188 +342,209 @@ const synthesisPrompt = (question: string, facts: Fact[]): string =>
 
 export const buildDeepResearchTool = (
   deps: DeepResearchDeps,
-): ToolDefinition => ({
-  name: "deepResearch",
-  description:
-    "Multi-hop web research — use this FIRST for any web question that needs more than one lookup to answer. " +
-    "It runs a bounded internal search→fetch→extract→synthesize loop and returns ONLY compact findings plus " +
-    "citations; raw pages never enter the conversation.\n" +
-    "ALWAYS use deepResearch when the question: chains facts (the answer to one part feeds the next), spans " +
-    "multiple sources, or asks to research / compare / synthesize / 调研 / 对比 / 综合.\n" +
-    "Do NOT use for: a single already-known URL (use webFetch), or one trivial single-shot lookup (use webSearch).\n" +
-    'Examples → deepResearch: "特斯拉现任 CFO 的本科母校在哪个城市"; "对比三个向量数据库并推荐一个"; ' +
-    '"who succeeded the person who founded company X, and where are they based".\n' +
-    'Examples → NOT deepResearch: "总结 https://example.com/post 这一页" (webFetch); "Python 的 GIL 是什么" ' +
-    '(answer directly); "今天的 AI 新闻" (webSearch).',
-  safety: "safe",
-  inputSchema,
-  execute: async (args, ctx): Promise<DeepResearchOutput> => {
-    const {
-      question,
-      maxHops = 3,
-      maxSubQueries = 3,
-      recency,
-      topic,
-    } = args as DeepResearchInput;
-
-    const visited = new Set<string>();
-    const facts: Fact[] = [];
-    const citations = new Map<string, string>(); // url -> title
-    const trace: DeepResearchOutput["trace"] = [];
-    let totalFetches = 0;
-    let hopsUsed = 0;
-
-    const finish = async (): Promise<DeepResearchOutput> => {
-      const citationList = Array.from(citations.entries()).map(
-        ([url, title]) => ({ url, title }),
-      );
-      if (facts.length === 0) {
+): ToolDefinition => {
+  // 同一工具实例（= 同一任务的注册表）内的调用计数，用于硬上限短路。
+  let callCount = 0;
+  return {
+    name: "deepResearch",
+    description:
+      "Multi-hop web research — use this FIRST for any web question that needs more than one lookup to answer. " +
+      "It runs a bounded internal search→fetch→extract→synthesize loop and returns ONLY compact findings plus " +
+      "citations; raw pages never enter the conversation.\n" +
+      "ALWAYS use deepResearch when the question: chains facts (the answer to one part feeds the next), spans " +
+      "multiple sources, or asks to research / compare / synthesize / 调研 / 对比 / 综合.\n" +
+      "Do NOT use for: a single already-known URL (use webFetch), or one trivial single-shot lookup (use webSearch).\n" +
+      'Examples → deepResearch: "特斯拉现任 CFO 的本科母校在哪个城市"; "对比三个向量数据库并推荐一个"; ' +
+      '"who succeeded the person who founded company X, and where are they based".\n' +
+      'Examples → NOT deepResearch: "总结 https://example.com/post 这一页" (webFetch); "Python 的 GIL 是什么" ' +
+      '(answer directly); "今天的 AI 新闻" (webSearch).',
+    safety: "safe",
+    inputSchema,
+    execute: async (args, ctx): Promise<DeepResearchOutput> => {
+      // 硬上限短路：同一任务内多次调用会把墙钟耗尽（弱模型反复重研究）。
+      callCount += 1;
+      if (callCount > MAX_DEEP_RESEARCH_CALLS) {
         return {
-          findings:
-            "未能检索到与问题相关的可靠信息。可尝试缩小问题范围或更换关键词。",
+          directAnswer: "",
+          confidence: "insufficient",
+          findings: `已在本任务内调用 deepResearch ${callCount - 1} 次。请基于此前返回的 findings 直接作答，不要再调用本工具。`,
+          citations: [],
+          hopsUsed: 0,
+          trace: [],
+        };
+      }
+
+      const {
+        question,
+        maxHops = 2,
+        maxSubQueries = 2,
+        recency,
+        topic,
+      } = args as DeepResearchInput;
+
+      const visited = new Set<string>();
+      const facts: Fact[] = [];
+      const citations = new Map<string, string>(); // url -> title
+      const trace: DeepResearchOutput["trace"] = [];
+      let totalFetches = 0;
+      let hopsUsed = 0;
+
+      const finish = async (): Promise<DeepResearchOutput> => {
+        const citationList = Array.from(citations.entries()).map(
+          ([url, title]) => ({ url, title }),
+        );
+        if (facts.length === 0) {
+          return {
+            directAnswer: "",
+            confidence: "insufficient",
+            findings:
+              "未能检索到与问题相关的可靠信息。可尝试缩小问题范围或更换关键词。",
+            citations: citationList,
+            hopsUsed,
+            trace,
+          };
+        }
+        // 合成为结构化产出：directAnswer + confidence + findings。失败兜底为
+        // 直接列事实、confidence=low（仍是可用结论，不至于让外层无所适从）。
+        const synth = await safeStructured(
+          deps,
+          synthesisSchema,
+          synthesisPrompt(question, facts),
+          {
+            directAnswer: "",
+            confidence: "low" as Confidence,
+            findings: facts.map((f) => `- ${f.claim}`).join("\n"),
+          },
+          ctx.signal,
+        );
+        return {
+          directAnswer: synth.directAnswer.slice(0, 500),
+          confidence: synth.confidence,
+          findings: synth.findings.slice(0, MAX_FINDINGS_CHARS),
           citations: citationList,
           hopsUsed,
           trace,
         };
-      }
-      let findings: string;
-      const { controller, cleanup } = createTimeoutController(
-        INNER_CALL_TIMEOUT_MS,
-        ctx.signal,
-      );
-      try {
-        const { text } = await generateText({
-          model: deps.model,
-          prompt: synthesisPrompt(question, facts),
-          abortSignal: controller.signal,
-          providerOptions: deps.providerOptions,
-        });
-        findings = text;
-      } catch (err) {
-        // 合成失败兜底：直接列出事实，仍是有用的紧凑结论。
-        console.warn(
-          "[deepResearch] synthesis failed, falling back to fact list:",
-          err instanceof Error ? err.message : err,
-        );
-        findings = facts.map((f) => `- ${f.claim}`).join("\n");
-      } finally {
-        cleanup();
-      }
-      return {
-        findings: findings.slice(0, MAX_FINDINGS_CHARS),
-        citations: citationList,
-        hopsUsed,
-        trace,
       };
-    };
 
-    if (ctx.signal.aborted) return finish();
+      if (ctx.signal.aborted) return finish();
 
-    for (let hop = 0; hop < maxHops; hop++) {
-      if (ctx.signal.aborted) break;
-      hopsUsed = hop + 1;
+      for (let hop = 0; hop < maxHops; hop++) {
+        if (ctx.signal.aborted) break;
+        hopsUsed = hop + 1;
 
-      // (a) 分解 + 充分性判断。第 0 轮强制继续（至少搜一次）。
-      const decomp = await safeStructured(
-        deps,
-        decomposeSchema,
-        decomposePrompt(question, facts, hop, maxSubQueries),
-        { subQueries: [question], sufficient: false },
-        ctx.signal,
-      );
-      if (decomp.sufficient && hop > 0) break;
-      const subQueries = (
-        decomp.subQueries.length > 0 ? decomp.subQueries : [question]
-      ).slice(0, maxSubQueries);
-
-      // (b) 并行搜索：独立子查询 fan-out。
-      const searches = (await Promise.all(
-        subQueries.map((query) =>
-          deps.webSearch
-            .execute(
-              {
-                query,
-                maxResults: RESULTS_PER_QUERY,
-                includeAnswer: true,
-                ...(recency ? { timeRange: recency } : {}),
-                ...(topic ? { topic } : {}),
-              },
-              childCtx(ctx),
-            )
-            .catch(
-              (err): WebSearchOutput => ({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            ),
-        ),
-      )) as WebSearchOutput[];
-
-      // (c) 汇总 + 按分数排序 + 去重 URL，受抓取总预算约束。
-      const remaining = MAX_TOTAL_FETCHES - totalFetches;
-      const ranked = searches
-        .flatMap((s) => s.results ?? [])
-        .filter((r) => r.url && !visited.has(r.url))
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-      const seenThisHop = new Set<string>();
-      const toFetch: SearchResultItem[] = [];
-      for (const r of ranked) {
-        if (toFetch.length >= remaining) break;
-        if (seenThisHop.has(r.url)) continue;
-        seenThisHop.add(r.url);
-        toFetch.push(r);
-      }
-
-      // (d) 并发抓取（限流）。
-      const pages = (await mapWithConcurrency(
-        toFetch,
-        FETCH_CONCURRENCY,
-        (r) =>
-          deps.webFetch.execute({ url: r.url }, childCtx(ctx)).catch(
-            (err): WebFetchOutput => ({
-              url: r.url,
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          ) as Promise<WebFetchOutput>,
-      )) as WebFetchOutput[];
-      for (const r of toFetch) visited.add(r.url);
-      totalFetches += pages.length;
-
-      // (e) 逐页抽取 → 事实（压缩；主 loop 永不见原页）。
-      let hopFactCount = 0;
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        const url = page.url ?? toFetch[i]?.url ?? "";
-        if (page.error || (!page.markdown && !page.raw)) continue;
-        const title = page.title ?? toFetch[i]?.title ?? url;
-        const ext = await safeStructured(
+        // (a) 分解 + 充分性判断。第 0 轮强制继续（至少搜一次）。
+        const decomp = await safeStructured(
           deps,
-          extractSchema,
-          extractPrompt(question, page),
-          // 抽取失败兜底：保留 excerpt 当作单条事实，不丢线索。
-          {
-            relevant: Boolean(page.excerpt),
-            facts: page.excerpt ? [page.excerpt] : [],
-          },
+          decomposeSchema,
+          decomposePrompt(question, facts, hop, maxSubQueries),
+          { subQueries: [question], sufficient: false },
           ctx.signal,
         );
-        if (!ext.relevant || ext.facts.length === 0) continue;
-        citations.set(url, title);
-        for (const claim of ext.facts) {
-          facts.push({ claim, sourceUrl: url, title });
-          hopFactCount++;
+        if (decomp.sufficient && hop > 0) break;
+        const subQueries = (
+          decomp.subQueries.length > 0 ? decomp.subQueries : [question]
+        ).slice(0, maxSubQueries);
+
+        // (b) 并行搜索：独立子查询 fan-out。
+        const searches = (await Promise.all(
+          subQueries.map((query) =>
+            deps.webSearch
+              .execute(
+                {
+                  query,
+                  maxResults: RESULTS_PER_QUERY,
+                  includeAnswer: true,
+                  ...(recency ? { timeRange: recency } : {}),
+                  ...(topic ? { topic } : {}),
+                },
+                childCtx(ctx),
+              )
+              .catch(
+                (err): WebSearchOutput => ({
+                  error: err instanceof Error ? err.message : String(err),
+                }),
+              ),
+          ),
+        )) as WebSearchOutput[];
+
+        // (c) 汇总 + 按分数排序 + 去重 URL，受抓取总预算约束。
+        const remaining = MAX_TOTAL_FETCHES - totalFetches;
+        const ranked = searches
+          .flatMap((s) => s.results ?? [])
+          .filter((r) => r.url && !visited.has(r.url))
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        const seenThisHop = new Set<string>();
+        const toFetch: SearchResultItem[] = [];
+        for (const r of ranked) {
+          if (toFetch.length >= remaining) break;
+          if (seenThisHop.has(r.url)) continue;
+          seenThisHop.add(r.url);
+          toFetch.push(r);
         }
+
+        // (d) 并发抓取（限流）。
+        const pages = (await mapWithConcurrency(
+          toFetch,
+          FETCH_CONCURRENCY,
+          (r) =>
+            deps.webFetch.execute({ url: r.url }, childCtx(ctx)).catch(
+              (err): WebFetchOutput => ({
+                url: r.url,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            ) as Promise<WebFetchOutput>,
+        )) as WebFetchOutput[];
+        for (const r of toFetch) visited.add(r.url);
+        totalFetches += pages.length;
+
+        // (e) 逐页抽取 → 事实（压缩；主 loop 永不见原页）。
+        // 并发抽取：弱模型单次内层调用可达数十秒，串行 N 页会轻松吃光墙钟；
+        // 与 fetch 同样限流并发，把单跳抽取延迟从 N×t 降到约 t。
+        const extractions = await mapWithConcurrency(
+          pages.map((page, i) => ({ page, i })),
+          EXTRACT_CONCURRENCY,
+          async ({ page, i }) => {
+            const url = page.url ?? toFetch[i]?.url ?? "";
+            if (page.error || (!page.markdown && !page.raw)) return null;
+            const title = page.title ?? toFetch[i]?.title ?? url;
+            const ext = await safeStructured(
+              deps,
+              extractSchema,
+              extractPrompt(question, page),
+              // 抽取失败兜底：保留 excerpt 当作单条事实，不丢线索。
+              {
+                relevant: Boolean(page.excerpt),
+                facts: page.excerpt ? [page.excerpt] : [],
+              },
+              ctx.signal,
+            );
+            return { url, title, ext };
+          },
+        );
+
+        // 按原页顺序合并，结果确定（mapWithConcurrency 保序）。
+        let hopFactCount = 0;
+        for (const r of extractions) {
+          if (!r || !r.ext.relevant || r.ext.facts.length === 0) continue;
+          citations.set(r.url, r.title);
+          for (const claim of r.ext.facts) {
+            facts.push({ claim, sourceUrl: r.url, title: r.title });
+            hopFactCount++;
+          }
+        }
+
+        trace.push({
+          hop,
+          subQueries,
+          urlsFetched: toFetch.map((r) => r.url),
+          factCount: hopFactCount,
+        });
+
+        if (totalFetches >= MAX_TOTAL_FETCHES) break;
       }
 
-      trace.push({
-        hop,
-        subQueries,
-        urlsFetched: toFetch.map((r) => r.url),
-        factCount: hopFactCount,
-      });
-
-      if (totalFetches >= MAX_TOTAL_FETCHES) break;
-    }
-
-    return finish();
-  },
-});
+      return finish();
+    },
+  };
+};
