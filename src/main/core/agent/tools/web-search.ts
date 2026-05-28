@@ -105,7 +105,9 @@ interface RawTavilyResponse {
 export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
   name: "webSearch",
   description:
-    "Search the web. Returns ranked URLs, snippets, an optional synthesized answer, and optional images.",
+    "Search the web for a SINGLE lookup. Returns ranked URLs, snippets, an optional synthesized answer, and optional images. " +
+    "If answering the question needs more than one search, chains facts across sources, or asks to research/compare/synthesize, " +
+    "use `deepResearch` instead of looping this tool yourself.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
