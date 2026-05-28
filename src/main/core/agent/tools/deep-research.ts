@@ -21,7 +21,7 @@
 import crypto from "node:crypto";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
-import { generateObject, generateText } from "ai";
+import { generateText } from "ai";
 import { z } from "zod/v4";
 
 import { createTimeoutController } from "../../../ai/stream-watchdog";
@@ -182,10 +182,53 @@ async function mapWithConcurrency<T, R>(
 }
 
 /**
- * 包裹 generateObject：超时 + 失败降级。schema 校验失败或抛错时返回 fallback，
- * 保证多跳循环永不崩溃（弱模型畸形输出的兜底）。
+ * 从模型输出文本里宽容地抽出第一个**平衡**的 JSON 对象。
+ *
+ * 弱模型常把 JSON 包进 ``` 围栏、或前后混入解释/思维文字。这里：
+ *  1. 先剥掉 ```json … ``` 围栏（若有）；
+ *  2. 从第一个 `{` 起做带字符串转义感知的括号配平，取到匹配的 `}`；
+ *  3. JSON.parse 该子串。任一步失败返回 undefined（交由调用方走 fallback）。
  */
-async function safeGenerateObject<T>(
+function extractJsonObject(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1] : text;
+  const start = body.indexOf("{");
+  if (start === -1) return undefined;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(body.slice(start, i + 1));
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 结构化内层调用：用 `generateText` 取文本，宽容提取 JSON 再用 zod 校验。
+ *
+ * 为什么不用 `generateObject`：OpenAI 兼容提供方（如 Xiaomi MiMo 经 DeepSeek
+ * 适配器）只能走「把 schema 注入 system message」的 compat 模式，弱模型常把
+ * JSON 包进 ``` 围栏或混入解释文字，导致 generateObject 直接抛
+ * "could not parse the response"。改为 generateText + extractJsonObject + zod
+ * 校验后，容忍围栏/前后文；任一步失败回退 fallback，多跳循环永不崩溃。
+ */
+async function safeStructured<T>(
   deps: DeepResearchDeps,
   schema: z.ZodType<T>,
   prompt: string,
@@ -197,17 +240,22 @@ async function safeGenerateObject<T>(
     signal,
   );
   try {
-    const { object } = await generateObject({
+    const { text } = await generateText({
       model: deps.model,
-      schema,
-      prompt,
+      prompt: `${prompt}\n\n只输出一个 JSON 对象，不要 markdown 围栏、不要任何解释文字。`,
       abortSignal: controller.signal,
       providerOptions: deps.providerOptions,
     });
-    return object;
+    const parsed = schema.safeParse(extractJsonObject(text));
+    if (parsed.success) return parsed.data;
+    console.warn(
+      "[deepResearch] 内层结构化输出校验失败，使用 fallback:",
+      parsed.error.message.slice(0, 200),
+    );
+    return fallback;
   } catch (err) {
     console.warn(
-      "[deepResearch] inner generateObject failed, using fallback:",
+      "[deepResearch] 内层结构化调用失败，使用 fallback:",
       err instanceof Error ? err.message : err,
     );
     return fallback;
@@ -238,13 +286,15 @@ const decomposePrompt = (
   `当前是第 ${hop + 1} 轮。已掌握的事实：\n${factsDigest(facts)}\n\n` +
   `请判断：现有事实是否已足以完整、准确地回答原始问题（sufficient）。` +
   `若不足，给出最多 ${maxSubQueries} 条**具体的**搜索查询（subQueries）以补齐缺口；` +
-  `尽量让各条查询相互独立，以便并行检索。若已足够，subQueries 可为空。`;
+  `尽量让各条查询相互独立，以便并行检索。若已足够，subQueries 可为空。\n\n` +
+  `示例输出：{"subQueries":["关键查询 1","关键查询 2"],"sufficient":false}`;
 
 const extractPrompt = (question: string, page: WebFetchOutput): string =>
   `原始问题：\n${question}\n\n` +
   `下面是一个网页的正文。请判断它是否与问题相关（relevant），` +
   `并抽取其中**有助于回答问题的具体事实**（facts，每条自包含、含关键数字/名称/日期）。` +
   `与问题无关则 relevant=false、facts 为空。\n\n` +
+  `示例输出：{"relevant":true,"facts":["事实 1（含关键数字/名称/日期）","事实 2"]}\n\n` +
   `网页标题：${page.title ?? ""}\n来源：${page.url ?? ""}\n\n正文：\n` +
   `${(page.markdown && page.markdown.length > 0 ? page.markdown : (page.raw ?? "")).slice(0, PER_PAGE_EXTRACT_INPUT)}`;
 
@@ -344,7 +394,7 @@ export const buildDeepResearchTool = (
       hopsUsed = hop + 1;
 
       // (a) 分解 + 充分性判断。第 0 轮强制继续（至少搜一次）。
-      const decomp = await safeGenerateObject(
+      const decomp = await safeStructured(
         deps,
         decomposeSchema,
         decomposePrompt(question, facts, hop, maxSubQueries),
@@ -415,7 +465,7 @@ export const buildDeepResearchTool = (
         const url = page.url ?? toFetch[i]?.url ?? "";
         if (page.error || (!page.markdown && !page.raw)) continue;
         const title = page.title ?? toFetch[i]?.title ?? url;
-        const ext = await safeGenerateObject(
+        const ext = await safeStructured(
           deps,
           extractSchema,
           extractPrompt(question, page),
