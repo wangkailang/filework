@@ -9,14 +9,14 @@ describe("rankBm25", () => {
     "the quick quick fox runs", // 2
   ];
 
-  it("ranks the document with more query-term matches highest", () => {
+  it("命中查询词更多的文档排名最高", () => {
     const ranked = rankBm25(docs, "quick fox");
-    // doc 2 repeats "quick" → higher term frequency than doc 0.
+    // doc 2 重复出现 "quick" → 词频高于 doc 0。
     expect(ranked[0].index).toBe(2);
     expect(ranked[1].index).toBe(0);
   });
 
-  it("gives a zero score to documents containing no query terms", () => {
+  it("不含任何查询词的文档得分为 0", () => {
     const ranked = rankBm25(docs, "quick fox");
     const doc1 = ranked.find((r) => r.index === 1);
     expect(doc1?.score).toBe(0);
@@ -24,7 +24,7 @@ describe("rankBm25", () => {
     expect((doc0?.score ?? 0) > 0).toBe(true);
   });
 
-  it("returns every document exactly once, sorted by descending score", () => {
+  it("每篇文档恰好返回一次,并按得分降序排列", () => {
     const ranked = rankBm25(docs, "quick fox");
     expect(ranked).toHaveLength(docs.length);
     expect(new Set(ranked.map((r) => r.index)).size).toBe(docs.length);
@@ -33,13 +33,13 @@ describe("rankBm25", () => {
     }
   });
 
-  it("tokenizes case- and punctuation-insensitively", () => {
+  it("分词忽略大小写与标点", () => {
     const ranked = rankBm25(["Hello, WORLD!", "nothing here"], "world");
     expect(ranked[0].index).toBe(0);
     expect(ranked[0].score).toBeGreaterThan(0);
   });
 
-  it("handles empty docs and empty query without throwing", () => {
+  it("空文档与空查询不抛异常", () => {
     expect(rankBm25([], "anything")).toEqual([]);
     const ranked = rankBm25(docs, "");
     expect(ranked).toHaveLength(docs.length);

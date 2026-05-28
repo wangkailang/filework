@@ -4,7 +4,7 @@ import { extractPdfPages, extractPdfTextFromBuffer } from "../pdf-text";
 import { makeMinimalPdf } from "./pdf-fixtures";
 
 describe("extractPdfTextFromBuffer", () => {
-  it("extracts text and page count from a PDF buffer", async () => {
+  it("从 PDF buffer 抽取文本与页数", async () => {
     const result = await extractPdfTextFromBuffer(
       makeMinimalPdf(["Hello PDF"]),
     );
@@ -16,7 +16,7 @@ describe("extractPdfTextFromBuffer", () => {
     }
   });
 
-  it("returns an error result for a non-PDF buffer", async () => {
+  it("非 PDF buffer 返回错误结果", async () => {
     const result = await extractPdfTextFromBuffer(
       new Uint8Array([1, 2, 3, 4, 5]),
     );
@@ -25,7 +25,7 @@ describe("extractPdfTextFromBuffer", () => {
 });
 
 describe("extractPdfPages", () => {
-  it("returns text for each page with 1-based page numbers", async () => {
+  it("返回每页文本及从 1 开始的页码", async () => {
     const result = await extractPdfPages(
       makeMinimalPdf(["Alpha page", "Bravo page"]),
     );
@@ -40,7 +40,7 @@ describe("extractPdfPages", () => {
     }
   });
 
-  it("returns an error result for a non-PDF buffer", async () => {
+  it("非 PDF buffer 返回错误结果", async () => {
     const result = await extractPdfPages(new Uint8Array([1, 2, 3, 4, 5]));
     expect(result.ok).toBe(false);
   });

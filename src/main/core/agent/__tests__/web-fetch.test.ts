@@ -46,7 +46,7 @@ const articleHtml = `
 `;
 
 describe("buildWebFetchTool", () => {
-  it("registers as a safe tool", () => {
+  it("注册为 safe 工具", () => {
     const tool = buildWebFetchTool({
       fetchImpl: (async () => fakeResponse("")) as never,
     });
@@ -54,7 +54,7 @@ describe("buildWebFetchTool", () => {
     expect(tool.safety).toBe("safe");
   });
 
-  it("returns title + markdown + raw for an HTML article", async () => {
+  it("对 HTML 文章返回 title + markdown + raw", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse(articleHtml, { url: "https://example.com/p" }),
     );
@@ -76,7 +76,7 @@ describe("buildWebFetchTool", () => {
     expect(out.truncated).toBe(false);
   });
 
-  it("truncates raw body to maxBytes", async () => {
+  it("将 raw 正文截断到 maxBytes", async () => {
     const big = `<html><body>${"a".repeat(500)}</body></html>`;
     const fetchImpl = vi.fn(async () => fakeResponse(big));
     const tool = buildWebFetchTool({ fetchImpl: fetchImpl as never });
@@ -88,7 +88,7 @@ describe("buildWebFetchTool", () => {
     expect(out.truncated).toBe(true);
   });
 
-  it("returns empty markdown for non-HTML content type", async () => {
+  it("对非 HTML content-type 返回空 markdown", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse('{"hello":"world"}', {
         headers: { "content-type": "application/json" },
@@ -103,7 +103,7 @@ describe("buildWebFetchTool", () => {
     expect(out.raw).toBe('{"hello":"world"}');
   });
 
-  it("propagates non-2xx status without throwing", async () => {
+  it("透传非 2xx 状态码且不抛异常", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse("blocked", { status: 403, statusText: "Forbidden" }),
     );
@@ -116,7 +116,7 @@ describe("buildWebFetchTool", () => {
     expect(out.statusText).toBe("Forbidden");
   });
 
-  it("forwards UA + abort signal to fetchImpl", async () => {
+  it("把 UA 与 abort signal 透传给 fetchImpl", async () => {
     const fetchImpl = vi.fn(async () => fakeResponse("<html></html>"));
     const tool = buildWebFetchTool({ fetchImpl: fetchImpl as never });
     const ctx = fakeCtx();
@@ -133,11 +133,11 @@ describe("buildWebFetchTool", () => {
   });
 });
 
-describe("buildWebFetchTool — PDF handling", () => {
+describe("buildWebFetchTool — PDF 处理", () => {
   const okExtract = (text: string, pages = 1) =>
     vi.fn(async () => ({ ok: true as const, text, pages, truncated: false }));
 
-  it("extracts text from an application/pdf response and omits raw binary", async () => {
+  it("从 application/pdf 响应抽取文本,且 raw 不含二进制", async () => {
     const extractPdf = okExtract("Federal Register page text", 8);
     const fetchImpl = vi.fn(async () =>
       fakeResponse("%PDF-1.4 binary…", {
@@ -168,7 +168,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.error).toBeUndefined();
   });
 
-  it("downloads PDFs larger than the HTML byte cap instead of refusing", async () => {
+  it("下载超过 HTML 字节上限的 PDF 而非拒绝", async () => {
     const extractPdf = okExtract("big pdf text");
     const fetchImpl = vi.fn(async () =>
       fakeResponse("%PDF-1.4 …", {
@@ -192,7 +192,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.error).toBeUndefined();
   });
 
-  it("detects PDFs by .pdf URL even when content-type is generic", async () => {
+  it("content-type 通用时仍按 .pdf URL 识别 PDF", async () => {
     const extractPdf = okExtract("octet-stream pdf text");
     const fetchImpl = vi.fn(async () =>
       fakeResponse("%PDF-1.4 …", {
@@ -212,7 +212,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.markdown).toBe("octet-stream pdf text");
   });
 
-  it("surfaces a PDF extraction failure as an error field", async () => {
+  it("PDF 抽取失败时以 error 字段暴露", async () => {
     const extractPdf = vi.fn(async () => ({
       ok: false as const,
       error: "encrypted PDF",
@@ -235,7 +235,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.error).toContain("encrypted PDF");
   });
 
-  it("refuses PDFs beyond the PDF download cap without calling the extractor", async () => {
+  it("超过 PDF 下载上限时拒绝且不调用抽取器", async () => {
     const extractPdf = okExtract("never reached");
     const fetchImpl = vi.fn(async () =>
       fakeResponse("%PDF-1.4 …", {
@@ -276,7 +276,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     return r;
   };
 
-  it("aborts a chunked PDF stream once it exceeds the cap (no content-length)", async () => {
+  it("无 content-length 时,分块 PDF 流超过上限即中止", async () => {
     const extractPdf = okExtract("never reached");
     const fetchImpl = vi.fn(async () =>
       pdfStream(
@@ -298,7 +298,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.error).toMatch(/too large/i);
   });
 
-  it("reassembles multi-chunk PDF bytes before extracting (no content-length)", async () => {
+  it("抽取前重组多块 PDF 字节(无 content-length)", async () => {
     let received: Uint8Array | undefined;
     const extractPdf = vi.fn(async (data: Uint8Array) => {
       received = data;
@@ -318,7 +318,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(new TextDecoder().decode(received)).toBe(chunks.join(""));
   });
 
-  it("routes a PDF + query through searchPdf and returns matched pages", async () => {
+  it("带 query 的 PDF 经 searchPdf 路由并返回命中页", async () => {
     const extractPdf = okExtract("full document text");
     let receivedQuery: string | undefined;
     const searchPdf = vi.fn(async (_data: Uint8Array, query: string) => {
@@ -360,7 +360,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.truncated).toBe(true);
   });
 
-  it("uses full-text extraction (not search) when no query is given", async () => {
+  it("未给 query 时使用全文抽取(而非搜索)", async () => {
     const extractPdf = okExtract("full document text", 3);
     const searchPdf = vi.fn();
     const fetchImpl = vi.fn(async () =>
@@ -383,7 +383,7 @@ describe("buildWebFetchTool — PDF handling", () => {
     expect(out.markdown).toBe("full document text");
   });
 
-  it("surfaces a PDF search failure as an error field", async () => {
+  it("PDF 搜索失败时以 error 字段暴露", async () => {
     const searchPdf = vi.fn(async () => ({
       ok: false as const,
       error: "search backend down",

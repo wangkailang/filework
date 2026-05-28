@@ -7,7 +7,7 @@ const pages = (texts: string[]) =>
   texts.map((text, i) => ({ num: i + 1, text }));
 
 describe("assemblePdfSearch", () => {
-  it("returns only matching pages, in page order, with page headers", () => {
+  it("只返回命中页,按页码顺序,并带页码标头", () => {
     const r = assemblePdfSearch(
       pages([
         "introduction with nothing relevant",
@@ -24,14 +24,14 @@ describe("assemblePdfSearch", () => {
     expect(r.markdown).not.toContain("middle filler");
   });
 
-  it("caps the number of pages and marks truncated when many pages match", () => {
+  it("命中页过多时限制页数并标记 truncated", () => {
     const many = pages(Array.from({ length: 6 }, (_, i) => `apple match ${i}`));
     const r = assemblePdfSearch(many, "apple", 100_000, 2);
     expect(r.matchedPages).toHaveLength(2);
     expect(r.truncated).toBe(true);
   });
 
-  it("falls back to leading pages when nothing matches", () => {
+  it("无命中时回退到靠前若干页", () => {
     const r = assemblePdfSearch(
       pages(["alpha", "bravo", "charlie", "delta", "echo"]),
       "zzznomatch",
@@ -41,7 +41,7 @@ describe("assemblePdfSearch", () => {
     expect(r.truncated).toBe(true);
   });
 
-  it("caps total characters at maxChars and marks truncated", () => {
+  it("总字符超过 maxChars 时截断并标记 truncated", () => {
     const r = assemblePdfSearch(
       pages([`apple ${"x".repeat(500)}`]),
       "apple",
@@ -53,7 +53,7 @@ describe("assemblePdfSearch", () => {
 });
 
 describe("searchPdfPages", () => {
-  it("extracts pages then returns the query-matched page", async () => {
+  it("先抽页再返回 query 命中的页", async () => {
     const pdf = makeMinimalPdf([
       "intro alpha",
       "target bravo value",
@@ -69,7 +69,7 @@ describe("searchPdfPages", () => {
     }
   });
 
-  it("returns an error result for a non-PDF buffer", async () => {
+  it("非 PDF buffer 返回错误结果", async () => {
     const r = await searchPdfPages(new Uint8Array([1, 2, 3]), "anything");
     expect(r.ok).toBe(false);
   });
