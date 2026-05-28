@@ -28,7 +28,8 @@
  * defeat the purpose of an autonomous benchmark.
  */
 
-import type { Tool } from "ai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type { LanguageModel, Tool } from "ai";
 import { z } from "zod/v4";
 
 import {
@@ -36,6 +37,7 @@ import {
   ToolRegistry,
 } from "../../main/core/agent/tool-registry";
 import { buildFileTools } from "../../main/core/agent/tools";
+import { buildDeepResearchTool } from "../../main/core/agent/tools/deep-research";
 import { buildWebFetchTool } from "../../main/core/agent/tools/web-fetch";
 import { buildWebScrapeTool } from "../../main/core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../../main/core/agent/tools/web-search";
@@ -50,6 +52,13 @@ export interface BuildEvalRegistryOptions {
   tavilyKey?: string | null;
   /** Read from env: `process.env.FIRECRAWL_API_KEY`. */
   firecrawlKey?: string | null;
+  /**
+   * 当前 eval 所用模型句柄。仅用于 `deepResearch` 的内层循环；
+   * 缺省（或无 tavilyKey）时不注册 deepResearch。
+   */
+  model?: LanguageModel;
+  /** 透传给 `deepResearch` 内层 LLM 调用。 */
+  providerOptions?: ProviderOptions;
 }
 
 // ─── Tool result size cap ────────────────────────────────────────────
@@ -158,17 +167,31 @@ export const buildEvalToolRegistry = (
   // Core file tools — no scanner; eval workspaces are small per-question.
   for (const def of buildFileTools()) register(def);
 
-  // Web stack (the renderer-only ones are skipped).
-  register(buildWebFetchTool({ fetchImpl: opts.fetchImpl }));
+  // Web stack (the renderer-only ones are skipped). 保留原始（未包 cap）
+  // 的 def 引用：deepResearch 内部要看完整页面做抽取，故传 raw def；而
+  // register() 注册的是包了 result-cap 的副本，互不影响。
+  const webFetchDef = buildWebFetchTool({ fetchImpl: opts.fetchImpl });
+  register(webFetchDef);
   register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
 
   if (opts.tavilyKey) {
-    register(
-      buildWebSearchTool({
-        fetchImpl: opts.fetchImpl,
-        resolveTavilyToken: async () => opts.tavilyKey ?? null,
-      }),
-    );
+    const webSearchDef = buildWebSearchTool({
+      fetchImpl: opts.fetchImpl,
+      resolveTavilyToken: async () => opts.tavilyKey ?? null,
+    });
+    register(webSearchDef);
+    // deepResearch —— 多跳子代理。额外要求 model（内层需自行调 LLM）。
+    // 注册时照例包 result-cap（其 findings 已自限，cap 仅为兜底）。
+    if (opts.model) {
+      register(
+        buildDeepResearchTool({
+          model: opts.model,
+          providerOptions: opts.providerOptions,
+          webSearch: webSearchDef,
+          webFetch: webFetchDef,
+        }),
+      );
+    }
   }
   if (opts.firecrawlKey) {
     register(

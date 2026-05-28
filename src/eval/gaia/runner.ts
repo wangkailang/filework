@@ -363,17 +363,20 @@ const runOneQuestion = async (
   let collected: CollectedEvents | null = null;
 
   try {
-    const registry = buildEvalToolRegistry({
-      fetchImpl: deps.fetchImpl,
-      tavilyKey: deps.tavilyKey,
-      firecrawlKey: deps.firecrawlKey,
-    });
-
-    const { model } = createModelWithAdapter({
+    // 先解析 model + adapter —— deepResearch 的注册依赖 model 句柄。
+    const { model, adapter } = createModelWithAdapter({
       provider: deps.provider,
       apiKey: deps.apiKey,
       model: deps.model,
       baseUrl: deps.baseUrl,
+    });
+
+    const registry = buildEvalToolRegistry({
+      fetchImpl: deps.fetchImpl,
+      tavilyKey: deps.tavilyKey,
+      firecrawlKey: deps.firecrawlKey,
+      model,
+      providerOptions: adapter.buildProviderOptions(),
     });
 
     // Reflection gate enforces the FINAL ANSWER protocol via deterministic

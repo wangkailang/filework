@@ -132,6 +132,36 @@ describe("buildEvalToolRegistry — conditional registration", () => {
     expect(r.has(CONDITIONAL_TOOLS.tavilyKey)).toBe(false);
     expect(r.has(CONDITIONAL_TOOLS.firecrawlKey)).toBe(false);
   });
+
+  it("registers deepResearch only when BOTH tavilyKey and model are present", () => {
+    const model = "mock-model" as unknown as Parameters<
+      typeof buildEvalToolRegistry
+    >[0]["model"];
+
+    // tavilyKey 但无 model → 不注册
+    expect(
+      buildEvalToolRegistry({
+        fetchImpl: mockFetch,
+        tavilyKey: "tvly-FAKE",
+      }).has("deepResearch"),
+    ).toBe(false);
+
+    // model 但无 tavilyKey → 不注册
+    expect(
+      buildEvalToolRegistry({ fetchImpl: mockFetch, model }).has(
+        "deepResearch",
+      ),
+    ).toBe(false);
+
+    // 两者齐备 → 注册
+    expect(
+      buildEvalToolRegistry({
+        fetchImpl: mockFetch,
+        tavilyKey: "tvly-FAKE",
+        model,
+      }).has("deepResearch"),
+    ).toBe(true);
+  });
 });
 
 // ─── Per-tool schema fixtures ────────────────────────────────────────
