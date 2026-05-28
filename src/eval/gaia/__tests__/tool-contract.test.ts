@@ -162,6 +162,37 @@ describe("buildEvalToolRegistry — conditional registration", () => {
       }).has("deepResearch"),
     ).toBe(true);
   });
+
+  it("forceDeepResearch 隐藏原始 webSearch/webFetch，只留 deepResearch", () => {
+    const model = "mock-model" as unknown as Parameters<
+      typeof buildEvalToolRegistry
+    >[0]["model"];
+
+    const r = buildEvalToolRegistry({
+      fetchImpl: mockFetch,
+      tavilyKey: "tvly-FAKE",
+      model,
+      forceDeepResearch: true,
+    });
+    expect(r.has("deepResearch")).toBe(true);
+    expect(r.has("webSearch")).toBe(false);
+    expect(r.has("webFetch")).toBe(false);
+    // 非 web 能力仍在
+    expect(r.has("runCommand")).toBe(true);
+    expect(r.has("youtubeTranscript")).toBe(true);
+  });
+
+  it("forceDeepResearch 在 deepResearch 无法注册时被忽略（回退到原始工具）", () => {
+    // 无 model → deepResearch 注册不了 → force 应被忽略，webFetch 仍在
+    const r = buildEvalToolRegistry({
+      fetchImpl: mockFetch,
+      tavilyKey: "tvly-FAKE",
+      forceDeepResearch: true,
+    });
+    expect(r.has("deepResearch")).toBe(false);
+    expect(r.has("webFetch")).toBe(true);
+    expect(r.has("webSearch")).toBe(true);
+  });
 });
 
 // ─── Per-tool schema fixtures ────────────────────────────────────────

@@ -149,4 +149,11 @@ export interface RunnerOptions {
    * setting and emit an SDK warning.
    */
   temperature?: number | null;
+  /**
+   * 强制多跳：对外层模型隐藏原始 webSearch/webFetch/webScrape，只暴露
+   * deepResearch（+ 文件/计算/解析工具），逼模型走子代理。用于评估"强制
+   * 走 deepResearch"时的正确率/行为。仅在 deepResearch 可注册（有
+   * TAVILY_API_KEY + model）时生效，否则忽略并回退到原始工具。
+   */
+  forceDeepResearch?: boolean;
 }

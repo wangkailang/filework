@@ -59,6 +59,12 @@ export interface BuildEvalRegistryOptions {
   model?: LanguageModel;
   /** 透传给 `deepResearch` 内层 LLM 调用。 */
   providerOptions?: ProviderOptions;
+  /**
+   * 强制多跳：对外层隐藏原始 webSearch/webFetch/webScrape，只暴露
+   * deepResearch（其内部仍使用原始 def）。仅在 deepResearch 实际注册成功时
+   * 生效；否则忽略并照常注册原始工具，避免外层完全没有 web 能力。
+   */
+  forceDeepResearch?: boolean;
 }
 
 // ─── Tool result size cap ────────────────────────────────────────────
@@ -171,29 +177,40 @@ export const buildEvalToolRegistry = (
   // 的 def 引用：deepResearch 内部要看完整页面做抽取，故传 raw def；而
   // register() 注册的是包了 result-cap 的副本，互不影响。
   const webFetchDef = buildWebFetchTool({ fetchImpl: opts.fetchImpl });
-  register(webFetchDef);
-  register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
+  const webSearchDef = opts.tavilyKey
+    ? buildWebSearchTool({
+        fetchImpl: opts.fetchImpl,
+        resolveTavilyToken: async () => opts.tavilyKey ?? null,
+      })
+    : null;
 
-  if (opts.tavilyKey) {
-    const webSearchDef = buildWebSearchTool({
-      fetchImpl: opts.fetchImpl,
-      resolveTavilyToken: async () => opts.tavilyKey ?? null,
-    });
-    register(webSearchDef);
-    // deepResearch —— 多跳子代理。额外要求 model（内层需自行调 LLM）。
-    // 注册时照例包 result-cap（其 findings 已自限，cap 仅为兜底）。
-    if (opts.model) {
-      register(
-        buildDeepResearchTool({
-          model: opts.model,
-          providerOptions: opts.providerOptions,
-          webSearch: webSearchDef,
-          webFetch: webFetchDef,
-        }),
-      );
-    }
+  // deepResearch —— 多跳子代理。需要 model + tavily（内层要搜索+调 LLM）。
+  let deepResearchRegistered = false;
+  if (webSearchDef && opts.model) {
+    register(
+      buildDeepResearchTool({
+        model: opts.model,
+        providerOptions: opts.providerOptions,
+        webSearch: webSearchDef,
+        webFetch: webFetchDef,
+      }),
+    );
+    deepResearchRegistered = true;
   }
-  if (opts.firecrawlKey) {
+
+  // 强制多跳：仅当 deepResearch 真注册成功时，对外层隐藏原始 search/fetch/
+  // scrape，逼模型走子代理。deepResearch 内部仍用上面注入的 raw def，不受影响。
+  const forcing = Boolean(opts.forceDeepResearch && deepResearchRegistered);
+  if (opts.forceDeepResearch && !deepResearchRegistered) {
+    console.warn(
+      "[gaia] --force-deep-research 已忽略：deepResearch 未注册（需 TAVILY_API_KEY + model）。回退到原始 web 工具。",
+    );
+  }
+
+  if (!forcing) register(webFetchDef);
+  if (webSearchDef && !forcing) register(webSearchDef);
+  register(buildYoutubeTranscriptTool({ fetchImpl: opts.fetchImpl }));
+  if (opts.firecrawlKey && !forcing) {
     register(
       buildWebScrapeTool({
         fetchImpl: opts.fetchImpl,

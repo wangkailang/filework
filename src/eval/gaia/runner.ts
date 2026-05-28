@@ -103,6 +103,7 @@ const buildAnswerVerifierPrompt = (
 const buildSystemPrompt = (
   q: NormalizedQuestion,
   attachmentPath: string | null,
+  forceDeepResearch = false,
 ): string => {
   void q;
   const sections: string[] = [
@@ -137,23 +138,42 @@ const buildSystemPrompt = (
     "",
     "## Available capabilities",
     "- File tools: listDirectory, readFile, writeFile, runCommand, ...",
-    "- Web tools: webFetch (single known URL), webSearch (single lookup, if configured),",
-    "  deepResearch (multi-hop research subagent — runs an internal search→fetch→extract loop",
-    "  and returns compact findings + citations; if configured)",
+    ...(forceDeepResearch
+      ? [
+          "- Web research: deepResearch is your ONLY web tool. Raw webSearch / webFetch",
+          "  are DISABLED. Route ALL web research through deepResearch.",
+        ]
+      : [
+          "- Web tools: webFetch (single known URL), webSearch (single lookup, if configured),",
+          "  deepResearch (multi-hop research subagent — runs an internal search→fetch→extract loop",
+          "  and returns compact findings + citations; if configured)",
+        ]),
     "- YouTube transcripts via youtubeTranscript",
     "- Document parsers: readPdfText, readDocxText, readXlsxSheet, readPptxSlides, ...",
     "- runCommand runs unsandboxed shell — you can use python3, curl, awk, etc.",
     "",
-    "## Multi-step research strategy (CRITICAL for GAIA L2/L3)",
-    'Many GAIA questions chain facts across multiple sources — e.g. "find X (paper / person',
-    '/ event), then use a property of X to answer about Y". For ANY such question:',
-    "- Use `deepResearch` FIRST — pass the FULL original question. It will internally",
-    "  decompose, run parallel sub-queries, fetch pages, and synthesize an answer with",
-    "  citations. Raw pages never enter your context, so it scales better than manual loops.",
-    "- ONLY use raw `webSearch` + `webFetch` when the question (a) names a specific URL or",
-    "  page to read, or (b) is a single trivial lookup you can settle in one search.",
-    "- If you find yourself looping `webSearch`+`webFetch` more than twice without",
-    "  converging, switch to `deepResearch` immediately.",
+    ...(forceDeepResearch
+      ? [
+          "## Web research (FORCED deepResearch mode)",
+          "Raw webSearch / webFetch are not available. For ANY question needing web",
+          "information, call `deepResearch` with the FULL original question. It internally",
+          "decomposes, searches, fetches, extracts, and returns compact findings + citations.",
+          "- Trust its findings as your evidence source; do not try to re-fetch pages yourself.",
+          "- If findings are insufficient, call `deepResearch` again with a refined question",
+          "  (e.g. add the entity you just learned), rather than narrating that you're stuck.",
+        ]
+      : [
+          "## Multi-step research strategy (CRITICAL for GAIA L2/L3)",
+          'Many GAIA questions chain facts across multiple sources — e.g. "find X (paper / person',
+          '/ event), then use a property of X to answer about Y". For ANY such question:',
+          "- Use `deepResearch` FIRST — pass the FULL original question. It will internally",
+          "  decompose, run parallel sub-queries, fetch pages, and synthesize an answer with",
+          "  citations. Raw pages never enter your context, so it scales better than manual loops.",
+          "- ONLY use raw `webSearch` + `webFetch` when the question (a) names a specific URL or",
+          "  page to read, or (b) is a single trivial lookup you can settle in one search.",
+          "- If you find yourself looping `webSearch`+`webFetch` more than twice without",
+          "  converging, switch to `deepResearch` immediately.",
+        ]),
     "",
     "## Constraints",
     "- Do NOT call askClarification (it is not available in eval mode).",
@@ -347,6 +367,8 @@ interface PerQuestionDeps {
    * layer translates `--temperature` into this value.
    */
   temperature: number | null;
+  /** 强制多跳：对外层只暴露 deepResearch，隐藏原始 webSearch/webFetch。 */
+  forceDeepResearch?: boolean;
 }
 
 const runOneQuestion = async (
@@ -390,6 +412,7 @@ const runOneQuestion = async (
       firecrawlKey: deps.firecrawlKey,
       model,
       providerOptions: adapter.buildProviderOptions(),
+      forceDeepResearch: deps.forceDeepResearch,
     });
 
     // Reflection gate enforces the FINAL ANSWER protocol via deterministic
@@ -418,7 +441,11 @@ const runOneQuestion = async (
       tools: registry.toAiSdkTools({
         ctxFactory: evalContextFactory(ws.workspace, controller.signal),
       }),
-      systemPrompt: buildSystemPrompt(question, ws.attachmentPath),
+      systemPrompt: buildSystemPrompt(
+        question,
+        ws.attachmentPath,
+        deps.forceDeepResearch,
+      ),
       maxStepsPerTurn: 12,
       temperature: temperatureForSdk,
       signal: controller.signal,
@@ -616,6 +643,7 @@ export const runGaia = async (
     model: opts.model,
     baseUrl: opts.baseUrl,
     temperature,
+    forceDeepResearch: opts.forceDeepResearch,
   };
 
   const results: QuestionResult[] = [];
