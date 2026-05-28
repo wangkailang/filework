@@ -195,6 +195,10 @@ export const executePlan = async ({
         taskId,
         modelName,
         isGitWorkspace,
+        // 让计划执行路径也能用上 deepResearch 多跳子代理（GAIA 研究类
+        // 任务正是经 createPlan 走这条路径）。plan-runner 不构造
+        // providerOptions（其 AgentLoop 同样未传），故仅传 model。
+        model,
       });
       const beforeToolCall = buildApprovalHook({
         sender,

@@ -557,6 +557,9 @@ const handleTaskExecution = async (
       allowedTools,
       modelName: llmConfig?.model,
       isGitWorkspace,
+      // deepResearch 子代理内层循环需要模型句柄；providerOptions 已在 :489 组装。
+      model,
+      providerOptions,
     });
     const beforeToolCall = buildApprovalHook({
       sender,

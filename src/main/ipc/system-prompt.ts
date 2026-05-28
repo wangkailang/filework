@@ -87,6 +87,9 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - For a SINGLE factual or conceptual question ("what is X?", "what's the difference between A and B?"), answer directly — do not invent filesystem work or searches. Multi-deliverable research / comparison / selection requests ("research X, Y, Z and recommend one") are NOT in this bucket — they go through Plan First above.
 - Prefer the specialized tool over \`runCommand\` when one fits (\`deleteFile\`, \`writeFile\`, \`listDirectory\`, etc.).
 
+### Web Research
+- Any web question that needs more than one lookup → reach for \`deepResearch\` (see its tool description for exact when/when-not). Use raw \`webSearch\` / \`webFetch\` only for a single lookup or a single known page.
+
 ### Deterministic Computation
 - Token generation is probabilistic; arithmetic is not. For multi-digit math, floating-point, unit / timezone / date conversion, hashing, or regex testing, call \`runCommand\` with \`python3 -c "print(...)"\` (use \`BigInt\` for large integers). Reasoning blocks pattern-match — they do not compute. Never quote a multi-digit numeric result not produced by a tool call this turn.
 

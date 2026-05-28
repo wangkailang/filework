@@ -33,6 +33,7 @@ interface ParsedFlags {
    */
   temperature: number | null;
   smoke: boolean;
+  forceDeepResearch: boolean;
   help: boolean;
 }
 
@@ -50,6 +51,9 @@ Optional:
   --level 1|2|3|all       Difficulty filter        (default: 1)
   --limit <N>             First N questions only   (default: all)
   --smoke                 Equivalent to --level 1 --limit 5
+  --force-deep-research   Hide raw webSearch/webFetch from the model; expose only
+                          deepResearch as the web tool (forces multi-hop subagent).
+                          Requires TAVILY_API_KEY; ignored if deepResearch can't register.
   --base-url <url>        Override provider endpoint (OpenAI-compatible providers and xiaomi)
   --temperature <n>       Sampling temperature      (default: 0 for deterministic runs)
                           Pass 'none' to omit the parameter — required for
@@ -88,6 +92,7 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     "base-url": { type: "string" as const },
     temperature: { type: "string" as const, default: "0" },
     smoke: { type: "boolean" as const, default: false },
+    "force-deep-research": { type: "boolean" as const, default: false },
     help: { type: "boolean" as const, default: false, short: "h" },
   };
   let parsed: ReturnType<typeof parseArgs<{ options: typeof options }>>;
@@ -165,6 +170,7 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     baseUrl: v["base-url"] as string | undefined,
     temperature,
     smoke,
+    forceDeepResearch: Boolean(v["force-deep-research"]),
     help: false,
   };
 };
@@ -210,6 +216,7 @@ const main = async (): Promise<number> => {
       model: parsed.model,
       baseUrl: parsed.baseUrl,
       temperature: parsed.temperature,
+      forceDeepResearch: parsed.forceDeepResearch,
       onProgress: ({ index, total, result }) => {
         const mark = result.passed ? "✓" : "✗";
         const dur = formatDuration(result.durationMs);

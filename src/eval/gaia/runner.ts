@@ -26,6 +26,7 @@ import {
   builtinRules,
   createReflectionGate,
   missingFinalAnswer,
+  type ReflectionRule,
 } from "../../main/core/agent/reflection-gate";
 
 import { filterQuestions, loadGaiaDataset } from "./dataset";
@@ -49,7 +50,9 @@ import type {
 } from "./types";
 import { setupQuestionWorkspace } from "./workspace";
 
-const DEFAULT_PER_QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
+// deepResearch 被强制时内部多跳 + 慢推理模型（如 MiMo，单次内层调用可达
+// 数十秒）会吃掉不少墙钟；5 分钟偏紧，放宽到 10 分钟。
+const DEFAULT_PER_QUESTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 const MAX_ANSWER_TAIL_FOR_VERIFIER = 1200;
 
@@ -100,9 +103,57 @@ const buildAnswerVerifierPrompt = (
   ].join("\n");
 };
 
+// KEEP IN SYNC with FINAL_ANSWER_LINE_RE in reflection-gate.ts / scorer.ts.
+const FINAL_ANSWER_LINE_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
+
+const hasValidFinalAnswer = (text: string): boolean =>
+  text.split(/\r?\n/).some((line) => {
+    const m = line.match(FINAL_ANSWER_LINE_RE);
+    return m !== null && m[1].trim().length > 0;
+  });
+
+/**
+ * GAIA 专用 reflection 规则：当本轮某次 `deepResearch` 已返回 high/medium 置信的
+ * 非空 directAnswer，但模型尚未给出合格 `FINAL ANSWER` 时，强制收口——`retry`
+ * + `forceNoTools`，并把具体 directAnswer 直接喂回，逼模型输出最终答案。
+ *
+ * 动机：弱模型（Xiaomi MiMo）实测会在 deepResearch 第 1 次就拿到正确答案后仍继续
+ * 调工具重研究，直到墙钟耗尽、never 收口。本规则替它把答案"逼"出来。必须排在
+ * `missingFinalAnswer` 之前，以便给出具体答案而非泛化"commit to best guess"。
+ */
+export const deepResearchAnswerReady: ReflectionRule = (turn) => {
+  // 取本轮最后一个带 high/medium 置信、非空 directAnswer 的 deepResearch 结果。
+  let ready: { directAnswer: string; confidence: string } | null = null;
+  for (const call of turn.toolCalls) {
+    if (call.name !== "deepResearch" || !call.success) continue;
+    const r = call.result as
+      | { directAnswer?: unknown; confidence?: unknown }
+      | null
+      | undefined;
+    const da =
+      r && typeof r.directAnswer === "string" ? r.directAnswer.trim() : "";
+    const conf = r && typeof r.confidence === "string" ? r.confidence : "";
+    if (da.length > 0 && (conf === "high" || conf === "medium")) {
+      ready = { directAnswer: da, confidence: conf };
+    }
+  }
+  if (!ready) return null;
+  if (hasValidFinalAnswer(turn.finalText)) return null;
+  return {
+    kind: "retry",
+    forceNoTools: true,
+    feedback:
+      `deepResearch 已返回答案：directAnswer="${ready.directAnswer}"（confidence=${ready.confidence}）。` +
+      "不要再调用任何工具。立即输出最终响应，最后一行且仅为：\n\n" +
+      `    FINAL ANSWER: ${ready.directAnswer}\n\n` +
+      "若该答案需按问题要求的格式/单位微调，可微调后再作为 FINAL ANSWER 输出。",
+  };
+};
+
 const buildSystemPrompt = (
   q: NormalizedQuestion,
   attachmentPath: string | null,
+  forceDeepResearch = false,
 ): string => {
   void q;
   const sections: string[] = [
@@ -137,10 +188,46 @@ const buildSystemPrompt = (
     "",
     "## Available capabilities",
     "- File tools: listDirectory, readFile, writeFile, runCommand, ...",
-    "- Web tools: webFetch (and webSearch / webScrape if configured)",
+    ...(forceDeepResearch
+      ? [
+          "- Web research: deepResearch is your ONLY web tool. Raw webSearch / webFetch",
+          "  are DISABLED. Route ALL web research through deepResearch.",
+        ]
+      : [
+          "- Web tools: webFetch (single known URL), webSearch (single lookup, if configured),",
+          "  deepResearch (multi-hop research subagent — runs an internal search→fetch→extract loop",
+          "  and returns compact findings + citations; if configured)",
+        ]),
     "- YouTube transcripts via youtubeTranscript",
     "- Document parsers: readPdfText, readDocxText, readXlsxSheet, readPptxSlides, ...",
     "- runCommand runs unsandboxed shell — you can use python3, curl, awk, etc.",
+    "",
+    ...(forceDeepResearch
+      ? [
+          "## Web research (FORCED deepResearch mode)",
+          "Raw webSearch / webFetch are not available. For ANY question needing web",
+          "information, call `deepResearch` with the FULL original question. It internally",
+          "decomposes, searches, fetches, extracts, and returns",
+          "{ directAnswer, confidence, findings, citations }.",
+          "- When confidence is `high` or `medium`, USE `directAnswer` as your FINAL ANSWER",
+          "  directly. Do NOT re-research to double-check — trust it.",
+          "- Call deepResearch AT MOST twice. Only call again (with a refined question that",
+          "  adds the entity you just learned) when confidence is `low`/`insufficient`.",
+          "- Never loop deepResearch repeatedly; each call is expensive and the budget is finite.",
+        ]
+      : [
+          "## Multi-step research strategy (CRITICAL for GAIA L2/L3)",
+          'Many GAIA questions chain facts across multiple sources — e.g. "find X (paper / person',
+          '/ event), then use a property of X to answer about Y". For ANY such question:',
+          "- Use `deepResearch` FIRST — pass the FULL original question. It returns",
+          "  { directAnswer, confidence, findings, citations }. When confidence is high/medium,",
+          "  use directAnswer as your answer; do NOT re-research to double-check.",
+          "- Call deepResearch AT MOST twice; only call again when confidence is low/insufficient.",
+          "- ONLY use raw `webSearch` + `webFetch` when the question (a) names a specific URL or",
+          "  page to read, or (b) is a single trivial lookup you can settle in one search.",
+          "- If you find yourself looping `webSearch`+`webFetch` more than twice without",
+          "  converging, switch to `deepResearch` immediately.",
+        ]),
     "",
     "## Constraints",
     "- Do NOT call askClarification (it is not available in eval mode).",
@@ -334,6 +421,8 @@ interface PerQuestionDeps {
    * layer translates `--temperature` into this value.
    */
   temperature: number | null;
+  /** 强制多跳：对外层只暴露 deepResearch，隐藏原始 webSearch/webFetch。 */
+  forceDeepResearch?: boolean;
 }
 
 const runOneQuestion = async (
@@ -363,17 +452,21 @@ const runOneQuestion = async (
   let collected: CollectedEvents | null = null;
 
   try {
-    const registry = buildEvalToolRegistry({
-      fetchImpl: deps.fetchImpl,
-      tavilyKey: deps.tavilyKey,
-      firecrawlKey: deps.firecrawlKey,
-    });
-
-    const { model } = createModelWithAdapter({
+    // 先解析 model + adapter —— deepResearch 的注册依赖 model 句柄。
+    const { model, adapter } = createModelWithAdapter({
       provider: deps.provider,
       apiKey: deps.apiKey,
       model: deps.model,
       baseUrl: deps.baseUrl,
+    });
+
+    const registry = buildEvalToolRegistry({
+      fetchImpl: deps.fetchImpl,
+      tavilyKey: deps.tavilyKey,
+      firecrawlKey: deps.firecrawlKey,
+      model,
+      providerOptions: adapter.buildProviderOptions(),
+      forceDeepResearch: deps.forceDeepResearch,
     });
 
     // Reflection gate enforces the FINAL ANSWER protocol via deterministic
@@ -388,7 +481,7 @@ const runOneQuestion = async (
       deps.temperature === null ? undefined : deps.temperature;
     const reflectGate = createReflectionGate({
       model,
-      rules: [missingFinalAnswer, ...builtinRules()],
+      rules: [deepResearchAnswerReady, missingFinalAnswer, ...builtinRules()],
       llmFallback: true,
       llmPromptBuilder: (turn) =>
         buildAnswerVerifierPrompt(question.question, turn.finalText),
@@ -402,7 +495,11 @@ const runOneQuestion = async (
       tools: registry.toAiSdkTools({
         ctxFactory: evalContextFactory(ws.workspace, controller.signal),
       }),
-      systemPrompt: buildSystemPrompt(question, ws.attachmentPath),
+      systemPrompt: buildSystemPrompt(
+        question,
+        ws.attachmentPath,
+        deps.forceDeepResearch,
+      ),
       maxStepsPerTurn: 12,
       temperature: temperatureForSdk,
       signal: controller.signal,
@@ -600,6 +697,7 @@ export const runGaia = async (
     model: opts.model,
     baseUrl: opts.baseUrl,
     temperature,
+    forceDeepResearch: opts.forceDeepResearch,
   };
 
   const results: QuestionResult[] = [];

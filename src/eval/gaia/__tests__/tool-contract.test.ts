@@ -132,6 +132,67 @@ describe("buildEvalToolRegistry — conditional registration", () => {
     expect(r.has(CONDITIONAL_TOOLS.tavilyKey)).toBe(false);
     expect(r.has(CONDITIONAL_TOOLS.firecrawlKey)).toBe(false);
   });
+
+  it("registers deepResearch only when BOTH tavilyKey and model are present", () => {
+    const model = "mock-model" as unknown as Parameters<
+      typeof buildEvalToolRegistry
+    >[0]["model"];
+
+    // tavilyKey 但无 model → 不注册
+    expect(
+      buildEvalToolRegistry({
+        fetchImpl: mockFetch,
+        tavilyKey: "tvly-FAKE",
+      }).has("deepResearch"),
+    ).toBe(false);
+
+    // model 但无 tavilyKey → 不注册
+    expect(
+      buildEvalToolRegistry({ fetchImpl: mockFetch, model }).has(
+        "deepResearch",
+      ),
+    ).toBe(false);
+
+    // 两者齐备 → 注册
+    expect(
+      buildEvalToolRegistry({
+        fetchImpl: mockFetch,
+        tavilyKey: "tvly-FAKE",
+        model,
+      }).has("deepResearch"),
+    ).toBe(true);
+  });
+
+  it("forceDeepResearch 隐藏原始 webSearch/webFetch，只留 deepResearch", () => {
+    const model = "mock-model" as unknown as Parameters<
+      typeof buildEvalToolRegistry
+    >[0]["model"];
+
+    const r = buildEvalToolRegistry({
+      fetchImpl: mockFetch,
+      tavilyKey: "tvly-FAKE",
+      model,
+      forceDeepResearch: true,
+    });
+    expect(r.has("deepResearch")).toBe(true);
+    expect(r.has("webSearch")).toBe(false);
+    expect(r.has("webFetch")).toBe(false);
+    // 非 web 能力仍在
+    expect(r.has("runCommand")).toBe(true);
+    expect(r.has("youtubeTranscript")).toBe(true);
+  });
+
+  it("forceDeepResearch 在 deepResearch 无法注册时被忽略（回退到原始工具）", () => {
+    // 无 model → deepResearch 注册不了 → force 应被忽略，webFetch 仍在
+    const r = buildEvalToolRegistry({
+      fetchImpl: mockFetch,
+      tavilyKey: "tvly-FAKE",
+      forceDeepResearch: true,
+    });
+    expect(r.has("deepResearch")).toBe(false);
+    expect(r.has("webFetch")).toBe(true);
+    expect(r.has("webSearch")).toBe(true);
+  });
 });
 
 // ─── Per-tool schema fixtures ────────────────────────────────────────

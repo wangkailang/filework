@@ -50,7 +50,8 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => ({
   name: "webFetch",
   description:
     "Fetch a public URL and return clean reader-mode markdown plus the raw body, with side-channel fields: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos`, `structuredData`. " +
-    "This is a plain HTTP fetch — it does NOT run JavaScript. If the page needs JS/session rendering (search-result pages, SPAs, dynamic `.aspx`/query pages) or the body comes back looking like a generic landing/home page instead of the resource you asked for, retry with `webFetchRendered`. Do not infer data from an empty or wrong page — switch tools or keep searching.",
+    "This is a plain HTTP fetch — it does NOT run JavaScript. If the page needs JS/session rendering (search-result pages, SPAs, dynamic `.aspx`/query pages) or the body comes back looking like a generic landing/home page instead of the resource you asked for, retry with `webFetchRendered`. Do not infer data from an empty or wrong page — switch tools or keep searching. " +
+    "If you find yourself fetching several pages to answer ONE question, use `deepResearch` instead — it runs the search→fetch→extract loop for you and returns compact findings with citations.",
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
