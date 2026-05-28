@@ -8,10 +8,11 @@
  * shortcut that let the model continue generating before the user
  * picked an option.
  */
+import type { LanguageModel } from "ai";
 import type { WebContents } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildAgentToolRegistry } from "../agent-tools";
+import { buildAgentToolRegistry, setAgentRegistryDeps } from "../agent-tools";
 import {
   drainClarificationResolver,
   drainClarificationsForTask,
@@ -172,5 +173,41 @@ describe("askClarification tool — blocks until user answers", () => {
     drainClarificationResolver(cidB, "answer-B");
     await expect(pB).resolves.toEqual({ answer: "answer-B" });
     expect(sA).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildAgentToolRegistry — deepResearch registration gate", () => {
+  const sender = {
+    isDestroyed: () => false,
+    send: vi.fn(),
+  } as unknown as WebContents;
+  const fetchFn = (async () => new Response("")) as unknown as typeof fetch;
+  const model = "mock-model" as unknown as LanguageModel;
+
+  // 复位模块级注入，避免污染其它用例。
+  afterEach(() => setAgentRegistryDeps({}));
+
+  it("fetchFn + resolveTavilyToken + model 齐备时注册 deepResearch", () => {
+    setAgentRegistryDeps({ fetchFn, resolveTavilyToken: async () => "tvly" });
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "t",
+      model,
+    });
+    expect(registry.has("deepResearch")).toBe(true);
+    expect(registry.has("webSearch")).toBe(true);
+  });
+
+  it("缺少 model 时不注册 deepResearch（webSearch 仍在）", () => {
+    setAgentRegistryDeps({ fetchFn, resolveTavilyToken: async () => "tvly" });
+    const registry = buildAgentToolRegistry({ sender, taskId: "t" });
+    expect(registry.has("deepResearch")).toBe(false);
+    expect(registry.has("webSearch")).toBe(true);
+  });
+
+  it("没有 Tavily 解析器时不注册 deepResearch", () => {
+    setAgentRegistryDeps({ fetchFn });
+    const registry = buildAgentToolRegistry({ sender, taskId: "t", model });
+    expect(registry.has("deepResearch")).toBe(false);
   });
 });

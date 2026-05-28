@@ -17,6 +17,8 @@
  */
 
 import crypto from "node:crypto";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type { LanguageModel } from "ai";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
 import { type ToolDefinition, ToolRegistry } from "../core/agent/tool-registry";
@@ -27,6 +29,7 @@ import {
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
 import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
+import { buildDeepResearchTool } from "../core/agent/tools/deep-research";
 import { updateMemoryTool } from "../core/agent/tools/memory";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
@@ -64,6 +67,13 @@ interface BuildAgentToolRegistryOptions {
    * `system-prompt.buildGitRunCommandProtocol` for the rationale.
    */
   isGitWorkspace?: boolean;
+  /**
+   * 当前任务所选模型句柄。仅用于 `deepResearch` 工具的内层循环
+   * （分解 / 逐页抽取 / 合成）。缺省时 `deepResearch` 不注册。
+   */
+  model?: LanguageModel;
+  /** 透传给 `deepResearch` 内层 LLM 调用，保持缓存/headers 行为与主 loop 一致。 */
+  providerOptions?: ProviderOptions;
 }
 
 /**
@@ -315,6 +325,8 @@ export const buildAgentToolRegistry = ({
   allowedTools,
   modelName,
   isGitWorkspace,
+  model,
+  providerOptions,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
@@ -350,10 +362,12 @@ export const buildAgentToolRegistry = ({
   // Search/scrape additionally require their resolvers since they need
   // a stored API key; render-fetch needs nothing besides Electron.
   if (agentRegistryDeps.fetchFn) {
-    {
-      const def = buildWebFetchTool({ fetchImpl: agentRegistryDeps.fetchFn });
-      if (allow(def.name)) registry.register(def);
-    }
+    // 构造一次、复用引用：webFetch / webSearch 既直接注册，也作为
+    // deepResearch 子代理的内部依赖（避免重复构造导致 deps 漂移）。
+    const webFetchDef = buildWebFetchTool({
+      fetchImpl: agentRegistryDeps.fetchFn,
+    });
+    if (allow(webFetchDef.name)) registry.register(webFetchDef);
     {
       const def = buildWebFetchRenderedTool();
       if (allow(def.name)) registry.register(def);
@@ -373,11 +387,21 @@ export const buildAgentToolRegistry = ({
       if (allow(def.name)) registry.register(def);
     }
     if (agentRegistryDeps.resolveTavilyToken) {
-      const def = buildWebSearchTool({
+      const webSearchDef = buildWebSearchTool({
         fetchImpl: agentRegistryDeps.fetchFn,
         resolveTavilyToken: agentRegistryDeps.resolveTavilyToken,
       });
-      if (allow(def.name)) registry.register(def);
+      if (allow(webSearchDef.name)) registry.register(webSearchDef);
+      // deepResearch —— 多跳子代理。额外要求 `model`（内层需自行调用 LLM）。
+      if (model) {
+        const def = buildDeepResearchTool({
+          model,
+          providerOptions,
+          webSearch: webSearchDef,
+          webFetch: webFetchDef,
+        });
+        if (allow(def.name)) registry.register(def);
+      }
     }
     if (agentRegistryDeps.resolveFirecrawlToken) {
       const def = buildWebScrapeTool({

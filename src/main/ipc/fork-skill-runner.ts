@@ -128,12 +128,18 @@ export const createForkSkillRunner = (
     const isGitWorkspace = isGitBackedWorkspace(workspace);
     // Force [] when undefined so the registry's allow() filter (zero-tool
     // default) matches the legacy `executor.ts:395-397` behavior.
+    // 构造一次、两处复用（注册表 + AgentLoop），避免重复调用。
+    const providerOptions = adapter.buildProviderOptions();
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId,
       allowedTools: opts.allowedTools ?? [],
       modelName: modelId,
       isGitWorkspace,
+      // fork-skill 默认 allowedTools 为 []（零工具），故 deepResearch 仅在
+      // skill 的 allowed-tools 显式包含时才注册。
+      model,
+      providerOptions,
     });
     const beforeToolCall = buildApprovalHook({ sender, taskId, workspace });
 
@@ -199,7 +205,7 @@ export const createForkSkillRunner = (
       tools: registryTools,
       systemPrompt: `${opts.systemPrompt}\n\nCurrent workspace: ${opts.workspacePath}`,
       history: opts.history,
-      providerOptions: adapter.buildProviderOptions(),
+      providerOptions,
       signal: childController.signal,
       agentId: taskId,
       maxStepsPerTurn:
