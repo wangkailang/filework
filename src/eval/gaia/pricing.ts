@@ -75,23 +75,22 @@ export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = Object.freeze(
     // MiniMax
     "abab6.5s-chat": { inputUsdPerMTok: 1, outputUsdPerMTok: 1 },
     "minimax-text-01": { inputUsdPerMTok: 1, outputUsdPerMTok: 1 },
-    // Xiaomi MiMo V2.5 系列（2026-05-27 调价公告生效）。官方报价为 CNY，
-    // 按 $1 ≈ ¥7 折算入表；漂移以后只需在此处调汇率：
-    //   - V2.5-Pro：输入 ¥3 / 输出 ¥6 / 命中缓存 ¥0.025（per MTok）
-    //   - V2.5：    输入 ¥1 / 输出 ¥2 / 命中缓存 ¥0.02 （per MTok）
-    // V2.1-TTS 限时免费、V2 系列官方建议迁移到 V2.5，均未录入。
-    // calculateCost() 只用 input/output 两个字段；cache 字段记录在此供
-    // 未来按 cache 命中拆账时复用。MiMo 不区分 cache write（首次写入按
-    // 普通 input 计费），故 cacheWriteUsdPerMTok 留空。
+    // Xiaomi MiMo V2.5 系列。官方现直接以 USD per 1M tokens 报价（2026-05-28 更新）：
+    //   - V2.5-Pro：输入(cache hit) $0.0036 / 输入(cache miss) $0.435 / 输出 $0.87
+    //   - V2.5：    输入(cache hit) $0.0028 / 输入(cache miss) $0.14  / 输出 $0.28
+    // inputUsdPerMTok 取 cache miss（未命中）价；cacheReadUsdPerMTok 取 cache hit 价。
+    // calculateCost() 只用 input/output 两个字段；cache 字段记录在此供未来按 cache
+    // 命中拆账时复用。MiMo 不单列 cache write（首次写入按普通 input 计费），故
+    // cacheWriteUsdPerMTok 留空。
     "mimo-v2.5-pro": {
-      inputUsdPerMTok: 0.43,
-      outputUsdPerMTok: 0.86,
+      inputUsdPerMTok: 0.435,
+      outputUsdPerMTok: 0.87,
       cacheReadUsdPerMTok: 0.0036,
     },
     "mimo-v2.5": {
       inputUsdPerMTok: 0.14,
-      outputUsdPerMTok: 0.29,
-      cacheReadUsdPerMTok: 0.0029,
+      outputUsdPerMTok: 0.28,
+      cacheReadUsdPerMTok: 0.0028,
     },
   },
 );
