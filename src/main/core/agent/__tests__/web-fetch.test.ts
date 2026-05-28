@@ -46,7 +46,7 @@ const articleHtml = `
 `;
 
 describe("buildWebFetchTool", () => {
-  it("registers as a safe tool", () => {
+  it("注册为 safe 工具", () => {
     const tool = buildWebFetchTool({
       fetchImpl: (async () => fakeResponse("")) as never,
     });
@@ -54,7 +54,7 @@ describe("buildWebFetchTool", () => {
     expect(tool.safety).toBe("safe");
   });
 
-  it("returns title + markdown + raw for an HTML article", async () => {
+  it("对 HTML 文章返回 title + markdown + raw", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse(articleHtml, { url: "https://example.com/p" }),
     );
@@ -76,7 +76,7 @@ describe("buildWebFetchTool", () => {
     expect(out.truncated).toBe(false);
   });
 
-  it("truncates raw body to maxBytes", async () => {
+  it("将 raw 正文截断到 maxBytes", async () => {
     const big = `<html><body>${"a".repeat(500)}</body></html>`;
     const fetchImpl = vi.fn(async () => fakeResponse(big));
     const tool = buildWebFetchTool({ fetchImpl: fetchImpl as never });
@@ -88,7 +88,7 @@ describe("buildWebFetchTool", () => {
     expect(out.truncated).toBe(true);
   });
 
-  it("returns empty markdown for non-HTML content type", async () => {
+  it("对非 HTML content-type 返回空 markdown", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse('{"hello":"world"}', {
         headers: { "content-type": "application/json" },
@@ -103,7 +103,7 @@ describe("buildWebFetchTool", () => {
     expect(out.raw).toBe('{"hello":"world"}');
   });
 
-  it("propagates non-2xx status without throwing", async () => {
+  it("透传非 2xx 状态码且不抛异常", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse("blocked", { status: 403, statusText: "Forbidden" }),
     );
@@ -116,7 +116,7 @@ describe("buildWebFetchTool", () => {
     expect(out.statusText).toBe("Forbidden");
   });
 
-  it("forwards UA + abort signal to fetchImpl", async () => {
+  it("把 UA 与 abort signal 透传给 fetchImpl", async () => {
     const fetchImpl = vi.fn(async () => fakeResponse("<html></html>"));
     const tool = buildWebFetchTool({ fetchImpl: fetchImpl as never });
     const ctx = fakeCtx();
@@ -130,5 +130,279 @@ describe("buildWebFetchTool", () => {
     );
     expect(init.signal).toBe(ctx.signal);
     expect(init.redirect).toBe("follow");
+  });
+});
+
+describe("buildWebFetchTool — PDF 处理", () => {
+  const okExtract = (text: string, pages = 1) =>
+    vi.fn(async () => ({ ok: true as const, text, pages, truncated: false }));
+
+  it("从 application/pdf 响应抽取文本,且 raw 不含二进制", async () => {
+    const extractPdf = okExtract("Federal Register page text", 8);
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 binary…", {
+        headers: { "content-type": "application/pdf" },
+        url: "https://example.com/doc.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/doc.pdf" },
+      fakeCtx(),
+    )) as {
+      contentType: string;
+      markdown: string;
+      raw: string;
+      pages?: number;
+      truncated: boolean;
+      error?: string;
+    };
+    expect(extractPdf).toHaveBeenCalledTimes(1);
+    expect(out.markdown).toBe("Federal Register page text");
+    expect(out.raw).toBe("");
+    expect(out.pages).toBe(8);
+    expect(out.contentType).toContain("pdf");
+    expect(out.error).toBeUndefined();
+  });
+
+  it("下载超过 HTML 字节上限的 PDF 而非拒绝", async () => {
+    const extractPdf = okExtract("big pdf text");
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": "17025841",
+        },
+        url: "https://archives.example.gov/issue.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://archives.example.gov/issue.pdf" },
+      fakeCtx(),
+    )) as { markdown: string; error?: string };
+    expect(extractPdf).toHaveBeenCalledTimes(1);
+    expect(out.markdown).toBe("big pdf text");
+    expect(out.error).toBeUndefined();
+  });
+
+  it("content-type 通用时仍按 .pdf URL 识别 PDF", async () => {
+    const extractPdf = okExtract("octet-stream pdf text");
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: { "content-type": "application/octet-stream" },
+        url: "https://example.com/files/report.pdf?v=2",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/files/report.pdf?v=2" },
+      fakeCtx(),
+    )) as { markdown: string };
+    expect(extractPdf).toHaveBeenCalledTimes(1);
+    expect(out.markdown).toBe("octet-stream pdf text");
+  });
+
+  it("PDF 抽取失败时以 error 字段暴露", async () => {
+    const extractPdf = vi.fn(async () => ({
+      ok: false as const,
+      error: "encrypted PDF",
+    }));
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: { "content-type": "application/pdf" },
+        url: "https://example.com/x.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/x.pdf" },
+      fakeCtx(),
+    )) as { markdown: string; error?: string };
+    expect(out.markdown).toBe("");
+    expect(out.error).toContain("encrypted PDF");
+  });
+
+  it("超过 PDF 下载上限时拒绝且不调用抽取器", async () => {
+    const extractPdf = okExtract("never reached");
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": "60000000",
+        },
+        url: "https://example.com/huge.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/huge.pdf" },
+      fakeCtx(),
+    )) as { error?: string; truncated: boolean };
+    expect(extractPdf).not.toHaveBeenCalled();
+    expect(out.truncated).toBe(true);
+    expect(out.error).toMatch(/too large/i);
+  });
+
+  // 用真实的多块 ReadableStream body,且不带 content-length —— 模拟 chunked
+  // 传输,逼出"无 content-length 时无界缓冲"的路径。
+  const pdfStream = (chunks: string[], url: string): Response => {
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const c of chunks) controller.enqueue(enc.encode(c));
+        controller.close();
+      },
+    });
+    const r = new Response(stream, {
+      headers: { "content-type": "application/pdf" },
+    });
+    Object.defineProperty(r, "url", { value: url });
+    return r;
+  };
+
+  it("无 content-length 时,分块 PDF 流超过上限即中止", async () => {
+    const extractPdf = okExtract("never reached");
+    const fetchImpl = vi.fn(async () =>
+      pdfStream(
+        ["a".repeat(30), "b".repeat(30), "c".repeat(30)],
+        "https://example.com/stream.pdf",
+      ),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+      pdfMaxBytes: 50,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/stream.pdf" },
+      fakeCtx(),
+    )) as { error?: string; truncated: boolean };
+    expect(extractPdf).not.toHaveBeenCalled();
+    expect(out.truncated).toBe(true);
+    expect(out.error).toMatch(/too large/i);
+  });
+
+  it("抽取前重组多块 PDF 字节(无 content-length)", async () => {
+    let received: Uint8Array | undefined;
+    const extractPdf = vi.fn(async (data: Uint8Array) => {
+      received = data;
+      return { ok: true as const, text: "ok", pages: 1, truncated: false };
+    });
+    const chunks = ["%PDF-1.4 ", "hello ", "world"];
+    const fetchImpl = vi.fn(async () =>
+      pdfStream(chunks, "https://example.com/multi.pdf"),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+      pdfMaxBytes: 1000,
+    });
+    await tool.execute({ url: "https://example.com/multi.pdf" }, fakeCtx());
+    expect(received).toBeDefined();
+    expect(new TextDecoder().decode(received)).toBe(chunks.join(""));
+  });
+
+  it("带 query 的 PDF 经 searchPdf 路由并返回命中页", async () => {
+    const extractPdf = okExtract("full document text");
+    let receivedQuery: string | undefined;
+    const searchPdf = vi.fn(async (_data: Uint8Array, query: string) => {
+      receivedQuery = query;
+      return {
+        ok: true as const,
+        markdown: "page 12 body",
+        matchedPages: [12],
+        total: 40,
+        truncated: true,
+      };
+    });
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: { "content-type": "application/pdf" },
+        url: "https://example.com/big.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+      searchPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/big.pdf", query: "net income 1959" },
+      fakeCtx(),
+    )) as {
+      markdown: string;
+      matchedPages?: number[];
+      pages?: number;
+      truncated: boolean;
+    };
+    expect(searchPdf).toHaveBeenCalledTimes(1);
+    expect(receivedQuery).toBe("net income 1959");
+    expect(extractPdf).not.toHaveBeenCalled();
+    expect(out.markdown).toBe("page 12 body");
+    expect(out.matchedPages).toEqual([12]);
+    expect(out.pages).toBe(40);
+    expect(out.truncated).toBe(true);
+  });
+
+  it("未给 query 时使用全文抽取(而非搜索)", async () => {
+    const extractPdf = okExtract("full document text", 3);
+    const searchPdf = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: { "content-type": "application/pdf" },
+        url: "https://example.com/doc.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      extractPdf,
+      searchPdf: searchPdf as never,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/doc.pdf" },
+      fakeCtx(),
+    )) as { markdown: string };
+    expect(extractPdf).toHaveBeenCalledTimes(1);
+    expect(searchPdf).not.toHaveBeenCalled();
+    expect(out.markdown).toBe("full document text");
+  });
+
+  it("PDF 搜索失败时以 error 字段暴露", async () => {
+    const searchPdf = vi.fn(async () => ({
+      ok: false as const,
+      error: "search backend down",
+    }));
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse("%PDF-1.4 …", {
+        headers: { "content-type": "application/pdf" },
+        url: "https://example.com/doc.pdf",
+      }),
+    );
+    const tool = buildWebFetchTool({
+      fetchImpl: fetchImpl as never,
+      searchPdf,
+    });
+    const out = (await tool.execute(
+      { url: "https://example.com/doc.pdf", query: "anything" },
+      fakeCtx(),
+    )) as { markdown: string; error?: string };
+    expect(out.markdown).toBe("");
+    expect(out.error).toContain("search backend down");
   });
 });
