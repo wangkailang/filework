@@ -392,7 +392,7 @@ export const App = () => {
             <BrowserRouterProvider openInPanel={openInBrowserPanel}>
               <div className="relative flex min-h-0 flex-1 overflow-hidden">
                 {railCollapsed && (
-                  <RailExpandButton onClick={() => setRailCollapsed(false)} />
+                  <RailExpandButton onClick={toggleRailCollapsed} />
                 )}
                 <LeftRail
                   workspacePath={workspace.localPath}

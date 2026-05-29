@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 import { BranchDiffPanel } from "../branch-diff/BranchDiffPanel";
 import { BrowserPanel } from "../browser/BrowserPanel";
 import { FilePreviewPanel } from "../file-preview/FilePreviewPanel";
@@ -123,28 +124,32 @@ export const ContextDock = ({
           <X className="size-3.5 text-muted-foreground" />
         </button>
       </div>
+      {/* 三个标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
+          webview / 文件预览,保留页面、滚动、缩放等状态。 */}
       <div className="h-[calc(100%-2.25rem)] overflow-hidden">
-        {activeTab === "preview" &&
-          (filePath ? (
+        <div className={cn("h-full", activeTab !== "preview" && "hidden")}>
+          {filePath ? (
             <FilePreviewPanel filePath={filePath} />
           ) : (
             <div className="p-4 text-sm text-muted-foreground">
               {LL.session_empty()}
             </div>
-          ))}
-        {activeTab === "diff" && (
+          )}
+        </div>
+        <div className={cn("h-full", activeTab !== "diff" && "hidden")}>
           <BranchDiffPanel
             workspaceRoot={workspaceRoot}
             currentBranch={currentBranch}
             invalidator={diffInvalidator}
           />
-        )}
-        {activeTab === "web" &&
-          (url ? (
+        </div>
+        <div className={cn("h-full", activeTab !== "web" && "hidden")}>
+          {url ? (
             <BrowserPanel url={url} />
           ) : (
             <div className="p-4 text-sm text-muted-foreground">—</div>
-          ))}
+          )}
+        </div>
       </div>
     </aside>
   );

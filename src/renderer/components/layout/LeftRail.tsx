@@ -8,6 +8,7 @@ import {
   Github,
   Gitlab,
   Menu,
+  MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -15,11 +16,13 @@ import {
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 import {
   type WorkspaceRef,
   workspaceRefLabel,
 } from "../../types/workspace-ref";
 import { useBranchDiff } from "../branch-diff/useBranchDiff";
+import { useChatSessionLite } from "../chat/ChatSessionProvider";
 import { SkillsModal } from "../skills/SkillsModal";
 import { BranchSwitcher } from "./BranchSwitcher";
 import { ChatHistoryPanel } from "./ChatHistoryPanel";
@@ -72,6 +75,7 @@ export const LeftRail = ({
   onOpenSettings: () => void;
 }) => {
   const { LL } = useI18nContext();
+  const chat = useChatSessionLite();
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const widthRef = useRef(width);
@@ -228,20 +232,36 @@ export const LeftRail = ({
         </div>
 
         {/* [对话 | 文件] 分段 */}
-        <div className="m-2 flex overflow-hidden rounded-lg border border-border">
-          {segBtn("chats", LL.rail_chats())}
-          {segBtn("files", LL.rail_files())}
+        <div className="m-2 flex items-center gap-2">
+          <div className="flex flex-1 overflow-hidden rounded-lg border border-border">
+            {segBtn("chats", LL.rail_chats())}
+            {segBtn("files", LL.rail_files())}
+          </div>
+          <button
+            type="button"
+            onClick={chat.handleNewChat}
+            disabled={chat.isLoading}
+            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+            title={LL.session_newChat()}
+          >
+            <MessageSquarePlus className="size-4" />
+          </button>
         </div>
 
+        {/* 两个面板常驻挂载,CSS 隐藏非活动者:切换 [对话|文件] 不再丢失
+            文件树的展开/选中状态。FileTreePanel 以分支为 key,切换分支时
+            重挂载并重新列目录(取代旧 Sidebar 在 onSwitched 里的 refresh)。 */}
         <div className="min-h-0 flex-1">
-          {railTab === "chats" ? (
+          <div className={cn("h-full", railTab !== "chats" && "hidden")}>
             <ChatHistoryPanel />
-          ) : (
+          </div>
+          <div className={cn("h-full", railTab !== "files" && "hidden")}>
             <FileTreePanel
+              key={`${workspacePath}:${branchForChip ?? ""}`}
               workspacePath={workspacePath}
               onSelectFile={onSelectFile}
             />
-          )}
+          </div>
         </div>
 
         {/* 左下角 ⚙ 菜单(设置 / 技能)+ 折叠 */}
