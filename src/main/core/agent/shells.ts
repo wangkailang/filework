@@ -19,6 +19,9 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 
+import { getSandboxLauncher } from "../sandbox";
+import type { SandboxPolicy } from "../sandbox/types";
+
 const MAX_BUFFER = 1_000_000;
 const DROP_CHUNK = 256_000;
 const DEFAULT_INITIAL_WINDOW_MS = 2000;
@@ -58,6 +61,11 @@ export interface SpawnBackgroundOptions {
   initialWindowMs?: number;
   /** Env overrides layered on top of process.env. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * OS 沙箱策略。提供则把命令包进 sandbox-exec(darwin)等;
+   * 不提供则裸调用(内部基础设施调用保持旧行为)。
+   */
+  sandbox?: SandboxPolicy;
 }
 
 export interface SpawnBackgroundResult {
@@ -77,9 +85,14 @@ export function spawnBackgroundShell(
   opts: SpawnBackgroundOptions = {},
 ): Promise<SpawnBackgroundResult> {
   const id = `shell_${++counter}`;
-  const child = spawn(command, [], {
+  // 沙箱包裹:有 policy 走 launcher(darwin 上 sandbox-exec),
+  // 无 policy 则 passthrough,等价旧的 `spawn(command, [], {shell:true})`。
+  const launch = opts.sandbox
+    ? getSandboxLauncher(opts.sandbox).buildSpawn(command, { cwd })
+    : { file: command, args: [], shell: true };
+  const child = spawn(launch.file, launch.args, {
     cwd,
-    shell: true,
+    shell: launch.shell ?? false,
     detached: process.platform !== "win32",
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...opts.env },

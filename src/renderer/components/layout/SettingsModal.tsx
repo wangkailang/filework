@@ -4,6 +4,7 @@ import {
   Cpu,
   Globe,
   KeyRound,
+  Lock,
   Monitor,
   Moon,
   Plug,
@@ -17,6 +18,7 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
 import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
+import { CommandSecurityPanel } from "../settings/CommandSecurityPanel";
 import { CredentialsPanel } from "../settings/CredentialsPanel";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
 import { McpConfigPanel } from "../settings/McpConfigPanel";
@@ -34,7 +36,8 @@ type Tab =
   | "tool-whitelist"
   | "usage"
   | "memory-debug"
-  | "task-trace";
+  | "task-trace"
+  | "command-security";
 
 const LOCALE_LABELS: Record<Locales, string> = {
   en: "English",
@@ -123,6 +126,7 @@ export const SettingsModal = ({
     { id: "credentials", label: "Credentials", icon: KeyRound },
     { id: "mcp", label: "MCP", icon: Plug },
     { id: "tool-whitelist", label: "工具白名单", icon: Shield },
+    { id: "command-security", label: "命令执行安全", icon: Lock },
     { id: "usage", label: LL.usage_title(), icon: BarChart3 },
     { id: "memory-debug", label: LL.memoryDebug_title(), icon: Brain },
     { id: "task-trace", label: "Task Trace", icon: Monitor },
@@ -243,6 +247,8 @@ export const SettingsModal = ({
           {activeTab === "memory-debug" && <MemoryDebugPanel />}
 
           {activeTab === "task-trace" && <TaskTracePanel />}
+
+          {activeTab === "command-security" && <CommandSecurityPanel />}
         </div>
       </div>
     </div>

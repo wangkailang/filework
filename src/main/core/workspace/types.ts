@@ -45,6 +45,11 @@ export interface ExecOptions {
   cwd?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * OS 沙箱策略。提供则把命令包进 sandbox-exec(darwin)等内核沙箱;
+   * 不提供则裸调用(内部 git 等基础设施命令保持旧行为,需网络/凭据)。
+   */
+  sandbox?: import("../sandbox/types").SandboxPolicy;
 }
 
 export interface ExecResult {
