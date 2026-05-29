@@ -24,6 +24,16 @@ const ja: Translation = {
   sidebar_collapse: "サイドバーを折りたたむ",
   sidebar_expand: "サイドバーを展開",
 
+  // TopBar / Rail / Dock (布局重构)
+  topbar_history: "履歴",
+  topbar_newChat: "新規チャット",
+  topbar_settings: "設定",
+  rail_chats: "チャット",
+  rail_files: "ファイル",
+  dock_preview: "プレビュー",
+  dock_diff: "差分",
+  dock_web: "Web",
+
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",
   settings_apiKey: "APIキー",

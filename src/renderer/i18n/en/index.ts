@@ -29,6 +29,16 @@ const en: BaseTranslation = {
   sidebar_collapse: "Collapse sidebar",
   sidebar_expand: "Expand sidebar",
 
+  // TopBar / Rail / Dock (布局重构)
+  topbar_history: "History",
+  topbar_newChat: "New chat",
+  topbar_settings: "Settings",
+  rail_chats: "Chats",
+  rail_files: "Files",
+  dock_preview: "Preview",
+  dock_diff: "Diff",
+  dock_web: "Web",
+
   // Settings
   settings_title: "Settings",
   settings_aiProvider: "AI Provider",

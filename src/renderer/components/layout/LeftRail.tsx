@@ -1,0 +1,333 @@
+// 左栏:顶部 workspace 标识 + 分支 + diff 开关;中部 [对话 | 文件] 分段切换
+// 会话列表 / 文件树;左下角 ⚙ 菜单(设置 / 技能,点击展开)。无独立顶栏。
+// 复用原 Sidebar 的可拖宽 / 可折叠逻辑(宽度 clamp 走 layout-geometry)。
+import {
+  Blocks,
+  FolderOpen,
+  GitCompareArrows,
+  Github,
+  Gitlab,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  X,
+} from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import {
+  type WorkspaceRef,
+  workspaceRefLabel,
+} from "../../types/workspace-ref";
+import { useBranchDiff } from "../branch-diff/useBranchDiff";
+import { SkillsModal } from "../skills/SkillsModal";
+import { BranchSwitcher } from "./BranchSwitcher";
+import { ChatHistoryPanel } from "./ChatHistoryPanel";
+import { FileTreePanel } from "./FileTreePanel";
+import {
+  clampRailWidth,
+  RAIL_MAX_WIDTH,
+  RAIL_MIN_WIDTH,
+} from "./layout-geometry";
+
+export type RailTab = "chats" | "files";
+
+export const LeftRail = ({
+  workspacePath,
+  workspaceRef,
+  currentBranch,
+  branchForChip,
+  diffInvalidator,
+  diffOpen,
+  railTab,
+  onRailTabChange,
+  onSelectFile,
+  width,
+  collapsed,
+  onWidthChange,
+  onCommitWidth,
+  onToggleCollapsed,
+  onToggleDiff,
+  onBranchSwitched,
+  onCloseWorkspace,
+  onOpenSettings,
+}: {
+  workspacePath: string;
+  workspaceRef?: WorkspaceRef;
+  currentBranch?: string | null;
+  branchForChip: string | null;
+  diffInvalidator: number;
+  diffOpen: boolean;
+  railTab: RailTab;
+  onRailTabChange: (t: RailTab) => void;
+  onSelectFile: (path: string) => void;
+  width: number;
+  collapsed: boolean;
+  onWidthChange: (width: number) => void;
+  onCommitWidth: (width: number) => void;
+  onToggleCollapsed: () => void;
+  onToggleDiff?: () => void;
+  onBranchSwitched?: (b: string) => void;
+  onCloseWorkspace: () => void;
+  onOpenSettings: () => void;
+}) => {
+  const { LL } = useI18nContext();
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const widthRef = useRef(width);
+  widthRef.current = width;
+
+  // 分支 diff 摘要(用于 diff 开关上的 +/- 徽标)。便宜:hook 有缓存,
+  // currentBranch 变化会 bust 缓存。
+  const { data: diffSummary } = useBranchDiff({
+    path: workspacePath,
+    currentBranch,
+    invalidator: diffInvalidator,
+  });
+
+  const startResize = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = widthRef.current;
+      const prevCursor = document.body.style.cursor;
+      const prevUserSelect = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: MouseEvent) => {
+        onWidthChange(clampRailWidth(startWidth + (ev.clientX - startX)));
+      };
+      const onUp = () => {
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevUserSelect;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        onCommitWidth(widthRef.current);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [onWidthChange, onCommitWidth],
+  );
+
+  const handleResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const step = e.shiftKey ? 20 : 5;
+      const delta = e.key === "ArrowLeft" ? -step : step;
+      const next = clampRailWidth(widthRef.current + delta);
+      onWidthChange(next);
+      onCommitWidth(next);
+    },
+    [onWidthChange, onCommitWidth],
+  );
+
+  if (collapsed) return null;
+
+  const dirName = workspaceRef
+    ? workspaceRefLabel(workspaceRef)
+    : workspacePath.split("/").pop() || workspacePath;
+  const HeaderIcon =
+    workspaceRef?.kind === "github"
+      ? Github
+      : workspaceRef?.kind === "gitlab"
+        ? Gitlab
+        : FolderOpen;
+  const kindBadge =
+    workspaceRef?.kind === "github"
+      ? "GitHub"
+      : workspaceRef?.kind === "gitlab"
+        ? "GitLab"
+        : "Local";
+  const hasDiff =
+    diffSummary &&
+    !diffSummary.notAvailable &&
+    (diffSummary.totalAdded > 0 || diffSummary.totalRemoved > 0);
+  const diffButtonVisible =
+    workspaceRef?.kind !== "local" ||
+    (diffSummary !== null && diffSummary.notAvailable !== "not-git");
+
+  const segBtn = (tab: RailTab, label: string) => (
+    <button
+      type="button"
+      onClick={() => onRailTabChange(tab)}
+      className={`flex-1 py-1.5 text-xs ${
+        railTab === tab
+          ? "bg-primary font-semibold text-primary-foreground"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <aside
+        className="relative flex h-full shrink-0 flex-col border-r border-border bg-muted/30"
+        style={{ width }}
+      >
+        {/* workspace 头部:名称(点击在 Finder 显示)+ 关闭 + 分支 + diff */}
+        <div className="flex flex-col gap-1 border-b border-border px-3 py-2">
+          <div className="flex items-center justify-between gap-1">
+            <button
+              type="button"
+              onClick={() => window.filework.showInFinder(workspacePath)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-primary"
+              title={workspacePath}
+            >
+              <HeaderIcon className="size-4 shrink-0 text-file-folder" />
+              <span className="truncate">{dirName}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onCloseWorkspace}
+              className="rounded p-1 transition-colors hover:bg-accent"
+              title={LL.sidebar_closeDir()}
+            >
+              <X className="size-3.5 text-muted-foreground" />
+            </button>
+          </div>
+          {workspaceRef && branchForChip && (
+            <div className="flex items-center gap-1.5 pl-6">
+              <BranchSwitcher
+                workspaceRef={workspaceRef}
+                currentBranch={branchForChip}
+                onSwitched={(b) => onBranchSwitched?.(b)}
+              />
+              {diffButtonVisible && onToggleDiff && (
+                <button
+                  type="button"
+                  onClick={onToggleDiff}
+                  title={LL.branch_diff_open()}
+                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent hover:text-foreground ${
+                    diffOpen
+                      ? "border-primary/50 bg-accent/50 text-foreground"
+                      : "border-border/60 text-muted-foreground"
+                  }`}
+                >
+                  <GitCompareArrows className="size-3" />
+                  {hasDiff && diffSummary && (
+                    <span className="font-mono">
+                      <span className="text-emerald-500">
+                        +{diffSummary.totalAdded}
+                      </span>{" "}
+                      <span className="text-red-400">
+                        -{diffSummary.totalRemoved}
+                      </span>
+                    </span>
+                  )}
+                </button>
+              )}
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+                {kindBadge}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* [对话 | 文件] 分段 */}
+        <div className="m-2 flex overflow-hidden rounded-lg border border-border">
+          {segBtn("chats", LL.rail_chats())}
+          {segBtn("files", LL.rail_files())}
+        </div>
+
+        <div className="min-h-0 flex-1">
+          {railTab === "chats" ? (
+            <ChatHistoryPanel />
+          ) : (
+            <FileTreePanel
+              workspacePath={workspacePath}
+              onSelectFile={onSelectFile}
+            />
+          )}
+        </div>
+
+        {/* 左下角 ⚙ 菜单(设置 / 技能)+ 折叠 */}
+        <div className="relative flex items-center justify-between border-t border-border px-2 py-2">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="flex items-center gap-1.5 rounded px-1.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title={LL.topbar_settings()}
+          >
+            <Menu className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="rounded p-1 transition-colors hover:bg-accent"
+            title={LL.sidebar_collapse()}
+          >
+            <PanelLeftClose className="size-3.5 text-muted-foreground" />
+          </button>
+          {menuOpen && (
+            <>
+              <button
+                type="button"
+                aria-label={LL.session_close()}
+                onClick={() => setMenuOpen(false)}
+                className="fixed inset-0 z-30 cursor-default"
+              />
+              <div className="absolute bottom-full left-2 z-40 mb-1 w-40 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenSettings();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-accent"
+                >
+                  <Settings className="size-4" />
+                  {LL.topbar_settings()}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSkillsOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-accent"
+                >
+                  <Blocks className="size-4" />
+                  {LL.sidebar_skills()}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* biome-ignore lint/a11y/useSemanticElements: 竖向 resize 手柄用 div + ARIA 是分栏标准做法 */}
+        <div
+          onMouseDown={startResize}
+          onKeyDown={handleResizeKey}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={RAIL_MIN_WIDTH}
+          aria-valuemax={RAIL_MAX_WIDTH}
+          tabIndex={0}
+          className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/30 focus:bg-primary/40 focus:outline-none active:bg-primary/50"
+        />
+      </aside>
+
+      <SkillsModal open={skillsOpen} onClose={() => setSkillsOpen(false)} />
+    </>
+  );
+};
+
+/** 折叠态下由 App 渲染的浮动展开按钮(无顶栏,放在左上、让开红绿灯)。 */
+export const RailExpandButton = ({ onClick }: { onClick: () => void }) => {
+  const { LL } = useI18nContext();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={LL.sidebar_expand()}
+      className="titlebar-no-drag absolute top-2 left-2 z-20 rounded-md p-1.5 transition-colors hover:bg-accent"
+    >
+      <PanelLeftOpen className="size-4 text-muted-foreground" />
+    </button>
+  );
+};

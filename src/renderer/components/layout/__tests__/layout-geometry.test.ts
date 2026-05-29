@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampDockWidth,
+  clampRailWidth,
   DOCK_DEFAULT_WIDTH,
   DOCK_MAX_WIDTH,
   DOCK_MIN_WIDTH,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
-  clampDockWidth,
-  clampRailWidth,
   resolveDockMode,
 } from "../layout-geometry";
 

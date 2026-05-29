@@ -80,6 +80,38 @@ type RootTranslation = {
 	 */
 	sidebar_expand: string
 	/**
+	 * H​i​s​t​o​r​y
+	 */
+	topbar_history: string
+	/**
+	 * N​e​w​ ​c​h​a​t
+	 */
+	topbar_newChat: string
+	/**
+	 * S​e​t​t​i​n​g​s
+	 */
+	topbar_settings: string
+	/**
+	 * C​h​a​t​s
+	 */
+	rail_chats: string
+	/**
+	 * F​i​l​e​s
+	 */
+	rail_files: string
+	/**
+	 * P​r​e​v​i​e​w
+	 */
+	dock_preview: string
+	/**
+	 * D​i​f​f
+	 */
+	dock_diff: string
+	/**
+	 * W​e​b
+	 */
+	dock_web: string
+	/**
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
@@ -1226,6 +1258,38 @@ export type TranslationFunctions = {
 	 * Expand sidebar
 	 */
 	sidebar_expand: () => LocalizedString
+	/**
+	 * History
+	 */
+	topbar_history: () => LocalizedString
+	/**
+	 * New chat
+	 */
+	topbar_newChat: () => LocalizedString
+	/**
+	 * Settings
+	 */
+	topbar_settings: () => LocalizedString
+	/**
+	 * Chats
+	 */
+	rail_chats: () => LocalizedString
+	/**
+	 * Files
+	 */
+	rail_files: () => LocalizedString
+	/**
+	 * Preview
+	 */
+	dock_preview: () => LocalizedString
+	/**
+	 * Diff
+	 */
+	dock_diff: () => LocalizedString
+	/**
+	 * Web
+	 */
+	dock_web: () => LocalizedString
 	/**
 	 * Settings
 	 */

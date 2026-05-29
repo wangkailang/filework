@@ -12,8 +12,12 @@ export const DOCK_DEFAULT_WIDTH = 420;
 /** 对话区的最小可读宽度;低于它时 Dock 改用浮层,避免重演"聊天被压到 30%"。 */
 export const MIN_CHAT_WIDTH = 420;
 
-const clamp = (n: number, min: number, max: number, fallback: number): number =>
-  Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+const clamp = (
+  n: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number => (Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback);
 
 export const clampRailWidth = (n: number): number =>
   clamp(n, RAIL_MIN_WIDTH, RAIL_MAX_WIDTH, RAIL_MIN_WIDTH);
