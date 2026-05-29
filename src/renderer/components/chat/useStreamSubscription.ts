@@ -394,17 +394,27 @@ export function useStreamSubscription({
       ({ id, toolCallId, result }) => {
         if (id !== streamTaskIdRef.current) return;
         updateParts((parts) => {
-          const isDenied =
-            result != null &&
-            typeof result === "object" &&
-            "denied" in result &&
-            (result as Record<string, unknown>).denied === true;
+          const resultObj =
+            result != null && typeof result === "object"
+              ? (result as Record<string, unknown>)
+              : null;
+          const isDenied = resultObj?.denied === true;
+          // A failed tool call (MCP timeout / not-connected, isError, or any
+          // tool returning `{ success: false }`) renders as `output-error`
+          // so the bubble shows the failure instead of a misleading "完成".
+          // Denied calls keep their own approval-rejected styling.
+          const isFailure =
+            !isDenied &&
+            resultObj != null &&
+            (resultObj.success === false || resultObj.isError === true);
           const next = parts.map((p) => {
             if (p.type !== "tool" || p.toolCallId !== toolCallId) return p;
             return {
               ...p,
               result,
-              state: "output-available" as const,
+              state: isFailure
+                ? ("output-error" as const)
+                : ("output-available" as const),
               approval: p.approval
                 ? {
                     ...p.approval,
@@ -420,7 +430,7 @@ export function useStreamSubscription({
           // image gallery, then video gallery — so the rendered order
           // matches how a reader scans an article header. Skipped on
           // denied results.
-          if (!isDenied) {
+          if (!isDenied && !isFailure) {
             const toolPart = next.find(
               (p): p is ToolPart =>
                 p.type === "tool" && p.toolCallId === toolCallId,

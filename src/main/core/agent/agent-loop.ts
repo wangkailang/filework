@@ -340,6 +340,38 @@ export class AgentLoop {
             });
             break;
           }
+          case "tool-error": {
+            // A tool whose `execute` threw (MCP timeout / not-connected,
+            // isError result, network failure, …) surfaces here rather than
+            // as `tool-result`. Without this case the part is dropped and the
+            // renderer's tool bubble stays in "执行中" forever. Mirror the
+            // tool-result path: emit a terminal `tool_execution_end` with
+            // success=false so the UI transitions and the model sees the
+            // failure. The AI SDK still feeds the error back into the loop,
+            // so the turn continues normally.
+            const message =
+              part.error instanceof Error
+                ? part.error.message
+                : typeof part.error === "string"
+                  ? part.error
+                  : String(part.error);
+            const result = { success: false, error: message };
+            toolResults?.set(part.toolCallId, {
+              name: part.toolName,
+              success: false,
+              result,
+            });
+            emit({
+              type: "tool_execution_end",
+              agentId,
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              result,
+              success: false,
+              durationMs: 0,
+            });
+            break;
+          }
           case "finish-step": {
             if (messageOpen) {
               const stepUsage = mapUsage(part.usage);
