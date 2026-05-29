@@ -1,29 +1,3 @@
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import c from "highlight.js/lib/languages/c";
-import cpp from "highlight.js/lib/languages/cpp";
-import csharp from "highlight.js/lib/languages/csharp";
-import css from "highlight.js/lib/languages/css";
-import diff from "highlight.js/lib/languages/diff";
-import dockerfile from "highlight.js/lib/languages/dockerfile";
-import go from "highlight.js/lib/languages/go";
-import ini from "highlight.js/lib/languages/ini";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import kotlin from "highlight.js/lib/languages/kotlin";
-import markdown from "highlight.js/lib/languages/markdown";
-import php from "highlight.js/lib/languages/php";
-import plaintext from "highlight.js/lib/languages/plaintext";
-import python from "highlight.js/lib/languages/python";
-import ruby from "highlight.js/lib/languages/ruby";
-import rust from "highlight.js/lib/languages/rust";
-import scss from "highlight.js/lib/languages/scss";
-import sql from "highlight.js/lib/languages/sql";
-import swift from "highlight.js/lib/languages/swift";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
 import { Check, Copy } from "lucide-react";
 import {
   type HTMLAttributes,
@@ -34,61 +8,9 @@ import {
   useState,
 } from "react";
 import type { ExtraProps } from "streamdown";
+// hljs 配置(语言注册、别名、转义)集中在 lib/highlight,与文件预览共用。
+import { escapeHtml, hljs, LANG_ALIAS } from "../../lib/highlight";
 import { cn } from "../../lib/utils";
-
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("c", c);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("csharp", csharp);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("diff", diff);
-hljs.registerLanguage("dockerfile", dockerfile);
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("ini", ini);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("kotlin", kotlin);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("php", php);
-hljs.registerLanguage("plaintext", plaintext);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("ruby", ruby);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("scss", scss);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("swift", swift);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("xml", xml);
-hljs.registerLanguage("yaml", yaml);
-
-const LANG_ALIAS: Record<string, string> = {
-  js: "javascript",
-  jsx: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  ts: "typescript",
-  tsx: "typescript",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  sh: "bash",
-  zsh: "bash",
-  shell: "bash",
-  yml: "yaml",
-  md: "markdown",
-  kt: "kotlin",
-  cs: "csharp",
-  "c++": "cpp",
-  "c#": "csharp",
-  html: "xml",
-  htm: "xml",
-  svg: "xml",
-  toml: "ini",
-  conf: "ini",
-  text: "plaintext",
-  txt: "plaintext",
-};
 
 const LANG_DISPLAY: Record<string, string> = {
   csharp: "c#",
@@ -101,9 +23,6 @@ type CodeProps = HTMLAttributes<HTMLElement> &
   ExtraProps & {
     children?: ReactNode;
   };
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const childrenToString = (children: ReactNode): string => {
   if (typeof children === "string") return children;

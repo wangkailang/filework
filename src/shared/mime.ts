@@ -24,6 +24,7 @@ const MIME_BY_EXT: Record<string, string> = {
   heic: "image/heic",
   heif: "image/heif",
   svg: "image/svg+xml",
+  ico: "image/x-icon",
   // documents
   pdf: "application/pdf",
   // video (used by local-file:// protocol for inline preview)

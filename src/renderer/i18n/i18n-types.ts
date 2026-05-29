@@ -715,6 +715,11 @@ type RootTranslation = {
 	 */
 	preview_videoLabel: RequiredParams<'0'>
 	/**
+	 * F​i​l​e​ ​t​o​o​ ​l​a​r​g​e​ ​(​{​0​}​)​;​ ​p​r​e​v​i​e​w​i​n​g​ ​t​h​e​ ​b​e​g​i​n​n​i​n​g​ ​o​n​l​y
+	 * @param {string} 0
+	 */
+	preview_truncated: RequiredParams<'0'>
+	/**
 	 * L​o​a​d​i​n​g​.​.​.
 	 */
 	code_loading: string
@@ -1842,6 +1847,10 @@ export type TranslationFunctions = {
 	 * Video preview: {0}
 	 */
 	preview_videoLabel: (arg0: string) => LocalizedString
+	/**
+	 * File too large ({0}); previewing the beginning only
+	 */
+	preview_truncated: (arg0: string) => LocalizedString
 	/**
 	 * Loading...
 	 */

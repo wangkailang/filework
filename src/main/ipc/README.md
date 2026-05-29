@@ -135,7 +135,7 @@ ai-handlers.ts (顶层协调器)
 - **核心功能**:
   - `fs:listDirectory` - 目录列表（带过滤）
   - `fs:readFile` - 文本文件读取
-  - `fs:readFileBase64` - 二进制文件读取
+  - `fs:readFilePreview` - 文件预览读取（超大文件截断,返回 truncated/totalBytes）
   - `fs:directoryStats` - 目录统计信息
 - **安全特性**:
   - 自动跳过隐藏文件和 `node_modules`
