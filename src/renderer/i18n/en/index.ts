@@ -236,8 +236,12 @@ const en: BaseTranslation = {
   preview_readFileError: "Failed to read file",
   preview_videoError: "Unable to play this video file",
   preview_videoLabel: "Video preview: {0:string}",
+  preview_audioError: "Unable to play this audio file",
+  preview_audioLabel: "Audio preview: {0:string}",
   preview_truncated:
     "File too large ({0:string}); previewing the beginning only",
+  preview_viewRendered: "Preview",
+  preview_viewSource: "Source",
 
   // Code viewer
   code_loading: "Loading...",

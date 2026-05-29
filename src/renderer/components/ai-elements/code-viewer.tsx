@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils";
 
 /** 可按文本预览的扩展名集合;不在此列的由上层走"不支持"分支。 */
 export const SUPPORTED_EXTENSIONS = new Set([
+  // Web / 前端
   ".ts",
   ".tsx",
   ".js",
@@ -15,25 +16,89 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".css",
   ".scss",
   ".less",
+  ".vue",
+  ".svelte",
+  ".astro",
+  // 数据 / 配置
   ".json",
+  ".jsonl",
+  ".ndjson",
   ".yaml",
   ".yml",
   ".toml",
+  ".ini",
+  ".properties",
+  ".conf",
+  ".cfg",
   ".xml",
   ".csv",
+  ".tsv",
+  // 文档 / 纯文本
   ".md",
+  ".markdown",
   ".txt",
   ".log",
+  // 系统 / 后端语言
   ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".kt",
+  ".kts",
+  ".c",
+  ".h",
+  ".cpp",
+  ".cc",
+  ".cxx",
+  ".hpp",
+  ".hh",
+  ".cs",
+  ".php",
+  ".rb",
+  ".swift",
+  ".lua",
+  ".dart",
+  ".r",
+  ".scala",
+  ".groovy",
+  ".gradle",
+  ".pl",
+  ".hs",
+  ".ex",
+  ".exs",
+  ".clj",
+  ".jl",
+  ".zig",
+  ".nim",
+  ".sol",
+  ".proto",
+  ".tf",
+  // Shell / 脚本
   ".sh",
   ".bash",
   ".zsh",
-  ".env",
-  ".gitignore",
-  ".editorconfig",
+  ".fish",
+  ".bat",
+  ".ps1",
+  ".vim",
+  // 数据库 / schema
   ".sql",
   ".graphql",
   ".prisma",
+  // diff / 补丁
+  ".diff",
+  ".patch",
+  // dotfile(getFileExtension 对纯点开头文件返回整名)
+  ".env",
+  ".gitignore",
+  ".gitattributes",
+  ".editorconfig",
+  ".dockerignore",
+  ".npmrc",
+  ".nvmrc",
+  ".prettierrc",
+  ".babelrc",
+  ".eslintrc",
 ]);
 
 /** 取文件扩展名(含点),正确处理 .env / .gitignore 这类 dotfile。 */
@@ -163,6 +228,9 @@ const VirtualizedCode = ({
     Math.ceil((scrollTop + viewportHeight) / LINE_HEIGHT) + OVERSCAN,
   );
   const visible = lines.slice(start, end);
+  // 行号槽宽度:按总行数位数定宽,使右对齐的行号在所有行间纵向对齐;最少 2 位避免极短文件槽位过窄。
+  // ch 贴合等宽字体的数字宽,+1.5rem 留出左右各 0.75rem 内边距(与下方 px-3 对应)。
+  const gutterWidth = `calc(${Math.max(2, String(total).length)}ch + 1.5rem)`;
 
   return (
     <div
@@ -178,17 +246,25 @@ const VirtualizedCode = ({
       {visible.map((line, i) => {
         const lineNo = start + i;
         const style = { height: LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px` };
-        return highlighted ? (
-          <div
-            key={lineNo}
-            className="px-4"
-            style={style}
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: 内容由 hljs 从本地文件生成,标签为转义后的 token 标记。
-            dangerouslySetInnerHTML={{ __html: line }}
-          />
-        ) : (
-          <div key={lineNo} className="px-4" style={style}>
-            {line}
+        return (
+          // w-fit + min-w-full:短行撑满视口(行号槽背景铺满),长行随内容变宽以触发横向滚动。
+          <div key={lineNo} className="flex w-fit min-w-full" style={style}>
+            {/* 行号槽:sticky 固定在左侧,横向滚动时用 bg-background 同色遮挡下层代码;select-none 让复制不带行号。 */}
+            <span
+              className="sticky left-0 z-[1] shrink-0 select-none border-r border-border bg-background px-3 text-right text-muted-foreground/70"
+              style={{ width: gutterWidth }}
+            >
+              {lineNo + 1}
+            </span>
+            {highlighted ? (
+              <span
+                className="pl-3 pr-4"
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: 内容由 hljs 从本地文件生成,标签为转义后的 token 标记。
+                dangerouslySetInnerHTML={{ __html: line }}
+              />
+            ) : (
+              <span className="pl-3 pr-4">{line}</span>
+            )}
           </div>
         );
       })}

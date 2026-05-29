@@ -1,12 +1,22 @@
-import { FileWarning, Loader2, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Code2,
+  Eye,
+  FileWarning,
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
+import { cn } from "../../lib/utils";
 import {
   CodeViewer,
   getFileExtension,
   isSupportedFile,
 } from "../ai-elements/code-viewer";
+import { MessageResponse } from "../ai-elements/message";
+import { AudioViewer } from "./AudioViewer";
 import { PdfViewer } from "./PdfViewer";
 import { VideoViewer } from "./VideoViewer";
 
@@ -38,6 +48,27 @@ const isVideoFile = (filename: string): boolean => {
   return VIDEO_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
 };
 
+// .ogg 容器既可是音视频,沿用现状归视频;.oga 明确为音频。
+const AUDIO_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".opus",
+  ".oga",
+]);
+
+const isAudioFile = (filename: string): boolean => {
+  return AUDIO_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
+};
+
+/** markdown 文件:支持"渲染预览 / 原文件源码"双模式切换。 */
+const isMarkdownFile = (filename: string): boolean => {
+  const e = getFileExtension(filename).toLowerCase();
+  return e === ".md" || e === ".markdown";
+};
+
 /** 人类可读的字节数(用于超大文件截断提示)。 */
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -65,6 +96,8 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
+  // markdown 视图模式:rendered=渲染预览(默认),source=原文件源码(带行号)。
+  const [mdView, setMdView] = useState<"rendered" | "source">("rendered");
 
   const fileName = filePath.split("/").pop() || filePath;
   const absolutePath = filePath;
@@ -72,7 +105,10 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const isPdf = isPdfFile(fileName);
   const isImage = isImageFile(fileName);
   const isVideo = isVideoFile(fileName);
-  const supported = isSupportedFile(fileName) || isPdf || isImage || isVideo;
+  const isAudio = isAudioFile(fileName);
+  const isMarkdown = isMarkdownFile(fileName);
+  const supported =
+    isSupportedFile(fileName) || isPdf || isImage || isVideo || isAudio;
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.25, 5)), []);
   const zoomOut = useCallback(
@@ -90,8 +126,9 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     setTruncated(false);
     setTruncatedTotal(0);
     setImageSrc(null);
+    setMdView("rendered");
 
-    if (!supported || isPdf || isVideo) {
+    if (!supported || isPdf || isVideo || isAudio) {
       setIsLoading(false);
       return;
     }
@@ -125,7 +162,7 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, supported, isImage, isPdf, isVideo, LL]);
+  }, [absolutePath, supported, isImage, isPdf, isVideo, isAudio, LL]);
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -138,6 +175,41 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
             {ext}
           </span>
+        )}
+        {/* markdown 源码/预览切换:仅 markdown 且内容就绪时出现,贴右。 */}
+        {isMarkdown && !isLoading && !error && content !== null && (
+          <div className="ml-auto flex shrink-0 items-center rounded-md border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setMdView("rendered")}
+              title={LL.preview_viewRendered()}
+              aria-label={LL.preview_viewRendered()}
+              aria-pressed={mdView === "rendered"}
+              className={cn(
+                "rounded p-1 transition-colors",
+                mdView === "rendered"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMdView("source")}
+              title={LL.preview_viewSource()}
+              aria-label={LL.preview_viewSource()}
+              aria-pressed={mdView === "source"}
+              className={cn(
+                "rounded p-1 transition-colors",
+                mdView === "source"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Code2 className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -176,11 +248,18 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
                 {LL.preview_truncated(formatBytes(truncatedTotal))}
               </div>
             )}
-            <CodeViewer
-              code={content}
-              filename={fileName}
-              className="min-h-0 flex-1"
-            />
+            {isMarkdown && mdView === "rendered" ? (
+              // 预览模式:复用聊天的 Streamdown 渲染(cjk/数学/表格/代码块/链接路由一致)。
+              <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+                <MessageResponse>{content}</MessageResponse>
+              </div>
+            ) : (
+              <CodeViewer
+                code={content}
+                filename={fileName}
+                className="min-h-0 flex-1"
+              />
+            )}
           </div>
         )}
 
@@ -228,6 +307,10 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
 
         {!isLoading && isVideo && (
           <VideoViewer filePath={filePath} fileName={fileName} />
+        )}
+
+        {!isLoading && isAudio && (
+          <AudioViewer filePath={filePath} fileName={fileName} />
         )}
       </div>
     </div>

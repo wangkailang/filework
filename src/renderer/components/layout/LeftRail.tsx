@@ -39,6 +39,7 @@ export const LeftRail = ({
   workspacePath,
   workspaceRef,
   currentBranch,
+  isGitRepo,
   branchForChip,
   diffInvalidator,
   diffOpen,
@@ -58,6 +59,8 @@ export const LeftRail = ({
   workspacePath: string;
   workspaceRef?: WorkspaceRef;
   currentBranch?: string | null;
+  /** 非 git 项目不展示 diff 入口,并跳过分支 diff 探测。 */
+  isGitRepo: boolean;
   branchForChip: string | null;
   diffInvalidator: number;
   diffOpen: boolean;
@@ -84,7 +87,8 @@ export const LeftRail = ({
   // 分支 diff 摘要(用于 diff 开关上的 +/- 徽标)。便宜:hook 有缓存,
   // currentBranch 变化会 bust 缓存。
   const { data: diffSummary } = useBranchDiff({
-    path: workspacePath,
+    // 非 git 项目:path 传空,hook 在 fetchNow 处直接短路,不发起 git diff 探测。
+    path: isGitRepo ? workspacePath : undefined,
     currentBranch,
     invalidator: diffInvalidator,
   });
@@ -148,9 +152,8 @@ export const LeftRail = ({
     diffSummary &&
     !diffSummary.notAvailable &&
     (diffSummary.totalAdded > 0 || diffSummary.totalRemoved > 0);
-  const diffButtonVisible =
-    workspaceRef?.kind !== "local" ||
-    (diffSummary !== null && diffSummary.notAvailable !== "not-git");
+  // 仅 git 项目展示 diff 入口(非 git 时分支 chip 本就因无分支名隐藏,这里再兜一层)。
+  const diffButtonVisible = isGitRepo;
 
   const segBtn = (tab: RailTab, label: string) => (
     <button

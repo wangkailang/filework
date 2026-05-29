@@ -84,6 +84,22 @@ export const LANG_ALIAS: Record<string, string> = {
   editorconfig: "ini",
   text: "plaintext",
   txt: "plaintext",
+  // C/C++ 头文件与扩展名变体
+  h: "c",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hh: "cpp",
+  // Kotlin 脚本
+  kts: "kotlin",
+  // 补丁文件按 diff 高亮
+  patch: "diff",
+  // JSON Lines / NDJSON 按 JSON 高亮(ignoreIllegals 容忍多行顶层对象)
+  jsonl: "json",
+  ndjson: "json",
+  // ini 风格配置
+  properties: "ini",
+  cfg: "ini",
 };
 
 /** 把文本里的 HTML 敏感字符转义,供 dangerouslySetInnerHTML 安全注入。 */
