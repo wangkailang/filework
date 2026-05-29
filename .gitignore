@@ -9,6 +9,7 @@ release/
 .env
 .env.local
 tmp/
+.superpowers/
 
 # Local editor/agent configuration (not part of source)
 .claude/settings.json
