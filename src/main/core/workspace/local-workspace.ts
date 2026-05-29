@@ -23,6 +23,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import { getSandboxLauncher } from "../sandbox";
 import type {
   ExecOptions,
   ExecResult,
@@ -231,9 +232,14 @@ class LocalWorkspaceExec implements WorkspaceExec {
         else resolve(value as ExecResult);
       };
 
-      const child = spawn(command, [], {
+      // 沙箱包裹:有 policy 走 launcher(darwin 上 sandbox-exec),
+      // 无 policy 则 passthrough,等价旧的 `spawn(command, [], {shell:true})`。
+      const launch = opts?.sandbox
+        ? getSandboxLauncher(opts.sandbox).buildSpawn(command, { cwd: cwdAbs })
+        : { file: command, args: [], shell: true };
+      const child = spawn(launch.file, launch.args, {
         cwd: cwdAbs,
-        shell: true,
+        shell: launch.shell ?? false,
         detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
         // BROWSER=none prevents dev servers (Vite / CRA / Next / Astro)

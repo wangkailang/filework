@@ -16,6 +16,8 @@
 import path from "node:path";
 import { z } from "zod/v4";
 
+import { resolveWritableRoots } from "../../sandbox";
+import type { SandboxConfig, SandboxPolicy } from "../../sandbox/types";
 import type { Workspace } from "../../workspace/types";
 import {
   killShell as killShellById,
@@ -70,6 +72,11 @@ export interface FileToolsDeps {
    * Non-git workspaces should leave this undefined.
    */
   gitProtocol?: string;
+  /**
+   * 命令执行沙箱配置(来自用户设置)。提供则 `runCommand` 在 OS 沙箱内
+   * 执行;不提供则裸调用(eval / fork 等无需沙箱的路径保持旧行为)。
+   */
+  sandbox?: SandboxConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +145,19 @@ const runCommandSchema = z.object({
     .default(false)
     .describe(
       "Set true for any command that does not terminate on its own: dev servers (`*dev`, `*start`, `*serve`), watchers (`--watch`), TUIs, REPLs. Returns a shellId immediately with the first ~2s of output; use `readShellOutput` to poll for more and `killShell` to terminate.",
+    ),
+  escalatePermissions: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Set true ONLY when the command genuinely needs to escape the sandbox: outbound network (npm/pip install, curl, git push) or writing outside the workspace. Triggers a user approval prompt; if approved the command runs WITHOUT the sandbox. Leave false for ordinary in-workspace work — sandboxed commands never need it.",
+    ),
+  justification: z
+    .string()
+    .optional()
+    .describe(
+      "One short sentence shown to the user explaining why escalatePermissions is needed (e.g. 'pnpm install needs network').",
     ),
 });
 
@@ -318,8 +338,34 @@ const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
  */
 const BACKGROUND_GUIDANCE = `Long-running commands (dev servers, watchers, REPLs) MUST use \`runInBackground: true\`. Foreground mode buffers stdout in memory and only returns when the child closes — for a dev server that never happens, so the agent hangs. Background mode returns a shellId immediately plus the first ~2s of output; use \`readShellOutput(shellId)\` to poll until you see the ready marker (e.g., \`Local: http://localhost:PORT\`), then \`killShell(shellId)\` when done.`;
 
+/**
+ * 为本次执行构造沙箱策略。escalatePermissions 经审批后 → 完全放开
+ * (danger-full-access / passthrough);否则套用设置档位 + 当前 workspace
+ * 的可写根。返回 undefined 表示不沙箱(无 config 的 eval/fork 路径)。
+ */
+async function buildRunPolicy(
+  config: SandboxConfig | undefined,
+  workspaceRoot: string,
+  escalate: boolean,
+): Promise<SandboxPolicy | undefined> {
+  if (!config) return undefined;
+  if (escalate) {
+    return {
+      mode: "danger-full-access",
+      writableRoots: [],
+      allowNetwork: true,
+    };
+  }
+  return {
+    mode: config.mode,
+    allowNetwork: config.allowNetwork,
+    writableRoots: await resolveWritableRoots(workspaceRoot),
+  };
+}
+
 function runCommandTool(
   gitProtocol?: string,
+  sandbox?: SandboxConfig,
 ): ToolDefinition<z.infer<typeof runCommandSchema>, unknown> {
   const parts = [
     "Execute a shell command in the workspace. Requires user approval.",
@@ -335,17 +381,24 @@ function runCommandTool(
       const cwdRel = args.cwd
         ? await resolveRel(ctx.workspace, args.cwd)
         : undefined;
+      const policy = await buildRunPolicy(
+        sandbox,
+        ctx.workspace.root,
+        args.escalatePermissions === true,
+      );
       if (args.runInBackground) {
         const cwdAbs = cwdRel
           ? ctx.workspace.fs.resolve(cwdRel)
           : ctx.workspace.root;
         return spawnBackgroundShell(args.command, cwdAbs, {
           env: { BROWSER: process.env.BROWSER ?? "none" },
+          sandbox: policy,
         });
       }
       return ctx.workspace.exec.run(args.command, {
         cwd: cwdRel,
         signal: ctx.signal,
+        sandbox: policy,
       });
     },
   };
@@ -487,7 +540,7 @@ export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
     writeFileTool as ToolDefinition,
     moveFileTool as ToolDefinition,
     deleteFileTool as ToolDefinition,
-    runCommandTool(deps?.gitProtocol) as ToolDefinition,
+    runCommandTool(deps?.gitProtocol, deps?.sandbox) as ToolDefinition,
     readShellOutputTool as ToolDefinition,
     killShellTool as ToolDefinition,
   ];

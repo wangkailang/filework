@@ -14,7 +14,13 @@ import type { WebContents } from "electron";
 import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
 import { rememberPreview } from "../core/agent/preview/snapshot-store";
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
+import {
+  isSandboxEffective,
+  resolveApprovalPolicy,
+  resolveSandboxConfig,
+} from "../core/sandbox";
 import type { Workspace } from "../core/workspace/types";
+import { getSetting } from "../db";
 import { requestApproval } from "./ai-tools";
 import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 
@@ -32,6 +38,15 @@ interface BuildApprovalHookOptions {
 
 const DENIED_REASON = "用户拒绝了此操作";
 const OUTSIDE_WORKSPACE_REASON = "路径必须在当前 workspace 内";
+
+/** db 未初始化(如单测)时回落 null,使设置解析走默认值。 */
+const safeGetSetting = (key: string): string | null => {
+  try {
+    return getSetting(key);
+  } catch {
+    return null;
+  }
+};
 
 export const buildApprovalHook = ({
   sender,
@@ -91,10 +106,25 @@ export const buildApprovalHook = ({
       }
     }
     if (call.toolName === "runCommand") {
-      const args = call.args as { cwd?: string };
-      if (args.cwd && !(await isInWorkspace(taskId, [args.cwd]))) {
+      const args = call.args as { cwd?: string; escalatePermissions?: boolean };
+      const escalate = args.escalatePermissions === true;
+
+      // cwd 越界:未提权时直接拒;提权时交由审批弹窗判断。
+      if (!escalate && args.cwd && !(await isInWorkspace(taskId, [args.cwd]))) {
         return { allow: false, reason: "cwd 必须在当前 workspace 内" };
       }
+
+      // 两层模型:提权一律弹窗;否则按审批策略 + 沙箱是否生效决定。
+      // 沙箱真正生效(darwin 非 danger 档)时,内核兜底,可免弹窗;
+      // 沙箱无效(如非 macOS)则即便策略宽松也必须弹窗兜底。
+      if (!escalate) {
+        const policy = resolveApprovalPolicy(safeGetSetting("approvalPolicy"));
+        const { mode } = resolveSandboxConfig(safeGetSetting("sandboxMode"));
+        if (policy !== "untrusted" && isSandboxEffective(mode)) {
+          return { allow: true };
+        }
+      }
+      // escalate 或需弹窗 → 落到下方 requestApproval。
     }
 
     // ── User approval (whitelist short-circuit lives inside) ────────

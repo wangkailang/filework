@@ -33,6 +33,8 @@ import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendere
 import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
+import { resolveSandboxConfig } from "../core/sandbox";
+import { getSetting } from "../db";
 import { mcpManager } from "../mcp/manager";
 import {
   type FileEntry,
@@ -324,9 +326,18 @@ export const buildAgentToolRegistry = ({
     ? buildGitRunCommandProtocol(modelName ?? "filework-agent")
     : undefined;
 
+  // db 未初始化(如部分单测)时回落默认沙箱配置,不阻断工具装配。
+  let sandboxModeSetting: string | null = null;
+  try {
+    sandboxModeSetting = getSetting("sandboxMode");
+  } catch {
+    sandboxModeSetting = null;
+  }
+
   for (const def of buildFileTools({
     incrementalScanner: wrapScanner(),
     gitProtocol,
+    sandbox: resolveSandboxConfig(sandboxModeSetting),
   })) {
     if (allow(def.name)) registry.register(def);
   }
