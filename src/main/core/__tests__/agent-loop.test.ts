@@ -247,6 +247,101 @@ describe("AgentLoop", () => {
     expect(toolEnd.success).toBe(false);
   });
 
+  it("tool-error part 应产出 tool_execution_end{success=false}", async () => {
+    // AI SDK turns a thrown tool `execute` (e.g. MCP timeout / not-connected)
+    // into a `tool-error` fullStream part. Without an explicit case the part
+    // is silently dropped and the tool bubble is stuck in "执行中" forever.
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "call-err",
+          toolName: "mcp__email__email_search",
+          input: { accountId: "a", limit: 10 },
+        },
+        {
+          type: "tool-error",
+          toolCallId: "call-err",
+          toolName: "mcp__email__email_search",
+          input: { accountId: "a", limit: 10 },
+          error: new Error('MCP server "email" is not connected'),
+        },
+        { type: "finish-step", finishReason: "tool-calls", usage: {} },
+        { type: "start-step" },
+        { type: "text-delta", text: "connection problem" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+    });
+
+    const events = await collect(loop, "check my mail");
+    const toolEnd = events.find((e) => e.type === "tool_execution_end");
+    if (!toolEnd || toolEnd.type !== "tool_execution_end")
+      throw new Error("expected tool_execution_end for the failed tool call");
+    expect(toolEnd.toolCallId).toBe("call-err");
+    expect(toolEnd.success).toBe(false);
+    expect(toolEnd.result).toMatchObject({
+      success: false,
+      error: 'MCP server "email" is not connected',
+    });
+
+    // The whole turn still completes — the error must not abort the agent.
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+  });
+
+  it("reflect 回合摘要中应把 tool-error 记为 success=false", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "te",
+          toolName: "boom",
+          input: {},
+        },
+        {
+          type: "tool-error",
+          toolCallId: "te",
+          toolName: "boom",
+          input: {},
+          error: "kaboom",
+        },
+        { type: "finish-step", finishReason: "tool-calls", usage: {} },
+        { type: "start-step" },
+        { type: "text-delta", text: "recovered" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    let captured: unknown;
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      hooks: {
+        reflect: async (s) => {
+          captured = s;
+          return { kind: "continue" };
+        },
+      },
+    });
+
+    await collect(loop, "go");
+    expect(captured).toMatchObject({
+      toolCalls: [expect.objectContaining({ name: "boom", success: false })],
+    });
+  });
+
   it("emits context_compressed when transformContext provides metrics", async () => {
     scriptedRuns.push({
       parts: [
