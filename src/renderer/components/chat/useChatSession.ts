@@ -571,6 +571,30 @@ export function useChatSession(
     stream.setPendingSkillApproval(null);
   };
 
+  // 稳定下列 handler 的引用,使 ChatSessionProvider 的低频切片在流式期间
+  // 能 bail-out(顶栏 / 左栏会话列表不随 messages 逐 token 重渲)。
+  const handleNewChat = useCallback(
+    () => crud.handleNewChat(stream.isLoading),
+    [crud.handleNewChat, stream.isLoading],
+  );
+  const handleSelectSession = useCallback(
+    (id: string) => crud.handleSelectSession(id, stream.isLoading),
+    [crud.handleSelectSession, stream.isLoading],
+  );
+  const handleForkSession = useCallback(
+    (fromMessageId: string) =>
+      crud.handleForkSession(fromMessageId, stream.isLoading),
+    [crud.handleForkSession, stream.isLoading],
+  );
+  const setSelectedLlmConfigIdStable = useCallback((id: string | null) => {
+    setSelectedLlmConfigId(id);
+    if (id) {
+      localStorage.setItem("filework-selected-llm-config", id);
+    } else {
+      localStorage.removeItem("filework-selected-llm-config");
+    }
+  }, []);
+
   return {
     sessions: crud.sessions,
     activeSessionId: crud.activeSessionId,
@@ -583,14 +607,7 @@ export function useChatSession(
     activeSkill: stream.activeSkill,
     pendingSkillApproval: stream.pendingSkillApproval,
     selectedLlmConfigId,
-    setSelectedLlmConfigId: (id: string | null) => {
-      setSelectedLlmConfigId(id);
-      if (id) {
-        localStorage.setItem("filework-selected-llm-config", id);
-      } else {
-        localStorage.removeItem("filework-selected-llm-config");
-      }
-    },
+    setSelectedLlmConfigId: setSelectedLlmConfigIdStable,
     retryInfo: stream.retryInfo,
     lastUsage: crud.lastUsage,
     lastError: crud.lastError,
@@ -605,11 +622,9 @@ export function useChatSession(
     handleRejectPlan: plan.handleRejectPlan,
     handleCancelPlan: plan.handleCancelPlan,
     handleStopGeneration,
-    handleNewChat: () => crud.handleNewChat(stream.isLoading),
-    handleSelectSession: (id: string) =>
-      crud.handleSelectSession(id, stream.isLoading),
+    handleNewChat,
+    handleSelectSession,
     handleDeleteSession: crud.handleDeleteSession,
-    handleForkSession: (fromMessageId: string) =>
-      crud.handleForkSession(fromMessageId, stream.isLoading),
+    handleForkSession,
   };
 }

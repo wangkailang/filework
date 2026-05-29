@@ -3,6 +3,7 @@ import { BranchDiffPanel } from "./components/branch-diff/BranchDiffPanel";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
+import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
 import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
 import {
   Sidebar,
@@ -337,44 +338,47 @@ export const App = () => {
               recordRecent(updatedRef, workspaceRefLabel(updatedRef));
             }}
           />
-          <BrowserRouterProvider openInPanel={setBrowserUrl}>
-            <main className="flex-1 flex pt-12 overflow-hidden">
-              {selectedFilePath && (
-                <div className="w-7/10 border-r border-border overflow-hidden">
-                  <FilePreviewPanel
-                    filePath={selectedFilePath}
-                    onClose={() => setSelectedFilePath(null)}
-                  />
+          <ChatSessionProvider
+            key={workspace.localPath}
+            workspacePath={workspace.localPath}
+            workspaceRefJson={workspaceRefJson}
+          >
+            <BrowserRouterProvider openInPanel={setBrowserUrl}>
+              <main className="flex-1 flex pt-12 overflow-hidden">
+                {selectedFilePath && (
+                  <div className="w-7/10 border-r border-border overflow-hidden">
+                    <FilePreviewPanel
+                      filePath={selectedFilePath}
+                      onClose={() => setSelectedFilePath(null)}
+                    />
+                  </div>
+                )}
+                <div
+                  className={
+                    selectedFilePath
+                      ? "w-3/10 overflow-hidden"
+                      : "flex-1 overflow-hidden"
+                  }
+                >
+                  <ChatPanel workspacePath={workspace.localPath} />
                 </div>
-              )}
-              <div
-                className={
-                  selectedFilePath
-                    ? "w-3/10 overflow-hidden"
-                    : "flex-1 overflow-hidden"
-                }
-              >
-                <ChatPanel
-                  workspacePath={workspace.localPath}
-                  workspaceRefJson={workspaceRefJson}
-                />
-              </div>
-              {branchDiffOpen && (
-                <BranchDiffPanel
-                  workspaceRoot={workspace.localPath}
-                  currentBranch={workspace.currentBranch}
-                  invalidator={diffInvalidator}
-                  onClose={() => setBranchDiffOpen(false)}
-                />
-              )}
-              {browserUrl && (
-                <BrowserPanel
-                  url={browserUrl}
-                  onClose={() => setBrowserUrl(null)}
-                />
-              )}
-            </main>
-          </BrowserRouterProvider>
+                {branchDiffOpen && (
+                  <BranchDiffPanel
+                    workspaceRoot={workspace.localPath}
+                    currentBranch={workspace.currentBranch}
+                    invalidator={diffInvalidator}
+                    onClose={() => setBranchDiffOpen(false)}
+                  />
+                )}
+                {browserUrl && (
+                  <BrowserPanel
+                    url={browserUrl}
+                    onClose={() => setBrowserUrl(null)}
+                  />
+                )}
+              </main>
+            </BrowserRouterProvider>
+          </ChatSessionProvider>
         </div>
       )}
     </TypesafeI18n>
