@@ -1,7 +1,11 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { open, readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { ipcMain } from "electron";
 import { directoryStats } from "../native";
+
+// 文件预览的读取上限:超过则只读前 N 字节并标记 truncated,
+// 避免把几百 MB 的文件整体读入内存、序列化过 IPC 拖垮渲染进程。
+const MAX_PREVIEW_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export interface FileInfo {
   name: string;
@@ -87,10 +91,38 @@ export const registerFileHandlers = () => {
     return content;
   });
 
-  // Read file as base64 (for binary files like PDF)
-  ipcMain.handle("fs:readFileBase64", async (_event, filePath: string) => {
-    const buffer = await readFile(filePath);
-    return buffer.toString("base64");
+  // 文件预览专用读取:对超大文件做截断,避免整体读入内存 / 过 IPC。
+  // 返回 { content, truncated, totalBytes };truncated 时 content 仅为前 MAX_PREVIEW_BYTES。
+  ipcMain.handle("fs:readFilePreview", async (_event, filePath: string) => {
+    try {
+      const { size } = await stat(filePath);
+      if (size <= MAX_PREVIEW_BYTES) {
+        const content = await readFile(filePath, "utf-8");
+        return { content, truncated: false, totalBytes: size };
+      }
+      // 超限:只读前 MAX_PREVIEW_BYTES 字节。
+      const handle = await open(filePath, "r");
+      try {
+        const buffer = Buffer.alloc(MAX_PREVIEW_BYTES);
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          MAX_PREVIEW_BYTES,
+          0,
+        );
+        let content = buffer.subarray(0, bytesRead).toString("utf-8");
+        // 截到最后一个完整换行:避免半行,顺带丢掉因字节边界产生的半个多字节字符。
+        const lastNewline = content.lastIndexOf("\n");
+        if (lastNewline > 0) {
+          content = content.slice(0, lastNewline);
+        }
+        return { content, truncated: true, totalBytes: size };
+      } finally {
+        await handle.close();
+      }
+    } catch (err) {
+      throw wrapFsError(err, filePath);
+    }
   });
 
   // 获取目录统计:下沉到 native (Rust) 实现,复刻原 TS 的过滤与计数语义,

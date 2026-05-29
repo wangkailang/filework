@@ -219,6 +219,7 @@ const ja: Translation = {
   preview_readFileError: "ファイルの読み込みに失敗しました",
   preview_videoError: "この動画ファイルを再生できません",
   preview_videoLabel: "動画プレビュー: {0}",
+  preview_truncated: "ファイルが大きすぎます({0})。先頭のみをプレビューします",
 
   // Code viewer
   code_loading: "読み込み中...",

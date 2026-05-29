@@ -1,6 +1,7 @@
 import { FileWarning, Loader2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { localFileUrl } from "../../lib/local-file-url";
 import {
   CodeViewer,
   getFileExtension,
@@ -37,22 +38,17 @@ const isVideoFile = (filename: string): boolean => {
   return VIDEO_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
 };
 
-const getMimeType = (filename: string): string => {
-  const ext = getFileExtension(filename).toLowerCase();
-  const map: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".bmp": "image/bmp",
-    ".webp": "image/webp",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-    ".avif": "image/avif",
-    ".tiff": "image/tiff",
-    ".tif": "image/tiff",
-  };
-  return map[ext] || "image/png";
+/** 人类可读的字节数(用于超大文件截断提示)。 */
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i++;
+  }
+  return `${value.toFixed(1)} ${units[i]}`;
 };
 
 interface FilePreviewPanelProps {
@@ -66,6 +62,9 @@ export const FilePreviewPanel = ({
 }: FilePreviewPanelProps) => {
   const { LL } = useI18nContext();
   const [content, setContent] = useState<string | null>(null);
+  // 截断信息:超大文件只预览开头时,顶部提示条用。
+  const [truncated, setTruncated] = useState(false);
+  const [truncatedTotal, setTruncatedTotal] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +91,8 @@ export const FilePreviewPanel = ({
     setIsLoading(true);
     setError(null);
     setContent(null);
+    setTruncated(false);
+    setTruncatedTotal(0);
     setImageSrc(null);
 
     if (!supported || isPdf || isVideo) {
@@ -100,29 +101,18 @@ export const FilePreviewPanel = ({
     }
 
     if (isImage) {
-      window.filework
-        .readFileBase64(absolutePath)
-        .then((base64) => {
-          if (!cancelled) {
-            const mime = getMimeType(fileName);
-            setImageSrc(`data:${mime};base64,${base64}`);
-            setIsLoading(false);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setError(
-              err instanceof Error ? err.message : LL.preview_readImageError(),
-            );
-            setIsLoading(false);
-          }
-        });
+      // 走 local-file:// 协议(支持 Range/流式),省去 base64 体积膨胀与主线程解码;
+      // 同步即可,加载与错误交给 <img> 自身处理。
+      setImageSrc(localFileUrl(absolutePath));
+      setIsLoading(false);
     } else {
       window.filework
-        .readFile(absolutePath)
-        .then((text) => {
+        .readFilePreview(absolutePath)
+        .then((result) => {
           if (!cancelled) {
-            setContent(text);
+            setContent(result.content);
+            setTruncated(result.truncated);
+            setTruncatedTotal(result.totalBytes);
             setIsLoading(false);
           }
         })
@@ -139,7 +129,7 @@ export const FilePreviewPanel = ({
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, fileName, supported, isImage, isPdf, isVideo, LL]);
+  }, [absolutePath, supported, isImage, isPdf, isVideo, LL]);
 
   return (
     <div className="flex h-full flex-col bg-background border-r border-border">
@@ -194,10 +184,21 @@ export const FilePreviewPanel = ({
         )}
 
         {!isLoading && supported && content !== null && (
-          <CodeViewer code={content} filename={fileName} className="h-full" />
+          <div className="flex h-full flex-col">
+            {truncated && (
+              <div className="shrink-0 border-b border-border bg-amber-500/10 px-4 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+                {LL.preview_truncated(formatBytes(truncatedTotal))}
+              </div>
+            )}
+            <CodeViewer
+              code={content}
+              filename={fileName}
+              className="min-h-0 flex-1"
+            />
+          </div>
         )}
 
-        {!isLoading && isImage && imageSrc && (
+        {!isLoading && !error && isImage && imageSrc && (
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-center gap-1 px-3 py-1.5 border-b border-border shrink-0">
               <button
@@ -231,6 +232,7 @@ export const FilePreviewPanel = ({
                 className="max-w-none transition-transform duration-150"
                 style={{ transform: `scale(${zoom})` }}
                 draggable={false}
+                onError={() => setError(LL.preview_readImageError())}
               />
             </div>
           </div>

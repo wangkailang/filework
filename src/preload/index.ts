@@ -22,8 +22,11 @@ const api = {
   listDirectory: (path: string, depth?: number) =>
     ipcRenderer.invoke("fs:listDirectory", path, depth),
   readFile: (path: string) => ipcRenderer.invoke("fs:readFile", path),
-  readFileBase64: (path: string) =>
-    ipcRenderer.invoke("fs:readFileBase64", path),
+  // 文件预览专用:对超大文件截断读取(>10MB 只取前 10MB)。
+  readFilePreview: (
+    path: string,
+  ): Promise<{ content: string; truncated: boolean; totalBytes: number }> =>
+    ipcRenderer.invoke("fs:readFilePreview", path),
   directoryStats: (path: string) =>
     ipcRenderer.invoke("fs:directoryStats", path),
 

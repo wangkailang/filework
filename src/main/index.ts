@@ -1,6 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { config } from "dotenv";
 import {
   app,
@@ -58,6 +60,7 @@ import { bootstrapProxy } from "./proxy-bootstrap";
 import { createProxyAwareFetch } from "./proxy-fetch";
 import { skillRegistry } from "./skills";
 import { initSkillDiscovery } from "./skills-runtime";
+import { parseRange } from "./utils/http-range";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -202,7 +205,9 @@ app.whenReady().then(async () => {
   const resolveProxy = (url: string): Promise<string> =>
     session.defaultSession.resolveProxy(url);
 
-  // Register local-file:// protocol to serve local files (for PDF preview etc.)
+  // Register local-file:// protocol to serve local files (for PDF/video/image preview).
+  // 支持 HTTP Range:视频可边下边播 + 拖拽 seek,大 PDF 按页按需加载,
+  // 大图渐进式加载 —— 而不是把整文件读进内存再一次性返回。
   protocol.handle("local-file", async (request) => {
     // URL format: local-file://open?path=/absolute/path/to/file.pdf
     const url = new URL(request.url);
@@ -210,14 +215,59 @@ app.whenReady().then(async () => {
     if (!filePath) {
       return new Response("Missing path parameter", { status: 400 });
     }
+
+    let fileSize: number;
     try {
-      const buffer = await readFile(filePath);
-      return new Response(buffer, {
-        headers: { "Content-Type": sniffMimeType(filePath) },
-      });
+      const st = await stat(filePath);
+      if (!st.isFile()) {
+        return new Response("Not a file", { status: 404 });
+      }
+      fileSize = st.size;
     } catch {
       return new Response("File not found", { status: 404 });
     }
+
+    const contentType = sniffMimeType(filePath);
+    const rangeHeader = request.headers.get("range");
+
+    // 无 Range:整文件流式返回。声明 Accept-Ranges,让浏览器后续 seek 时改发 Range。
+    if (!rangeHeader) {
+      const body = Readable.toWeb(
+        createReadStream(filePath),
+      ) as ReadableStream<Uint8Array>;
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": String(fileSize),
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+
+    const range = parseRange(rangeHeader, fileSize);
+    if (!range) {
+      // 不可满足的 Range → 416 + Content-Range: bytes */size
+      return new Response("Range Not Satisfiable", {
+        status: 416,
+        headers: { "Content-Range": `bytes */${fileSize}` },
+      });
+    }
+
+    const { start, end } = range;
+    // createReadStream 的 end 为闭区间,正好对应 HTTP Range 语义。
+    const body = Readable.toWeb(
+      createReadStream(filePath, { start, end }),
+    ) as ReadableStream<Uint8Array>;
+    return new Response(body, {
+      status: 206,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Content-Length": String(end - start + 1),
+        "Accept-Ranges": "bytes",
+      },
+    });
   });
 
   // Initialize SQLite database
