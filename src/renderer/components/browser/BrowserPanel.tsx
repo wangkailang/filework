@@ -7,7 +7,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  type CSSProperties,
   type FormEvent,
   useCallback,
   useEffect,
@@ -22,12 +21,8 @@ interface BrowserPanelProps {
    *  differs from the webview's current location — internal navigation
    *  (back/forward, link clicks inside the page) is not clobbered. */
   url: string;
-  onClose: () => void;
 }
 
-const WIDTH_STORAGE_KEY = "filework.browserPanel.width";
-const DEFAULT_WIDTH = 520;
-const MIN_WIDTH = 360;
 // Vite inlines process.env.NODE_ENV at build time in the renderer.
 const WEBVIEW_PARTITION =
   process.env.NODE_ENV === "production"
@@ -35,13 +30,9 @@ const WEBVIEW_PARTITION =
     : "in-app-browser";
 
 /** Mirror BranchDiffPanel — sits in the App flex row, not a modal. */
-export function BrowserPanel({ url, onClose }: BrowserPanelProps) {
+export function BrowserPanel({ url }: BrowserPanelProps) {
   const { LL } = useI18nContext();
   const webviewRef = useRef<WebviewTag | null>(null);
-
-  const [width, setWidth] = useState<number>(() => readStoredWidth());
-  const widthRef = useRef(width);
-  widthRef.current = width;
 
   // Snapshot the very first URL for the webview's `src` attribute.
   // Subsequent prop changes route through the imperative loadURL effect
@@ -58,57 +49,6 @@ export function BrowserPanel({ url, onClose }: BrowserPanelProps) {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-
-  // ---- resize --------------------------------------------------------------
-  const draggingRef = useRef(false);
-  const activeListenersRef = useRef<{
-    onMove: (e: MouseEvent) => void;
-    onUp: () => void;
-  } | null>(null);
-
-  const stopResize = useCallback(() => {
-    const active = activeListenersRef.current;
-    if (active) {
-      document.removeEventListener("mousemove", active.onMove);
-      document.removeEventListener("mouseup", active.onUp);
-      activeListenersRef.current = null;
-    }
-    if (draggingRef.current) {
-      draggingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-  }, []);
-
-  const startResize = useCallback(() => {
-    if (draggingRef.current) return;
-    draggingRef.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const onMove = (e: MouseEvent) => {
-      const next = clampWidth(window.innerWidth - e.clientX);
-      setWidth(next);
-    };
-    const onUp = () => {
-      try {
-        localStorage.setItem(WIDTH_STORAGE_KEY, String(widthRef.current));
-      } catch {
-        // ignore storage quota / disabled
-      }
-      stopResize();
-    };
-    activeListenersRef.current = { onMove, onUp };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  }, [stopResize]);
-
-  useEffect(() => stopResize, [stopResize]);
-  useEffect(() => {
-    const onResize = () => setWidth((w) => clampWidth(w));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
 
   // True once the webview has fired dom-ready. loadURL before this
   // point throws inside Electron's webview impl; queue intent here and
@@ -275,21 +215,8 @@ export function BrowserPanel({ url, onClose }: BrowserPanelProps) {
     wv.loadURL(target).catch(() => {});
   };
 
-  const style: CSSProperties = {
-    width: `${width}px`,
-    flex: `0 0 ${width}px`,
-  };
-
   return (
-    <aside
-      style={style}
-      className="relative h-full bg-background border-l border-border flex flex-col"
-    >
-      <div
-        onMouseDown={startResize}
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-10"
-        aria-hidden="true"
-      />
+    <aside className="flex h-full w-full flex-col bg-background">
       <header className="flex items-center gap-1 px-2 py-1.5 border-b border-border">
         <button
           type="button"
@@ -343,15 +270,6 @@ export function BrowserPanel({ url, onClose }: BrowserPanelProps) {
         >
           <ExternalLink className="size-3.5" />
         </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
-          title={LL.browser_close()}
-          aria-label={LL.browser_close()}
-        >
-          <X className="size-3.5" />
-        </button>
       </header>
 
       <div className="relative flex-1 min-h-0">
@@ -389,23 +307,6 @@ export function BrowserPanel({ url, onClose }: BrowserPanelProps) {
       </div>
     </aside>
   );
-}
-
-function clampWidth(raw: number): number {
-  const max = Math.floor(window.innerWidth * 0.8);
-  return Math.max(MIN_WIDTH, Math.min(max, raw));
-}
-
-function readStoredWidth(): number {
-  try {
-    const raw = localStorage.getItem(WIDTH_STORAGE_KEY);
-    if (!raw) return DEFAULT_WIDTH;
-    const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n) || n <= 0) return DEFAULT_WIDTH;
-    return clampWidth(n);
-  } catch {
-    return DEFAULT_WIDTH;
-  }
 }
 
 // File extensions that look like TLDs would otherwise match the bare-

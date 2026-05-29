@@ -24,6 +24,16 @@ const zhCN: Translation = {
   sidebar_collapse: "折叠侧栏",
   sidebar_expand: "展开侧栏",
 
+  // TopBar / Rail / Dock (布局重构)
+  topbar_history: "历史",
+  topbar_newChat: "新对话",
+  topbar_settings: "设置",
+  rail_chats: "对话",
+  rail_files: "文件",
+  dock_preview: "预览",
+  dock_diff: "差异",
+  dock_web: "网页",
+
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",
   settings_apiKey: "API 密钥",

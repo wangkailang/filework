@@ -1,4 +1,4 @@
-import { FileWarning, Loader2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { FileWarning, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
@@ -53,13 +53,9 @@ const formatBytes = (bytes: number): string => {
 
 interface FilePreviewPanelProps {
   filePath: string;
-  onClose: () => void;
 }
 
-export const FilePreviewPanel = ({
-  filePath,
-  onClose,
-}: FilePreviewPanelProps) => {
+export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const { LL } = useI18nContext();
   const [content, setContent] = useState<string | null>(null);
   // 截断信息:超大文件只预览开头时,顶部提示条用。
@@ -132,27 +128,17 @@ export const FilePreviewPanel = ({
   }, [absolutePath, supported, isImage, isPdf, isVideo, LL]);
 
   return (
-    <div className="flex h-full flex-col bg-background border-r border-border">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="truncate text-sm font-medium text-foreground">
-            {fileName}
+    <div className="flex h-full flex-col bg-background">
+      {/* 文件名头(关闭由 Dock 头部统一负责) */}
+      <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <span className="truncate text-sm font-medium text-foreground">
+          {fileName}
+        </span>
+        {ext && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            {ext}
           </span>
-          {ext && (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              {ext}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded p-1 hover:bg-accent transition-colors"
-          aria-label={LL.preview_close()}
-        >
-          <X className="w-4 h-4 text-muted-foreground" />
-        </button>
+        )}
       </div>
 
       {/* Content */}

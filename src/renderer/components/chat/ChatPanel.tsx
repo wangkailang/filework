@@ -4,7 +4,6 @@ import {
   CopyIcon,
   GitBranch,
   HelpCircle,
-  History,
   Loader2,
   MessageSquarePlus,
   RefreshCw,
@@ -60,13 +59,13 @@ import { toolPresenters } from "../ai-elements/tool-presenters";
 import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
+import { useChatSessionContext } from "./ChatSessionProvider";
 import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
 import { MediaVideoCard } from "./MediaVideoCard";
 import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
-import { SessionList } from "./SessionList";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
 import type {
@@ -88,7 +87,6 @@ import type {
   VideoGalleryPart,
   VideoJobPart,
 } from "./types";
-import { useChatSession } from "./useChatSession";
 import { VideoGallery } from "./VideoGallery";
 
 const formatTokens = (n: number | null): string => {
@@ -188,7 +186,7 @@ const RecoveryButton = ({
   chat,
 }: {
   action: RecoveryAction;
-  chat: ReturnType<typeof useChatSession>;
+  chat: ReturnType<typeof useChatSessionContext>;
 }) => {
   const { LL } = useI18nContext();
   const Icon = RECOVERY_ACTION_ICONS[action];
@@ -238,7 +236,7 @@ const ErrorBanner = ({
   label: string;
   hint: string;
   actions: RecoveryAction[];
-  chat: ReturnType<typeof useChatSession>;
+  chat: ReturnType<typeof useChatSessionContext>;
   className?: string;
 }) => (
   <div
@@ -365,17 +363,10 @@ const ClarificationCard = ({
   );
 };
 
-export const ChatPanel = ({
-  workspacePath,
-  workspaceRefJson,
-}: {
-  workspacePath: string;
-  workspaceRefJson?: string;
-}) => {
+export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
   const { LL } = useI18nContext();
-  const [showHistory, setShowHistory] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const chat = useChatSession(workspacePath, workspaceRefJson);
+  const chat = useChatSessionContext();
 
   // Composer-side pending attachments — lifted out of PromptInput so the
   // drag-drop overlay (sibling DOM) and the file picker feed the same
@@ -979,7 +970,6 @@ export const ChatPanel = ({
   };
 
   const hasMessages = chat.messages.length > 0;
-  const hasSessions = chat.sessions.length > 0;
 
   // ---------------------------------------------------------------------------
   // JSX
@@ -1000,41 +990,6 @@ export const ChatPanel = ({
           </div>
         </div>
       )}
-      {showHistory && (
-        <SessionList
-          sessions={chat.sessions}
-          activeId={chat.activeSessionId}
-          onSelect={chat.handleSelectSession}
-          onDelete={chat.handleDeleteSession}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
-
-      {(hasMessages || hasSessions) && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-          <button
-            type="button"
-            onClick={() => setShowHistory(true)}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <History className="size-3.5" />
-            <span>
-              {LL.session_history()}
-              {hasSessions ? ` (${chat.sessions.length})` : ""}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={chat.handleNewChat}
-            disabled={chat.isLoading}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            <MessageSquarePlus className="size-3.5" />
-            <span>{LL.session_newChat()}</span>
-          </button>
-        </div>
-      )}
-
       <WorkspaceMemoryModal
         open={memoryOpen}
         onClose={() => setMemoryOpen(false)}

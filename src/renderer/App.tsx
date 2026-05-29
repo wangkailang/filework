@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BranchDiffPanel } from "./components/branch-diff/BranchDiffPanel";
-import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
-import { FilePreviewPanel } from "./components/file-preview/FilePreviewPanel";
+import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
+import { ContextDock, type DockTab } from "./components/dock/ContextDock";
 import {
-  Sidebar,
-  SidebarExpandFloatingButton,
-} from "./components/layout/Sidebar";
+  LeftRail,
+  RailExpandButton,
+  type RailTab,
+} from "./components/layout/LeftRail";
+import {
+  clampDockWidth,
+  clampRailWidth,
+  DOCK_DEFAULT_WIDTH,
+  RAIL_DEFAULT_WIDTH,
+  resolveDockMode,
+} from "./components/layout/layout-geometry";
+import { SettingsModal } from "./components/layout/SettingsModal";
 import { GitHubConnectModal } from "./components/onboarding/GitHubConnectModal";
 import { GitLabConnectModal } from "./components/onboarding/GitLabConnectModal";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
@@ -34,22 +42,25 @@ const getInitialLocale = (): Locales => {
   return "en";
 };
 
-const SIDEBAR_MIN_WIDTH = 180;
-const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_DEFAULT_WIDTH = 256;
-
-const clampSidebarWidth = (n: number): number =>
-  Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, n));
-
-const getInitialSidebarWidth = (): number => {
-  const saved = localStorage.getItem("filework-sidebar-width");
-  if (!saved) return SIDEBAR_DEFAULT_WIDTH;
-  const n = Number.parseInt(saved, 10);
-  return Number.isFinite(n) ? clampSidebarWidth(n) : SIDEBAR_DEFAULT_WIDTH;
+// 左栏宽度 / 折叠:优先读新键 filework-rail-*,回落旧 filework-sidebar-*
+// (一次性迁移,老用户偏好不丢)。
+const getInitialRailWidth = (): number => {
+  const saved =
+    localStorage.getItem("filework-rail-width") ??
+    localStorage.getItem("filework-sidebar-width");
+  if (!saved) return RAIL_DEFAULT_WIDTH;
+  return clampRailWidth(Number.parseInt(saved, 10));
 };
 
-const getInitialSidebarCollapsed = (): boolean =>
-  localStorage.getItem("filework-sidebar-collapsed") === "1";
+const getInitialRailCollapsed = (): boolean =>
+  (localStorage.getItem("filework-rail-collapsed") ??
+    localStorage.getItem("filework-sidebar-collapsed")) === "1";
+
+const getInitialDockWidth = (): number => {
+  const saved = localStorage.getItem("filework-dock-width");
+  if (!saved) return DOCK_DEFAULT_WIDTH;
+  return clampDockWidth(Number.parseInt(saved, 10));
+};
 
 interface ResolvedWorkspace {
   ref: WorkspaceRef;
@@ -70,31 +81,72 @@ export const App = () => {
   const [workspace, setWorkspace] = useState<ResolvedWorkspace | null>(null);
   const [locale, setLocale] = useState<Locales>(getInitialLocale);
   const [isRestoring, setIsRestoring] = useState(true);
-  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [githubModalOpen, setGithubModalOpen] = useState(false);
   const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
-  const [branchDiffOpen, setBranchDiffOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Bumped whenever a destructive tool finishes; the branch-diff hook
-  // uses this as its invalidator so the sidebar pill and panel reflect
-  // post-write reality without waiting for the 30 s TTL.
+  // uses this as its invalidator so the dock Diff tab reflects post-write
+  // reality without waiting for the 30 s TTL.
   const [diffInvalidator, setDiffInvalidator] = useState(0);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(
-    getInitialSidebarWidth,
+
+  // 左栏
+  const [railTab, setRailTab] = useState<RailTab>("chats");
+  const [railWidth, setRailWidth] = useState<number>(getInitialRailWidth);
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(
+    getInitialRailCollapsed,
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
-    getInitialSidebarCollapsed,
-  );
+
+  // 右侧 ContextDock(统一停靠:预览 / Diff / Web)
+  const [dockOpen, setDockOpen] = useState(false);
+  const [dockTab, setDockTab] = useState<DockTab>("preview");
+  const [dockFilePath, setDockFilePath] = useState<string | null>(null);
+  const [dockWidth, setDockWidth] = useState<number>(getInitialDockWidth);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
-  const handleCommitSidebarWidth = useCallback((w: number) => {
-    localStorage.setItem("filework-sidebar-width", String(w));
+
+  // 窗口宽度:决定 Dock 用分栏还是浮层(避免对话被压到不可读)。
+  const [winWidth, setWinWidth] = useState<number>(() => window.innerWidth);
+
+  const commitRailWidth = useCallback((w: number) => {
+    localStorage.setItem("filework-rail-width", String(w));
   }, []);
-  const handleToggleSidebarCollapsed = useCallback(() => {
-    setSidebarCollapsed((prev) => {
+  const toggleRailCollapsed = useCallback(() => {
+    setRailCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem("filework-sidebar-collapsed", next ? "1" : "0");
+      localStorage.setItem("filework-rail-collapsed", next ? "1" : "0");
       return next;
     });
+  }, []);
+  const commitDockWidth = useCallback((w: number) => {
+    localStorage.setItem("filework-dock-width", String(w));
+  }, []);
+  const openFileInDock = useCallback((path: string) => {
+    setDockFilePath(path);
+    setDockTab("preview");
+    setDockOpen(true);
+  }, []);
+  const openInBrowserPanel = useCallback((u: string) => {
+    setBrowserUrl(u);
+    setDockTab("web");
+    setDockOpen(true);
+  }, []);
+  const resetDock = useCallback(() => {
+    setDockOpen(false);
+    setDockFilePath(null);
+    setBrowserUrl(null);
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Settings 入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
+  useEffect(() => {
+    const handler = () => setSettingsOpen(true);
+    window.addEventListener("filework:open-settings", handler);
+    return () => window.removeEventListener("filework:open-settings", handler);
   }, []);
 
   const resolveWorkspace = useCallback(
@@ -149,9 +201,6 @@ export const App = () => {
     workspaceRef.current = workspace;
   }, [workspace]);
 
-  // Bump the branch-diff invalidator whenever a destructive tool
-  // finishes — refreshes both the sidebar +/- pill and the open panel
-  // without waiting for the cache TTL.
   useEffect(() => {
     const DESTRUCTIVE = new Set([
       "writeFile",
@@ -234,7 +283,7 @@ export const App = () => {
       return;
     }
     const ref: WorkspaceRef = { kind: "local", path };
-    setSelectedFilePath(null);
+    resetDock();
     try {
       const resolved = await resolveWorkspace(ref);
       setWorkspace(resolved);
@@ -251,7 +300,7 @@ export const App = () => {
     setIsRestoring(true);
     try {
       const resolved = await resolveWorkspace(ref);
-      setSelectedFilePath(null);
+      resetDock();
       setWorkspace(resolved);
       recordRecent(ref, workspaceRefLabel(ref));
     } catch (err) {
@@ -261,15 +310,51 @@ export const App = () => {
     }
   };
 
+  // 分支切换后更新持久化的 WorkspaceRef,使后续 agent 任务以新分支为基准。
+  const handleBranchSwitched = (branch: string) => {
+    if (!workspace) return;
+    if (workspace.ref.kind === "local") {
+      // 本地:仅更新实时 chip 状态,不持久化(本地 ref 不带分支,下次启动
+      // 会从磁盘重新探测)。
+      setWorkspace({ ...workspace, currentBranch: branch });
+      return;
+    }
+    const updatedRef: WorkspaceRef = { ...workspace.ref, ref: branch };
+    setWorkspace({ ...workspace, ref: updatedRef });
+    recordRecent(updatedRef, workspaceRefLabel(updatedRef));
+  };
+
+  // Diff 开关:已在 Diff 标签且开着 → 关;否则切到 Diff 并打开 Dock。
+  const toggleDiff = () => {
+    if (dockOpen && dockTab === "diff") {
+      setDockOpen(false);
+    } else {
+      setDockTab("diff");
+      setDockOpen(true);
+    }
+  };
+
   if (isRestoring) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="titlebar-drag fixed top-0 left-0 right-0 h-12" />
+        <div className="titlebar-drag fixed top-0 right-0 left-0 h-12" />
       </div>
     );
   }
 
   const workspaceRefJson = workspace ? encodeRef(workspace.ref) : undefined;
+  const branchForChip =
+    workspace == null
+      ? null
+      : workspace.ref.kind === "local"
+        ? (workspace.currentBranch ?? null)
+        : workspace.ref.ref;
+  const dockMode = resolveDockMode({
+    windowWidth: winWidth,
+    railWidth,
+    railCollapsed,
+    dockWidth,
+  });
 
   return (
     <TypesafeI18n key={locale} locale={locale}>
@@ -296,85 +381,68 @@ export const App = () => {
           )}
         </>
       ) : (
-        <div className="flex h-screen w-screen overflow-hidden">
-          <div className="titlebar-drag fixed top-0 left-0 right-0 h-12 z-50" />
-          {sidebarCollapsed && (
-            <SidebarExpandFloatingButton
-              onClick={handleToggleSidebarCollapsed}
-            />
-          )}
-          <Sidebar
+        <div className="flex h-screen w-screen flex-col overflow-hidden">
+          {/* 极简透明拖拽条:macOS 无边框窗口靠它拖动 + 让开红绿灯。非工具栏。 */}
+          <div className="titlebar-drag h-7 shrink-0" />
+          <ChatSessionProvider
+            key={workspace.localPath}
             workspacePath={workspace.localPath}
-            workspaceRef={workspace.ref}
-            currentBranch={workspace.currentBranch}
-            onChangeDirectory={handleSelectLocal}
-            onCloseDirectory={() => setWorkspace(null)}
-            onLocaleChange={setLocale}
-            onSelectFile={setSelectedFilePath}
-            branchDiffOpen={branchDiffOpen}
-            diffInvalidator={diffInvalidator}
-            onToggleBranchDiff={() => setBranchDiffOpen((v) => !v)}
-            width={sidebarWidth}
-            collapsed={sidebarCollapsed}
-            onWidthChange={setSidebarWidth}
-            onCommitWidth={handleCommitSidebarWidth}
-            onToggleCollapsed={handleToggleSidebarCollapsed}
-            onBranchSwitched={(branch) => {
-              if (workspace.ref.kind === "local") {
-                // Local: just patch the live chip state. No persist —
-                // local refs don't carry a branch, and next launch
-                // re-probes from disk.
-                setWorkspace({ ...workspace, currentBranch: branch });
-                return;
-              }
-              // Remote: persist the new ref so subsequent agent tasks
-              // treat it as the base / PR target.
-              const updatedRef: WorkspaceRef = {
-                ...workspace.ref,
-                ref: branch,
-              };
-              setWorkspace({ ...workspace, ref: updatedRef });
-              recordRecent(updatedRef, workspaceRefLabel(updatedRef));
-            }}
-          />
-          <BrowserRouterProvider openInPanel={setBrowserUrl}>
-            <main className="flex-1 flex pt-12 overflow-hidden">
-              {selectedFilePath && (
-                <div className="w-7/10 border-r border-border overflow-hidden">
-                  <FilePreviewPanel
-                    filePath={selectedFilePath}
-                    onClose={() => setSelectedFilePath(null)}
-                  />
-                </div>
-              )}
-              <div
-                className={
-                  selectedFilePath
-                    ? "w-3/10 overflow-hidden"
-                    : "flex-1 overflow-hidden"
-                }
-              >
-                <ChatPanel
+            workspaceRefJson={workspaceRefJson}
+          >
+            <BrowserRouterProvider openInPanel={openInBrowserPanel}>
+              <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                {railCollapsed && (
+                  <RailExpandButton onClick={toggleRailCollapsed} />
+                )}
+                <LeftRail
                   workspacePath={workspace.localPath}
-                  workspaceRefJson={workspaceRefJson}
-                />
-              </div>
-              {branchDiffOpen && (
-                <BranchDiffPanel
-                  workspaceRoot={workspace.localPath}
+                  workspaceRef={workspace.ref}
                   currentBranch={workspace.currentBranch}
-                  invalidator={diffInvalidator}
-                  onClose={() => setBranchDiffOpen(false)}
+                  branchForChip={branchForChip}
+                  diffInvalidator={diffInvalidator}
+                  diffOpen={dockOpen && dockTab === "diff"}
+                  railTab={railTab}
+                  onRailTabChange={setRailTab}
+                  onSelectFile={openFileInDock}
+                  width={railWidth}
+                  collapsed={railCollapsed}
+                  onWidthChange={setRailWidth}
+                  onCommitWidth={commitRailWidth}
+                  onToggleCollapsed={toggleRailCollapsed}
+                  onToggleDiff={toggleDiff}
+                  onBranchSwitched={handleBranchSwitched}
+                  onCloseWorkspace={() => setWorkspace(null)}
+                  onOpenSettings={() => setSettingsOpen(true)}
                 />
-              )}
-              {browserUrl && (
-                <BrowserPanel
-                  url={browserUrl}
-                  onClose={() => setBrowserUrl(null)}
-                />
-              )}
-            </main>
-          </BrowserRouterProvider>
+                <main className="relative flex min-w-0 flex-1 overflow-hidden">
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <ChatPanel workspacePath={workspace.localPath} />
+                  </div>
+                  {dockOpen && (
+                    <ContextDock
+                      mode={dockMode}
+                      width={dockWidth}
+                      activeTab={dockTab}
+                      onTabChange={setDockTab}
+                      onClose={() => setDockOpen(false)}
+                      onWidthChange={setDockWidth}
+                      onCommitWidth={commitDockWidth}
+                      filePath={dockFilePath}
+                      url={browserUrl}
+                      workspaceRoot={workspace.localPath}
+                      currentBranch={workspace.currentBranch}
+                      diffInvalidator={diffInvalidator}
+                    />
+                  )}
+                </main>
+              </div>
+            </BrowserRouterProvider>
+          </ChatSessionProvider>
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            onLocaleChange={setLocale}
+          />
         </div>
       )}
     </TypesafeI18n>
