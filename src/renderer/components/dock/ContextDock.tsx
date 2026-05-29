@@ -28,6 +28,7 @@ export const ContextDock = ({
   workspaceRoot,
   currentBranch,
   diffInvalidator,
+  isGitRepo,
 }: {
   mode: DockMode;
   width: number;
@@ -41,10 +42,14 @@ export const ContextDock = ({
   workspaceRoot: string;
   currentBranch?: string | null;
   diffInvalidator: number;
+  /** 非 git 项目隐藏「差异 / 网页」两个标签与内容。 */
+  isGitRepo: boolean;
 }) => {
   const { LL } = useI18nContext();
   const widthRef = useRef(width);
   widthRef.current = width;
+  // 非 git 项目不提供「差异 / 网页」,即使 activeTab 残留也回落到预览。
+  const effectiveTab: DockTab = isGitRepo ? activeTab : "preview";
 
   // 左边缘拖拽:向左拖变宽(dock 在右侧,故 delta 取负)。
   const startResize = useCallback(
@@ -81,7 +86,7 @@ export const ContextDock = ({
       type="button"
       onClick={() => onTabChange(t)}
       className={`rounded-t-md px-3 py-1.5 text-xs ${
-        activeTab === t
+        effectiveTab === t
           ? "bg-card text-foreground shadow-[inset_0_-2px_0_var(--color-primary)]"
           : "text-muted-foreground hover:text-foreground"
       }`}
@@ -112,8 +117,8 @@ export const ContextDock = ({
       />
       <div className="flex h-9 items-center gap-1 border-b border-border px-2">
         {tabBtn("preview", LL.dock_preview())}
-        {tabBtn("diff", LL.dock_diff())}
-        {tabBtn("web", LL.dock_web())}
+        {isGitRepo && tabBtn("diff", LL.dock_diff())}
+        {isGitRepo && tabBtn("web", LL.dock_web())}
         <div className="flex-1" />
         <button
           type="button"
@@ -127,7 +132,7 @@ export const ContextDock = ({
       {/* 三个标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
           webview / 文件预览,保留页面、滚动、缩放等状态。 */}
       <div className="h-[calc(100%-2.25rem)] overflow-hidden">
-        <div className={cn("h-full", activeTab !== "preview" && "hidden")}>
+        <div className={cn("h-full", effectiveTab !== "preview" && "hidden")}>
           {filePath ? (
             <FilePreviewPanel filePath={filePath} />
           ) : (
@@ -136,20 +141,25 @@ export const ContextDock = ({
             </div>
           )}
         </div>
-        <div className={cn("h-full", activeTab !== "diff" && "hidden")}>
-          <BranchDiffPanel
-            workspaceRoot={workspaceRoot}
-            currentBranch={currentBranch}
-            invalidator={diffInvalidator}
-          />
-        </div>
-        <div className={cn("h-full", activeTab !== "web" && "hidden")}>
-          {url ? (
-            <BrowserPanel url={url} />
-          ) : (
-            <div className="p-4 text-sm text-muted-foreground">—</div>
-          )}
-        </div>
+        {/* 差异 / 网页:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
+        {isGitRepo && (
+          <div className={cn("h-full", effectiveTab !== "diff" && "hidden")}>
+            <BranchDiffPanel
+              workspaceRoot={workspaceRoot}
+              currentBranch={currentBranch}
+              invalidator={diffInvalidator}
+            />
+          </div>
+        )}
+        {isGitRepo && (
+          <div className={cn("h-full", effectiveTab !== "web" && "hidden")}>
+            {url ? (
+              <BrowserPanel url={url} />
+            ) : (
+              <div className="p-4 text-sm text-muted-foreground">—</div>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   );

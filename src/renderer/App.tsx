@@ -72,6 +72,11 @@ interface ResolvedWorkspace {
    * undefined and read the branch from `ref.ref` instead.
    */
   currentBranch?: string | null;
+  /**
+   * 是否 git 仓库:本地由 probeGit 探测,远程(github/gitlab)恒为 true。
+   * 非 git 项目隐藏「差异 / 网页」入口(见 ContextDock 与 openInBrowserPanel)。
+   */
+  isGitRepo: boolean;
 }
 
 const recentKeyFor = (ref: WorkspaceRef): string =>
@@ -126,6 +131,12 @@ export const App = () => {
     setDockOpen(true);
   }, []);
   const openInBrowserPanel = useCallback((u: string) => {
+    // 非 git 项目不提供内置网页面板,链接交给系统浏览器打开(workspaceRef 见下方,
+    // 闭包在调用时才读 .current,此时已初始化)。
+    if (!workspaceRef.current?.isGitRepo) {
+      void window.filework.openExternal(u).catch(() => {});
+      return;
+    }
     setBrowserUrl(u);
     setDockTab("web");
     setDockOpen(true);
@@ -165,6 +176,7 @@ export const App = () => {
           ref,
           localPath: ref.path,
           currentBranch: probe.isGitRepo ? probe.currentBranch : null,
+          isGitRepo: probe.isGitRepo,
         };
       }
       if (ref.kind === "github") {
@@ -174,7 +186,7 @@ export const App = () => {
           repo: ref.repo,
           ref: ref.ref,
         });
-        return { ref, localPath: root };
+        return { ref, localPath: root, isGitRepo: true };
       }
       const { root } = await window.filework.gitlab.cloneRepo({
         credentialId: ref.credentialId,
@@ -183,7 +195,7 @@ export const App = () => {
         project: ref.project,
         ref: ref.ref,
       });
-      return { ref, localPath: root };
+      return { ref, localPath: root, isGitRepo: true };
     },
     [],
   );
@@ -398,6 +410,7 @@ export const App = () => {
                   workspacePath={workspace.localPath}
                   workspaceRef={workspace.ref}
                   currentBranch={workspace.currentBranch}
+                  isGitRepo={workspace.isGitRepo}
                   branchForChip={branchForChip}
                   diffInvalidator={diffInvalidator}
                   diffOpen={dockOpen && dockTab === "diff"}
@@ -432,6 +445,7 @@ export const App = () => {
                       workspaceRoot={workspace.localPath}
                       currentBranch={workspace.currentBranch}
                       diffInvalidator={diffInvalidator}
+                      isGitRepo={workspace.isGitRepo}
                     />
                   )}
                 </main>

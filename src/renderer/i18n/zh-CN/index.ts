@@ -220,7 +220,11 @@ const zhCN: Translation = {
   preview_readFileError: "读取文件失败",
   preview_videoError: "无法播放此视频文件",
   preview_videoLabel: "视频预览: {0}",
+  preview_audioError: "无法播放此音频文件",
+  preview_audioLabel: "音频预览: {0}",
   preview_truncated: "文件过大({0}),仅预览开头部分",
+  preview_viewRendered: "预览",
+  preview_viewSource: "源码",
 
   // Code viewer
   code_loading: "加载中...",

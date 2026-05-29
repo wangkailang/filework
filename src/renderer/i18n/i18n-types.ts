@@ -747,10 +747,27 @@ type RootTranslation = {
 	 */
 	preview_videoLabel: RequiredParams<'0'>
 	/**
+	 * U​n​a​b​l​e​ ​t​o​ ​p​l​a​y​ ​t​h​i​s​ ​a​u​d​i​o​ ​f​i​l​e
+	 */
+	preview_audioError: string
+	/**
+	 * A​u​d​i​o​ ​p​r​e​v​i​e​w​:​ ​{​0​}
+	 * @param {string} 0
+	 */
+	preview_audioLabel: RequiredParams<'0'>
+	/**
 	 * F​i​l​e​ ​t​o​o​ ​l​a​r​g​e​ ​(​{​0​}​)​;​ ​p​r​e​v​i​e​w​i​n​g​ ​t​h​e​ ​b​e​g​i​n​n​i​n​g​ ​o​n​l​y
 	 * @param {string} 0
 	 */
 	preview_truncated: RequiredParams<'0'>
+	/**
+	 * P​r​e​v​i​e​w
+	 */
+	preview_viewRendered: string
+	/**
+	 * S​o​u​r​c​e
+	 */
+	preview_viewSource: string
 	/**
 	 * L​o​a​d​i​n​g​.​.​.
 	 */
@@ -1912,9 +1929,25 @@ export type TranslationFunctions = {
 	 */
 	preview_videoLabel: (arg0: string) => LocalizedString
 	/**
+	 * Unable to play this audio file
+	 */
+	preview_audioError: () => LocalizedString
+	/**
+	 * Audio preview: {0}
+	 */
+	preview_audioLabel: (arg0: string) => LocalizedString
+	/**
 	 * File too large ({0}); previewing the beginning only
 	 */
 	preview_truncated: (arg0: string) => LocalizedString
+	/**
+	 * Preview
+	 */
+	preview_viewRendered: () => LocalizedString
+	/**
+	 * Source
+	 */
+	preview_viewSource: () => LocalizedString
 	/**
 	 * Loading...
 	 */
