@@ -40,10 +40,13 @@ const inputSchema = z.object({
     .number()
     .int()
     .positive()
-    .max(1_000_000)
+    .max(1_000_000, {
+      message:
+        "maxBytes must be ≤ 1000000 (1MB). webFetch reads the body INTO context — it is not a file downloader. To save a large file (multi-MB .txt/.csv/.zip) to disk, use runCommand with `curl -L -o <path> <url>` (or wget) AND set escalatePermissions:true — the sandbox blocks outbound network, so an un-escalated curl fails to connect (exit 7).",
+    })
     .optional()
     .describe(
-      "Cap on returned raw body bytes (default 200_000). Larger bodies are truncated and `truncated:true` is set. Does not affect the extracted `markdown` field.",
+      "Cap on returned raw body bytes (default 200_000, hard max 1_000_000). Larger bodies are truncated and `truncated:true` is set; does not affect the extracted `markdown` field. This tool loads the body into context — to DOWNLOAD a large file to disk, use runCommand `curl -L -o`/`wget` with escalatePermissions:true (network needs escalation), not webFetch.",
     ),
   query: z
     .string()

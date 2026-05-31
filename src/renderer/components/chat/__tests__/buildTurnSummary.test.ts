@@ -239,15 +239,28 @@ describe("buildTurnSummary", () => {
     const parts: MessagePart[] = [
       tool(
         "runCommand",
-        { command: "sleep 99" },
-        { success: false, cancelled: true },
+        { command: "zip -r out.zip big" },
+        { success: false, cancelled: true, deliverable: true },
         "output-available",
       ),
     ];
     expect(buildTurnSummary(parts)?.commands[0]).toEqual({
-      command: "sleep 99",
+      command: "zip -r out.zip big",
       exitCode: null,
       kind: "generic",
     });
+  });
+
+  it("hides read-only inspection commands from the card", () => {
+    const parts: MessagePart[] = [
+      tool(
+        "runCommand",
+        { command: "du -sh ." },
+        { exitCode: 0, commandKind: "generic", deliverable: false },
+        "output-available",
+      ),
+    ];
+    // Nothing delivered → no card at all.
+    expect(buildTurnSummary(parts)).toBeNull();
   });
 });

@@ -141,6 +141,11 @@ const zhCN: Translation = {
   toolName_directoryStats: "目录统计",
   toolName_findDuplicates: "查找重复文件",
   toolName_runCommand: "执行命令",
+  toolName_webSearch: "联网搜索",
+  toolName_webFetch: "抓取网页",
+  toolName_webFetchRendered: "渲染抓取",
+  toolName_webScrape: "抓取内容",
+  toolName_youtubeTranscript: "视频字幕",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",

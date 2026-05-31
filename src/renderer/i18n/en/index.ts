@@ -157,6 +157,11 @@ const en: BaseTranslation = {
   toolName_directoryStats: "Directory Stats",
   toolName_findDuplicates: "Find Duplicates",
   toolName_runCommand: "Run Command",
+  toolName_webSearch: "Web Search",
+  toolName_webFetch: "Fetch Page",
+  toolName_webFetchRendered: "Fetch (Rendered)",
+  toolName_webScrape: "Scrape Page",
+  toolName_youtubeTranscript: "YouTube Transcript",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0:number} lines",

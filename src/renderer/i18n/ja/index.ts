@@ -150,6 +150,11 @@ const ja: Translation = {
   toolName_directoryStats: "ディレクトリ統計",
   toolName_findDuplicates: "重複ファイル検出",
   toolName_runCommand: "コマンド実行",
+  toolName_webSearch: "ウェブ検索",
+  toolName_webFetch: "ページ取得",
+  toolName_webFetchRendered: "レンダリング取得",
+  toolName_webScrape: "スクレイピング",
+  toolName_youtubeTranscript: "動画字幕",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",
