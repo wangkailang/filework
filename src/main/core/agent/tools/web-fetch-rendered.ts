@@ -9,6 +9,7 @@
  */
 import { z } from "zod/v4";
 
+import { searchText } from "../../../ai/text-search";
 import { fetchRenderedHtml } from "../../../ipc/hidden-browser";
 import type { ToolDefinition } from "../tool-registry";
 import { extractReadable } from "./web-extract";
@@ -33,9 +34,17 @@ const inputSchema = z.object({
     .number()
     .int()
     .positive()
-    .max(1_000_000)
+    .max(256_000)
     .optional()
-    .describe("Cap on `raw` body bytes, default 200_000."),
+    .describe(
+      "Cap on returned content bytes (default 200_000, hard max 256_000).",
+    ),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "When set, return only the chunks most relevant to this query (BM25-ranked) in `markdown` + `matchedChunks`, instead of the whole page.",
+    ),
 });
 
 const DEFAULT_MAX_BYTES = 200_000;
@@ -52,6 +61,7 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
       timeoutMs,
       settleMs,
       maxBytes = DEFAULT_MAX_BYTES,
+      query,
     } = args as z.infer<typeof inputSchema>;
     const { html, finalUrl, status } = await fetchRenderedHtml(url, {
       timeoutMs,
@@ -59,21 +69,48 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
       signal: ctx.signal,
     });
     const readable = extractReadable(html, finalUrl);
-    const truncated = html.length > maxBytes;
-    return {
+    const sideFields = {
       status,
       statusText: status === null ? "load-failed" : "OK",
       url: finalUrl,
       contentType: "text/html",
       title: readable.title,
       excerpt: readable.excerpt,
-      markdown: readable.markdown,
       images: readable.images,
       videos: readable.videos,
       meta: readable.meta,
       structuredData: readable.structuredData,
-      raw: truncated ? html.slice(0, maxBytes) : html,
-      truncated,
+    };
+
+    // Only ONE field carries content into context: distilled `markdown` for a
+    // page, else `raw`. Returning both doubled tokens, so drop redundant raw
+    // once markdown exists. With a query, BM25-retrieve only relevant chunks.
+    const hasMarkdown = readable.markdown.length > 0;
+    const content = hasMarkdown ? readable.markdown : html;
+
+    const q = query?.trim();
+    if (q) {
+      const hit = searchText(content, q, { maxChars: maxBytes });
+      return {
+        ...sideFields,
+        markdown: hit.markdown,
+        raw: "",
+        truncated: hit.truncated,
+        matchedChunks: hit.matchedChunks,
+      };
+    }
+
+    let markdown = readable.markdown;
+    let raw = hasMarkdown ? "" : html;
+    const mdTruncated = markdown.length > maxBytes;
+    const rawTruncated = raw.length > maxBytes;
+    if (mdTruncated) markdown = markdown.slice(0, maxBytes);
+    if (rawTruncated) raw = raw.slice(0, maxBytes);
+    return {
+      ...sideFields,
+      markdown,
+      raw,
+      truncated: mdTruncated || rawTruncated,
     };
   },
 });

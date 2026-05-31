@@ -16,6 +16,7 @@ import { tool as defineAiTool } from "ai";
 import type { z } from "zod/v4";
 
 import type { Workspace } from "../workspace/types";
+import { capToolResult } from "./cap-tool-result";
 
 export interface ToolContext {
   workspace: Workspace;
@@ -166,7 +167,10 @@ export class ToolRegistry {
           }
         }
 
-        return def.execute(args as never, ctx);
+        // Universal source cap: bound any tool's result before it enters the
+        // model context, so no tool (built-in / web / MCP) can blow up the
+        // step that consumes it. See cap-tool-result.ts.
+        return capToolResult(await def.execute(args as never, ctx));
       },
     });
   }

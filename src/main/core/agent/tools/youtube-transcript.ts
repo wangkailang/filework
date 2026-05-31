@@ -29,6 +29,7 @@
  */
 import { z } from "zod/v4";
 
+import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
 
 export interface YoutubeTranscriptDeps {
@@ -281,6 +282,12 @@ const inputSchema = z.object({
     .describe(
       "BCP-47 language code preference, e.g. 'en', 'zh', 'es'. Falls back to English then first available.",
     ),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "When set, return only the parts of the transcript most relevant to this query (BM25-ranked) in `fullText` + `matchedChunks`, instead of the whole transcript — for long videos.",
+    ),
 });
 
 const USER_AGENT =
@@ -301,7 +308,7 @@ export const buildYoutubeTranscriptTool = (
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
-    const { url, lang } = args as z.infer<typeof inputSchema>;
+    const { url, lang, query } = args as z.infer<typeof inputSchema>;
     const videoId = extractVideoId(url);
     if (!videoId) {
       throw new Error(
@@ -391,6 +398,11 @@ export const buildYoutubeTranscriptTool = (
     }
     const { segments, fullText } = parseJson3(json3);
 
+    // With a query, BM25-retrieve only the relevant transcript chunks (long
+    // videos can run to hundreds of KB); else return the full transcript.
+    const q = query?.trim();
+    const search = q ? searchText(fullText, q) : null;
+
     return {
       videoId,
       title: player.videoDetails?.title ?? null,
@@ -398,7 +410,8 @@ export const buildYoutubeTranscriptTool = (
       trackName: track.name ?? null,
       kind: track.kind ?? null,
       segments,
-      fullText,
+      fullText: search ? search.markdown : fullText,
+      ...(search ? { matchedChunks: search.matchedChunks } : {}),
       availableLanguages: tracks.map((t) => t.languageCode),
     };
   },

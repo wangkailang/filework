@@ -9,6 +9,7 @@
  */
 import { z } from "zod/v4";
 
+import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
 import type { ArticleMeta } from "./web-extract";
 
@@ -23,6 +24,12 @@ const inputSchema = z.object({
     .array(z.enum(["markdown", "html"]))
     .optional()
     .describe("Default ['markdown']."),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "When set, return only the chunks of `markdown` most relevant to this query (BM25-ranked) + `matchedChunks`, instead of the whole document.",
+    ),
 });
 
 interface RawFirecrawlResponse {
@@ -90,7 +97,7 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
   safety: "safe",
   inputSchema,
   execute: async (args, ctx) => {
-    const { url, formats } = args as z.infer<typeof inputSchema>;
+    const { url, formats, query } = args as z.infer<typeof inputSchema>;
     const token = await deps.resolveFirecrawlToken();
     if (!token) {
       return {
@@ -117,12 +124,18 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
       throw new Error(`Firecrawl returned error: ${json.error}`);
     }
     const metadata = json.data?.metadata;
+    const fullMarkdown = json.data?.markdown ?? "";
+    // With a query, BM25-retrieve only the relevant chunks instead of the
+    // whole document (the universal cap bounds size; this keeps it relevant).
+    const q = query?.trim();
+    const search = q ? searchText(fullMarkdown, q) : null;
     return {
       status: res.status,
       url,
       title: metadata?.title ?? null,
       excerpt: metadata?.description ?? null,
-      markdown: json.data?.markdown ?? "",
+      markdown: search ? search.markdown : fullMarkdown,
+      ...(search ? { matchedChunks: search.matchedChunks } : {}),
       html: json.data?.html ?? null,
       meta: metadata ? firecrawlMetaToArticleMeta(metadata) : {},
       // Firecrawl doesn't itemize images / videos / structured data the
