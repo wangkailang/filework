@@ -357,6 +357,48 @@ export interface BatchApprovalPart {
   state: ApprovalState;
 }
 
+/**
+ * Machine-generated deliverable for one assistant turn. Appended by the
+ * renderer's stream subscription when a turn finalizes (right before the
+ * UsagePart), aggregated purely from the turn's own tool parts — so the
+ * file counts and command outcomes are *facts* the model cannot misstate.
+ *
+ * Distinct from the per-tool cards (the narrative of *how* the work was
+ * done): this is the *what got done* surface — a Codex-style changelist
+ * the user can scan and click into the diff dock. Persisted to JSONL so
+ * reopening the session still shows the deliverable.
+ *
+ * Omitted entirely for pure Q&A turns (no files touched, no commands run).
+ */
+export interface TurnSummaryFile {
+  /** Workspace-relative or absolute path as the tool reported it. */
+  path: string;
+  op: "create" | "modify" | "delete";
+  /** Net added lines across all writes to this path this turn. */
+  added: number;
+  /** Net removed lines across all writes to this path this turn. */
+  removed: number;
+  /** How many write calls hit this path — UI shows ⟳ N when > 1. */
+  writeCount: number;
+  /** Diff stat was unavailable/unreliable (binary, too large, errored). */
+  unknownStat?: boolean;
+}
+
+export interface TurnSummaryCommand {
+  command: string;
+  /** Process exit code; null when interrupted or unknown. */
+  exitCode: number | null;
+  kind: "test" | "build" | "generic";
+  /** Present only for test-kind commands whose output parsed cleanly. */
+  testStats?: { passed: number; failed: number };
+}
+
+export interface TurnSummaryPart {
+  type: "turn-summary";
+  files: TurnSummaryFile[];
+  commands: TurnSummaryCommand[];
+}
+
 export type MessagePart =
   | TextPart
   | ReasoningPart
@@ -371,4 +413,5 @@ export type MessagePart =
   | ArticleMetaPart
   | VideoJobPart
   | AttachmentPart
-  | BatchApprovalPart;
+  | BatchApprovalPart
+  | TurnSummaryPart;

@@ -4,7 +4,6 @@ import {
   CopyIcon,
   GitBranch,
   HelpCircle,
-  Loader2,
   MessageSquarePlus,
   RefreshCw,
   Settings,
@@ -68,6 +67,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
+import { TurnSummaryCard } from "./TurnSummaryCard";
 import type {
   ArticleMetaPart,
   AttachmentPart,
@@ -83,11 +83,13 @@ import type {
   RecoveryAction,
   ToolApproval,
   ToolPart,
+  TurnSummaryPart,
   UsagePart,
   VideoGalleryPart,
   VideoJobPart,
 } from "./types";
 import { VideoGallery } from "./VideoGallery";
+import { WorkingIndicator } from "./WorkingIndicator";
 
 const formatTokens = (n: number | null): string => {
   if (n == null) return "-";
@@ -843,6 +845,11 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           />
         );
       }
+      if (part.type === "turn-summary") {
+        return (
+          <TurnSummaryCard key="turn-summary" part={part as TurnSummaryPart} />
+        );
+      }
       if (part.type === "usage") {
         const u = part as UsagePart;
         return (
@@ -1067,60 +1074,59 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                   </div>
                 );
               })}
-              {chat.isLoading &&
-                chat.messages[chat.messages.length - 1]?.content === "" &&
-                !chat.messages[chat.messages.length - 1]?.parts?.length && (
-                  <div className="flex items-center gap-2 px-4 py-2 text-muted-foreground">
-                    {chat.retryInfo ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span className="text-sm">
-                          {LL.chat_retrying(
-                            String(chat.retryInfo.attempt),
-                            String(chat.retryInfo.maxRetries),
-                          )}{" "}
-                          <span className="text-xs opacity-75">
-                            {RETRY_TYPE_LABELS[chat.retryInfo.type] ??
-                              chat.retryInfo.type}
-                          </span>
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm">
-                          {chat.isPlanGenerating
-                            ? LL.chat_planGenerating()
-                            : LL.chat_thinking()}
-                        </span>
-                      </>
-                    )}
-                    {chat.activeSkill && (
-                      <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
-                        <Sparkles className="w-3 h-3" />
-                        {chat.activeSkill.skillName}
-                        <span className="text-muted-foreground">
-                          ({chat.activeSkill.source})
-                        </span>
-                      </span>
-                    )}
-                  </div>
-                )}
-              {chat.activeSkill &&
-                chat.isLoading &&
-                (chat.messages[chat.messages.length - 1]?.content !== "" ||
-                  (chat.messages[chat.messages.length - 1]?.parts?.length ??
-                    0) > 0) && (
-                  <div className="flex items-center gap-1.5 px-4 py-1">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
-                      <Sparkles className="w-3 h-3" />
-                      {chat.activeSkill.skillName}
-                      <span className="text-muted-foreground">
-                        ({chat.activeSkill.source})
-                      </span>
+              {/* Working indicator: hidden while the model actively produces
+                  visible output (the growing text is its own feedback), shown
+                  with an elapsed timer once the stream goes silent for a beat
+                  (e.g. the 10–30s a large writeFile's input takes to generate).
+                  Hidden entirely while we're blocked on the user. */}
+              {(() => {
+                const lastMsg = chat.messages[chat.messages.length - 1];
+                const parts = lastMsg?.parts ?? [];
+                const awaitingInput = parts.some(
+                  (p) =>
+                    (p.type === "tool" &&
+                      p.approval?.state === "approval-requested") ||
+                    (p.type === "batch-approval" &&
+                      p.state === "approval-requested") ||
+                    (p.type === "clarification" && !p.answeredOption),
+                );
+                const lastPart = parts[parts.length - 1];
+                const lastPartLen =
+                  lastPart &&
+                  (lastPart.type === "text" || lastPart.type === "reasoning")
+                    ? lastPart.text.length
+                    : 0;
+                const signature =
+                  (lastMsg?.content?.length ?? 0) + parts.length + lastPartLen;
+                const retryText = chat.retryInfo
+                  ? `${LL.chat_retrying(
+                      String(chat.retryInfo.attempt),
+                      String(chat.retryInfo.maxRetries),
+                    )} ${
+                      RETRY_TYPE_LABELS[chat.retryInfo.type] ??
+                      chat.retryInfo.type
+                    }`
+                  : null;
+                return (
+                  <WorkingIndicator
+                    active={chat.isLoading && !awaitingInput}
+                    signature={signature}
+                    retryText={retryText}
+                    planGenerating={chat.isPlanGenerating}
+                  />
+                );
+              })()}
+              {chat.activeSkill && chat.isLoading && (
+                <div className="flex items-center gap-1.5 px-4 py-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
+                    <Sparkles className="w-3 h-3" />
+                    {chat.activeSkill.skillName}
+                    <span className="text-muted-foreground">
+                      ({chat.activeSkill.source})
                     </span>
-                  </div>
-                )}
+                  </span>
+                </div>
+              )}
 
               {/* Fallback error banner — shown when lastError is set but the
                   error part was not attached to any message (e.g. race condition

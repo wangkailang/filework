@@ -8,6 +8,7 @@
 
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
+import { getProviderFetch } from "../provider-fetch";
 import {
   type CacheMetrics,
   NO_CACHE_METRICS,
@@ -26,6 +27,8 @@ export class OpenAIAdapter implements ProviderAdapter {
     const openai = createOpenAI({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
+      // See provider-fetch.ts — per-host proxy-aware fetch set at bootstrap.
+      fetch: getProviderFetch(),
     });
     return isCustomEndpoint ? openai.chat(config.model) : openai(config.model);
   }

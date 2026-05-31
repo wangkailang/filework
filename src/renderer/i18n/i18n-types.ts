@@ -306,6 +306,14 @@ type RootTranslation = {
 	 */
 	chat_thinking: string
 	/**
+	 * G​e​n​e​r​a​t​i​n​g
+	 */
+	chat_generating: string
+	/**
+	 * G​e​n​e​r​a​t​i​n​g​ ​a​ ​l​o​n​g​ ​r​e​s​p​o​n​s​e
+	 */
+	chat_generatingLong: string
+	/**
 	 * F​o​r​k​ ​f​r​o​m​ ​h​e​r​e
 	 */
 	chat_forkHere: string
@@ -1504,6 +1512,14 @@ export type TranslationFunctions = {
 	 * Thinking...
 	 */
 	chat_thinking: () => LocalizedString
+	/**
+	 * Generating
+	 */
+	chat_generating: () => LocalizedString
+	/**
+	 * Generating a long response
+	 */
+	chat_generatingLong: () => LocalizedString
 	/**
 	 * Fork from here
 	 */

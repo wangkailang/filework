@@ -60,9 +60,18 @@ export const MarkdownCodeBlock = ({
   return <HighlightedBlock raw={raw} resolved={resolved} />;
 };
 
+// Beyond this many lines a block collapses by default. Backstop for models
+// that paste a whole rewritten document into chat (the content belongs in the
+// file/diff, not the message) — keeps the conversation scannable instead of a
+// wall of text. Tuned to still show a useful preview before the fade.
+const COLLAPSE_LINE_THRESHOLD = 16;
+
 const HighlightedBlock = memo(
   ({ raw, resolved }: { raw: string; resolved: string }) => {
     const display = LANG_DISPLAY[resolved] ?? resolved;
+    const lineCount = useMemo(() => raw.split("\n").length, [raw]);
+    const collapsible = lineCount > COLLAPSE_LINE_THRESHOLD;
+    const [expanded, setExpanded] = useState(false);
     const html = useMemo(
       () =>
         hljs.getLanguage(resolved)
@@ -85,15 +94,40 @@ const HighlightedBlock = memo(
           <span className="font-mono text-xs lowercase text-muted-foreground">
             {display}
           </span>
+          {collapsible && (
+            <span className="ml-2 font-mono text-xs text-muted-foreground/60">
+              {lineCount} 行
+            </span>
+          )}
           <CopyButton raw={raw} />
         </div>
-        <pre className="m-0 overflow-x-auto p-4 text-sm leading-relaxed">
-          <code
-            className={`hljs language-${resolved}`}
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: hljs escapes input HTML; output is sanitized token markup
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </pre>
+        <div className="relative">
+          <pre
+            className={cn(
+              "m-0 overflow-x-auto p-4 text-sm leading-relaxed",
+              collapsible && !expanded && "max-h-72 overflow-y-hidden",
+              collapsible && expanded && "max-h-[600px] overflow-y-auto",
+            )}
+          >
+            <code
+              className={`hljs language-${resolved}`}
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: hljs escapes input HTML; output is sanitized token markup
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </pre>
+          {collapsible && !expanded && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />
+          )}
+        </div>
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex w-full items-center justify-center border-t border-border bg-muted/30 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+          >
+            {expanded ? "收起" : `展开全部 ${lineCount} 行`}
+          </button>
+        )}
       </div>
     );
   },
