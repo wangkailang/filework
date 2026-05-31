@@ -1,7 +1,7 @@
 // 右侧统一停靠面板:预览 / Diff / Web 三标签共用一个容器,可拖分隔条调宽。
 // 由父级(App)通过 mode 决定分栏(参与 flex 布局)还是浮层(absolute 覆盖)。
-import { X } from "lucide-react";
-import { useCallback, useRef } from "react";
+import { Maximize2, Minimize2, X } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { BranchDiffPanel } from "../branch-diff/BranchDiffPanel";
@@ -48,6 +48,8 @@ export const ContextDock = ({
   const { LL } = useI18nContext();
   const widthRef = useRef(width);
   widthRef.current = width;
+  // 全屏:铺满窗口(fixed inset-0),忽略 width 与 mode。关闭面板时一并复位。
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // 非 git 项目不提供「差异 / 网页」,即使 activeTab 残留也回落到预览。
   const effectiveTab: DockTab = isGitRepo ? activeTab : "preview";
 
@@ -98,28 +100,52 @@ export const ContextDock = ({
   return (
     <aside
       className={
-        mode === "overlay"
-          ? "absolute top-0 right-0 z-40 h-full border-l border-border bg-background shadow-2xl"
-          : "relative h-full shrink-0 border-l border-border bg-background"
+        isFullscreen
+          ? // 让开顶部 28px 系统标题栏(hiddenInset):否则头部按钮落在 OS 拖拽区里点不动。
+            "fixed top-7 right-0 bottom-0 left-0 z-50 border-l border-border bg-background"
+          : mode === "overlay"
+            ? "absolute top-0 right-0 z-40 h-full border-l border-border bg-background shadow-2xl"
+            : "relative h-full shrink-0 border-l border-border bg-background"
       }
-      style={{ width }}
+      style={isFullscreen ? undefined : { width }}
     >
-      {/* biome-ignore lint/a11y/useSemanticElements: 竖向 resize 手柄用 div + ARIA 是分栏标准做法 */}
-      <div
-        onMouseDown={startResize}
-        role="separator"
-        aria-orientation="vertical"
-        aria-valuenow={width}
-        aria-valuemin={DOCK_MIN_WIDTH}
-        aria-valuemax={DOCK_MAX_WIDTH}
-        tabIndex={0}
-        className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/30 focus:bg-primary/40 focus:outline-none"
-      />
-      <div className="flex h-9 items-center gap-1 border-b border-border px-2">
+      {/* 全屏铺满窗口时调宽无意义,隐藏分隔条。 */}
+      {!isFullscreen && (
+        // biome-ignore lint/a11y/useSemanticElements: 竖向 resize 手柄用 div + ARIA 是分栏标准做法
+        <div
+          onMouseDown={startResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={DOCK_MIN_WIDTH}
+          aria-valuemax={DOCK_MAX_WIDTH}
+          tabIndex={0}
+          className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/30 focus:bg-primary/40 focus:outline-none"
+        />
+      )}
+      <div className="titlebar-no-drag flex h-9 items-center gap-1 border-b border-border px-2">
         {tabBtn("preview", LL.dock_preview())}
         {isGitRepo && tabBtn("diff", LL.dock_diff())}
         {isGitRepo && tabBtn("web", LL.dock_web())}
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setIsFullscreen((v) => !v)}
+          className="rounded p-1 hover:bg-accent"
+          aria-label={
+            isFullscreen ? LL.preview_exitFullscreen() : LL.preview_fullscreen()
+          }
+          aria-pressed={isFullscreen}
+          title={
+            isFullscreen ? LL.preview_exitFullscreen() : LL.preview_fullscreen()
+          }
+        >
+          {isFullscreen ? (
+            <Minimize2 className="size-3.5 text-muted-foreground" />
+          ) : (
+            <Maximize2 className="size-3.5 text-muted-foreground" />
+          )}
+        </button>
         <button
           type="button"
           onClick={onClose}

@@ -94,6 +94,7 @@ const streamdownControls: ComponentProps<typeof Streamdown>["controls"] = {
 function RoutedAnchor({
   children,
   href,
+  className,
   ...props
 }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   const link = useLinkRouter();
@@ -104,6 +105,11 @@ function RoutedAnchor({
       onClick={link.onClick}
       onAuxClick={link.onAuxClick}
       rel="noopener noreferrer"
+      className={cn(
+        // 主色链接:下划线带 offset、hover 加深;长 URL 可断行不撑破气泡。
+        "cursor-pointer break-words font-medium text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:text-primary/80 hover:decoration-primary/70",
+        className,
+      )}
     >
       {children}
     </a>

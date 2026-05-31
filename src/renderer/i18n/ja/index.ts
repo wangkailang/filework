@@ -241,6 +241,8 @@ const ja: Translation = {
   preview_truncated: "ファイルが大きすぎます({0})。先頭のみをプレビューします",
   preview_viewRendered: "プレビュー",
   preview_viewSource: "ソース",
+  preview_fullscreen: "全画面",
+  preview_exitFullscreen: "全画面を終了",
 
   // Code viewer
   code_loading: "読み込み中...",
