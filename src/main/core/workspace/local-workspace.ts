@@ -42,6 +42,42 @@ import { WorkspaceEscapeError } from "./types";
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5 * 60 * 1000;
 
+// runCommand output cap — applied at the tool boundary BEFORE it reaches the
+// model, mirroring Codex/Claude Code. A runaway `cat bigfile` then adds ~32KB
+// to context, not megabytes (which a multi-step loop would re-send each turn,
+// ballooning input tokens). Keep head AND tail — exit info / final errors live
+// at the end. Peak memory stays at HEAD+TAIL even for a 100MB stream.
+const EXEC_OUT_HEAD = 24_000;
+const EXEC_OUT_TAIL = 8_000;
+
+/** Memory-bounded head+tail capture of a streamed output. */
+class BoundedCapture {
+  private head = "";
+  private tail = "";
+  private total = 0;
+
+  push(chunk: string): void {
+    this.total += chunk.length;
+    if (this.head.length < EXEC_OUT_HEAD) {
+      const room = EXEC_OUT_HEAD - this.head.length;
+      this.head += chunk.slice(0, room);
+      chunk = chunk.slice(room);
+    }
+    if (chunk) this.tail = (this.tail + chunk).slice(-EXEC_OUT_TAIL);
+  }
+
+  get truncated(): boolean {
+    return this.total > EXEC_OUT_HEAD + EXEC_OUT_TAIL;
+  }
+
+  /** Reconstructs the full text when within budget, else head…tail. */
+  value(): string {
+    if (!this.truncated) return this.head + this.tail;
+    const dropped = this.total - this.head.length - this.tail.length;
+    return `${this.head}\n…[truncated ${dropped} chars]…\n${this.tail}`;
+  }
+}
+
 /**
  * Project the absolute path `p` into its canonical (symlink-resolved)
  * form, even when `p` does not exist yet. We walk up to the deepest
@@ -273,16 +309,25 @@ class LocalWorkspaceExec implements WorkspaceExec {
         }
       };
 
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (data) => {
-        stdout += data.toString();
+      const outCap = new BoundedCapture();
+      const errCap = new BoundedCapture();
+      child.stdout?.on("data", (data) => outCap.push(data.toString()));
+      child.stderr?.on("data", (data) => errCap.push(data.toString()));
+
+      const buildResult = (
+        exitCode: number,
+        stderrSuffix = "",
+      ): ExecResult => ({
+        stdout: outCap.value(),
+        stderr: errCap.value() + stderrSuffix,
+        exitCode,
+        ...(outCap.truncated || errCap.truncated
+          ? { outputTruncated: true }
+          : {}),
       });
-      child.stderr?.on("data", (data) => {
-        stderr += data.toString();
-      });
+
       child.on("close", (code) => {
-        settle({ stdout, stderr, exitCode: code ?? 0 });
+        settle(buildResult(code ?? 0));
       });
       child.on("error", (error) => settle(error, true));
 
@@ -290,22 +335,14 @@ class LocalWorkspaceExec implements WorkspaceExec {
         if (settled) return;
         terminate("SIGTERM");
         killTimer = setTimeout(() => terminate("SIGKILL"), 2000);
-        settle({
-          stdout,
-          stderr: `${stderr}\nCommand timed out after ${timeoutMs}ms`,
-          exitCode: 124,
-        });
+        settle(buildResult(124, `\nCommand timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
       const onAbort = () => {
         if (settled) return;
         terminate("SIGTERM");
         killTimer = setTimeout(() => terminate("SIGKILL"), 2000);
-        settle({
-          stdout,
-          stderr: `${stderr}\nCommand was cancelled`,
-          exitCode: 130,
-        });
+        settle(buildResult(130, "\nCommand was cancelled"));
       };
       if (opts?.signal) {
         if (opts.signal.aborted) onAbort();

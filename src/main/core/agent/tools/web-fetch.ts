@@ -15,6 +15,7 @@ import {
   extractPdfTextFromBuffer,
   type PdfExtractResult,
 } from "../../../ai/pdf-text";
+import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
 import { extractReadable } from "./web-extract";
 
@@ -40,16 +41,19 @@ const inputSchema = z.object({
     .number()
     .int()
     .positive()
-    .max(1_000_000)
+    .max(256_000, {
+      message:
+        "maxBytes must be ≤ 256000 (256KB). webFetch reads the body INTO context — it is not a file downloader. To save a large file (multi-MB .txt/.csv/.zip) to disk, use runCommand with `curl -L -o <path> <url>` (or wget) AND set escalatePermissions:true — the sandbox blocks outbound network, so an un-escalated curl fails to connect (exit 7).",
+    })
     .optional()
     .describe(
-      "Cap on returned raw body bytes (default 200_000). Larger bodies are truncated and `truncated:true` is set. Does not affect the extracted `markdown` field.",
+      "Cap on returned content bytes (default 200_000, hard max 256_000). Bounds whichever field carries the body into context — the extracted `markdown` for HTML, or `raw` otherwise. Larger bodies are truncated with `truncated:true`. This tool loads content into context — to DOWNLOAD a large file to disk, use runCommand `curl -L -o`/`wget` with escalatePermissions:true (network needs escalation), not webFetch.",
     ),
   query: z
     .string()
     .optional()
     .describe(
-      "PDF only. When set, return just the pages most relevant to this query (BM25-ranked, whole pages with `--- Page N ---` headers + `matchedPages`) instead of the document head. Use to find a specific fact in a long PDF. Ignored for non-PDF responses.",
+      "When set, return only the parts of the document most relevant to this query (BM25-ranked) instead of the whole body — for PDFs the matching pages (`matchedPages`), for HTML/text the matching chunks (`matchedChunks`). Use to pull a specific fact out of a long page/document without loading it all into context.",
     ),
 });
 
@@ -218,10 +222,9 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => {
         });
       }
 
-      const raw = await res.text();
-      const truncated = raw.length > maxBytes;
+      const body = await res.text();
       const readable = isHtml(contentType)
-        ? extractReadable(raw, res.url)
+        ? extractReadable(body, res.url)
         : {
             title: null,
             excerpt: null,
@@ -231,21 +234,48 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => {
             meta: {},
             structuredData: [],
           };
-      return {
-        status: res.status,
-        statusText: res.statusText,
-        url: res.url,
-        contentType,
+      // Only ONE field carries the body into context: the distilled
+      // `markdown` for HTML, else `raw`. Returning both (HTML) doubled the
+      // tokens for no gain, so drop the redundant `raw` once we have markdown.
+      const hasMarkdown = readable.markdown.length > 0;
+      const content = hasMarkdown ? readable.markdown : body;
+      const sideFields = {
         title: readable.title,
         excerpt: readable.excerpt,
-        markdown: readable.markdown,
         images: readable.images,
         videos: readable.videos,
         meta: readable.meta,
         structuredData: readable.structuredData,
-        raw: truncated ? raw.slice(0, maxBytes) : raw,
-        truncated,
       };
+
+      // 带 query → BM25 文本检索,只回相关块(对应 PDF 的逐页检索),把长文
+      // 从可能数 MB 压到几块。结果统一放 `markdown`(=与你 query 相关的内容)。
+      const q = query?.trim();
+      if (q) {
+        const hit = searchText(content, q, { maxChars: maxBytes });
+        return base({
+          ...sideFields,
+          markdown: hit.markdown,
+          raw: "",
+          truncated: hit.truncated,
+          matchedChunks: hit.matchedChunks,
+        });
+      }
+
+      // 无 query:返回承载字段并封顶到 maxBytes(markdown 此前未封顶,大文章
+      // 同样会撑爆上下文)。
+      let markdown = readable.markdown;
+      let raw = hasMarkdown ? "" : body;
+      const mdTruncated = markdown.length > maxBytes;
+      const rawTruncated = raw.length > maxBytes;
+      if (mdTruncated) markdown = markdown.slice(0, maxBytes);
+      if (rawTruncated) raw = raw.slice(0, maxBytes);
+      return base({
+        ...sideFields,
+        markdown,
+        raw,
+        truncated: mdTruncated || rawTruncated,
+      });
     },
   };
 };

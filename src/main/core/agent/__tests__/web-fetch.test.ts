@@ -54,7 +54,7 @@ describe("buildWebFetchTool", () => {
     expect(tool.safety).toBe("safe");
   });
 
-  it("对 HTML 文章返回 title + markdown + raw", async () => {
+  it("对 HTML 文章返回 title + markdown,并省略冗余 raw", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse(articleHtml, { url: "https://example.com/p" }),
     );
@@ -72,16 +72,19 @@ describe("buildWebFetchTool", () => {
     expect(out.status).toBe(200);
     expect(out.title).toBe("Hello");
     expect(out.markdown).toContain("first paragraph");
-    expect(out.raw).toContain("<article>");
+    // markdown carries the content → raw is dropped to avoid doubling tokens.
+    expect(out.raw).toBe("");
     expect(out.truncated).toBe(false);
   });
 
-  it("将 raw 正文截断到 maxBytes", async () => {
-    const big = `<html><body>${"a".repeat(500)}</body></html>`;
-    const fetchImpl = vi.fn(async () => fakeResponse(big));
+  it("将非 HTML 正文(raw)截断到 maxBytes", async () => {
+    const big = "a".repeat(500);
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse(big, { headers: { "content-type": "text/plain" } }),
+    );
     const tool = buildWebFetchTool({ fetchImpl: fetchImpl as never });
     const out = (await tool.execute(
-      { url: "https://example.com/", maxBytes: 100 },
+      { url: "https://example.com/x.txt", maxBytes: 100 },
       fakeCtx(),
     )) as { raw: string; truncated: boolean };
     expect(out.raw.length).toBe(100);

@@ -13,4 +13,9 @@ export const getToolLabels = (
   directoryStats: LL.toolName_directoryStats(),
   findDuplicates: LL.toolName_findDuplicates(),
   runCommand: LL.toolName_runCommand(),
+  webSearch: LL.toolName_webSearch(),
+  webFetch: LL.toolName_webFetch(),
+  webFetchRendered: LL.toolName_webFetchRendered(),
+  webScrape: LL.toolName_webScrape(),
+  youtubeTranscript: LL.toolName_youtubeTranscript(),
 });

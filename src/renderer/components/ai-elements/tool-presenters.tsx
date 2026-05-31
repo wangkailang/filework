@@ -31,6 +31,13 @@ export interface ToolPresenter {
     state: ToolState,
     ctx: PresenterCtx,
   ) => ReactNode | null;
+  /**
+   * One-line summary for a COLLAPSED group of consecutive same-name calls
+   * (e.g. 5 webSearch in a row). Receives each call's args so it can list
+   * what varied (the queries) instead of a bare "5 个 webSearch". Falls back
+   * to the generic count label when absent.
+   */
+  groupSummary?: (argsList: unknown[], ctx: PresenterCtx) => ReactNode | null;
   input?: (args: unknown, ctx: PresenterCtx) => ReactNode | null;
   output?: (
     result: unknown,
@@ -896,6 +903,142 @@ function changeToPreviewHunk(c: Change): PreviewDiffHunk {
 // Registry
 // ---------------------------------------------------------------------------
 
+function searchQuery(args: unknown): string {
+  const a = asRecord(args);
+  return typeof a?.query === "string" ? a.query : "";
+}
+
+const webSearchPresenter: ToolPresenter = {
+  // Single call: show the query (so a row isn't just "完成 webSearch").
+  summary: (args) => {
+    const q = searchQuery(args);
+    if (!q) return null;
+    return <span className="text-foreground/80">{q}</span>;
+  },
+  // Collapsed group: list each call's query instead of "5 个 webSearch".
+  groupSummary: (argsList) => {
+    const queries = argsList.map(searchQuery).filter(Boolean);
+    if (!queries.length) return null;
+    return <span className="text-foreground/80">{queries.join("、")}</span>;
+  },
+  // Expanded output: the ranked results (title + url).
+  output: (result) => {
+    const r = asRecord(result);
+    const results = Array.isArray(r?.results) ? r.results : [];
+    if (!results.length) return null;
+    return (
+      <div className="px-3 py-2 text-xs space-y-1.5 max-h-72 overflow-auto">
+        {results.map((item, i) => {
+          const it = asRecord(item);
+          const title = typeof it?.title === "string" ? it.title : "";
+          const url = typeof it?.url === "string" ? it.url : "";
+          return (
+            <div key={url || i} className="min-w-0">
+              <div className="truncate text-foreground/90">{title || url}</div>
+              {url && (
+                <div className="truncate text-muted-foreground">{url}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  },
+};
+
+// --- File ops that have no rich output: just surface the target path(s) so
+//     a collapsed row reads "移动文件 a → b" instead of a bare "完成 moveFile".
+
+const moveFilePresenter: ToolPresenter = {
+  summary: (args) => {
+    const a = asRecord(args);
+    const src = typeof a?.source === "string" ? a.source : "";
+    const dst = typeof a?.destination === "string" ? a.destination : "";
+    if (!src && !dst) return null;
+    return (
+      <span className="text-foreground/80">
+        {shortPath(src)} <span className="text-muted-foreground">→</span>{" "}
+        {shortPath(dst)}
+      </span>
+    );
+  },
+};
+
+function pathOnlySummary(args: unknown): ReactNode | null {
+  const a = asRecord(args);
+  const p = typeof a?.path === "string" ? a.path : "";
+  return p ? <span className="text-foreground/80">{shortPath(p)}</span> : null;
+}
+
+const deleteFilePresenter: ToolPresenter = { summary: pathOnlySummary };
+const createDirectoryPresenter: ToolPresenter = { summary: pathOnlySummary };
+
+const directoryStatsPresenter: ToolPresenter = {
+  summary: (args, result, state, { LL }) => {
+    const a = asRecord(args);
+    const p = typeof a?.path === "string" ? a.path : "";
+    const r = asRecord(result);
+    const files = typeof r?.totalFiles === "number" ? r.totalFiles : null;
+    const dirs = typeof r?.totalDirs === "number" ? r.totalDirs : null;
+    return (
+      <>
+        <span className="text-foreground/80">{shortPath(p)}</span>
+        {state === "output-available" && files !== null && dirs !== null && (
+          <span className="ml-2 text-muted-foreground">
+            {LL.tool_summary_dirs_files(dirs, files)}
+          </span>
+        )}
+      </>
+    );
+  },
+};
+
+// --- Web tools keyed on a `url` arg: show the host/path, group lists each. ---
+
+function urlArg(args: unknown): string {
+  const a = asRecord(args);
+  return typeof a?.url === "string" ? a.url : "";
+}
+
+function shortUrl(u: string, max = 60): string {
+  if (!u) return u;
+  const stripped = u.replace(/^https?:\/\//, "");
+  return stripped.length > max ? `${stripped.slice(0, max)}…` : stripped;
+}
+
+const urlGroupSummary = (argsList: unknown[]): ReactNode | null => {
+  const urls = argsList
+    .map(urlArg)
+    .filter(Boolean)
+    .map((u) => shortUrl(u, 40));
+  if (!urls.length) return null;
+  return <span className="text-foreground/80">{urls.join("、")}</span>;
+};
+
+const urlPresenter: ToolPresenter = {
+  summary: (args) => {
+    const u = urlArg(args);
+    return u ? <span className="text-foreground/80">{shortUrl(u)}</span> : null;
+  },
+  groupSummary: urlGroupSummary,
+};
+
+const webFetchPresenter: ToolPresenter = {
+  summary: (args) => {
+    const u = urlArg(args);
+    if (!u) return null;
+    const a = asRecord(args);
+    const q = typeof a?.query === "string" ? a.query : "";
+    return (
+      <span className="text-foreground/80">
+        {shortUrl(u)}
+        {q && <span className="ml-2 text-muted-foreground">🔍 {q}</span>}
+      </span>
+    );
+  },
+  groupSummary: urlGroupSummary,
+};
+
 export const toolPresenters: Record<string, ToolPresenter> = {
   runCommand: runCommandPresenter,
   readFile: readFilePresenter,
@@ -903,4 +1046,13 @@ export const toolPresenters: Record<string, ToolPresenter> = {
   writeFile: writeFilePresenter,
   readShellOutput: readShellOutputPresenter,
   killShell: killShellPresenter,
+  webSearch: webSearchPresenter,
+  moveFile: moveFilePresenter,
+  deleteFile: deleteFilePresenter,
+  createDirectory: createDirectoryPresenter,
+  directoryStats: directoryStatsPresenter,
+  webFetch: webFetchPresenter,
+  webFetchRendered: urlPresenter,
+  webScrape: urlPresenter,
+  youtubeTranscript: urlPresenter,
 };

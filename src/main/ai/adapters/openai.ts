@@ -34,7 +34,10 @@ export class OpenAIAdapter implements ProviderAdapter {
   }
 
   buildProviderOptions() {
-    return NO_PROVIDER_OPTIONS;
+    // Disable parallel tool calls so a `createPlan` call can't be batched in
+    // the same step as other tools — its await-for-approval then truly halts
+    // the loop instead of letting siblings (webSearch etc.) run unapproved.
+    return { openai: { parallelToolCalls: false } };
   }
 
   extractCacheMetrics(

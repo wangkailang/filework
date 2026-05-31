@@ -242,4 +242,54 @@ describe("safeTools.directoryStats", () => {
     expect((res as { scannedEntries?: number }).scannedEntries).toBe(1000);
     expect((res as { hitLimit?: boolean }).hitLimit).toBe(true);
   });
+
+  it("aggregates count and total size per extension", async () => {
+    vi.resetModules();
+
+    // Two .txt (10 + 30 bytes) and one .md (5 bytes); sizes keyed off name.
+    const sizes: Record<string, number> = {
+      "a.txt": 10,
+      "b.txt": 30,
+      "c.md": 5,
+    };
+    const fakeEntries = Object.keys(sizes).map((name) => ({
+      name,
+      isDirectory: () => false,
+      parentPath: "/tmp",
+    }));
+
+    vi.doMock("node:fs/promises", async () => {
+      const actual =
+        await vi.importActual<typeof import("node:fs/promises")>(
+          "node:fs/promises",
+        );
+      return {
+        ...actual,
+        readdir: vi.fn(async () => fakeEntries as unknown),
+        stat: vi.fn(async (p: string) => ({
+          size: sizes[p.split("/").pop() ?? ""] ?? 0,
+          mtime: new Date(0),
+        })),
+      };
+    });
+
+    const { safeTools } = await import("../ai-tools");
+
+    const res = (await safeTools.directoryStats.execute?.(
+      { path: "/tmp", maxEntries: 1000 },
+      {
+        toolCallId: "t2",
+        messages: [],
+      } as unknown as import("ai").ToolExecutionOptions,
+    )) as {
+      totalFiles: number;
+      totalSize: number;
+      extensions: Record<string, { count: number; totalSize: number }>;
+    };
+
+    expect(res.totalFiles).toBe(3);
+    expect(res.totalSize).toBe(45);
+    expect(res.extensions[".txt"]).toEqual({ count: 2, totalSize: 40 });
+    expect(res.extensions[".md"]).toEqual({ count: 1, totalSize: 5 });
+  });
 });

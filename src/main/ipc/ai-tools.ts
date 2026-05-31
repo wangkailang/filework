@@ -293,7 +293,7 @@ export const safeTools: Record<string, Tool> = {
 
   directoryStats: {
     description:
-      "Get statistics about a directory (file count, size, extensions)",
+      "Count files and total size by extension (each type returns { count, totalSize in bytes }) plus overall totals. Use this for any 'count / size by type' aggregation — never tally a listDirectory dump by hand.",
     inputSchema: z.object({
       path: z.string().describe("Absolute path to directory"),
       maxEntries: z
@@ -318,7 +318,10 @@ export const safeTools: Record<string, Tool> = {
       let totalFiles = 0;
       let totalDirs = 0;
       let totalSize = 0;
-      const extensions: Record<string, number> = {};
+      // Per-extension count AND size, so the model relays a finished table
+      // instead of hand-summing sizes by type (the step it gets wrong).
+      const extensions: Record<string, { count: number; totalSize: number }> =
+        {};
       let scanned = 0;
       for (const entry of entries) {
         if (scanned >= maxEntries) break;
@@ -338,7 +341,10 @@ export const safeTools: Record<string, Tool> = {
             const s = await stat(fullPath);
             totalSize += s.size;
             const ext = extname(entry.name) || "(no ext)";
-            extensions[ext] = (extensions[ext] || 0) + 1;
+            extensions[ext] ??= { count: 0, totalSize: 0 };
+            const bucket = extensions[ext];
+            bucket.count++;
+            bucket.totalSize += s.size;
           }
         } catch {
           // skip inaccessible

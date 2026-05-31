@@ -16,6 +16,7 @@ import { tool as defineAiTool } from "ai";
 import type { z } from "zod/v4";
 
 import type { Workspace } from "../workspace/types";
+import { capToolResult } from "./cap-tool-result";
 
 export interface ToolContext {
   workspace: Workspace;
@@ -38,6 +39,16 @@ export type BeforeToolCallHook = (
   },
   ctx: ToolContext,
 ) => Promise<BeforeToolCallDecision>;
+
+/**
+ * Gate run before EVERY non-`createPlan` tool. Resolves `true` to proceed
+ * (no plan pending, or the plan was approved) and `false` to deny (the user
+ * rejected a still-pending plan). Lets a draft plan awaiting approval block
+ * all other tools — a defense layered on top of disabling parallel tool
+ * calls, which is what actually prevents a sibling tool from racing the
+ * plan within one step.
+ */
+export type PlanGateHook = (toolName: string) => Promise<boolean>;
 
 export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
@@ -94,6 +105,7 @@ export class ToolRegistry {
   toAiSdkTools(opts: {
     ctxFactory: (call: { toolName: string; toolCallId: string }) => ToolContext;
     beforeToolCall?: BeforeToolCallHook;
+    planGate?: PlanGateHook;
   }): Record<string, Tool> {
     const result: Record<string, Tool> = {};
     for (const def of this.tools.values()) {
@@ -110,6 +122,7 @@ export class ToolRegistry {
         toolCallId: string;
       }) => ToolContext;
       beforeToolCall?: BeforeToolCallHook;
+      planGate?: PlanGateHook;
     },
   ): Tool {
     return defineAiTool({
@@ -120,6 +133,20 @@ export class ToolRegistry {
           toolName: def.name,
           toolCallId: execOpts.toolCallId,
         });
+
+        // A draft plan awaiting approval blocks every other tool until the
+        // user approves (or rejects → deny). createPlan itself is exempt.
+        if (def.name !== "createPlan" && opts.planGate) {
+          const proceed = await opts.planGate(def.name);
+          if (!proceed) {
+            const denied: ToolDeniedResult = {
+              success: false,
+              denied: true,
+              reason: "计划被拒绝,未执行",
+            };
+            return denied;
+          }
+        }
 
         if (def.safety === "destructive" && opts.beforeToolCall) {
           const decision = await opts.beforeToolCall(
@@ -140,7 +167,10 @@ export class ToolRegistry {
           }
         }
 
-        return def.execute(args as never, ctx);
+        // Universal source cap: bound any tool's result before it enters the
+        // model context, so no tool (built-in / web / MCP) can blow up the
+        // step that consumes it. See cap-tool-result.ts.
+        return capToolResult(await def.execute(args as never, ctx));
       },
     });
   }

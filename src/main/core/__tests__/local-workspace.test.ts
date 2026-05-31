@@ -127,6 +127,20 @@ describe("LocalWorkspace", () => {
       const result = await promise;
       expect(result.exitCode).toBe(130);
     });
+
+    it("clamps large output to head+tail and flags outputTruncated", async () => {
+      // 40k chars + a tail marker → over the 32k budget, so the middle is
+      // dropped but the head ('A') and tail ('TAILMARKER') both survive.
+      const result = await ws.exec.run(
+        `node -e "process.stdout.write('A'.repeat(40000) + 'TAILMARKER')"`,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.outputTruncated).toBe(true);
+      expect(result.stdout.length).toBeLessThan(40000);
+      expect(result.stdout.startsWith("A")).toBe(true);
+      expect(result.stdout).toContain("[truncated");
+      expect(result.stdout.endsWith("TAILMARKER")).toBe(true);
+    });
   });
 
   describe("identity", () => {

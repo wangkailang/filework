@@ -469,6 +469,11 @@ type RootTranslation = {
 	 * R​u​n​ ​C​o​m​m​a​n​d
 	 */
 	toolName_runCommand: string
+	toolName_webSearch: string
+	toolName_webFetch: string
+	toolName_webFetchRendered: string
+	toolName_webScrape: string
+	toolName_youtubeTranscript: string
 	/**
 	 * {​0​}​ ​l​i​n​e​s
 	 * @param {number} 0
@@ -1676,6 +1681,11 @@ export type TranslationFunctions = {
 	 * Run Command
 	 */
 	toolName_runCommand: () => LocalizedString
+	toolName_webSearch: () => LocalizedString
+	toolName_webFetch: () => LocalizedString
+	toolName_webFetchRendered: () => LocalizedString
+	toolName_webScrape: () => LocalizedString
+	toolName_youtubeTranscript: () => LocalizedString
 	/**
 	 * {0} lines
 	 */

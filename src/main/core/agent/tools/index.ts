@@ -16,7 +16,7 @@
 import path from "node:path";
 import { z } from "zod/v4";
 
-import { resolveWritableRoots } from "../../sandbox";
+import { isSandboxEffective, resolveWritableRoots } from "../../sandbox";
 import type { SandboxConfig, SandboxPolicy } from "../../sandbox/types";
 import type { Workspace } from "../../workspace/types";
 import { computeWriteFilePreview } from "../preview/write-file";
@@ -26,7 +26,11 @@ import {
   spawnBackgroundShell,
 } from "../shells";
 import type { ToolContext, ToolDefinition } from "../tool-registry";
-import { classifyCommand, parseTestStats } from "./command-classify";
+import {
+  classifyCommand,
+  isDeliverableCommand,
+  parseTestStats,
+} from "./command-classify";
 
 // ---------------------------------------------------------------------------
 // Optional deps for incremental scanning (wired in PR 2)
@@ -439,9 +443,30 @@ function runCommandTool(
         commandKind === "test"
           ? parseTestStats(result.stdout, result.stderr)
           : undefined;
+      // Sandbox blocks outbound network by default; a failing curl/wget/git/
+      // package-manager command then dies with a connection error (curl exit
+      // 7). Tell the model the real cause + the fix instead of leaving it to
+      // guess from a bare non-zero exit.
+      const networkBlocked =
+        policy != null &&
+        isSandboxEffective(policy.mode) &&
+        !policy.allowNetwork;
+      const usesNetwork =
+        /\b(curl|wget|git\s+(clone|fetch|pull|push)|npm|pnpm|yarn|bun|pip3?|brew)\b/.test(
+          args.command,
+        );
+      const hint =
+        networkBlocked &&
+        usesNetwork &&
+        typeof result.exitCode === "number" &&
+        result.exitCode !== 0
+          ? "Likely blocked by the sandbox's no-network policy (curl exit 7 = could not connect). To go online, retry the SAME command with escalatePermissions:true — it prompts for approval, then runs outside the sandbox."
+          : undefined;
       return {
         ...result,
         commandKind,
+        deliverable: isDeliverableCommand(args.command),
+        ...(hint ? { hint } : {}),
         ...(testStats ? { testStats } : {}),
       };
     },
@@ -487,7 +512,7 @@ const directoryStatsTool: ToolDefinition<
 > = {
   name: "directoryStats",
   description:
-    "Get statistics about a directory (file count, size, extensions)",
+    "Count files and total size by extension (each type returns { count, totalSize in bytes }) plus overall totals. Use this for any 'count / size by type' aggregation — never tally a listDirectory dump by hand.",
   safety: "safe",
   inputSchema: directoryStatsSchema,
   execute: async (args, ctx) => {
@@ -496,7 +521,9 @@ const directoryStatsTool: ToolDefinition<
     let totalFiles = 0;
     let totalDirs = 0;
     let totalSize = 0;
-    const extensions: Record<string, number> = {};
+    // Per-extension count AND size, so the model relays a finished table
+    // instead of hand-summing sizes by type (the step it gets wrong).
+    const extensions: Record<string, { count: number; totalSize: number }> = {};
     let scanned = 0;
     for (const entry of entries) {
       if (scanned >= args.maxEntries) break;
@@ -507,7 +534,10 @@ const directoryStatsTool: ToolDefinition<
         totalFiles++;
         totalSize += entry.size;
         const ext = entry.extension || "(no ext)";
-        extensions[ext] = (extensions[ext] || 0) + 1;
+        extensions[ext] ??= { count: 0, totalSize: 0 };
+        const bucket = extensions[ext];
+        bucket.count++;
+        bucket.totalSize += entry.size;
       }
     }
     return {

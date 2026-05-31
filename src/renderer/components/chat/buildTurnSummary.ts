@@ -129,6 +129,11 @@ function collectCommands(toolParts: ToolPart[]): TurnSummaryCommand[] {
       r.commandKind === "test" || r.commandKind === "build"
         ? r.commandKind
         : "generic";
+    // Only genuine deliverables belong in the card. Tests/builds are kept as
+    // a verification signal; generic commands only if they changed the
+    // filesystem (`deliverable`). Read-only inspections (du, find | while ...
+    // stat, compute scripts) are scaffolding, not deliverables — they're hidden.
+    if (kind === "generic" && r.deliverable !== true) continue;
     const entry: TurnSummaryCommand = { command, exitCode, kind };
     if (
       kind === "test" &&
