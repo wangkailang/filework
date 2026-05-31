@@ -19,8 +19,8 @@ import { randomUUID } from "node:crypto";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel, ModelMessage, Tool } from "ai";
 import { stepCountIs, streamText } from "ai";
-
 import type { Workspace } from "../workspace/types";
+import { compactToolResults } from "./compact-tool-results";
 import type {
   AgentEndStatus,
   AgentEvent,
@@ -242,6 +242,13 @@ export class AgentLoop {
         stopWhen: stepCountIs(this.cfg.maxStepsPerTurn ?? 20),
         system: this.cfg.systemPrompt,
         messages,
+        // Shrink older tool results before each internal step so a big
+        // webFetch/runCommand result isn't re-sent at full size every step
+        // (the input-token multiplier). Latest result stays intact.
+        prepareStep: ({ messages: stepMessages }) => {
+          const compacted = compactToolResults(stepMessages);
+          return compacted ? { messages: compacted } : {};
+        },
         abortSignal: this.cfg.signal,
         providerOptions: this.cfg.providerOptions,
         ...(this.cfg.temperature !== undefined && {

@@ -56,6 +56,8 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** True when stdout/stderr was clamped (head+tail kept) to bound context. */
+  outputTruncated?: boolean;
 }
 
 export interface FileStat {
