@@ -341,7 +341,8 @@ export const safeTools: Record<string, Tool> = {
             const s = await stat(fullPath);
             totalSize += s.size;
             const ext = extname(entry.name) || "(no ext)";
-            const bucket = (extensions[ext] ??= { count: 0, totalSize: 0 });
+            extensions[ext] ??= { count: 0, totalSize: 0 };
+            const bucket = extensions[ext];
             bucket.count++;
             bucket.totalSize += s.size;
           }

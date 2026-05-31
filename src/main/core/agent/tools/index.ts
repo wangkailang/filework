@@ -534,7 +534,8 @@ const directoryStatsTool: ToolDefinition<
         totalFiles++;
         totalSize += entry.size;
         const ext = entry.extension || "(no ext)";
-        const bucket = (extensions[ext] ??= { count: 0, totalSize: 0 });
+        extensions[ext] ??= { count: 0, totalSize: 0 };
+        const bucket = extensions[ext];
         bucket.count++;
         bucket.totalSize += entry.size;
       }
