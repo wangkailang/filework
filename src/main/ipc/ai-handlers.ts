@@ -65,6 +65,7 @@ import { getModelAndAdapterByConfigId } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
+  awaitPlanGate,
   cleanupTask,
   drainClarificationResolver,
   manualStopFlags,
@@ -570,6 +571,12 @@ const handleTaskExecution = async (
         toolCallId,
       }),
       beforeToolCall,
+      // Block any tool while this task's draft plan awaits approval; resolves
+      // immediately when no plan is pending.
+      planGate: async () => {
+        const gate = awaitPlanGate(id);
+        return gate ? await gate : true;
+      },
     });
     const agentTools = { ...registryTools, ...skillTools };
 

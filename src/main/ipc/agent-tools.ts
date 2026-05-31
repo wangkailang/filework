@@ -45,6 +45,7 @@ import {
   makeInlinePlanId,
   pendingClarifications,
   pendingPlanApprovals,
+  registerPlanGate,
 } from "./ai-task-control";
 import { buildGitRunCommandProtocol } from "./system-prompt";
 
@@ -293,7 +294,7 @@ const createPlanTool = (
     // First call: pause until user approves or rejects via ai:approvePlan
     // / ai:rejectPlan. cleanupTask / stopTaskExecution also resolve this
     // with `approved=false` so the Promise never leaks.
-    return new Promise<{
+    const approval = new Promise<{
       recorded: boolean;
       approved: boolean;
       stepCount: number;
@@ -308,6 +309,18 @@ const createPlanTool = (
         }
       });
     });
+    // Gate every other tool of this task on the same approval, so nothing
+    // runs while the plan is still a draft. With parallel tool calls disabled
+    // (see provider adapters) createPlan is alone in its step, so this gate is
+    // race-free for those providers and best-effort otherwise.
+    registerPlanGate(
+      taskId,
+      approval.then(
+        () => true,
+        () => false,
+      ),
+    );
+    return approval;
   },
 });
 

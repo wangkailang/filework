@@ -622,8 +622,16 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
   const renderToolGroup = (unit: ToolGroupUnit) => {
     const { items, toolName, toolCount } = unit;
     const label = toolLabels[toolName] || toolName;
-    const summary = LL.tool_summary_group_label(toolCount, label);
     const head = items.find((p) => p.type === "tool") as ToolPart | undefined;
+    // Prefer a tool-specific group summary (e.g. webSearch lists the queries)
+    // over the generic "N 个 <label>", which just repeats the header label.
+    const presenter = toolPresenters[toolName];
+    const groupSummary = presenter?.groupSummary?.(
+      items.filter((p): p is ToolPart => p.type === "tool").map((p) => p.args),
+      { LL, workspacePath, toolCallId: head?.toolCallId ?? toolName },
+    );
+    const summary =
+      groupSummary ?? LL.tool_summary_group_label(toolCount, label);
     let groupReasoningIdx = 0;
     return (
       <Tool key={`group-${head?.toolCallId ?? toolName}`} defaultOpen={false}>
@@ -793,8 +801,20 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             return !(awaiting && pendingBatchToolCallIds.has(tp.toolCallId));
           });
 
+    // While a plan is still a draft awaiting「开始执行」, hide any tool cards
+    // in the same message. Models on endpoints that ignore
+    // `parallel_tool_calls` (e.g. MiniMax) emit read-only tools alongside
+    // createPlan in one step; they run before approval but deliver nothing —
+    // showing their cards reads as "executed without approval". They reappear
+    // once the plan is approved (status → executing).
+    const hasDraftPlan = parts.some(
+      (p) =>
+        p.type === "plan" && (p as PlanMessagePart).plan.status === "draft",
+    );
+
     return groupConsecutiveTools(visibleParts).map((part) => {
       if (part.type === "tool-group") {
+        if (hasDraftPlan) return null;
         return renderToolGroup(part);
       }
       if (part.type === "reasoning") {
@@ -817,6 +837,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         );
       }
       if (part.type === "tool") {
+        if (hasDraftPlan) return null;
         return renderToolPart(part);
       }
       if (part.type === "plan") {
@@ -1088,7 +1109,11 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                       p.approval?.state === "approval-requested") ||
                     (p.type === "batch-approval" &&
                       p.state === "approval-requested") ||
-                    (p.type === "clarification" && !p.answeredOption),
+                    (p.type === "clarification" && !p.answeredOption) ||
+                    // A draft plan blocks the loop on「开始执行」— the agent
+                    // isn't generating, so don't show「正在生成」.
+                    (p.type === "plan" &&
+                      (p as PlanMessagePart).plan.status === "draft"),
                 );
                 const lastPart = parts[parts.length - 1];
                 const lastPartLen =

@@ -69,6 +69,30 @@ export const drainPlanResolver = (
 };
 
 /**
+ * Plan gate: while a draft `createPlan` awaits approval, every OTHER tool of
+ * the same task awaits this promise (resolves `true` on approve, `false` on
+ * reject). createPlan registers it when it suspends; the entry self-clears
+ * once settled. `awaitPlanGate` returns null when no plan is pending, so the
+ * common path adds no latency.
+ */
+const planApprovalGates = new Map<string, Promise<boolean>>();
+
+export const registerPlanGate = (
+  taskId: string,
+  gate: Promise<boolean>,
+): void => {
+  planApprovalGates.set(taskId, gate);
+  void gate.finally(() => {
+    if (planApprovalGates.get(taskId) === gate) {
+      planApprovalGates.delete(taskId);
+    }
+  });
+};
+
+export const awaitPlanGate = (taskId: string): Promise<boolean> | null =>
+  planApprovalGates.get(taskId) ?? null;
+
+/**
  * Pending `askClarification` tool calls keyed by a per-call UUID
  * (`clarificationId`), not by taskId. Keying by taskId let a concurrent
  * second clarification overwrite the first resolver via Map.set and the

@@ -461,7 +461,13 @@ export const PlanViewer = ({
 
       {/* Steps */}
       <div className="px-3 py-2 space-y-1.5">
-        {plan.steps.map((step) => {
+        {plan.steps.map((rawStep) => {
+          // A draft plan hasn't been approved yet — never show a step as
+          // running/done even if the model pre-set a status. Force pending so
+          // the card reflects "nothing has started".
+          const step = isDraft
+            ? { ...rawStep, status: "pending" as const }
+            : rawStep;
           const hasSubSteps = !!(step.subSteps && step.subSteps.length > 0);
           const stepFailed =
             step.status === "failed" || step.status === "skipped";

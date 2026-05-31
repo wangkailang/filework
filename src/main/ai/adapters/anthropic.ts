@@ -35,6 +35,9 @@ export class AnthropicAdapter implements ProviderAdapter {
     return {
       anthropic: {
         cacheControl: { type: "ephemeral" as const },
+        // See OpenAIAdapter: serialize tool calls so `createPlan`'s
+        // await-for-approval halts the loop instead of running siblings.
+        disableParallelToolUse: true,
       },
     };
   }
