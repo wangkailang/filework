@@ -4,6 +4,7 @@
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import type { LanguageModel } from "ai";
+import { getProviderFetch } from "../provider-fetch";
 import {
   type CacheMetrics,
   NO_CACHE_METRICS,
@@ -19,6 +20,8 @@ export class DeepSeekAdapter implements ProviderAdapter {
     const deepseek = createDeepSeek({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
+      // See provider-fetch.ts — per-host proxy-aware fetch set at bootstrap.
+      fetch: getProviderFetch(),
     });
     return deepseek(config.model);
   }

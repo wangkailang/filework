@@ -19,12 +19,14 @@ import { z } from "zod/v4";
 import { resolveWritableRoots } from "../../sandbox";
 import type { SandboxConfig, SandboxPolicy } from "../../sandbox/types";
 import type { Workspace } from "../../workspace/types";
+import { computeWriteFilePreview } from "../preview/write-file";
 import {
   killShell as killShellById,
   readShell,
   spawnBackgroundShell,
 } from "../shells";
 import type { ToolContext, ToolDefinition } from "../tool-registry";
+import { classifyCommand, parseTestStats } from "./command-classify";
 
 // ---------------------------------------------------------------------------
 // Optional deps for incremental scanning (wired in PR 2)
@@ -283,15 +285,45 @@ const writeFileTool: ToolDefinition<
 > = {
   name: "writeFile",
   description:
-    "Write content to a file (creates or overwrites). Requires user approval.",
+    "Write content to a file (creates or overwrites). Requires user approval. The new content goes ONLY in the `content` argument — after the call, report just the path and the returned diff stats (added/removed lines); do NOT repeat the file's contents in your chat reply.",
   safety: "destructive",
   inputSchema: writeFileSchema,
   execute: async (args, ctx) => {
     const rel = await resolveRel(ctx.workspace, args.path);
+    // Compute the diff against the pre-image *before* overwriting, so the
+    // turn summary reads authoritative +/- counts off the result instead
+    // of re-diffing in the renderer. Best-effort: a preview failure must
+    // never block the actual write.
+    const diffStat = await computeWriteDiffStat(args, ctx).catch(() => null);
     await ctx.workspace.fs.writeFile(rel, args.content);
-    return { success: true, path: args.path };
+    return {
+      success: true,
+      path: args.path,
+      ...(diffStat ? { diffStat } : {}),
+    };
   },
 };
+
+/** Pre-image diff stat for `writeFile`, derived from the shared preview. */
+async function computeWriteDiffStat(
+  args: { path: string; content: string },
+  ctx: ToolContext,
+): Promise<{
+  added: number;
+  removed: number;
+  isNew: boolean;
+  isBinary: boolean;
+  truncated: boolean;
+}> {
+  const preview = await computeWriteFilePreview(args, ctx.workspace);
+  return {
+    added: preview.added,
+    removed: preview.removed,
+    isNew: !preview.oldExists,
+    isBinary: preview.isBinary,
+    truncated: preview.truncated != null,
+  };
+}
 
 const moveFileTool: ToolDefinition<z.infer<typeof moveFileSchema>, unknown> = {
   name: "moveFile",
@@ -395,11 +427,23 @@ function runCommandTool(
           sandbox: policy,
         });
       }
-      return ctx.workspace.exec.run(args.command, {
+      const result = await ctx.workspace.exec.run(args.command, {
         cwd: cwdRel,
         signal: ctx.signal,
         sandbox: policy,
       });
+      // Attach backend-derived facts so the turn summary (and any other
+      // consumer) doesn't have to re-classify / re-parse stdout in the UI.
+      const commandKind = classifyCommand(args.command);
+      const testStats =
+        commandKind === "test"
+          ? parseTestStats(result.stdout, result.stderr)
+          : undefined;
+      return {
+        ...result,
+        commandKind,
+        ...(testStats ? { testStats } : {}),
+      };
     },
   };
 }

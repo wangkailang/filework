@@ -2,6 +2,7 @@ import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { PlanView } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
+import { buildTurnSummary } from "./buildTurnSummary";
 import { contentFromParts } from "./helpers";
 import type { SkillApprovalData } from "./SkillApprovalDialog";
 import type {
@@ -575,30 +576,32 @@ export function useStreamSubscription({
       window.filework.usage
         .getTaskUsage(id)
         .then((usage: UsageInfo | null) => {
-          if (usage && usage.totalTokens != null) {
-            setLastUsage(usage);
-            setMessages((prev) => {
-              const idx = prev.findIndex((m) => m.id === assistantId);
-              if (idx === -1) return prev;
-              const updated = [...prev];
-              const msg = updated[idx];
-              const usagePart: UsagePart = { type: "usage", ...usage };
-              const newParts: MessagePart[] = [...(msg.parts ?? []), usagePart];
-              updated[idx] = { ...msg, parts: newParts };
-              if (activeSessionIdRef.current) {
-                debouncedSave(updated, activeSessionIdRef.current);
-              }
-              return updated;
-            });
-          } else {
-            setMessages((prev) => {
-              streamAssistantIdRef.current = null;
-              if (activeSessionIdRef.current) {
-                debouncedSave(prev, activeSessionIdRef.current);
-              }
-              return prev;
-            });
-          }
+          const hasUsage = usage != null && usage.totalTokens != null;
+          if (hasUsage && usage) setLastUsage(usage);
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            const msg = updated[idx];
+            const baseParts = msg.parts ?? [];
+            // Machine-generated turn deliverable, aggregated from the (by now
+            // normalized) tool parts and inserted just before the usage row.
+            // Null for pure Q&A turns — nothing to append.
+            const summary = buildTurnSummary(baseParts);
+            const appended: MessagePart[] = [
+              ...(summary ? [summary] : []),
+              ...(hasUsage && usage
+                ? [{ type: "usage", ...usage } as UsagePart]
+                : []),
+            ];
+            if (appended.length > 0) {
+              updated[idx] = { ...msg, parts: [...baseParts, ...appended] };
+            }
+            if (activeSessionIdRef.current) {
+              debouncedSave(updated, activeSessionIdRef.current);
+            }
+            return updated;
+          });
           streamAssistantIdRef.current = null;
         })
         .catch(() => {

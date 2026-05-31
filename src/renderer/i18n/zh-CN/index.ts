@@ -90,6 +90,8 @@ const zhCN: Translation = {
   chat_retrying: "正在重试 ({0}/{1})...",
   chat_planGenerating: "正在分析任务，生成执行计划...",
   chat_thinking: "思考中...",
+  chat_generating: "正在生成",
+  chat_generatingLong: "正在生成较长内容",
   chat_forkHere: "从此处分支",
   chat_inputPlaceholder: "告诉我你想做什么... (Enter 发送)",
 

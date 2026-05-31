@@ -9,6 +9,7 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
+import { getProviderFetch } from "../provider-fetch";
 import {
   type CacheMetrics,
   NO_CACHE_METRICS,
@@ -23,6 +24,9 @@ export class AnthropicAdapter implements ProviderAdapter {
     const anthropic = createAnthropic({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
+      // Per-host proxy-aware fetch (set at bootstrap) — avoids the global
+      // env proxy that can buffer streaming responses. See provider-fetch.ts.
+      fetch: getProviderFetch(),
     });
     return anthropic(config.model);
   }

@@ -97,6 +97,10 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 ### Goal-Driven Execution
 - After completing a task, briefly verify the result. State what was done and what was verified.
 
+### Output Discipline
+- After writing or editing a file, do NOT paste the file's contents back into your reply — the user already sees the change as a diff in the UI, and the \`writeFile\` result gives you the added/removed line counts. Report only the path and a one-line summary of what changed.
+- Never wrap a whole document you just wrote (or are about to write) in a fenced code block in the chat. Reserve code fences for short, illustrative snippets — a few lines, not a whole file. Dumping a full document inline floods the chat and breaks Markdown rendering when the document itself contains code fences.
+
 ## Project Constraints
 - Use absolute paths based on the workspace path provided.
 - Respond in the same language as the user's prompt.`;

@@ -23,6 +23,7 @@ config({ path: join(__dirname, "../../.env") });
 
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
+import { setProviderFetch } from "./ai/provider-fetch";
 import { killAllShells } from "./core/agent/shells";
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
@@ -196,6 +197,10 @@ app.whenReady().then(async () => {
   const proxyAwareFetch = createProxyAwareFetch({
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
   });
+  // Route AI SDK model traffic through the same per-host fetch — the global
+  // env proxy can buffer streaming responses; per-host PAC resolution may
+  // take a non-buffering path for the API host. See provider-fetch.ts.
+  setProviderFetch(proxyAwareFetch);
 
   // Same per-host PAC source, exposed as a raw resolver for spawned
   // `git` children. `git-proxy-env.ts` consumes Chromium's PAC output

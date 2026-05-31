@@ -100,6 +100,8 @@ const en: BaseTranslation = {
   chat_retrying: "Retrying ({0:string}/{1:string})...",
   chat_planGenerating: "Analyzing task, generating plan...",
   chat_thinking: "Thinking...",
+  chat_generating: "Generating",
+  chat_generatingLong: "Generating a long response",
   chat_forkHere: "Fork from here",
   chat_inputPlaceholder: "Tell me what you want to do... (Enter to send)",
 

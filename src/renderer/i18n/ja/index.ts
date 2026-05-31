@@ -92,6 +92,8 @@ const ja: Translation = {
   chat_retrying: "リトライ中 ({0}/{1})...",
   chat_planGenerating: "タスクを分析し、実行計画を生成中...",
   chat_thinking: "考え中...",
+  chat_generating: "生成中",
+  chat_generatingLong: "長めの内容を生成中",
   chat_forkHere: "ここから分岐",
   chat_inputPlaceholder: "やりたいことを教えてください... (Enter で送信)",
 

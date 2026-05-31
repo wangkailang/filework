@@ -160,6 +160,17 @@ export const App = () => {
     return () => window.removeEventListener("filework:open-settings", handler);
   }, []);
 
+  // 回合交付物卡片点击文件 → 在 ContextDock 预览(同 open-settings 的事件模式,
+  // 避免把 openFileInDock 一路透传到 ChatPanel)。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (path) openFileInDock(path);
+    };
+    window.addEventListener("filework:open-file", handler);
+    return () => window.removeEventListener("filework:open-file", handler);
+  }, [openFileInDock]);
+
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
       if (ref.kind === "local") {
