@@ -144,7 +144,9 @@ const runCommandSchema = z.object({
   cwd: z
     .string()
     .optional()
-    .describe("Working directory (defaults to workspace root)"),
+    .describe(
+      "Working directory. Accepts any absolute path, including locations outside the workspace (pair with escalatePermissions for those). Defaults to the workspace root. Use this instead of `cd <dir> &&` in the command.",
+    ),
   runInBackground: z
     .boolean()
     .optional()
@@ -464,6 +466,9 @@ function runCommandTool(
           : undefined;
       return {
         ...result,
+        // 非零退出码即工具失败:agent-loop 与 UI 都以 `success` 判定成败,
+        // 而命令"跑完但退出非零"不抛异常,缺了这一行会停在绿色"完成"。
+        success: result.exitCode === 0,
         commandKind,
         deliverable: isDeliverableCommand(args.command),
         ...(hint ? { hint } : {}),
