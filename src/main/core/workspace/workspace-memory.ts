@@ -114,6 +114,15 @@ const SECRET_PATTERNS: RegExp[] = [
 const SECRET_KEYWORD =
   /\b(?:api[_-]?key|access[_-]?key|secret|passwd|password|credential|token|bearer|auth|key)\b|密钥|秘钥|密匙|密码|口令|凭据|凭证|令牌|私钥/i;
 
+/**
+ * 候选 token 切分:除空白外,也按 CJK 文字、CJK 标点、全/半角形切分。
+ * 中文场景里密钥常与「密钥：」这类全角冒号(U+FF1A)或汉字紧贴(无空格),
+ * 只按 \s+ 切会把 "API密钥：tp-xxxx" 粘成一个含汉字的 token,使其过不了
+ * looksLikeSecretToken 的 ^[A-Za-z0-9_-]+$ 检测而漏放。ASCII 的 / . @ 不在此
+ * 切分集合内 → URL / 路径仍整体保留,继续被 looksLikeSecretToken 排除。
+ */
+const SECRET_TOKEN_SPLIT = /[\s　-〿＀-￯一-鿿]+/;
+
 /** 不含 token 关键词的关键词上限长度 —— 独立高熵 token 触发的最小长度。 */
 const STANDALONE_TOKEN_LEN = 32;
 
@@ -133,7 +142,7 @@ function looksLikeSecretToken(tok: string): boolean {
 export function containsSecret(text: string): boolean {
   if (SECRET_PATTERNS.some((re) => re.test(text))) return true;
   const hasKeyword = SECRET_KEYWORD.test(text);
-  for (const raw of text.split(/\s+/)) {
+  for (const raw of text.split(SECRET_TOKEN_SPLIT)) {
     // 去掉首尾包裹的引号 / 括号 / 标点,保留中间结构。
     const tok = raw.replace(/^["'`(<[]+|["'`)>\].,;:!?]+$/g, "");
     if (!looksLikeSecretToken(tok)) continue;

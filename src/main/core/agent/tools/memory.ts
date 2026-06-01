@@ -84,9 +84,19 @@ export const updateMemoryTool: ToolDefinition<
         text: args.text,
       });
     } catch (err) {
-      // 敏感信息被存储层拦截:不持久化,告知模型原因(勿在记忆里存密钥)。
+      // 敏感信息被存储层拦截:不持久化。除了原因,还回传一条祈使式指令 ——
+      // 模型曾无视 success:false 谎称「已记住」并回显密钥,故在结果里直接规定
+      // 如何对用户措辞:必须说没存、不得谎称已存、不得回显密钥原文。
       if (err instanceof MemorySecretError) {
-        return { success: false, action: "rejected", reason: err.message };
+        return {
+          success: false,
+          action: "rejected",
+          reason: err.message,
+          tellUser:
+            "It was NOT stored because it looks like a secret/credential, " +
+            "which must never be saved to memory. Tell the user you did not save it. " +
+            "Do NOT claim it was saved, and do NOT echo the secret value back.",
+        };
       }
       throw err;
     }
