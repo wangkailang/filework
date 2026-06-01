@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { CredentialKind } from "../shared/credentials";
 
+/** 工作目录记忆的单条结构化条目(与主进程 MemoryEntry 同形)。 */
+type WorkspaceMemoryEntry = {
+  key: string;
+  category: "preference" | "project" | "convention" | "reference";
+  text: string;
+  updatedAt: string;
+};
+
 /**
  * Expose safe IPC methods to the renderer process via contextBridge.
  * This is the ONLY bridge between main and renderer.
@@ -799,12 +807,42 @@ const api = {
     ): Promise<{
       agentMemory: string | null;
       agentMemoryPath: string;
+      userMemory: string | null;
+      userMemoryPath: string;
+      workspaceEntries: WorkspaceMemoryEntry[];
+      userEntries: WorkspaceMemoryEntry[];
       humanFile: string | null;
       humanContent: string | null;
       combined: string | null;
     } | null> => ipcRenderer.invoke("workspace-memory:get", { workspacePath }),
     clear: (workspacePath: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke("workspace-memory:clear", { workspacePath }),
+    clearUser: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("workspace-memory:clear-user"),
+    forget: (
+      workspacePath: string,
+      scope: "user" | "workspace",
+      key: string,
+    ): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("workspace-memory:forget", {
+        workspacePath,
+        scope,
+        key,
+      }),
+    update: (
+      workspacePath: string,
+      scope: "user" | "workspace",
+      key: string,
+      category: "preference" | "project" | "convention" | "reference",
+      text: string,
+    ): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("workspace-memory:update", {
+        workspacePath,
+        scope,
+        key,
+        category,
+        text,
+      }),
   },
 
   // Task trace (durable execution trace)

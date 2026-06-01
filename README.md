@@ -24,6 +24,24 @@
 - Rust + napi-rs (`@filework/native` 原生插件，承担 IO/CPU 密集的文件系统操作)
 - electron-builder (macOS 打包)
 
+## Architecture
+
+分层架构,数据流自上而下:UI → 唯一的 preload 桥 → 主进程 IPC → Agent 内核(工具注册表 + 审批门控)→ 平台服务 → 外部。
+
+**分层说明**
+
+- **① Renderer** — React + Tailwind 的纯 UI:对话区(回合交付 / 审批门控)、计划查看器、文件树与 Dock(预览 / diff / 网页)、设置(LLM 渠道、Workspace Memory 面板)。
+- **② Preload** — `contextBridge` 暴露 `window.filework`,是主 ↔ 渲染之间**唯一**的桥,渲染层无 Node 权限。
+- **③ Main / IPC** — 按域拆分的 handler:AI 与计划执行、文件 / Git / GitHub / GitLab、MCP、工作区记忆、配置与凭据。
+- **④ Agent Core** — 智能体内核:
+  - `agent-loop` 驱动「模型 → 工具调用 → 观测」循环,内置重试、反思门控(reflection-gate)、工具结果压缩 / 截断以控上下文。
+  - `tool-registry` 统一注册工具并施加**审批门控**(敏感操作执行前需用户确认)。
+  - **Tools** 是能力面:内置工具(读写文件、`runCommand`、目录统计)、**Memory 工具**(`updateMemory` 按 key upsert / `clearMemory` 分作用域清空,写入前做敏感信息拦截)、Web 工具(搜索 / 抓取)、技能执行(`run-skill`)、以及把任意 **MCP Server** 的工具桥接进来的 **MCP bridge**。
+- **⑤ Platform / Services** — 工作区抽象(本地 / GitHub / GitLab)、内核沙箱(macOS seatbelt)、会话持久化(JSONL)、SQLite(Drizzle)、多后端 AI 适配层(Vercel AI SDK)、Rust 原生插件,以及**记忆存储**(`~/.filework/workspace-memory/*.json`,区分 `user` 跨工作区偏好与 `workspace` 项目事实)。
+- **⑥ External** — 唯一的外部依赖面:LLM 厂商 API、MCP 服务器、Git 远端、本地文件系统。
+
+> **记忆系统**:Agent 通过 Memory 工具把可复用事实写成结构化条目 `{ key, scope, category, text }`,同一 `key` 复用即原地更新(根治重复);读取时合并「人写 AGENTS.md / CLAUDE.md(只读)」+「机器记忆」注入系统提示。详见 `src/main/core/workspace/workspace-memory.ts`。
+
 ## Development
 
 > 前置依赖:Node.js + pnpm，以及 **Rust 工具链**(`rustup`)。`pnpm install`
@@ -47,17 +65,24 @@ pnpm package
 
 ```
 src/
-├── main/           # Electron main process
-│   ├── db/         # SQLite database (Drizzle ORM)
-│   ├── native/     # @filework/native 的 TS 封装(懒加载原生插件)
-│   └── ipc/        # IPC handlers (file ops, AI, settings)
-├── preload/        # Context bridge (main ↔ renderer)
-└── renderer/       # React UI
-    ├── components/ # UI components
-    │   ├── chat/   # Chat interface
-    │   ├── layout/ # Sidebar, titlebar
-    │   └── onboarding/ # Welcome screen
-    └── global.css  # Design tokens
+├── main/                 # Electron 主进程
+│   ├── core/             # 与 Electron 解耦的内核
+│   │   ├── agent/        # Agent 内核
+│   │   │   ├── agent-loop.ts      # 模型 → 工具 → 观测 循环
+│   │   │   ├── tool-registry.ts   # 工具注册 + 审批门控
+│   │   │   └── tools/             # 内置工具(file ops / runCommand / memory / web / run-skill)
+│   │   ├── workspace/    # 工作区抽象(local / github / gitlab)+ workspace-memory(机器记忆)
+│   │   ├── session/      # 会话持久化(JSONL store)
+│   │   └── sandbox/      # macOS seatbelt 内核沙箱
+│   ├── mcp/              # MCP 客户端 + tool-bridge(把 MCP 工具桥接给 Agent)
+│   ├── ai/               # AI 适配层(adapters)、上下文压缩、检索等
+│   ├── db/               # SQLite (Drizzle ORM)
+│   ├── native/           # @filework/native 的 TS 封装(懒加载原生插件)
+│   └── ipc/              # IPC handlers(ai / plan / file / git / mcp / workspace-memory / settings …)
+├── preload/              # Context bridge(main ↔ renderer 唯一桥)
+└── renderer/             # React UI
+    ├── components/       # chat / layout / dock / settings / onboarding
+    └── global.css        # Design tokens
 
 native/
 └── filework-native/  # Rust 原生插件 (napi-rs),处理 IO/CPU 密集操作

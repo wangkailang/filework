@@ -1,20 +1,26 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { workspaceKey } from "../../session/workspace-key";
 import { LocalWorkspace } from "../local-workspace";
 import {
+  clearUserMemory,
+  clearWorkspaceMemory,
+  containsSecret,
+  forgetMemory,
+  getWorkspaceMemoryInfo,
   readWorkspaceMemory,
+  rememberMemory,
   setWorkspaceMemoryRoot,
-  updateWorkspaceMemory,
 } from "../workspace-memory";
 
 // 历史托管块标记(仅迁移测试用,故在测试内内联,不从模块导出)。
 const LEGACY_START = "<!-- filework:memory:start -->";
 const LEGACY_END = "<!-- filework:memory:end -->";
 
-describe("workspace-memory (zero repo footprint)", () => {
+describe("workspace-memory (structured entries, zero repo footprint)", () => {
   let root: string;
   let memRoot: string;
   let ws: LocalWorkspace;
@@ -49,78 +55,237 @@ describe("workspace-memory (zero repo footprint)", () => {
 
     it("merges human instructions and agent memory", async () => {
       await ws.fs.writeFile("AGENTS.md", "# Human rules\n- be nice");
-      await updateWorkspaceMemory(ws, "- learned: uses pnpm");
+      await rememberMemory(ws, {
+        key: "pm",
+        scope: "workspace",
+        category: "project",
+        text: "uses pnpm",
+      });
       const mem = await readWorkspaceMemory(ws);
       expect(mem).toContain("be nice"); // 人写
-      expect(mem).toContain("learned: uses pnpm"); // 机器
+      expect(mem).toContain("uses pnpm"); // 机器
+    });
+
+    it("renders each entry with its [key] so the agent can update in place", async () => {
+      await rememberMemory(ws, {
+        key: "build-cmd",
+        scope: "workspace",
+        category: "project",
+        text: "pnpm build",
+      });
+      expect(await readWorkspaceMemory(ws)).toContain(
+        "- [build-cmd] pnpm build",
+      );
     });
 
     it("truncates oversized memory with a notice", async () => {
-      await updateWorkspaceMemory(ws, "x".repeat(20_000));
+      await rememberMemory(ws, {
+        key: "big",
+        scope: "workspace",
+        category: "project",
+        text: "x".repeat(20_000),
+      });
       const mem = await readWorkspaceMemory(ws);
       expect(mem).toContain("workspace memory truncated");
       expect((mem ?? "").length).toBeLessThan(20_000);
     });
 
     it("keeps agent memory even when the human file exceeds the budget", async () => {
-      // 大体量人写文件不应把机器记忆挤出上限(否则 saved memory 永不进提示词)。
       await ws.fs.writeFile("AGENTS.md", "H".repeat(9000));
-      await updateWorkspaceMemory(ws, "- agent fact kept");
-      const mem = await readWorkspaceMemory(ws);
-      expect(mem).toContain("- agent fact kept");
+      await rememberMemory(ws, {
+        key: "fact",
+        scope: "workspace",
+        category: "project",
+        text: "agent fact kept",
+      });
+      expect(await readWorkspaceMemory(ws)).toContain("agent fact kept");
     });
   });
 
-  describe("updateWorkspaceMemory — never touches the repo", () => {
+  describe("rememberMemory — never touches the repo", () => {
     it("writes to app data, leaving the workspace untouched (zero footprint)", async () => {
-      await updateWorkspaceMemory(ws, "- uses pnpm");
-      // 仓库里不应凭空出现 AGENTS.md / CLAUDE.md
+      await rememberMemory(ws, {
+        key: "pm",
+        scope: "workspace",
+        category: "project",
+        text: "uses pnpm",
+      });
       expect(await ws.fs.exists("AGENTS.md")).toBe(false);
       expect(await ws.fs.exists("CLAUDE.md")).toBe(false);
-      // 但记忆能被读回
-      expect(await readWorkspaceMemory(ws)).toContain("- uses pnpm");
+      expect(await readWorkspaceMemory(ws)).toContain("uses pnpm");
     });
 
     it("never writes agent memory into a human AGENTS.md", async () => {
       await ws.fs.writeFile("AGENTS.md", "# Human only");
-      await updateWorkspaceMemory(ws, "- learned fact");
+      await rememberMemory(ws, {
+        key: "fact",
+        scope: "workspace",
+        category: "project",
+        text: "learned fact",
+      });
       const agents = (await ws.fs.readFile("AGENTS.md")) as string;
-      expect(agents).toBe("# Human only"); // 原样不动
+      expect(agents).toBe("# Human only");
       expect(agents).not.toContain("learned fact");
     });
+  });
 
-    it("append accumulates; replace overwrites", async () => {
-      await updateWorkspaceMemory(ws, "- one");
-      await updateWorkspaceMemory(ws, "- two");
-      let mem = await readWorkspaceMemory(ws);
-      expect(mem).toContain("- one");
-      expect(mem).toContain("- two");
-
-      await updateWorkspaceMemory(ws, "- only", "replace");
-      mem = await readWorkspaceMemory(ws);
-      expect(mem).toContain("- only");
-      expect(mem).not.toContain("- one");
-    });
-
-    it("dedups identical append content (no unbounded growth)", async () => {
-      await updateWorkspaceMemory(ws, "- dup");
-      await updateWorkspaceMemory(ws, "- dup");
+  describe("upsert by key (no reworded duplicates)", () => {
+    it("same key overwrites in place instead of appending", async () => {
+      await rememberMemory(ws, {
+        key: "pm",
+        scope: "workspace",
+        category: "project",
+        text: "uses pnpm",
+      });
+      await rememberMemory(ws, {
+        key: "pm",
+        scope: "workspace",
+        category: "project",
+        text: "uses pnpm v9",
+      });
       const mem = (await readWorkspaceMemory(ws)) ?? "";
-      expect(mem.split("- dup").length - 1).toBe(1);
+      expect(mem).toContain("uses pnpm v9");
+      // 仍只有一条 pm 记忆
+      expect(mem.split("[pm]").length - 1).toBe(1);
     });
 
-    it("keys memory by workspace path — two dirs are independent", async () => {
+    it("merges a near-duplicate in the same category under a single entry", async () => {
+      await rememberMemory(ws, {
+        key: "lang-a",
+        scope: "user",
+        category: "preference",
+        text: "always reply in chinese",
+      });
+      await rememberMemory(ws, {
+        key: "lang-b",
+        scope: "user",
+        category: "preference",
+        text: "Always reply in Chinese.",
+      });
+      const info = await getWorkspaceMemoryInfo(ws);
+      const lines = (info.userMemory ?? "")
+        .split("\n")
+        .filter((l) => l.startsWith("- "));
+      expect(lines.length).toBe(1); // 近重复被合并
+    });
+
+    it("forget removes the entry by key", async () => {
+      await rememberMemory(ws, {
+        key: "tmp",
+        scope: "workspace",
+        category: "project",
+        text: "to be removed",
+      });
+      await forgetMemory(ws, "workspace", "tmp");
+      expect(await readWorkspaceMemory(ws)).toBeNull();
+    });
+  });
+
+  describe("concurrency safety", () => {
+    it("serializes concurrent writes so no entry is clobbered (lost-update)", async () => {
+      await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          rememberMemory(ws, {
+            key: `k${i}`,
+            scope: "workspace",
+            category: "project",
+            text: `fact ${i}`,
+          }),
+        ),
+      );
+      const info = await getWorkspaceMemoryInfo(ws);
+      expect(info.workspaceEntries.length).toBe(12);
+    });
+  });
+
+  describe("secret guard", () => {
+    it("detects common credential shapes", () => {
+      expect(containsSecret("token is sk-abcdefghijklmnop1234")).toBe(true);
+      expect(containsSecret("use ghp_0123456789abcdefghijABCDEFGHIJ12")).toBe(
+        true,
+      );
+      expect(containsSecret("password=hunter2hunter")).toBe(true);
+      expect(containsSecret("-----BEGIN OPENSSH PRIVATE KEY-----")).toBe(true);
+    });
+
+    it("does not flag ordinary durable facts", () => {
+      expect(containsSecret("uses pnpm and vitest")).toBe(false);
+      expect(containsSecret("回复语言使用中文")).toBe(false);
+    });
+  });
+
+  describe("scopes", () => {
+    it("user-scope memory is shared across workspaces; workspace-scope is not", async () => {
       const root2 = await mkdtemp(path.join(tmpdir(), "fw-mem-ws2-"));
       const ws2 = new LocalWorkspace(root2);
       try {
-        await updateWorkspaceMemory(ws, "- from dir A");
-        await updateWorkspaceMemory(ws2, "- from dir B");
-        expect(await readWorkspaceMemory(ws)).toContain("- from dir A");
-        expect(await readWorkspaceMemory(ws)).not.toContain("- from dir B");
-        expect(await readWorkspaceMemory(ws2)).toContain("- from dir B");
+        await rememberMemory(ws, {
+          key: "reply-style",
+          scope: "user",
+          category: "preference",
+          text: "reply in chinese",
+        });
+        await rememberMemory(ws, {
+          key: "build",
+          scope: "workspace",
+          category: "project",
+          text: "from dir A",
+        });
+        // user 偏好两个工作区都能读到
+        expect(await readWorkspaceMemory(ws)).toContain("reply in chinese");
+        expect(await readWorkspaceMemory(ws2)).toContain("reply in chinese");
+        // workspace 事实只属于 A
+        expect(await readWorkspaceMemory(ws2)).not.toContain("from dir A");
+        expect(await readWorkspaceMemory(ws)).toContain("from dir A");
       } finally {
         await rm(root2, { recursive: true, force: true });
       }
+    });
+
+    it("clearWorkspaceMemory keeps user memory; clearUserMemory keeps workspace memory", async () => {
+      await rememberMemory(ws, {
+        key: "reply-style",
+        scope: "user",
+        category: "preference",
+        text: "reply in chinese",
+      });
+      await rememberMemory(ws, {
+        key: "build",
+        scope: "workspace",
+        category: "project",
+        text: "pnpm build",
+      });
+
+      await clearWorkspaceMemory(ws);
+      const mem = (await readWorkspaceMemory(ws)) ?? "";
+      expect(mem).toContain("reply in chinese"); // user 保留
+      expect(mem).not.toContain("pnpm build"); // workspace 清掉
+
+      await clearUserMemory();
+      expect(await readWorkspaceMemory(ws)).toBeNull(); // user 也清掉
+    });
+  });
+
+  describe("migration of legacy plain-text .md memory", () => {
+    it("quarantines an old <key>.md into a single legacy-notes entry and removes the .md", async () => {
+      const mdPath = path.join(memRoot, `${workspaceKey(root)}.md`);
+      const jsonPath = path.join(memRoot, `${workspaceKey(root)}.json`);
+      await writeFile(mdPath, "- uses pnpm\n- tests in __tests__\n", "utf-8");
+
+      const mem = await readWorkspaceMemory(ws);
+      expect(mem).toContain("uses pnpm");
+      expect(mem).toContain("tests in __tests__");
+
+      // 旧文件被清掉,新结构化文件生成
+      await expect(readFile(mdPath, "utf-8")).rejects.toThrow();
+      const json = JSON.parse(await readFile(jsonPath, "utf-8"));
+      expect(Array.isArray(json)).toBe(true);
+      // 不再逐行伪装成 N 条事实,而是整体收成单条隔离条目
+      expect(json.length).toBe(1);
+      expect(json[0].key).toBe("legacy-notes");
+      expect(json[0].category).toBe("reference");
+      expect(json[0].text).toContain("uses pnpm");
+      expect(json[0].text).toContain("tests in __tests__");
     });
   });
 
@@ -132,13 +297,10 @@ describe("workspace-memory (zero repo footprint)", () => {
       const mem = await readWorkspaceMemory(ws);
       const agentsAfter = (await ws.fs.readFile("AGENTS.md")) as string;
 
-      // AGENTS.md 恢复干净:人写内容保留,块与标记被抹掉
       expect(agentsAfter).toContain("# Top");
       expect(agentsAfter).toContain("# Bottom");
       expect(agentsAfter).not.toContain("filework:memory:start");
       expect(agentsAfter).not.toContain("migrated fact");
-
-      // 记忆迁入机器侧,仍可读回
       expect(mem).toContain("migrated fact");
     });
 
@@ -147,15 +309,6 @@ describe("workspace-memory (zero repo footprint)", () => {
       await readWorkspaceMemory(ws);
       const agents = (await ws.fs.readFile("AGENTS.md")) as string;
       expect(agents).toBe("# Clean human file");
-    });
-
-    it("removes AGENTS.md entirely if it contained only the legacy block", async () => {
-      const block = `${LEGACY_START}\n- solo fact\n${LEGACY_END}`;
-      await ws.fs.writeFile("AGENTS.md", block);
-      const mem = await readWorkspaceMemory(ws);
-      // 原本只有块的文件不应留下空文件
-      expect(await ws.fs.exists("AGENTS.md")).toBe(false);
-      expect(mem).toContain("solo fact");
     });
   });
 });
