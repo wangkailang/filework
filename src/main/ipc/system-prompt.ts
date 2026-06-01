@@ -198,7 +198,7 @@ export const buildWorkspaceMemoryGuidance = (
     "## Workspace Memory (consult before exploring)",
     workspaceMemory.trim(),
     "",
-    "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. If it is stale or wrong, call `updateMemory` to correct it.",
+    "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. Each item is shown as `- [key] fact`. To correct or extend it, call `updateMemory` and REUSE the matching [key] so the entry is updated in place rather than duplicated; use forget=true to drop one.",
   ].join("\n");
 };
 
