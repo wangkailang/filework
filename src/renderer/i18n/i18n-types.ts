@@ -469,10 +469,25 @@ type RootTranslation = {
 	 * R​u​n​ ​C​o​m​m​a​n​d
 	 */
 	toolName_runCommand: string
+	/**
+	 * W​e​b​ ​S​e​a​r​c​h
+	 */
 	toolName_webSearch: string
+	/**
+	 * F​e​t​c​h​ ​P​a​g​e
+	 */
 	toolName_webFetch: string
+	/**
+	 * F​e​t​c​h​ ​(​R​e​n​d​e​r​e​d​)
+	 */
 	toolName_webFetchRendered: string
+	/**
+	 * S​c​r​a​p​e​ ​P​a​g​e
+	 */
 	toolName_webScrape: string
+	/**
+	 * Y​o​u​T​u​b​e​ ​T​r​a​n​s​c​r​i​p​t
+	 */
 	toolName_youtubeTranscript: string
 	/**
 	 * {​0​}​ ​l​i​n​e​s
@@ -781,6 +796,14 @@ type RootTranslation = {
 	 * S​o​u​r​c​e
 	 */
 	preview_viewSource: string
+	/**
+	 * F​u​l​l​s​c​r​e​e​n
+	 */
+	preview_fullscreen: string
+	/**
+	 * E​x​i​t​ ​f​u​l​l​s​c​r​e​e​n
+	 */
+	preview_exitFullscreen: string
 	/**
 	 * L​o​a​d​i​n​g​.​.​.
 	 */
@@ -1681,10 +1704,25 @@ export type TranslationFunctions = {
 	 * Run Command
 	 */
 	toolName_runCommand: () => LocalizedString
+	/**
+	 * Web Search
+	 */
 	toolName_webSearch: () => LocalizedString
+	/**
+	 * Fetch Page
+	 */
 	toolName_webFetch: () => LocalizedString
+	/**
+	 * Fetch (Rendered)
+	 */
 	toolName_webFetchRendered: () => LocalizedString
+	/**
+	 * Scrape Page
+	 */
 	toolName_webScrape: () => LocalizedString
+	/**
+	 * YouTube Transcript
+	 */
 	toolName_youtubeTranscript: () => LocalizedString
 	/**
 	 * {0} lines
@@ -1974,6 +2012,14 @@ export type TranslationFunctions = {
 	 * Source
 	 */
 	preview_viewSource: () => LocalizedString
+	/**
+	 * Fullscreen
+	 */
+	preview_fullscreen: () => LocalizedString
+	/**
+	 * Exit fullscreen
+	 */
+	preview_exitFullscreen: () => LocalizedString
 	/**
 	 * Loading...
 	 */

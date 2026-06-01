@@ -35,9 +35,11 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      "flex w-fit min-w-0 max-w-full flex-col gap-1 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
-      "group-[.is-assistant]:text-foreground",
+      // 用户气泡贴合文字(w-fit);助手满宽(w-full)给一个确定宽度的祖先,
+      // 否则工具卡里 truncate 的长 URL 会反撑 w-fit、省略号永不触发。
+      "flex min-w-0 max-w-full flex-col gap-1 overflow-hidden text-sm",
+      "group-[.is-user]:ml-auto group-[.is-user]:w-fit group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
+      "group-[.is-assistant]:w-full group-[.is-assistant]:text-foreground",
       className,
     )}
     {...props}
@@ -94,6 +96,7 @@ const streamdownControls: ComponentProps<typeof Streamdown>["controls"] = {
 function RoutedAnchor({
   children,
   href,
+  className,
   ...props
 }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   const link = useLinkRouter();
@@ -104,6 +107,11 @@ function RoutedAnchor({
       onClick={link.onClick}
       onAuxClick={link.onAuxClick}
       rel="noopener noreferrer"
+      className={cn(
+        // 主色链接:下划线带 offset、hover 加深;长 URL 可断行不撑破气泡。
+        "cursor-pointer break-words font-medium text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:text-primary/80 hover:decoration-primary/70",
+        className,
+      )}
     >
       {children}
     </a>

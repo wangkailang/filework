@@ -106,6 +106,7 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 
 ## Project Constraints
 - Use absolute paths based on the workspace path provided.
+- To run a command in another directory, pass the cwd argument to runCommand. Do NOT prepend 'cd <dir> &&' to the command — cwd lets the sandbox and approval UI parse where the command runs.
 - Respond in the same language as the user's prompt.`;
 
 /**

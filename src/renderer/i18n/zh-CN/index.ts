@@ -232,6 +232,8 @@ const zhCN: Translation = {
   preview_truncated: "文件过大({0}),仅预览开头部分",
   preview_viewRendered: "预览",
   preview_viewSource: "源码",
+  preview_fullscreen: "全屏",
+  preview_exitFullscreen: "退出全屏",
 
   // Code viewer
   code_loading: "加载中...",

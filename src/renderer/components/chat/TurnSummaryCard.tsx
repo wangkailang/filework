@@ -35,11 +35,11 @@ function FileRow({ file }: { file: TurnSummaryFile }) {
     <button
       type="button"
       onClick={() => openFile(file.path)}
-      className="flex w-full items-center gap-2 px-3 py-1 text-left text-xs hover:bg-accent/40"
+      className="group flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left text-xs transition-colors hover:bg-accent/60"
       title={file.path}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="truncate text-foreground/80">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+      <span className="truncate text-foreground/80 underline decoration-transparent underline-offset-2 transition-colors group-hover:text-primary group-hover:decoration-primary/50">
         {shortPath(file.path)}
       </span>
       {file.writeCount > 1 && (

@@ -249,6 +249,8 @@ const en: BaseTranslation = {
     "File too large ({0:string}); previewing the beginning only",
   preview_viewRendered: "Preview",
   preview_viewSource: "Source",
+  preview_fullscreen: "Fullscreen",
+  preview_exitFullscreen: "Exit fullscreen",
 
   // Code viewer
   code_loading: "Loading...",
