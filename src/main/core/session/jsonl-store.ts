@@ -27,7 +27,8 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
-
+import { redactMessageParts } from "../../../shared/security/redact-message";
+import { redactSecrets } from "../../../shared/security/secret-detection";
 import type { MessagePart } from "./message-parts";
 import type {
   ChatMessage,
@@ -37,8 +38,6 @@ import type {
   SessionLine,
 } from "./types";
 import { workspaceKey } from "./workspace-key";
-import { redactSecrets } from "../../../shared/security/secret-detection";
-import { redactMessageParts } from "../../../shared/security/redact-message";
 
 const SESSION_FILE_EXT = ".jsonl";
 const TMP_FILE_EXT = ".jsonl.tmp";
@@ -317,7 +316,9 @@ export class JsonlSessionStore {
     const messageLines: MessageLine[] = messages.map((m) => {
       const stripped = m.parts ? stripTransientPreview(m.parts) : m.parts;
       // 持久化边界脱敏:落盘副本掩码,in-memory(发给 LLM 的)不受影响。
-      const safeParts = stripped ? redactMessageParts(stripped).parts : stripped;
+      const safeParts = stripped
+        ? redactMessageParts(stripped).parts
+        : stripped;
       return {
         kind: "message",
         id: m.id,

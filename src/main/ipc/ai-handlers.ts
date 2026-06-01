@@ -7,6 +7,7 @@
 
 import crypto from "node:crypto";
 import { ipcMain } from "electron";
+import { redactSecrets } from "../../shared/security/secret-detection";
 import { resolveAdapterName } from "../ai/adapters";
 import { compressContext } from "../ai/context-compressor";
 import { DeltaBatcher } from "../ai/delta-batcher";
@@ -77,7 +78,6 @@ import {
 import { settleBatch } from "./approval-batcher";
 import { buildApprovalHook } from "./approval-hook";
 import { createForkSkillRunner } from "./fork-skill-runner";
-import { redactSecrets } from "../../shared/security/secret-detection";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
@@ -234,7 +234,12 @@ const handleTaskExecution = async (
         spaceIdx > 0 ? payload.prompt.slice(0, spaceIdx) : payload.prompt;
       skillArgs = spaceIdx > 0 ? payload.prompt.slice(spaceIdx + 1) : "";
       // skillArgs 含用户自由文本,脱敏后再写日志避免密钥落入 stdout。
-      console.log("[Skill Matching] Command:", command, "Args:", redactSecrets(skillArgs ?? "").text);
+      console.log(
+        "[Skill Matching] Command:",
+        command,
+        "Args:",
+        redactSecrets(skillArgs ?? "").text,
+      );
 
       skill = skillRegistry.matchByCommand(command);
       console.log(

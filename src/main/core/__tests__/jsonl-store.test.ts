@@ -214,8 +214,7 @@ describe("JsonlSessionStore", () => {
     });
 
     it("落盘前对消息 content 与 parts 脱敏,读回为掩码版", async () => {
-      const KEY =
-        "tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41";
+      const KEY = "tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41";
       const s = await store.createSession("/ws");
       const originalMsg = {
         id: "m-secret",

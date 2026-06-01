@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  containsSecret,
-  redactDeep,
-  redactSecrets,
-} from "../secret-detection";
+import { containsSecret, redactDeep, redactSecrets } from "../secret-detection";
 
 describe("secret-detection", () => {
   describe("containsSecret", () => {
     it("命中已知厂商前缀与赋值式", () => {
       expect(containsSecret("token is sk-abcdefghijklmnop1234")).toBe(true);
-      expect(containsSecret("use ghp_0123456789abcdefghijABCDEFGHIJ12")).toBe(true);
+      expect(containsSecret("use ghp_0123456789abcdefghijABCDEFGHIJ12")).toBe(
+        true,
+      );
       expect(containsSecret("password=hunter2hunter")).toBe(true);
       expect(containsSecret("-----BEGIN OPENSSH PRIVATE KEY-----")).toBe(true);
     });
@@ -21,7 +19,9 @@ describe("secret-detection", () => {
           "xiaomi llm key tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41 记一下",
         ),
       ).toBe(true);
-      expect(containsSecret("我的密钥是 ab12cd34ef56gh78ij90kl12mn34")).toBe(true);
+      expect(containsSecret("我的密钥是 ab12cd34ef56gh78ij90kl12mn34")).toBe(
+        true,
+      );
     });
 
     it("命中全角冒号紧贴、token 前无空格的中文写法(回归)", () => {
@@ -41,9 +41,17 @@ describe("secret-detection", () => {
     it("不误伤普通事实/路径/hash/uuid", () => {
       expect(containsSecret("uses pnpm and vitest")).toBe(false);
       expect(containsSecret("回复语言使用中文")).toBe(false);
-      expect(containsSecret("项目根目录是 /Users/kailang/develop/2026/filework")).toBe(false);
-      expect(containsSecret("build at commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")).toBe(false);
-      expect(containsSecret("session 550e8400-e29b-41d4-a716-446655440000")).toBe(false);
+      expect(
+        containsSecret("项目根目录是 /Users/kailang/develop/2026/filework"),
+      ).toBe(false);
+      expect(
+        containsSecret(
+          "build at commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        ),
+      ).toBe(false);
+      expect(
+        containsSecret("session 550e8400-e29b-41d4-a716-446655440000"),
+      ).toBe(false);
       expect(containsSecret("见 https://github.com/foo/bar 文档")).toBe(false);
     });
   });

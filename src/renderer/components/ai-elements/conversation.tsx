@@ -9,10 +9,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { useI18nContext } from "../../i18n/i18n-react";
-import { cn } from "../../lib/utils";
 import { redactMessageParts } from "../../../shared/security/redact-message";
 import { redactSecrets } from "../../../shared/security/secret-detection";
+import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 
 // ---------------------------------------------------------------------------
 // Context
