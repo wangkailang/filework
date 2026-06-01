@@ -1053,13 +1053,16 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 // 同一密钥常同时出现在用户输入与模型回显里,提示只显示一次(轻微提醒)。
                 let noticeShown = false;
                 return chat.messages.map((msg, index) => {
-                  // 显示即时掩码:仅用于渲染,chat.messages 原对象(发给 LLM)不动。
+                  // 检测(驱动提示)对所有角色一致;但「显示掩码」只作用于助手回显与
+                  // 工具参数——用户自己输入的消息显示原文,不掩码(自己输入的,本就清楚)。
+                  // 落盘脱敏对所有角色不变,见 jsonl-store —— 显示原文不等于会落盘。
+                  const isUser = msg.role === "user";
                   const sourceParts = msg.parts ?? migrateToParts(msg);
-                  const { parts: displayParts, count: partsCount } =
-                    redactMessageParts(sourceParts);
-                  const { text: displayContent, count: contentCount } =
-                    redactSecrets(msg.content);
-                  const secretCount = partsCount + contentCount;
+                  const redParts = redactMessageParts(sourceParts);
+                  const redContent = redactSecrets(msg.content);
+                  const secretCount = redParts.count + redContent.count;
+                  const displayParts = isUser ? sourceParts : redParts.parts;
+                  const displayContent = isUser ? msg.content : redContent.text;
                   const showNotice = secretCount > 0 && !noticeShown;
                   if (showNotice) noticeShown = true;
                   const userAttachments =
@@ -1085,7 +1088,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         </MessageContent>
                       </Message>
                       {showNotice && (
-                        <SystemNoticeCard message="已自动遮蔽疑似密钥,不会保存到会话记录或记忆" />
+                        <SystemNoticeCard message="检测到疑似密钥,不会保存到会话记录或记忆" />
                       )}
                       {msg.role === "user" && !chat.isLoading && (
                         <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
