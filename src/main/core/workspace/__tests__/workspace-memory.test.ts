@@ -206,9 +206,37 @@ describe("workspace-memory (structured entries, zero repo footprint)", () => {
       expect(containsSecret("-----BEGIN OPENSSH PRIVATE KEY-----")).toBe(true);
     });
 
-    it("does not flag ordinary durable facts", () => {
+    it("detects a vendor key stated in natural language (keyword + high-entropy token)", () => {
+      expect(
+        containsSecret(
+          "xiaomi llm key tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41 记一下",
+        ),
+      ).toBe(true);
+      expect(containsSecret("我的密钥是 ab12cd34ef56gh78ij90kl12mn34")).toBe(
+        true,
+      );
+    });
+
+    it("flags a long standalone high-entropy token even without a keyword", () => {
+      expect(
+        containsSecret("记住 tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6"),
+      ).toBe(true);
+    });
+
+    it("does not flag ordinary durable facts, paths, hashes or uuids", () => {
       expect(containsSecret("uses pnpm and vitest")).toBe(false);
       expect(containsSecret("回复语言使用中文")).toBe(false);
+      expect(
+        containsSecret("项目根目录是 /Users/kailang/develop/2026/filework"),
+      ).toBe(false);
+      expect(
+        containsSecret(
+          "build at commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        ),
+      ).toBe(false); // 40-hex SHA
+      expect(
+        containsSecret("session 550e8400-e29b-41d4-a716-446655440000"),
+      ).toBe(false); // UUID
     });
 
     it("rememberMemory rejects secret-bearing text at the storage layer", async () => {

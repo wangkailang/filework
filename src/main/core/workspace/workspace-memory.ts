@@ -92,7 +92,12 @@ function withFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 /**
  * 敏感信息检测:命中则拒绝写入记忆(避免把密钥/令牌持久化并注入每轮提示)。
- * 高信号特征 + 通用「<敏感词>=<值>」赋值式。
+ *
+ * 三层:
+ *  1) 已知厂商前缀(sk- / ghp_ / AKIA / AIza / xox / 私钥头);
+ *  2)「<敏感词>=<值>」赋值式;
+ *  3) 通用启发式:出现密钥类关键词附近有「高熵 token」,或文本里出现「足够长的
+ *     高熵 token」。前者抓 "xiaomi llm key tp-xxxx 记一下" 这类自然语言陈述。
  */
 const SECRET_PATTERNS: RegExp[] = [
   /sk-[a-z0-9]{16,}/i, // OpenAI / Anthropic 风格
@@ -105,9 +110,37 @@ const SECRET_PATTERNS: RegExp[] = [
   /\b(?:api[_-]?key|secret|passwd|password|token)\b\s*[:=]\s*\S{8,}/i, // 赋值式
 ];
 
+/** 密钥类上下文关键词(中英)。 */
+const SECRET_KEYWORD =
+  /\b(?:api[_-]?key|access[_-]?key|secret|passwd|password|credential|token|bearer|auth|key)\b|密钥|秘钥|密匙|密码|口令|凭据|凭证|令牌|私钥/i;
+
+/** 不含 token 关键词的关键词上限长度 —— 独立高熵 token 触发的最小长度。 */
+const STANDALONE_TOKEN_LEN = 32;
+
+/**
+ * 一个 token 是否像高熵凭据:紧凑串(仅字母数字 _ -)、含数字、且含 16 进制以外
+ * 的字母 —— 借此排除路径 / URL(含 / . @)、纯 16 进制哈希与 UUID。
+ */
+function looksLikeSecretToken(tok: string): boolean {
+  if (tok.length < 16) return false;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(tok)) return false; // 排除路径/URL/版本号
+  if (!/[0-9]/.test(tok)) return false; // 需含数字
+  if (!/[g-z]/i.test(tok)) return false; // 含非 16 进制字母 → 排除 hash / uuid
+  return true;
+}
+
 /** 文本是否疑似含敏感凭据。 */
 export function containsSecret(text: string): boolean {
-  return SECRET_PATTERNS.some((re) => re.test(text));
+  if (SECRET_PATTERNS.some((re) => re.test(text))) return true;
+  const hasKeyword = SECRET_KEYWORD.test(text);
+  for (const raw of text.split(/\s+/)) {
+    // 去掉首尾包裹的引号 / 括号 / 标点,保留中间结构。
+    const tok = raw.replace(/^["'`(<[]+|["'`)>\].,;:!?]+$/g, "");
+    if (!looksLikeSecretToken(tok)) continue;
+    if (hasKeyword) return true; // 关键词 + 高熵 token(抓自然语言陈述)
+    if (tok.length >= STANDALONE_TOKEN_LEN) return true; // 足够长的独立高熵 token
+  }
+  return false;
 }
 
 /** rememberMemory 因命中敏感信息而拒绝写入时抛出。 */
