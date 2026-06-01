@@ -110,6 +110,14 @@ export function containsSecret(text: string): boolean {
   return SECRET_PATTERNS.some((re) => re.test(text));
 }
 
+/** rememberMemory 因命中敏感信息而拒绝写入时抛出。 */
+export class MemorySecretError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MemorySecretError";
+  }
+}
+
 /** 把 `readFile` 的返回（string | Uint8Array）统一为字符串。 */
 function toText(content: string | Uint8Array): string {
   return typeof content === "string"
@@ -187,34 +195,21 @@ function normalizeForCompare(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9一-鿿]/g, "");
 }
 
-/** 字符 bigram 集合(对无空格的中文也有效)。 */
-function bigrams(s: string): Set<string> {
-  const out = new Set<string>();
-  if (s.length === 1) out.add(s);
-  for (let i = 0; i + 1 < s.length; i++) out.add(s.slice(i, i + 2));
-  return out;
-}
-
-/** 近重复:一方包含另一方,或 bigram Jaccard 相似度高。阈值取高以避免误并。 */
+/**
+ * 近重复:仅在「归一化后完全相等」时判重(只差大小写 / 标点 / 空白 / emoji)。
+ * 不做模糊相似度(bigram / 子串包含)—— 那会把同分类下两条「确实不同」的事实
+ * 静默并成一条而无任何提示。模糊重复交由「复用同一 key」这一主机制处理。
+ */
 function isNearDuplicate(a: string, b: string): boolean {
   const na = normalizeForCompare(a);
   const nb = normalizeForCompare(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  if (na.length >= 6 && nb.length >= 6 && (na.includes(nb) || nb.includes(na)))
-    return true;
-  const ga = bigrams(na);
-  const gb = bigrams(nb);
-  let inter = 0;
-  for (const g of ga) if (gb.has(g)) inter++;
-  const union = ga.size + gb.size - inter;
-  return union > 0 && inter / union >= 0.82;
+  return na.length > 0 && na === nb;
 }
 
 /**
  * upsert 一条记忆:
  *  - key 命中 → 覆盖那条;
- *  - 否则同 category 下若有近重复旧条目 → 覆盖它(防换措辞新增);
+ *  - 否则同 category 下若有「归一化完全相同」的旧条目 → 覆盖它(防换 key 重复);
  *  - 都没有 → 追加。
  */
 function upsertEntry(entries: MemoryEntry[], next: MemoryEntry): MemoryEntry[] {
@@ -283,9 +278,12 @@ async function migrateLegacyBlock(workspace: Workspace): Promise<void> {
       : inner;
     if (body) {
       const file = workspaceEntriesPath(workspace.root);
-      const entries = await readEntries(file);
-      for (const e of legacyEntriesFrom(body)) upsertEntry(entries, e);
-      await writeEntries(file, entries);
+      // 锁内 read-modify-write,避免与并发 remember/forget 互相覆盖。
+      await withFileLock(file, async () => {
+        const entries = await readEntries(file);
+        for (const e of legacyEntriesFrom(body)) upsertEntry(entries, e);
+        await writeEntries(file, entries);
+      });
     }
 
     // 只移除块本身(连同相邻空行),不重排文件其它部分。块外手写内容原样保留。
@@ -302,13 +300,18 @@ async function migrateLegacyBlock(workspace: Workspace): Promise<void> {
   }
 }
 
+/** 已确认迁移过(或本就无旧 .md)的 workspaceRoot,避免每次读取都试探旧文件。 */
+const legacyMdChecked = new Set<string>();
+
 /**
  * 一次性迁移旧版纯文本 `<key>.md` → 结构化 `<key>.json`,随后删除旧文件。
  * 幂等:JSON 已有内容则不覆盖,只清残留 .md;旧文件不存在则不动。
+ * 读-查-写-删整段在文件锁内完成,避免与并发 remember/forget 互相覆盖(lost-update)。
  */
 async function migrateLegacyMd(workspaceRoot: string): Promise<void> {
+  // 进程内已检查过该工作区:无 .md 或已迁移 → 直接跳过,免去每次读取的探测开销。
+  if (legacyMdChecked.has(workspaceRoot)) return;
   try {
-    const jsonPath = workspaceEntriesPath(workspaceRoot);
     const mdPath = legacyMdPath(workspaceRoot);
     let mdText: string | null = null;
     try {
@@ -316,12 +319,20 @@ async function migrateLegacyMd(workspaceRoot: string): Promise<void> {
     } catch {
       mdText = null;
     }
-    if (!mdText) return;
-    const existing = await readEntries(jsonPath);
-    if (existing.length === 0) {
-      await writeEntries(jsonPath, legacyEntriesFrom(mdText));
+    if (!mdText) {
+      legacyMdChecked.add(workspaceRoot);
+      return;
     }
-    await rm(mdPath, { force: true });
+    const jsonPath = workspaceEntriesPath(workspaceRoot);
+    await withFileLock(jsonPath, async () => {
+      // 锁内复查:并发的另一个迁移可能已写入,此时不覆盖,只清残留 .md。
+      const existing = await readEntries(jsonPath);
+      if (existing.length === 0) {
+        await writeEntries(jsonPath, legacyEntriesFrom(mdText));
+      }
+      await rm(mdPath, { force: true });
+    });
+    legacyMdChecked.add(workspaceRoot);
   } catch (err) {
     console.warn("[Workspace Memory] legacy .md migration skipped:", err);
   }
@@ -340,12 +351,8 @@ function renderScope(entries: MemoryEntry[], heading: string): string {
 
 /** 工作目录记忆的结构化信息(供 UI 查看用)。 */
 export interface WorkspaceMemoryInfo {
-  /** 工作区机器记忆(渲染后的 markdown),无则 null。 */
-  agentMemory: string | null;
   /** 工作区机器记忆文件绝对路径。 */
   agentMemoryPath: string;
-  /** user 作用域记忆(跨工作区共享,渲染后的 markdown),无则 null。 */
-  userMemory: string | null;
   /** user 记忆文件绝对路径。 */
   userMemoryPath: string;
   /** 工作区结构化条目(供面板逐条编辑/删除)。 */
@@ -389,8 +396,6 @@ export async function getWorkspaceMemoryInfo(
 
   const userRendered = renderScope(userEntries, "User memory (all workspaces)");
   const wsRendered = renderScope(wsEntries, "This workspace");
-  const agentMemory = wsRendered || null;
-  const userMemory = userRendered || null;
 
   // 预算分配:机器记忆是「免去重复探索」的核心负载,优先完整保留;人写内容
   // 用剩余预算。否则一个大体量 AGENTS.md 会把机器记忆挤出上限、令其永不进提示词。
@@ -412,9 +417,7 @@ export async function getWorkspaceMemoryInfo(
   const combined: string | null = parts.length ? parts.join("\n\n") : null;
 
   return {
-    agentMemory,
     agentMemoryPath: workspaceEntriesPath(workspace.root),
-    userMemory,
     userMemoryPath: userEntriesPath(),
     workspaceEntries: wsEntries,
     userEntries,
@@ -469,6 +472,13 @@ export async function rememberMemory(
   workspace: Workspace,
   input: RememberInput,
 ): Promise<void> {
+  // 敏感信息护栏放在存储层:任何写入路径(Agent 工具 / 面板编辑 IPC)都拦得住,
+  // 不会把密钥/令牌持久化并注入提示。
+  if (containsSecret(input.text)) {
+    throw new MemorySecretError(
+      "Refused to store: the text appears to contain a secret/credential.",
+    );
+  }
   const file =
     input.scope === "user"
       ? userEntriesPath()

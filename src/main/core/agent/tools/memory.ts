@@ -14,8 +14,8 @@ import { z } from "zod/v4";
 import {
   clearUserMemory,
   clearWorkspaceMemory,
-  containsSecret,
   forgetMemory,
+  MemorySecretError,
   rememberMemory,
 } from "../../workspace/workspace-memory";
 import type { ToolDefinition } from "../tool-registry";
@@ -76,21 +76,20 @@ export const updateMemoryTool: ToolDefinition<
       await forgetMemory(ctx.workspace, args.scope, args.key);
       return { success: true, action: "forget", key: args.key };
     }
-    // 拒绝把疑似密钥/令牌写进记忆(否则会持久化并注入每轮提示)。
-    if (containsSecret(args.text)) {
-      return {
-        success: false,
-        action: "rejected",
-        reason:
-          "Refused to store: the text looks like it contains a secret/credential. Do not persist secrets in memory.",
-      };
+    try {
+      await rememberMemory(ctx.workspace, {
+        key: args.key,
+        scope: args.scope,
+        category: args.category,
+        text: args.text,
+      });
+    } catch (err) {
+      // 敏感信息被存储层拦截:不持久化,告知模型原因(勿在记忆里存密钥)。
+      if (err instanceof MemorySecretError) {
+        return { success: false, action: "rejected", reason: err.message };
+      }
+      throw err;
     }
-    await rememberMemory(ctx.workspace, {
-      key: args.key,
-      scope: args.scope,
-      category: args.category,
-      text: args.text,
-    });
     return {
       success: true,
       action: "remember",

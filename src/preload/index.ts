@@ -805,9 +805,7 @@ const api = {
     get: (
       workspacePath: string,
     ): Promise<{
-      agentMemory: string | null;
       agentMemoryPath: string;
-      userMemory: string | null;
       userMemoryPath: string;
       workspaceEntries: WorkspaceMemoryEntry[];
       userEntries: WorkspaceMemoryEntry[];

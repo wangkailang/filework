@@ -84,12 +84,17 @@ export const registerWorkspaceMemoryHandlers = (): void => {
       },
     ): Promise<{ ok: boolean }> => {
       if (!payload?.workspacePath || !payload.text.trim()) return { ok: false };
-      await rememberMemory(new LocalWorkspace(payload.workspacePath), {
-        key: payload.key,
-        scope: payload.scope,
-        category: payload.category,
-        text: payload.text,
-      });
+      try {
+        await rememberMemory(new LocalWorkspace(payload.workspacePath), {
+          key: payload.key,
+          scope: payload.scope,
+          category: payload.category,
+          text: payload.text,
+        });
+      } catch {
+        // 命中敏感信息护栏(MemorySecretError)等 → 不写入,返回失败。
+        return { ok: false };
+      }
       return { ok: true };
     },
   );

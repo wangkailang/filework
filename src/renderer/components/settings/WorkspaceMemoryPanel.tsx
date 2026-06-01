@@ -22,9 +22,7 @@ interface MemoryEntry {
 }
 
 interface WorkspaceMemoryInfo {
-  agentMemory: string | null;
   agentMemoryPath: string;
-  userMemory: string | null;
   userMemoryPath: string;
   workspaceEntries: MemoryEntry[];
   userEntries: MemoryEntry[];

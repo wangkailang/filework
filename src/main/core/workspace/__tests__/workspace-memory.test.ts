@@ -11,6 +11,7 @@ import {
   containsSecret,
   forgetMemory,
   getWorkspaceMemoryInfo,
+  MemorySecretError,
   readWorkspaceMemory,
   rememberMemory,
   setWorkspaceMemoryRoot,
@@ -163,10 +164,7 @@ describe("workspace-memory (structured entries, zero repo footprint)", () => {
         text: "Always reply in Chinese.",
       });
       const info = await getWorkspaceMemoryInfo(ws);
-      const lines = (info.userMemory ?? "")
-        .split("\n")
-        .filter((l) => l.startsWith("- "));
-      expect(lines.length).toBe(1); // 近重复被合并
+      expect(info.userEntries.length).toBe(1); // 归一化相同被合并
     });
 
     it("forget removes the entry by key", async () => {
@@ -211,6 +209,19 @@ describe("workspace-memory (structured entries, zero repo footprint)", () => {
     it("does not flag ordinary durable facts", () => {
       expect(containsSecret("uses pnpm and vitest")).toBe(false);
       expect(containsSecret("回复语言使用中文")).toBe(false);
+    });
+
+    it("rememberMemory rejects secret-bearing text at the storage layer", async () => {
+      await expect(
+        rememberMemory(ws, {
+          key: "leak",
+          scope: "workspace",
+          category: "project",
+          text: "deploy key sk-abcdefghijklmnop1234",
+        }),
+      ).rejects.toBeInstanceOf(MemorySecretError);
+      // 未落盘
+      expect(await readWorkspaceMemory(ws)).toBeNull();
     });
   });
 
