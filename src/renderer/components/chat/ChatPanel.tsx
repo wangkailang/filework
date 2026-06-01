@@ -11,6 +11,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { redactMessageParts } from "../../../shared/security/redact-message";
+import { redactSecrets } from "../../../shared/security/secret-detection";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import {
@@ -67,6 +69,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
+import { SystemNoticeCard } from "./SystemNoticeCard";
 import { TurnSummaryCard } from "./TurnSummaryCard";
 import type {
   ArticleMetaPart,
@@ -1047,9 +1050,16 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           ) : (
             <>
               {chat.messages.map((msg, index) => {
+                // 显示即时掩码:仅用于渲染,chat.messages 原对象(发给 LLM)不动。
+                const sourceParts = msg.parts ?? migrateToParts(msg);
+                const { parts: displayParts, count: partsCount } =
+                  redactMessageParts(sourceParts);
+                const { text: displayContent, count: contentCount } =
+                  redactSecrets(msg.content);
+                const secretCount = partsCount + contentCount;
                 const userAttachments =
                   msg.role === "user"
-                    ? ((msg.parts?.filter((p) => p.type === "attachment") as
+                    ? ((displayParts.filter((p) => p.type === "attachment") as
                         | AttachmentPart[]
                         | undefined) ?? [])
                     : [];
@@ -1058,17 +1068,20 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                     <Message from={msg.role}>
                       <MessageContent>
                         {msg.role === "assistant" ? (
-                          renderAssistantParts(msg.parts ?? migrateToParts(msg))
+                          renderAssistantParts(displayParts)
                         ) : (
                           <>
                             {userAttachments.length > 0 && (
                               <AttachmentList attachments={userAttachments} />
                             )}
-                            {msg.content}
+                            {displayContent}
                           </>
                         )}
                       </MessageContent>
                     </Message>
+                    {secretCount > 0 && (
+                      <SystemNoticeCard message="🔒 检测到疑似密钥,已自动遮蔽,不会写入会话记录或记忆。" />
+                    )}
                     {msg.role === "user" && !chat.isLoading && (
                       <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                         <MessageAction
