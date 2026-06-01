@@ -74,6 +74,12 @@ describe("secret-detection", () => {
     it("空串安全返回", () => {
       expect(redactSecrets("")).toEqual({ text: "", count: 0 });
     });
+
+    it("厂商前缀与赋值式同时命中同一 token 时只计一次(回归)", () => {
+      const r = redactSecrets("token = sk-abcdefghijklmnop1234");
+      expect(r.count).toBe(1);
+      expect(r.text).not.toContain("sk-abcdefghijklmnop1234");
+    });
   });
 
   describe("redactDeep", () => {
@@ -93,6 +99,12 @@ describe("secret-detection", () => {
     it("非字符串原样返回 count=0", () => {
       expect(redactDeep(123)).toEqual({ value: 123, count: 0 });
       expect(redactDeep(null)).toEqual({ value: null, count: 0 });
+    });
+
+    it("空字符串叶子安全处理", () => {
+      const r = redactDeep({ x: "" });
+      expect(r.count).toBe(0);
+      expect((r.value as { x: string }).x).toBe("");
     });
   });
 });

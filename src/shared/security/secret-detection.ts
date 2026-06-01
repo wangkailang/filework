@@ -16,7 +16,7 @@ const SECRET_PATTERNS: RegExp[] = [
   /\bAIza[0-9A-Za-z\-_]{35}\b/, // Google API key
   /\bxox[baprs]-[A-Za-z0-9-]{10,}/, // Slack
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/, // 私钥
-  /\b(?:api[_-]?key|secret|passwd|password|token)\b\s*[:=]\s*\S{8,}/i, // 赋值式
+  /\b(?:api[_\- ]?key|secret|passwd|password|token)\b\s*[:=]\s*\S{8,}/i, // 赋值式(api key 允许空格)
 ];
 
 /** 密钥类上下文关键词(中英)。 */
@@ -60,26 +60,44 @@ export function containsSecret(text: string): boolean {
 /** 定位并掩码所有命中片段;返回脱敏文本与命中数。 */
 export function redactSecrets(text: string): { text: string; count: number } {
   if (!text) return { text, count: 0 };
-  let count = 0;
-  let out = text;
-  // 先盖厂商前缀 / 赋值式(整段匹配),再跑高熵候选——• 不在 [A-Za-z0-9_-] 内,不会重复命中。
+  const hasKeyword = SECRET_KEYWORD.test(text);
+  // 在「原文」上收集所有命中区间 [start, end),再合并重叠区间——避免顺序遮蔽时
+  // 后一个 pattern 命中前一个留下的掩码字符(•),造成同一密钥被重复计数/重复遮蔽。
+  const spans: Array<[number, number]> = [];
   for (const re of SECRET_PATTERNS) {
-    const g = re.flags.includes("g") ? re.flags : `${re.flags}g`;
-    out = out.replace(new RegExp(re.source, g), (m) => {
-      count++;
-      return mask(m);
-    });
-  }
-  const hasKeyword = SECRET_KEYWORD.test(out);
-  out = out.replace(TOKEN_CANDIDATE, (tok) => {
-    if (!isHighEntropyToken(tok)) return tok;
-    if (hasKeyword || tok.length >= STANDALONE_TOKEN_LEN) {
-      count++;
-      return mask(tok);
+    const g = new RegExp(
+      re.source,
+      re.flags.includes("g") ? re.flags : `${re.flags}g`,
+    );
+    for (let m = g.exec(text); m; m = g.exec(text)) {
+      spans.push([m.index, m.index + m[0].length]);
+      if (m[0].length === 0) g.lastIndex++; // 防零宽匹配死循环
     }
-    return tok;
-  });
-  return { text: out, count };
+  }
+  // 用独立实例 exec,避免污染模块级 TOKEN_CANDIDATE 的 lastIndex。
+  const tc = new RegExp(TOKEN_CANDIDATE.source, "g");
+  for (let m = tc.exec(text); m; m = tc.exec(text)) {
+    const tok = m[0];
+    if (!isHighEntropyToken(tok)) continue;
+    if (hasKeyword || tok.length >= STANDALONE_TOKEN_LEN) {
+      spans.push([m.index, m.index + tok.length]);
+    }
+  }
+  if (spans.length === 0) return { text, count: 0 };
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const [s, e] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  // 从后往前替换,使前面区间的索引仍然有效。
+  let out = text;
+  for (let i = merged.length - 1; i >= 0; i--) {
+    const [s, e] = merged[i];
+    out = out.slice(0, s) + mask(out.slice(s, e)) + out.slice(e);
+  }
+  return { text: out, count: merged.length };
 }
 
 /** 递归掩码任意 JSON 值的字符串叶子(对象/数组/string);其它类型原样返回。 */
