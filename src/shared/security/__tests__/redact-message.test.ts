@@ -45,4 +45,70 @@ describe("redactMessageParts", () => {
     expect(r.count).toBe(0);
     expect((r.parts[0] as { text: string }).text).toBe("普通文本");
   });
+
+  it("掩码 clarification part 的 question 字段", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "clarification",
+        question: `请输入密钥: ${KEY}`,
+        options: ["选项A"],
+      },
+    ];
+    const r = redactMessageParts(parts);
+    expect(r.count).toBeGreaterThan(0);
+    expect(JSON.stringify(r.parts[0])).not.toContain("sxnbvy8");
+  });
+
+  it("掩码 batch-approval part 的 entries[].args 字段", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "batch-approval",
+        batchId: "batch-1",
+        toolName: "writeFile",
+        entries: [
+          {
+            toolCallId: "tc-1",
+            args: { content: `secret=${KEY}` },
+            description: "写入文件",
+          },
+        ],
+        state: "approval-requested",
+      },
+    ];
+    const r = redactMessageParts(parts);
+    expect(r.count).toBeGreaterThan(0);
+    expect(JSON.stringify(r.parts[0])).not.toContain("sxnbvy8");
+  });
+
+  it("掩码 plan part 的 steps[].artifacts[].args 字段", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "plan",
+        plan: {
+          id: "plan-1",
+          goal: "完成任务",
+          status: "executing",
+          steps: [
+            {
+              id: 1,
+              action: "run",
+              description: "执行步骤",
+              status: "running",
+              artifacts: [
+                {
+                  toolCallId: "tc-2",
+                  toolName: "bash",
+                  args: { command: `TOKEN=${KEY} make deploy` },
+                  success: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ];
+    const r = redactMessageParts(parts);
+    expect(r.count).toBeGreaterThan(0);
+    expect(JSON.stringify(r.parts[0])).not.toContain("sxnbvy8");
+  });
 });

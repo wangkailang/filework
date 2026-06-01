@@ -1097,7 +1097,8 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         <MessageActions>
                           <MessageAction
                             onClick={() =>
-                              navigator.clipboard.writeText(msg.content)
+                              // displayContent 已在本回调顶部脱敏,复制脱敏文本而非原文。
+                              navigator.clipboard.writeText(displayContent)
                             }
                             label="Copy"
                           >

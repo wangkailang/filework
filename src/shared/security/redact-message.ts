@@ -30,6 +30,19 @@ export function redactMessageParts(parts: MessagePart[]): {
       count += a.count + b.count;
       return { ...part, args: a.value, result: b.value };
     }
+    // 这些 part 含模型/用户产生的明文(plan 工件 args/result、批准条目 args、
+    // 澄清问答、回合摘要命令、视频任务 prompt 等),且不含二进制数据,整体深度脱敏。
+    if (
+      part.type === "clarification" ||
+      part.type === "batch-approval" ||
+      part.type === "plan" ||
+      part.type === "turn-summary" ||
+      part.type === "video-job"
+    ) {
+      const r = redactDeep(part);
+      count += r.count;
+      return r.value as MessagePart;
+    }
     return part;
   });
   return { parts: out, count };
