@@ -1049,66 +1049,72 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             </ConversationEmptyState>
           ) : (
             <>
-              {chat.messages.map((msg, index) => {
-                // 显示即时掩码:仅用于渲染,chat.messages 原对象(发给 LLM)不动。
-                const sourceParts = msg.parts ?? migrateToParts(msg);
-                const { parts: displayParts, count: partsCount } =
-                  redactMessageParts(sourceParts);
-                const { text: displayContent, count: contentCount } =
-                  redactSecrets(msg.content);
-                const secretCount = partsCount + contentCount;
-                const userAttachments =
-                  msg.role === "user"
-                    ? ((displayParts.filter((p) => p.type === "attachment") as
-                        | AttachmentPart[]
-                        | undefined) ?? [])
-                    : [];
-                return (
-                  <div key={msg.id}>
-                    <Message from={msg.role}>
-                      <MessageContent>
-                        {msg.role === "assistant" ? (
-                          renderAssistantParts(displayParts)
-                        ) : (
-                          <>
-                            {userAttachments.length > 0 && (
-                              <AttachmentList attachments={userAttachments} />
-                            )}
-                            {displayContent}
-                          </>
-                        )}
-                      </MessageContent>
-                    </Message>
-                    {secretCount > 0 && (
-                      <SystemNoticeCard message="🔒 检测到疑似密钥,已自动遮蔽,不会写入会话记录或记忆。" />
-                    )}
-                    {msg.role === "user" && !chat.isLoading && (
-                      <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                        <MessageAction
-                          onClick={() => chat.handleForkSession(msg.id)}
-                          label={LL.chat_forkHere()}
-                        >
-                          <GitBranch className="size-3" />
-                        </MessageAction>
-                      </MessageActions>
-                    )}
-                    {msg.role === "assistant" &&
-                      index === chat.messages.length - 1 && (
-                        <MessageActions>
+              {(() => {
+                // 同一密钥常同时出现在用户输入与模型回显里,提示只显示一次(轻微提醒)。
+                let noticeShown = false;
+                return chat.messages.map((msg, index) => {
+                  // 显示即时掩码:仅用于渲染,chat.messages 原对象(发给 LLM)不动。
+                  const sourceParts = msg.parts ?? migrateToParts(msg);
+                  const { parts: displayParts, count: partsCount } =
+                    redactMessageParts(sourceParts);
+                  const { text: displayContent, count: contentCount } =
+                    redactSecrets(msg.content);
+                  const secretCount = partsCount + contentCount;
+                  const showNotice = secretCount > 0 && !noticeShown;
+                  if (showNotice) noticeShown = true;
+                  const userAttachments =
+                    msg.role === "user"
+                      ? ((displayParts.filter((p) => p.type === "attachment") as
+                          | AttachmentPart[]
+                          | undefined) ?? [])
+                      : [];
+                  return (
+                    <div key={msg.id}>
+                      <Message from={msg.role}>
+                        <MessageContent>
+                          {msg.role === "assistant" ? (
+                            renderAssistantParts(displayParts)
+                          ) : (
+                            <>
+                              {userAttachments.length > 0 && (
+                                <AttachmentList attachments={userAttachments} />
+                              )}
+                              {displayContent}
+                            </>
+                          )}
+                        </MessageContent>
+                      </Message>
+                      {showNotice && (
+                        <SystemNoticeCard message="已自动遮蔽疑似密钥,不会保存到会话记录或记忆" />
+                      )}
+                      {msg.role === "user" && !chat.isLoading && (
+                        <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                           <MessageAction
-                            onClick={() =>
-                              // displayContent 已在本回调顶部脱敏,复制脱敏文本而非原文。
-                              navigator.clipboard.writeText(displayContent)
-                            }
-                            label="Copy"
+                            onClick={() => chat.handleForkSession(msg.id)}
+                            label={LL.chat_forkHere()}
                           >
-                            <CopyIcon className="size-3" />
+                            <GitBranch className="size-3" />
                           </MessageAction>
                         </MessageActions>
                       )}
-                  </div>
-                );
-              })}
+                      {msg.role === "assistant" &&
+                        index === chat.messages.length - 1 && (
+                          <MessageActions>
+                            <MessageAction
+                              onClick={() =>
+                                // displayContent 已在本回调顶部脱敏,复制脱敏文本而非原文。
+                                navigator.clipboard.writeText(displayContent)
+                              }
+                              label="Copy"
+                            >
+                              <CopyIcon className="size-3" />
+                            </MessageAction>
+                          </MessageActions>
+                        )}
+                    </div>
+                  );
+                });
+              })()}
               {/* Working indicator: hidden while the model actively produces
                   visible output (the growing text is its own feedback), shown
                   with an elapsed timer once the stream goes silent for a beat
