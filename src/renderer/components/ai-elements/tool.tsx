@@ -118,7 +118,9 @@ export const ToolHeader = ({
   const { open } = useCollapsible();
 
   return (
-    <CollapsibleTrigger asChild>
+    // 触发器是 <button>(默认 inline-block → max-content),不给 w-full 它会被
+    // 内容撑开,里面的 flex-1 summary 就拿不到收缩边界、truncate 永不生效。
+    <CollapsibleTrigger asChild className="block w-full min-w-0">
       <div
         className={cn(
           "flex items-center gap-1.5 px-2 py-1 cursor-pointer select-none rounded-md hover:bg-muted/50 transition-colors min-w-0",
