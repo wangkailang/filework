@@ -625,6 +625,7 @@ export function useChatSession(
     handleNewChat,
     handleSelectSession,
     handleDeleteSession: crud.handleDeleteSession,
+    handleRenameSession: crud.handleRenameSession,
     handleForkSession,
   };
 }

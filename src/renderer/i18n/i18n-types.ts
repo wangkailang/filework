@@ -272,6 +272,46 @@ type RootTranslation = {
 	 */
 	session_newChat: string
 	/**
+	 * Rename
+	 */
+	session_rename: string
+	/**
+	 * Today
+	 */
+	session_group_today: string
+	/**
+	 * Yesterday
+	 */
+	session_group_yesterday: string
+	/**
+	 * Previous 7 days
+	 */
+	session_group_week: string
+	/**
+	 * Previous 30 days
+	 */
+	session_group_month: string
+	/**
+	 * Earlier
+	 */
+	session_group_earlier: string
+	/**
+	 * Delete chat
+	 */
+	session_delete_confirm_title: string
+	/**
+	 * This chat will be permanently deleted. Continue?
+	 */
+	session_delete_confirm_desc: string
+	/**
+	 * Delete
+	 */
+	session_confirm: string
+	/**
+	 * Cancel
+	 */
+	session_cancel: string
+	/**
 	 * R​e​j​e​c​t
 	 */
 	chat_reject: string
@@ -1508,6 +1548,46 @@ export type TranslationFunctions = {
 	 * New Chat
 	 */
 	session_newChat: () => LocalizedString
+	/**
+	 * Rename
+	 */
+	session_rename: () => LocalizedString
+	/**
+	 * Today
+	 */
+	session_group_today: () => LocalizedString
+	/**
+	 * Yesterday
+	 */
+	session_group_yesterday: () => LocalizedString
+	/**
+	 * Previous 7 days
+	 */
+	session_group_week: () => LocalizedString
+	/**
+	 * Previous 30 days
+	 */
+	session_group_month: () => LocalizedString
+	/**
+	 * Earlier
+	 */
+	session_group_earlier: () => LocalizedString
+	/**
+	 * Delete chat
+	 */
+	session_delete_confirm_title: () => LocalizedString
+	/**
+	 * This chat will be permanently deleted. Continue?
+	 */
+	session_delete_confirm_desc: () => LocalizedString
+	/**
+	 * Delete
+	 */
+	session_confirm: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	session_cancel: () => LocalizedString
 	/**
 	 * Reject
 	 */

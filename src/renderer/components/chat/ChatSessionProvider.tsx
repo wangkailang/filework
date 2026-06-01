@@ -21,6 +21,7 @@ type ChatSessionLiteValue = Pick<
   | "handleNewChat"
   | "handleSelectSession"
   | "handleDeleteSession"
+  | "handleRenameSession"
 >;
 
 const ChatSessionContext = createContext<ChatSessionValue | null>(null);
@@ -46,6 +47,7 @@ export const ChatSessionProvider = ({
       handleNewChat: value.handleNewChat,
       handleSelectSession: value.handleSelectSession,
       handleDeleteSession: value.handleDeleteSession,
+      handleRenameSession: value.handleRenameSession,
     }),
     [
       value.sessions,
@@ -56,6 +58,7 @@ export const ChatSessionProvider = ({
       value.handleNewChat,
       value.handleSelectSession,
       value.handleDeleteSession,
+      value.handleRenameSession,
     ],
   );
   return (
