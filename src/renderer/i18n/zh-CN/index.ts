@@ -80,6 +80,16 @@ const zhCN: Translation = {
   session_empty: "暂无历史对话",
   session_delete: "删除对话",
   session_newChat: "新对话",
+  session_rename: "重命名",
+  session_group_today: "今天",
+  session_group_yesterday: "昨天",
+  session_group_week: "近 7 天",
+  session_group_month: "近 30 天",
+  session_group_earlier: "更早",
+  session_delete_confirm_title: "删除对话",
+  session_delete_confirm_desc: "删除后无法恢复,确定删除这个对话吗?",
+  session_confirm: "删除",
+  session_cancel: "取消",
 
   // Chat panel
   chat_reject: "拒绝",

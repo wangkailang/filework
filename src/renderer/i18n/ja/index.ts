@@ -82,6 +82,17 @@ const ja: Translation = {
   session_empty: "チャット履歴がありません",
   session_delete: "チャットを削除",
   session_newChat: "新しいチャット",
+  session_rename: "名前を変更",
+  session_group_today: "今日",
+  session_group_yesterday: "昨日",
+  session_group_week: "過去 7 日間",
+  session_group_month: "過去 30 日間",
+  session_group_earlier: "それ以前",
+  session_delete_confirm_title: "チャットを削除",
+  session_delete_confirm_desc:
+    "削除後は元に戻せません。このチャットを削除しますか?",
+  session_confirm: "削除",
+  session_cancel: "キャンセル",
 
   // Chat panel
   chat_reject: "拒否",

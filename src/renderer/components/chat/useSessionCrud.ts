@@ -11,6 +11,10 @@ export function useSessionCrud(workspacePath: string) {
   const [lastError, setLastError] = useState<StreamErrorInfo | null>(null);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 标记当前会话是否有"尚未落盘的真实改动"。仅在 debouncedSave(消息编辑/
+  // 流式)时置 true,落盘后清零。纯预览会话只 setMessages、不触发它,因此
+  // flushPendingSave 对预览是 no-op,不会无谓改写文件 → 不会刷新 updatedAt。
+  const dirtyRef = useRef(false);
   const activeSessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   // Set by createNewSession() so the load-history effect below skips the
@@ -27,6 +31,9 @@ export function useSessionCrud(workspacePath: string) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
+    // 无真实改动则不落盘 —— 切换/预览会话时不应改写文件刷新 updatedAt。
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
 
     const sessionId = activeSessionIdRef.current;
     const latestMessages = messagesRef.current;
@@ -37,9 +44,12 @@ export function useSessionCrud(workspacePath: string) {
 
   const debouncedSave = useCallback(
     (msgs: ChatMessage[], sessionId: string) => {
+      dirtyRef.current = true;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         window.filework.saveChatHistory(sessionId, workspacePath, msgs);
+        saveTimerRef.current = null;
+        dirtyRef.current = false;
       }, 500);
     },
     [workspacePath],
@@ -175,6 +185,24 @@ export function useSessionCrud(workspacePath: string) {
     [activeSessionId, flushPendingSave, sessions],
   );
 
+  const handleRenameSession = useCallback(
+    async (sessionId: string, rawTitle: string) => {
+      const title = rawTitle.trim();
+      if (!title) return;
+      const current = sessions.find((s) => s.id === sessionId);
+      if (!current || current.title === title) return;
+      // 仅改标题,保留原 updatedAt —— 重命名不应让会话跳到列表顶部。
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, title } : s)),
+      );
+      await window.filework.updateChatSession(sessionId, {
+        title,
+        updatedAt: current.updatedAt,
+      });
+    },
+    [sessions],
+  );
+
   const handleForkSession = useCallback(
     async (fromMessageId: string, isLoading: boolean) => {
       if (isLoading || !activeSessionId) return;
@@ -211,6 +239,7 @@ export function useSessionCrud(workspacePath: string) {
     handleNewChat,
     handleSelectSession,
     handleDeleteSession,
+    handleRenameSession,
     handleForkSession,
   };
 }

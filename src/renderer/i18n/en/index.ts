@@ -90,6 +90,17 @@ const en: BaseTranslation = {
   session_empty: "No chat history",
   session_delete: "Delete chat",
   session_newChat: "New Chat",
+  session_rename: "Rename",
+  session_group_today: "Today",
+  session_group_yesterday: "Yesterday",
+  session_group_week: "Previous 7 days",
+  session_group_month: "Previous 30 days",
+  session_group_earlier: "Earlier",
+  session_delete_confirm_title: "Delete chat",
+  session_delete_confirm_desc:
+    "This chat will be permanently deleted. Continue?",
+  session_confirm: "Delete",
+  session_cancel: "Cancel",
 
   // Chat panel
   chat_reject: "Reject",
