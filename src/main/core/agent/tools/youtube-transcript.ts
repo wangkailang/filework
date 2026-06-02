@@ -1,31 +1,31 @@
 /**
- * youtubeTranscript — fetch the captions of a YouTube video as
- * time-stamped segments + concatenated full text. Closes the GAIA
- * "what does the speaker say in the video at URL X" gap that
- * `webFetch` / `webFetchRendered` can't handle (those return only the
- * watch-page metadata, not the transcript).
+ * youtubeTranscript — 获取 YouTube 视频的字幕,返回带时间戳的
+ * 分段 + 拼接后的完整文本。弥补了 GAIA 中
+ * “URL X 的视频里讲话者说了什么” 这一类
+ * `webFetch` / `webFetchRendered` 无法处理的场景(那两个只返回
+ * 观看页的元数据,而非字幕文稿)。
  *
- * Mechanism:
- *   1. Resolve the input (watch URL / share URL / embed URL / bare
- *      11-char video ID) to a video ID.
- *   2. Fetch `https://www.youtube.com/watch?v=<id>` via the injected
- *      proxy-aware fetch.
- *   3. Pull `ytInitialPlayerResponse = { ... };` out of the page
- *      (brace-counting parser so we don't choke on nested JSON), parse
- *      it, and walk to `captions.playerCaptionsTracklistRenderer.
- *      captionTracks`.
- *   4. Pick the requested language (or English / first available) and
- *      fetch its `baseUrl` with `&fmt=json3` for clean JSON.
- *   5. Flatten the json3 `events` into `{ start, duration, text }`
- *      segments and a concatenated `fullText`.
+ * 机制:
+ *   1. 把输入(观看 URL / 分享 URL / 嵌入 URL / 纯
+ *      11 字符视频 ID)解析为视频 ID。
+ *   2. 通过注入的代理感知 fetch 获取
+ *      `https://www.youtube.com/watch?v=<id>`。
+ *   3. 从页面中抽取 `ytInitialPlayerResponse = { ... };`
+ *      (用括号计数解析器,以免被嵌套 JSON 卡住),解析
+ *      它,并沿路径走到 `captions.playerCaptionsTracklistRenderer.
+ *      captionTracks`。
+ *   4. 选取请求的语言(或英文 / 第一个可用项),并
+ *      用 `&fmt=json3` 获取其 `baseUrl` 以得到干净的 JSON。
+ *   5. 把 json3 的 `events` 展平为 `{ start, duration, text }`
+ *      分段以及拼接后的 `fullText`。
  *
- * No new dependency — same `fetchImpl` plumbing as `webFetch`, so the
- * tool respects whatever proxy / UA configuration the rest of the web
- * stack uses. Brittle to YouTube's HTML changes; if `ytInitialPlayerResponse`
- * disappears we'll surface a clear error rather than a half-parsed
- * result.
+ * 没有新依赖 —— 与 `webFetch` 使用相同的 `fetchImpl` 管线,因此该
+ * 工具遵循 web 栈其余部分所用的代理 / UA 配置。对 YouTube 的 HTML
+ * 变更比较脆弱;若 `ytInitialPlayerResponse`
+ * 消失,我们会抛出明确的错误,而不是返回半解析的
+ * 结果。
  *
- * Safety: `safe` — read-only, no different from `webFetch`.
+ * 安全性: `safe` —— 只读,与 `webFetch` 无异。
  */
 import { z } from "zod/v4";
 
@@ -33,15 +33,15 @@ import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
 
 export interface YoutubeTranscriptDeps {
-  /** Main-process proxy-aware fetch. Production: `createProxyAwareFetch`. */
+  /** 主进程的代理感知 fetch。生产环境: `createProxyAwareFetch`。 */
   fetchImpl: typeof fetch;
 }
 
-// ─── Pure helpers (exported for unit tests) ──────────────────────────
+// ─── 纯函数辅助方法(导出供单元测试使用) ──────────────────────────
 
 /**
- * Extract an 11-char YouTube video id from a URL or accept a bare id.
- * Returns `null` for inputs we don't recognise.
+ * 从 URL 中抽取 11 字符的 YouTube 视频 id,或直接接受一个纯 id。
+ * 对无法识别的输入返回 `null`。
  */
 export const extractVideoId = (input: string): string | null => {
   const trimmed = input.trim();
@@ -71,13 +71,13 @@ export const extractVideoId = (input: string): string | null => {
 };
 
 /**
- * Find the `ytInitialPlayerResponse = { ... };` assignment in the
- * watch-page HTML and return the JSON string slice (no outer
- * semicolon). Returns `null` when the marker is absent.
+ * 在观看页的 HTML 中查找 `ytInitialPlayerResponse = { ... };`
+ * 赋值语句,并返回其 JSON 字符串切片(不含外层
+ * 分号)。标记不存在时返回 `null`。
  *
- * Uses a brace-counting walk (string- and escape-aware) instead of a
- * non-greedy regex because the JSON contains nested braces and quoted
- * strings with escaped characters.
+ * 使用括号计数遍历(可感知字符串与转义),而非
+ * 非贪婪正则,因为该 JSON 含有嵌套括号以及带转义
+ * 字符的引号字符串。
  */
 export const extractPlayerResponseJson = (html: string): string | null => {
   const markers = [
@@ -126,7 +126,7 @@ export const extractPlayerResponseJson = (html: string): string | null => {
 export interface CaptionTrack {
   baseUrl: string;
   languageCode: string;
-  /** YouTube's display name, e.g. "English (auto-generated)". */
+  /** YouTube 的显示名称,例如 "English (auto-generated)"。 */
   name?: string;
   kind?: string;
   isTranslatable?: boolean;
@@ -165,9 +165,9 @@ const flattenName = (
 };
 
 /**
- * Normalise the captions block of a parsed player response into a
- * plain `CaptionTrack[]`. Drops tracks without a `baseUrl` or
- * `languageCode`.
+ * 把已解析的 player response 中的字幕块归一化为
+ * 普通的 `CaptionTrack[]`。丢弃没有 `baseUrl` 或
+ * `languageCode` 的轨道。
  */
 export const extractCaptionTracks = (
   playerResponse: PlayerResponseShape,
@@ -190,13 +190,13 @@ export const extractCaptionTracks = (
 };
 
 /**
- * Pick the most appropriate caption track for the requested language:
- *   1. exact `languageCode` match,
- *   2. prefix match (e.g. "en" matches "en-US"),
- *   3. English fallback ("en" / "en-*"),
- *   4. first track.
+ * 为请求的语言挑选最合适的字幕轨道:
+ *   1. `languageCode` 精确匹配,
+ *   2. 前缀匹配(例如 "en" 匹配 "en-US"),
+ *   3. 回退到英文("en" / "en-*"),
+ *   4. 第一个轨道。
  *
- * Returns `null` only when the input list is empty.
+ * 仅当输入列表为空时返回 `null`。
  */
 export const pickCaptionTrack = (
   tracks: CaptionTrack[],
@@ -220,9 +220,9 @@ export const pickCaptionTrack = (
 };
 
 export interface TranscriptSegment {
-  /** Start time in seconds. */
+  /** 起始时间(秒)。 */
   start: number;
-  /** Duration in seconds. */
+  /** 时长(秒)。 */
   duration: number;
   text: string;
 }
@@ -238,9 +238,9 @@ interface Json3Doc {
 }
 
 /**
- * Convert a `&fmt=json3` caption document into clean segments + a
- * single concatenated string. Drops zero-text events (json3 uses some
- * events purely for window/style timing).
+ * 把 `&fmt=json3` 的字幕文档转换为干净的分段 + 一个
+ * 拼接后的字符串。丢弃无文本的 event(json3 中有些
+ * event 纯粹用于窗口/样式计时)。
  */
 export const parseJson3 = (
   doc: Json3Doc,
@@ -265,7 +265,7 @@ export const parseJson3 = (
   return { segments, fullText };
 };
 
-// ─── Tool definition ─────────────────────────────────────────────────
+// ─── 工具定义 ─────────────────────────────────────────────────
 
 const inputSchema = z.object({
   url: z
@@ -398,8 +398,8 @@ export const buildYoutubeTranscriptTool = (
     }
     const { segments, fullText } = parseJson3(json3);
 
-    // With a query, BM25-retrieve only the relevant transcript chunks (long
-    // videos can run to hundreds of KB); else return the full transcript.
+    // 有 query 时,用 BM25 仅检索相关的字幕片段(长视频
+    // 的文稿可能达到数百 KB);否则返回完整文稿。
     const q = query?.trim();
     const search = q ? searchText(fullText, q) : null;
 

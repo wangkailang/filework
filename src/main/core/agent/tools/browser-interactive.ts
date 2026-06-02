@@ -1,23 +1,23 @@
 /**
- * Interactive browser tools — give the agent a stateful, real-Chromium
- * session it can navigate, click, and type into. Closes the gap left
- * by the stateless `webFetchRendered` (which only loads + reads once
- * and discards the window), unblocking GAIA-style tasks that need to
- * search a site, click a result, paginate, or fill a form.
+ * 交互式浏览器工具 —— 给 agent 一个有状态的、真实 Chromium 的
+ * 会话,可在其中导航、点击和输入。弥补了无状态的
+ * `webFetchRendered` 留下的缺口(后者只加载 + 读取一次
+ * 便丢弃窗口),从而解锁需要搜索站点、点击结果、翻页或
+ * 填写表单的 GAIA 式任务。
  *
- * All five tools delegate to `ipc/interactive-browser.ts` which owns
- * the BrowserWindow lifecycle and page-side scripts. The tools
- * themselves are domain-neutral and don't touch Electron directly, so
- * unit tests can stub the manager via module mocking.
+ * 全部五个工具都委托给 `ipc/interactive-browser.ts`,后者负责
+ * BrowserWindow 的生命周期和页面侧脚本。工具本身
+ * 与领域无关,且不直接接触 Electron,因此
+ * 单元测试可通过模块 mock 来打桩 manager。
  *
- * Element addressing is by `ref` (a `data-aix-ref` attribute injected
- * onto interactive elements by the snapshot script), not CSS selector.
- * The LLM picks `ref` values from the returned `elements[]`.
+ * 元素寻址通过 `ref`(由快照脚本注入到交互元素上的
+ * `data-aix-ref` 属性),而非 CSS 选择器。
+ * LLM 从返回的 `elements[]` 中挑选 `ref` 值。
  *
- * Safety: all five tools are marked `safe` to mirror `webFetch` /
- * `webFetchRendered`. Note that clicks/submits on live pages can
- * trigger third-party side effects (e.g. form posts); callers wanting
- * approval-gated browsing should mark them `destructive` upstream.
+ * 安全性:全部五个工具都标记为 `safe`,与 `webFetch` /
+ * `webFetchRendered` 保持一致。注意,在实时页面上的点击/提交可能
+ * 触发第三方副作用(例如表单提交);需要
+ * 审批门控浏览的调用方应在上游将其标记为 `destructive`。
  */
 import { z } from "zod/v4";
 
@@ -30,7 +30,7 @@ import {
 } from "../../../ipc/interactive-browser";
 import type { ToolDefinition } from "../tool-registry";
 
-// ─── Schemas ─────────────────────────────────────────────────────────
+// ─── 校验 Schema ─────────────────────────────────────────────────────
 
 const openSchema = z.object({
   url: z.string().url().describe("Absolute HTTP(S) URL to open."),
@@ -99,7 +99,7 @@ const closeSchema = z.object({
     .describe("Session id returned by `browserOpen`."),
 });
 
-// ─── Tool definitions ────────────────────────────────────────────────
+// ─── 工具定义 ────────────────────────────────────────────────────────
 
 export const buildBrowserOpenTool = (): ToolDefinition => ({
   name: "browserOpen",
@@ -181,7 +181,7 @@ export const buildBrowserCloseTool = (): ToolDefinition => ({
   },
 });
 
-/** Convenience: build all five tools at once for registration. */
+/** 便利方法:一次性构建全部五个工具以供注册。 */
 export const buildBrowserInteractiveTools = (): ToolDefinition[] => [
   buildBrowserOpenTool(),
   buildBrowserClickTool(),

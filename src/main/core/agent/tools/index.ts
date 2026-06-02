@@ -1,16 +1,15 @@
 /**
- * Built-in file tools, ToolRegistry-shaped.
+ * 内置文件工具,符合 ToolRegistry 形态。
  *
- * These are the M1 replacements for `safeTools` / `rawExecutors` in
- * `src/main/ipc/ai-tools.ts`. They route every filesystem and exec call
- * through `ctx.workspace.*`, so the same tool body works for any
- * `Workspace` implementation (LocalWorkspace today, GitHub/GitLab later).
+ * 这些是 `src/main/ipc/ai-tools.ts` 中 `safeTools` / `rawExecutors` 的
+ * M1 版替代实现。它们把每一次文件系统与 exec 调用都经由
+ * `ctx.workspace.*` 路由,因此同一份工具实现可适配任何
+ * `Workspace` 实现(当前是 LocalWorkspace,日后可接 GitHub/GitLab)。
  *
- * Tool inputSchemas continue to accept absolute paths (the model has been
- * trained on this in prompts and skill bodies) — `resolveRel()` converts
- * them to workspace-relative form, which means out-of-sandbox absolute
- * paths surface as a `WorkspaceEscapeError` from `toRelative()` rather
- * than being silently joined.
+ * 工具的 inputSchema 仍然接受绝对路径(模型已在提示词与技能正文中
+ * 按此训练)—— `resolveRel()` 会把它们转换为相对于 workspace 的形式,
+ * 这意味着越出沙箱的绝对路径会从 `toRelative()` 抛出
+ * `WorkspaceEscapeError`,而不是被悄悄拼接进去。
  */
 
 import path from "node:path";
@@ -33,7 +32,7 @@ import {
 } from "./command-classify";
 
 // ---------------------------------------------------------------------------
-// Optional deps for incremental scanning (wired in PR 2)
+// 增量扫描的可选依赖(在 PR 2 中接入)
 // ---------------------------------------------------------------------------
 
 export interface IncrementalScanResult {
@@ -70,12 +69,11 @@ export interface IncrementalScannerLike {
 export interface FileToolsDeps {
   incrementalScanner?: IncrementalScannerLike;
   /**
-   * Optional git workflow manual embedded into `runCommand`'s
-   * description. When the active workspace is git-backed, the IPC
-   * layer (see `system-prompt.buildGitRunCommandProtocol`) builds this
-   * string so the agent gets HEREDOC / `gh` / `glab` templates with
-   * high attention weight only when considering a shell command.
-   * Non-git workspaces should leave this undefined.
+   * 嵌入到 `runCommand` description 中的可选 git 工作流手册。当前活跃
+   * workspace 由 git 支撑时,IPC 层(见
+   * `system-prompt.buildGitRunCommandProtocol`)会构造该字符串,使 agent
+   * 仅在考虑 shell 命令时才以高注意力权重获得 HEREDOC / `gh` / `glab`
+   * 模板。非 git workspace 应将其保持为 undefined。
    */
   gitProtocol?: string;
   /**
@@ -86,7 +84,7 @@ export interface FileToolsDeps {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 辅助函数
 // ---------------------------------------------------------------------------
 
 async function resolveRel(workspace: Workspace, p: string): Promise<string> {
@@ -103,7 +101,7 @@ const sortEntries = (entries: WorkspaceEntryLike[]): WorkspaceEntryLike[] =>
   });
 
 // ---------------------------------------------------------------------------
-// Schemas
+// Schema 定义
 // ---------------------------------------------------------------------------
 
 const pathSchema = z.object({
@@ -200,7 +198,7 @@ const clearCacheSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Tool factories
+// 工具工厂
 // ---------------------------------------------------------------------------
 
 function listDirectoryTool(
@@ -296,10 +294,9 @@ const writeFileTool: ToolDefinition<
   inputSchema: writeFileSchema,
   execute: async (args, ctx) => {
     const rel = await resolveRel(ctx.workspace, args.path);
-    // Compute the diff against the pre-image *before* overwriting, so the
-    // turn summary reads authoritative +/- counts off the result instead
-    // of re-diffing in the renderer. Best-effort: a preview failure must
-    // never block the actual write.
+    // 在覆盖*之前*先对前镜像计算 diff,使 turn 摘要能直接从结果读取权威的
+    // +/- 行数,而不必在渲染端重新做 diff。尽力而为:预览失败绝不能
+    // 阻塞实际写入。
     const diffStat = await computeWriteDiffStat(args, ctx).catch(() => null);
     await ctx.workspace.fs.writeFile(rel, args.content);
     return {
@@ -310,7 +307,7 @@ const writeFileTool: ToolDefinition<
   },
 };
 
-/** Pre-image diff stat for `writeFile`, derived from the shared preview. */
+/** `writeFile` 的前镜像 diff 统计,由共享预览推导得出。 */
 async function computeWriteDiffStat(
   args: { path: string; content: string },
   ctx: ToolContext,
@@ -362,17 +359,15 @@ const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
 };
 
 /**
- * `runCommand` — host shell tool, factory-ized so the description can
- * carry an optional git workflow protocol (HEREDOC commit message,
- * `gh` / `glab` PR templates). Caller passes `gitProtocol` only when
- * the active workspace is git-backed; otherwise the description stays
- * minimal so non-git workspaces don't pay attention budget for rules
- * that don't apply.
+ * `runCommand` —— 宿主 shell 工具,做成工厂以便其 description 可携带
+ * 可选的 git 工作流协议(HEREDOC 提交信息、`gh` / `glab` PR 模板)。
+ * 调用方仅在活跃 workspace 由 git 支撑时才传入 `gitProtocol`;否则
+ * description 保持精简,使非 git workspace 不必为不适用的规则付出
+ * 注意力预算。
  *
- * The protocol lives in the tool description (not the system prompt)
- * by design — LLMs allocate attention to tool descriptions with high
- * weight only when considering that tool. This is the "on-demand"
- * injection pattern used by Claude Code's `Bash` tool.
+ * 该协议刻意放在工具 description 中(而非系统提示)—— LLM 仅在考虑
+ * 某个工具时才会以高权重把注意力分配给该工具的 description。这是
+ * Claude Code 的 `Bash` 工具所采用的"按需"注入模式。
  */
 const BACKGROUND_GUIDANCE = `Long-running commands (dev servers, watchers, REPLs) MUST use \`runInBackground: true\`. Foreground mode buffers stdout in memory and only returns when the child closes — for a dev server that never happens, so the agent hangs. Background mode returns a shellId immediately plus the first ~2s of output; use \`readShellOutput(shellId)\` to poll until you see the ready marker (e.g., \`Local: http://localhost:PORT\`), then \`killShell(shellId)\` when done.`;
 
@@ -438,17 +433,16 @@ function runCommandTool(
         signal: ctx.signal,
         sandbox: policy,
       });
-      // Attach backend-derived facts so the turn summary (and any other
-      // consumer) doesn't have to re-classify / re-parse stdout in the UI.
+      // 附上后端推导出的事实,使 turn 摘要(以及任何其他消费方)无需在
+      // UI 中重新分类 / 重新解析 stdout。
       const commandKind = classifyCommand(args.command);
       const testStats =
         commandKind === "test"
           ? parseTestStats(result.stdout, result.stderr)
           : undefined;
-      // Sandbox blocks outbound network by default; a failing curl/wget/git/
-      // package-manager command then dies with a connection error (curl exit
-      // 7). Tell the model the real cause + the fix instead of leaving it to
-      // guess from a bare non-zero exit.
+      // 沙箱默认阻断出站网络;此时失败的 curl/wget/git/包管理器命令会以
+      // 连接错误结束(curl 退出码 7)。告知模型真正的原因 + 修复办法,而不是
+      // 任由它从一个孤零零的非零退出码去猜。
       const networkBlocked =
         policy != null &&
         isSandboxEffective(policy.mode) &&
@@ -526,8 +520,8 @@ const directoryStatsTool: ToolDefinition<
     let totalFiles = 0;
     let totalDirs = 0;
     let totalSize = 0;
-    // Per-extension count AND size, so the model relays a finished table
-    // instead of hand-summing sizes by type (the step it gets wrong).
+    // 按扩展名分别统计数量与大小,使模型直接转述一张完成的表格,而不必
+    // 按类型手动累加大小(它容易出错的那一步)。
     const extensions: Record<string, { count: number; totalSize: number }> = {};
     let scanned = 0;
     for (const entry of entries) {
@@ -603,12 +597,12 @@ function clearDirectoryCacheTool(
 }
 
 // ---------------------------------------------------------------------------
-// Public factory
+// 公开工厂
 // ---------------------------------------------------------------------------
 
 /**
- * Build the standard set of file tools. Pass an `incrementalScanner` to
- * enable the incremental listing path and register the cache utility tools.
+ * 构建标准文件工具集合。传入 `incrementalScanner` 以启用增量列目录路径
+ * 并注册缓存相关的辅助工具。
  */
 export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
   const tools: ToolDefinition[] = [

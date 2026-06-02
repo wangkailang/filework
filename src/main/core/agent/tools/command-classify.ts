@@ -1,15 +1,14 @@
 /**
- * Backend-side classification of a `runCommand` invocation, so the turn
- * summary (and any other consumer) reads facts off the tool result rather
- * than re-parsing stdout in the renderer. Pure string-in / data-out — no
- * IO, no side effects.
+ * 在后端对 `runCommand` 调用进行分类,使本轮摘要(以及任何其他消费方)
+ * 直接从工具结果读取事实,而不是在渲染层重新解析 stdout。纯字符串输入 /
+ * 数据输出 —— 无 IO,无副作用。
  */
 
 export type CommandKind = "test" | "build" | "generic";
 
-// Test-runner signatures. Checked before build so a command that both
-// builds and tests (e.g. `npm run build && npm test`) is reported as a
-// test run — that's the stronger signal about what the user cares about.
+// 测试运行器的特征签名。先于 build 检查,这样同时构建和测试的命令
+// (例如 `npm run build && npm test`)会被报告为一次测试运行 ——
+// 这是关于用户真正关心什么的更强信号。
 const TEST_PATTERNS: RegExp[] = [
   /\b(?:vitest|jest|mocha|ava|rspec|phpunit|cypress)\b/,
   /\bpytest\b/,
@@ -34,12 +33,11 @@ export function classifyCommand(command: string): CommandKind {
   return "generic";
 }
 
-// Command heads that change the filesystem — the bounded set of things that
-// actually constitute a deliverable. We allowlist these (rather than denylist
-// read-only commands, an unbounded set: pipes, `while` loops, `$(...)`, awk,
-// arbitrary scripts) so the card fails toward hiding noise, not surfacing it.
+// 会改动文件系统的命令头 —— 真正构成交付物的那有限集合。我们采用白名单
+// (而不是把只读命令列入黑名单,那是个无界集合:管道、`while` 循环、
+// `$(...)`、awk、任意脚本),以便卡片倾向于隐藏噪声,而不是把它暴露出来。
 const MUTATING_HEADS = new Set([
-  // file ops
+  // 文件操作
   "mv",
   "cp",
   "rm",
@@ -58,7 +56,7 @@ const MUTATING_HEADS = new Set([
   "mkfile",
   "mkfifo",
   "tee",
-  // archive / compression
+  // 归档 / 压缩
   "zip",
   "unzip",
   "tar",
@@ -73,13 +71,13 @@ const MUTATING_HEADS = new Set([
   "compress",
   "rar",
   "unrar",
-  // permissions / attributes
+  // 权限 / 属性
   "chmod",
   "chown",
   "chgrp",
   "chflags",
   "xattr",
-  // media / document conversion (common filework deliverables)
+  // 媒体 / 文档转换(常见的 filework 交付物)
   "sips",
   "convert",
   "magick",
@@ -89,9 +87,8 @@ const MUTATING_HEADS = new Set([
   "gs",
 ]);
 
-// Inline-script interpreters: a deliverable only if the snippet shows a
-// filesystem write (see MUTATION_MARKERS); a pure "compute disk usage" script
-// has none and stays out of the card.
+// 内联脚本解释器:只有当片段中出现文件系统写入(见 MUTATION_MARKERS)时
+// 才算交付物;一个纯粹"计算磁盘占用"的脚本不含此类标记,因而不进入卡片。
 const INTERPRETERS = new Set([
   "python",
   "python3",
@@ -103,7 +100,7 @@ const INTERPRETERS = new Set([
   "zsh",
 ]);
 
-// git subcommands that change repo/working-tree state.
+// 会改变仓库 / 工作区状态的 git 子命令。
 const MUTATING_GIT = new Set([
   "add",
   "commit",
@@ -127,8 +124,8 @@ const MUTATING_GIT = new Set([
   "tag",
 ]);
 
-// Substrings inside an interpreter snippet that imply it writes to the
-// filesystem or shells out — the snippet then counts as a deliverable.
+// 解释器片段中暗示它会写入文件系统或外派 shell 的子串 ——
+// 此时该片段被视为交付物。
 const MUTATION_MARKERS = [
   "remove",
   "rmdir",
@@ -161,10 +158,10 @@ function stripEnvAssignments(tokens: string[]): string[] {
 }
 
 /**
- * Split a command line into segments on the shell operators `&&`, `||`, `;`,
- * `|`, and newlines, but only when they appear OUTSIDE quotes. A naive
- * `.split()` would wrongly break `python3 -c "import os; print(...)"` at the
- * in-string `;`. Pipes inside quotes (e.g. a grep pattern) stay intact too.
+ * 按 shell 运算符 `&&`、`||`、`;`、`|` 以及换行符把命令行拆分为多个片段,
+ * 但仅当它们出现在引号之外时才拆分。朴素的 `.split()` 会在
+ * `python3 -c "import os; print(...)"` 里字符串内的 `;` 处错误地拆开。
+ * 引号内的管道符(例如 grep 的模式)也会保持完整。
  */
 function splitSegments(command: string): string[] {
   const segments: string[] = [];
@@ -186,7 +183,7 @@ function splitSegments(command: string): string[] {
     if (two === "&&" || two === "||") {
       segments.push(buf);
       buf = "";
-      i++; // consume the second operator char
+      i++; // 消费运算符的第二个字符
       continue;
     }
     if (ch === ";" || ch === "|" || ch === "\n") {
@@ -201,8 +198,8 @@ function splitSegments(command: string): string[] {
 }
 
 /**
- * True when a segment writes to a real file via `>` / `>>` redirection.
- * Ignores fd-dups (`2>&1`, `>&2`) and `/dev/null`, which deliver nothing.
+ * 当某个片段通过 `>` / `>>` 重定向写入真实文件时返回 true。
+ * 忽略文件描述符复制(`2>&1`、`>&2`)和 `/dev/null`,它们不产生任何交付物。
  */
 function hasWriteRedirect(segment: string): boolean {
   let quote: '"' | "'" | null = null;
@@ -217,7 +214,7 @@ function hasWriteRedirect(segment: string): boolean {
       continue;
     }
     if (ch === ">") {
-      if (segment[i + 1] === "&") continue; // fd-dup, not a file write
+      if (segment[i + 1] === "&") continue; // 文件描述符复制,而非写文件
       const target = segment
         .slice(i + 1)
         .replace(/^>?\s*/, "")
@@ -234,10 +231,10 @@ function segmentIsDeliverable(segment: string): boolean {
   if (hasWriteRedirect(segment)) return true;
   const tokens = stripEnvAssignments(segment.split(/\s+/).filter(Boolean));
   if (tokens.length === 0) return false;
-  const head = tokens[0].replace(/^.*\//, ""); // strip any leading path
+  const head = tokens[0].replace(/^.*\//, ""); // 去掉任何前导路径
   if (MUTATING_HEADS.has(head)) return true;
   if (head === "git") return tokens.length > 1 && MUTATING_GIT.has(tokens[1]);
-  if (head === "sed") return tokens.some((t) => t.startsWith("-i")); // in-place
+  if (head === "sed") return tokens.some((t) => t.startsWith("-i")); // 原地修改
   if (INTERPRETERS.has(head)) {
     const lower = segment.toLowerCase();
     return MUTATION_MARKERS.some((m) => lower.includes(m));
@@ -246,24 +243,22 @@ function segmentIsDeliverable(segment: string): boolean {
 }
 
 /**
- * True when a `runCommand` invocation changed the filesystem — any segment of
- * the chain runs a known file-mutating command (or writes via redirect). Used
- * to keep only genuine deliverables in the turn card; read-only inspections
- * (`du`, `find | while ... stat`, compute scripts) return false and are hidden.
- * Conservative the other way: an unrecognized mutator is under-reported, never
- * shown as noise.
+ * 当一次 `runCommand` 调用改动了文件系统时返回 true —— 命令链中的任意片段
+ * 运行了已知的文件改动命令(或通过重定向写入)。用于在本轮卡片中只保留
+ * 真正的交付物;只读的检查类命令(`du`、`find | while ... stat`、计算脚本)
+ * 返回 false 并被隐藏。在另一个方向上保持保守:无法识别的改动命令会被
+ * 漏报,而绝不会被当作噪声展示出来。
  */
 export function isDeliverableCommand(command: string): boolean {
   return splitSegments(command).some(segmentIsDeliverable);
 }
 
 /**
- * Pull `{ passed, failed }` out of a test runner's output. Tolerant of the
- * common formats (jest / vitest / pytest) by simply taking the first
- * `N passed` and `N failed` counts anywhere in the combined output — these
- * runners all print a summary line with those tokens. Returns undefined
- * when neither token is present (e.g. go test, or a non-test command), so
- * the caller can omit `testStats` entirely.
+ * 从测试运行器的输出中提取 `{ passed, failed }`。通过简单地在合并后的输出中
+ * 任意位置取第一个 `N passed` 和 `N failed` 计数,兼容常见格式
+ * (jest / vitest / pytest)—— 这些运行器都会打印含这些 token 的汇总行。
+ * 当两个 token 都不存在时(例如 go test 或非测试命令)返回 undefined,
+ * 以便调用方可以完全省略 `testStats`。
  */
 export function parseTestStats(
   stdout: string,
