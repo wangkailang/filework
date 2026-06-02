@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
 
 // ---------------------------------------------------------------------------
-// Constants
+// 常量
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_TOKEN_BUDGET = 80_000;
@@ -10,13 +10,13 @@ const SAFETY_MARGIN = 2_000;
 export const TOOL_RESULT_COMPRESS_THRESHOLD_CHARS = 2_000;
 
 // ---------------------------------------------------------------------------
-// Model context window map
+// 模型上下文窗口映射
 // ---------------------------------------------------------------------------
 
 /**
- * Known context window sizes (in tokens) for common models.
- * Prefix-matched: "claude-3.5-sonnet-20241022" matches "claude-3.5-sonnet".
- * More specific prefixes should come first.
+ * 常见模型已知的上下文窗口大小（以 token 计）。
+ * 按前缀匹配："claude-3.5-sonnet-20241022" 匹配 "claude-3.5-sonnet"。
+ * 更具体的前缀应排在前面。
  */
 const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
   // Anthropic
@@ -47,19 +47,18 @@ const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
   ["deepseek-coder", 64_000],
   ["deepseek-reasoner", 64_000],
   ["deepseek", 64_000],
-  // Xiaomi MiMo (reasoning model). MiMo-v2.5-pro advertises 128K context;
-  // the prefix catch-all keeps future MiMo SKUs working without a code
-  // change. If a deployment uses a smaller window the user can configure
-  // a Custom provider as an override.
+  // 小米 MiMo（推理模型）。MiMo-v2.5-pro 标称 128K 上下文；
+  // 前缀兜底匹配可让未来的 MiMo 型号无需改动代码即可工作。
+  // 若某次部署使用更小的窗口，用户可配置自定义 provider 覆盖。
   ["mimo-v2.5", 128_000],
   ["mimo", 128_000],
 ];
 
 /**
- * Compute the input token budget for a given model.
+ * 计算给定模型的输入 token 预算。
  *
- * Formula: contextWindow - maxOutputTokens - safetyMargin
- * Falls back to DEFAULT_TOKEN_BUDGET for unknown models.
+ * 公式：contextWindow - maxOutputTokens - safetyMargin
+ * 对未知模型回退到 DEFAULT_TOKEN_BUDGET。
  */
 export function getTokenBudgetForModel(modelId: string): number {
   const lower = modelId.toLowerCase();
@@ -75,44 +74,44 @@ const TRUNCATION_NOTICE =
 const COMPRESSED_PLACEHOLDER = "[工具结果已压缩]";
 
 // ---------------------------------------------------------------------------
-// Public interfaces
+// 公共接口
 // ---------------------------------------------------------------------------
 
 export interface TruncationResult {
   messages: ModelMessage[];
   wasTruncated: boolean;
-  /** Number of messages dropped by simple truncation (0 if not truncated) */
+  /** 简单截断丢弃的消息数量（未截断时为 0） */
   messagesDropped: number;
 }
 
 // ---------------------------------------------------------------------------
-// Token estimation
+// Token 估算
 // ---------------------------------------------------------------------------
 
-// CJK Unified Ideographs and common CJK ranges (global flag for matchAll)
+// CJK 统一表意文字及常见 CJK 区段（带 global 标志以供 matchAll 使用）
 const CJK_RE_G =
   /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u{20000}-\u{2FA1F}]/gu;
 
 /**
- * Estimate the token count of a single string.
+ * 估算单个字符串的 token 数量。
  *
- * Latin/ASCII text: ~4 chars per token (GPT/Claude average).
- * CJK text: ~1.5 chars per token — each character is typically 1-2 tokens
- * in common tokenizers (cl100k, claude).
+ * 拉丁/ASCII 文本：约 4 字符/token（GPT/Claude 平均值）。
+ * CJK 文本：约 1.5 字符/token —— 在常见分词器（cl100k、claude）中
+ * 每个字符通常为 1-2 个 token。
  *
- * Uses a single global regex match to count CJK characters, avoiding
- * per-character iteration overhead on large strings (tool results up to 200KB).
+ * 使用单次全局正则匹配统计 CJK 字符，避免在大字符串（工具结果可达 200KB）
+ * 上逐字符迭代的开销。
  */
 function estimateStringTokens(text: string): number {
   CJK_RE_G.lastIndex = 0;
   const cjkChars = text.match(CJK_RE_G)?.length ?? 0;
   const latinChars = text.length - cjkChars;
-  // CJK: ~1.5 chars/token  |  Latin/ASCII: ~4 chars/token
+  // CJK：约 1.5 字符/token  |  拉丁/ASCII：约 4 字符/token
   return Math.ceil(cjkChars / 1.5 + latinChars / 4);
 }
 
 /**
- * Estimate the total token count for a ModelMessage array.
+ * 估算 ModelMessage 数组的总 token 数量。
  */
 export function estimateTokens(messages: ModelMessage[]): number {
   let total = 0;
@@ -123,17 +122,14 @@ export function estimateTokens(messages: ModelMessage[]): number {
 }
 
 /**
- * Per-attachment token approximations. Picking conservative defaults
- * keeps the budget from over-firing compression on routine submits
- * while staying in the right order of magnitude. Anthropic's image
- * tokenizer maxes around ~1500 tokens; PDFs depend on length but
- * ~2000 tokens covers a short doc.
+ * 各类附件的 token 近似值。选取保守的默认值，既能在数量级上保持准确，
+ * 又能避免在日常提交时过度触发压缩。Anthropic 的图片分词器上限约为
+ * 1500 token；PDF 取决于长度，但约 2000 token 足以覆盖一份短文档。
  *
- * Crucially: never `JSON.stringify` an image/file part — its `image`
- * or `data` field is a Buffer, and stringifying expands it to a giant
- * `{type:"Buffer",data:[...]}` literal that both bloats the estimate
- * and (downstream) gets parsed back as a plain object, killing the
- * Buffer identity that the AI SDK schema requires.
+ * 关键点：绝不要对 image/file 分块执行 `JSON.stringify` —— 其 `image`
+ * 或 `data` 字段是 Buffer，序列化会将其展开为一个巨大的
+ * `{type:"Buffer",data:[...]}` 字面量，既会膨胀估算值，又会（在下游）
+ * 被解析回普通对象，破坏 AI SDK schema 所要求的 Buffer 身份。
  */
 const IMAGE_TOKEN_APPROX = 1500;
 const FILE_TOKEN_APPROX = 2000;
@@ -165,8 +161,8 @@ function estimateMessageTokens(msg: ModelMessage): number {
         tokens += FILE_TOKEN_APPROX;
         break;
       default:
-        // reasoning and other rare parts — rough estimate from JSON.
-        // Safe here because these don't carry binary fields.
+        // reasoning 及其他罕见分块 —— 用 JSON 做粗略估算。
+        // 此处安全，因为这些分块不携带二进制字段。
         tokens += estimateStringTokens(JSON.stringify(part));
         break;
     }
@@ -185,22 +181,22 @@ function estimateToolResultTokens(
 }
 
 // ---------------------------------------------------------------------------
-// Compression helpers
+// 压缩辅助函数
 // ---------------------------------------------------------------------------
 
 /**
- * Deep-clone a message. Uses Node's `structuredClone` so binary fields
- * (`image: Uint8Array`, `data: Buffer`) survive the round-trip with
- * their prototype intact — the AI SDK's prompt schema checks
- * `instanceof Uint8Array`, which a JSON round-trip would silently break.
+ * 深拷贝一条消息。使用 Node 的 `structuredClone`，使二进制字段
+ * （`image: Uint8Array`、`data: Buffer`）在往返过程中原型保持完整 ——
+ * AI SDK 的 prompt schema 会检查 `instanceof Uint8Array`，而 JSON 往返
+ * 会悄无声息地破坏它。
  */
 function cloneMessage(msg: ModelMessage): ModelMessage {
   return structuredClone(msg);
 }
 
 /**
- * Compress large tool-result values in a message array (mutates clones).
- * Returns a new array with compressed messages.
+ * 压缩消息数组中过大的 tool-result 值（对克隆副本进行变更）。
+ * 返回包含已压缩消息的新数组。
  */
 export function compressToolResults(messages: ModelMessage[]): ModelMessage[] {
   return messages.map((msg) => {
@@ -240,20 +236,20 @@ function isLargeToolResult(
 }
 
 // ---------------------------------------------------------------------------
-// Truncation
+// 截断
 // ---------------------------------------------------------------------------
 
 /**
- * Truncate a ModelMessage array to fit within a token budget.
+ * 截断 ModelMessage 数组，使其符合 token 预算。
  *
- * Strategy (in priority order):
- * 1. Compress tool results exceeding 2000 chars
- * 2. Remove early message rounds (from the beginning)
- * 3. Insert a truncation notice at the start
+ * 策略（按优先级顺序）：
+ * 1. 压缩超过 2000 字符的工具结果
+ * 2. 从开头移除较早的消息轮次
+ * 3. 在开头插入一条截断提示
  *
- * Edge cases:
- * - budget <= 0 → use DEFAULT_TOKEN_BUDGET
- * - Single message over budget → truncate its text content
+ * 边界情况：
+ * - budget <= 0 → 使用 DEFAULT_TOKEN_BUDGET
+ * - 单条消息超出预算 → 截断其文本内容
  */
 export function truncateToFit(
   messages: ModelMessage[],
@@ -266,37 +262,37 @@ export function truncateToFit(
     return { messages: [], wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Check if already within budget
+  // 检查是否已在预算之内
   if (estimateTokens(messages) <= effectiveBudget) {
     return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Strategy 1: compress large tool results
+  // 策略 1：压缩过大的工具结果
   let result = compressToolResults(messages);
 
   if (estimateTokens(result) <= effectiveBudget) {
     return { messages: result, wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Strategy 2: remove early messages from the beginning
+  // 策略 2：从开头移除较早的消息
   const originalCount = result.length;
   while (result.length > 1 && estimateTokens(result) > effectiveBudget) {
     result = result.slice(1);
   }
 
-  // Edge case: single message still over budget → truncate its text
+  // 边界情况：单条消息仍超出预算 → 截断其文本
   if (result.length === 1 && estimateTokens(result) > effectiveBudget) {
     result = [truncateSingleMessage(result[0], effectiveBudget)];
   }
 
-  // Strategy 3: insert truncation notice at the beginning
+  // 策略 3：在开头插入截断提示
   const notice: ModelMessage = {
     role: "system",
     content: TRUNCATION_NOTICE,
   };
   const noticeTokens = estimateTokens([notice]);
 
-  // Make room for the notice if needed
+  // 如有需要，为提示腾出空间
   while (
     result.length > 1 &&
     estimateTokens(result) + noticeTokens > effectiveBudget
@@ -304,7 +300,7 @@ export function truncateToFit(
     result = result.slice(1);
   }
 
-  // If single message + notice still over budget, truncate the message further
+  // 若单条消息加提示仍超出预算，则进一步截断该消息
   if (
     result.length === 1 &&
     estimateTokens(result) + noticeTokens > effectiveBudget
@@ -316,16 +312,16 @@ export function truncateToFit(
   }
 
   result = [notice, ...result];
-  // Subtract 1 for the notice message we added
+  // 减去我们添加的那条提示消息
   const messagesDropped = originalCount - (result.length - 1);
 
   return { messages: result, wasTruncated: true, messagesDropped };
 }
 
 /**
- * Truncate a single message's text content to fit within a token budget.
- * Uses the CJK ratio (1.5 chars/token) as a conservative estimate so we
- * never exceed the budget regardless of script.
+ * 截断单条消息的文本内容，使其符合 token 预算。
+ * 使用 CJK 比率（1.5 字符/token）作为保守估算，
+ * 以确保无论何种文字都不会超出预算。
  */
 function truncateSingleMessage(
   msg: ModelMessage,
@@ -333,7 +329,7 @@ function truncateSingleMessage(
 ): ModelMessage {
   const maxChars = Math.floor(budget * 1.5);
 
-  // Only truncate string content for user/system/assistant messages
+  // 仅对 user/system/assistant 消息截断字符串内容
   if (typeof msg.content === "string" && msg.role !== "tool") {
     return { ...msg, content: msg.content.slice(0, maxChars) } as ModelMessage;
   }
@@ -366,7 +362,7 @@ function truncateSingleMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Async truncation with optional LLM compression
+// 带可选 LLM 压缩的异步截断
 // ---------------------------------------------------------------------------
 
 export interface CompressionResult {
@@ -375,10 +371,10 @@ export interface CompressionResult {
 }
 
 /**
- * Async version of truncateToFit that supports an optional LLM compressor.
+ * truncateToFit 的异步版本，支持可选的 LLM 压缩器。
  *
- * If simple truncation exceeds the budget and a compressor is provided,
- * delegates to the compressor. Falls back to simple truncation on failure.
+ * 若简单截断后仍超出预算且提供了压缩器，则委托给压缩器处理。
+ * 失败时回退到简单截断。
  */
 export async function truncateToFitAsync(
   messages: ModelMessage[],
@@ -395,18 +391,18 @@ export async function truncateToFitAsync(
     return { messages: [], wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Check if already within budget
+  // 检查是否已在预算之内
   if (estimateTokens(messages) <= effectiveBudget) {
     return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Strategy 1: compress tool results
+  // 策略 1：压缩工具结果
   const compressed = compressToolResults(messages);
   if (estimateTokens(compressed) <= effectiveBudget) {
     return { messages: compressed, wasTruncated: false, messagesDropped: 0 };
   }
 
-  // Strategy 2: try LLM compression if available
+  // 策略 2：如可用则尝试 LLM 压缩
   if (compressor) {
     try {
       const result = await compressor(compressed, effectiveBudget);
@@ -425,6 +421,6 @@ export async function truncateToFitAsync(
     }
   }
 
-  // Strategy 3: fall back to simple drop-from-beginning
+  // 策略 3：回退到简单的从头丢弃
   return truncateToFit(compressed, budget);
 }

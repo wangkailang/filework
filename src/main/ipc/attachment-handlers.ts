@@ -1,16 +1,14 @@
 /**
- * User-attached file IPC.
+ * 用户附件文件的 IPC。
  *
- * `chat:attachFile` takes a renderer-supplied source path (from the
- * native file picker or a drag-drop `webUtils.getPathForFile`), copies
- * the file into `~/.filework/attachments/{sessionId}/`, sniffs MIME and
- * routing kind from the extension, and returns the metadata the
- * renderer needs to build an `AttachmentPart`.
+ * `chat:attachFile` 接收渲染进程提供的源路径(来自原生文件选择器
+ * 或拖放的 `webUtils.getPathForFile`),将文件拷贝到
+ * `~/.filework/attachments/{sessionId}/`,从扩展名嗅探 MIME 与路由
+ * 类型,并返回渲染进程构建 `AttachmentPart` 所需的元数据。
  *
- * Size-capped at 25 MB so a stray drag of a 4 GB video can't blow up
- * the JSONL session store or the model context. The cap returns a
- * structured `{ error }` (not a thrown exception) so the renderer can
- * surface a toast.
+ * 大小上限为 25 MB,以免误拖一个 4 GB 视频撑爆 JSONL 会话存储或模型
+ * 上下文。超限时返回结构化的 `{ error }`(而非抛出异常),使渲染进程
+ * 可以弹出提示。
  */
 
 import { stat } from "node:fs/promises";
@@ -27,8 +25,8 @@ import {
   saveBytesAttachmentToDisk,
 } from "./media-storage";
 
-// Re-exported so the existing handler tests stay co-located. The
-// canonical implementation lives in shared/mime.ts.
+// 重新导出,使现有的 handler 测试保持就近放置。规范实现位于
+// shared/mime.ts。
 export { classifyKind, extFromMime, sniffMimeType };
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -92,11 +90,10 @@ export const registerAttachmentHandlers = () => {
   );
 
   /**
-   * Clipboard-paste counterpart to `chat:attachFile`. Renderer hands over
-   * the raw bytes + MIME from a `ClipboardItem`; we pick the extension
-   * from the MIME (no filename exists on the clipboard) and write under
-   * the same attachments root so the rest of the pipeline (`local-file://`,
-   * AttachmentList, message-converter) doesn't care how the file got there.
+   * `chat:attachFile` 的剪贴板粘贴对应项。渲染进程从 `ClipboardItem`
+   * 交来原始字节 + MIME;我们从 MIME 选取扩展名(剪贴板上不存在文件名)
+   * 并写入同一个附件根目录,使后续流水线(`local-file://`、
+   * AttachmentList、message-converter)无需关心文件从何而来。
    */
   ipcMain.handle(
     "chat:attachBlob",
@@ -110,10 +107,10 @@ export const registerAttachmentHandlers = () => {
       },
     ): Promise<AttachFileResult | AttachFileError> => {
       try {
-        // Renderer is technically trusted in this app, but the IPC
-        // surface is reachable from preload-injected JS — validate the
-        // bytes payload explicitly so a bug there can't crash the
-        // handler with `Cannot read property byteLength of undefined`.
+        // 本应用中渲染进程在技术上是受信任的,但 IPC 入口可从
+        // preload 注入的 JS 触达 —— 因此显式校验 bytes 载荷,以免那里
+        // 的 bug 用 `Cannot read property byteLength of undefined` 把
+        // handler 弄崩。
         if (!ArrayBuffer.isView(payload.bytes)) {
           return { error: "Invalid payload: bytes must be a typed array" };
         }
@@ -127,9 +124,9 @@ export const registerAttachmentHandlers = () => {
           };
         }
         const ext = extFromMime(payload.mimeType);
-        // basename() strips any traversal / directory chars from a
-        // renderer-supplied display name. Matches the laundering
-        // chat:attachFile already does via `basename(sourcePath)`.
+        // basename() 会从渲染进程提供的显示名中剥离任何路径穿越 /
+        // 目录字符。与 chat:attachFile 已通过 `basename(sourcePath)`
+        // 做的净化处理一致。
         const safeName = payload.name
           ? basename(payload.name)
           : `pasted-${Date.now()}.${ext}`;

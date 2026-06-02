@@ -1,19 +1,18 @@
 /**
- * AI Tools Definition and Management
+ * AI 工具定义与管理
  *
- * Currently exports:
- *   - `safeTools`: read-only tool implementations consumed by
- *     `ai-plan-handlers` (plan-generation read-only tools) and by
- *     `ai-tools.test.ts` for unit coverage
- *   - `requestApproval`: IPC approval primitive used by `approval-hook.ts`
- *   - `dangerousToolDescriptions`: localized prompt strings, consumed
- *     internally by `requestApproval`
+ * 当前导出：
+ *   - `safeTools`：只读工具实现，由 `ai-plan-handlers`
+ *     （计划生成的只读工具）以及 `ai-tools.test.ts`
+ *     的单元测试使用
+ *   - `requestApproval`：`approval-hook.ts` 使用的 IPC 审批原语
+ *   - `dangerousToolDescriptions`：本地化的 prompt 字符串，
+ *     由 `requestApproval` 内部使用
  *
- * Pre-M2 the file also exported `rawExecutors`, `statefulTools`, and
- * `wrapToolWithAbort` — all deleted in M2 PR 4 because their only
- * consumer (`ai-tool-permissions.ts`) was itself deleted after the
- * AgentLoop migration replaced it with `core/agent/tools/*` +
- * `agent-tools.ts` + `approval-hook.ts`.
+ * 在 M2 之前，本文件还导出过 `rawExecutors`、`statefulTools` 与
+ * `wrapToolWithAbort` —— 均已在 M2 PR 4 中删除，因为它们唯一的
+ * 使用方（`ai-tool-permissions.ts`）在 AgentLoop 迁移后已被
+ * `core/agent/tools/*` + `agent-tools.ts` + `approval-hook.ts` 取代并删除。
  */
 
 import { spawn } from "node:child_process";
@@ -36,7 +35,7 @@ const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
     return a.name.localeCompare(b.name);
   });
 
-/** Human-readable descriptions for dangerous operations */
+/** 危险操作的可读描述 */
 export const dangerousToolDescriptions: Record<
   string,
   (args: Record<string, unknown>) => string
@@ -54,7 +53,7 @@ export const dangerousToolNames: string[] = Object.keys(
   dangerousToolDescriptions,
 );
 
-/** Safe (read-only) tools — shared across all requests */
+/** 安全（只读）工具 —— 在所有请求间共享 */
 export const safeTools: Record<string, Tool> = {
   listDirectory: {
     description:
@@ -89,7 +88,7 @@ export const safeTools: Record<string, Tool> = {
       includeStats?: boolean;
     }) => {
       if (!incremental) {
-        // Use original implementation only when incremental scanning is explicitly disabled
+        // 仅在显式禁用增量扫描时才使用原始实现
         const entries = await readdir(dirPath, { withFileTypes: true });
         const results: FileEntry[] = [];
         for (const entry of entries) {
@@ -107,7 +106,7 @@ export const safeTools: Record<string, Tool> = {
               modifiedAt: stats.mtime.toISOString(),
             });
           } catch {
-            // skip inaccessible
+            // 跳过无法访问的项
           }
         }
         const sortedResults = sortFileEntries(results);
@@ -119,11 +118,11 @@ export const safeTools: Record<string, Tool> = {
           : sortedResults;
       }
 
-      // Use incremental scanning
+      // 使用增量扫描
       const scanner = getIncrementalScanner();
       const scanResult = await scanner.scanIncremental(dirPath, forceRescan);
 
-      // Combine all files (added + modified + unchanged)
+      // 合并所有文件（新增 + 修改 + 未变更）
       const allFiles = [
         ...scanResult.added,
         ...scanResult.modified,
@@ -207,27 +206,27 @@ export const safeTools: Record<string, Tool> = {
           const terminateProcessTree = (signal: NodeJS.Signals) => {
             if (!child.pid) return;
             try {
-              // Detached child gets its own process group. Kill the whole group.
+              // detached 子进程拥有自己的进程组。杀掉整个进程组。
               if (process.platform !== "win32") {
                 process.kill(-child.pid, signal);
               } else {
-                // /T kills child tree, /F force-kills.
+                // /T 杀掉子进程树，/F 强制结束。
                 spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
                   stdio: "ignore",
                   windowsHide: true,
                 });
               }
             } catch {
-              // Fallback to direct pid kill when process-group kill isn't available.
+              // 当进程组终止不可用时，回退为直接按 pid 终止。
               try {
                 process.kill(child.pid, signal);
               } catch {
-                // Process may already be gone.
+                // 进程可能已经退出。
               }
             }
           };
 
-          // Use shell: true to properly handle quoted arguments, pipes, and shell syntax
+          // 使用 shell: true 以正确处理带引号的参数、管道与 shell 语法
           const child = spawn(command, [], {
             cwd: cwd || process.cwd(),
             shell: true,
@@ -258,14 +257,14 @@ export const safeTools: Record<string, Tool> = {
             settle(error, true);
           });
 
-          // Handle abort signal
+          // 处理 abort 信号
           if (abortSignal) {
             const onAbort = () => {
               console.log("[Tool] Aborting runCommand:", command);
 
               try {
                 terminateProcessTree("SIGTERM");
-                // Force kill after grace period in case process ignores SIGTERM.
+                // 宽限期后强制终止，以防进程忽略 SIGTERM。
                 killTimer = setTimeout(() => {
                   terminateProcessTree("SIGKILL");
                 }, 2000);
@@ -276,7 +275,7 @@ export const safeTools: Record<string, Tool> = {
               settle({
                 stdout,
                 stderr: `${stderr}\\nCommand was cancelled`,
-                exitCode: 130, // Standard exit code for SIGTERM
+                exitCode: 130, // SIGTERM 的标准退出码
               });
             };
 
@@ -318,8 +317,8 @@ export const safeTools: Record<string, Tool> = {
       let totalFiles = 0;
       let totalDirs = 0;
       let totalSize = 0;
-      // Per-extension count AND size, so the model relays a finished table
-      // instead of hand-summing sizes by type (the step it gets wrong).
+      // 按扩展名统计数量与大小，让模型直接转述一张算好的表，
+      // 而不是按类型手动累加大小（它在这一步容易出错）。
       const extensions: Record<string, { count: number; totalSize: number }> =
         {};
       let scanned = 0;
@@ -347,7 +346,7 @@ export const safeTools: Record<string, Tool> = {
             bucket.totalSize += s.size;
           }
         } catch {
-          // skip inaccessible
+          // 跳过无法访问的项
         }
       }
       return {
@@ -379,7 +378,7 @@ export const safeTools: Record<string, Tool> = {
 };
 
 /**
- * Request approval from the renderer and wait for the response
+ * 向渲染层请求审批并等待其响应
  */
 export const requestApproval = (
   sender: Electron.WebContents,
@@ -405,9 +404,9 @@ export const requestApproval = (
     return Promise.resolve(true);
   }
 
-  // All destructive tools coalesce into a single approval card per
-  // (task, toolName) so a wave of N concurrent deleteFile calls becomes
-  // 1 click instead of N. 普通批准只放行卡片里显示的操作;白名单(后续自动
+  // 所有破坏性工具按 (task, toolName) 合并为单张审批卡片，
+  // 这样一波 N 个并发的 deleteFile 调用只需点击 1 次而非 N 次。
+  // 普通批准只放行卡片里显示的操作;白名单(后续自动
   // 放行)仅在用户显式选「始终允许」时由 settleBatch 写入,这里不再自动写。
   const describeFn = dangerousToolDescriptions[toolName];
   const description = describeFn
@@ -425,8 +424,8 @@ export const requestApproval = (
   });
 };
 
-// `wrapToolWithAbort` was deleted in M2 PR 4 along with its only callers
-// (`buildTools` / `buildSkillSpecificTools`). Per-call abort tracking now
-// lives inside the AgentLoop's tool registry (`core/agent/tool-registry.ts`)
-// and the IPC translator emits task-trace `tool-start` / `tool-end` events
-// directly (`ai-handlers.ts`).
+// `wrapToolWithAbort` 已在 M2 PR 4 中连同其唯一调用方
+// （`buildTools` / `buildSkillSpecificTools`）一起删除。逐次调用的 abort
+// 跟踪现在位于 AgentLoop 的工具注册表（`core/agent/tool-registry.ts`）内，
+// 而 IPC 转换层直接发出 task-trace 的 `tool-start` / `tool-end` 事件
+// （`ai-handlers.ts`）。

@@ -1,9 +1,9 @@
 /**
- * IPC: local-git:* — branch operations for local (non-clone) workspaces.
+ * IPC: local-git:* — 针对本地(非克隆)工作区的分支操作。
  *
- * Mirrors the `github:*` / `gitlab:*` branch surface: probe (current),
- * listBranches, checkoutBranch. The clone-cache `checkoutBranchTo`
- * helper does the actual switch — same dirty-tree refusal as remote.
+ * 与 `github:*` / `gitlab:*` 的分支接口保持一致:probe(当前分支)、
+ * listBranches、checkoutBranch。实际的分支切换由 clone-cache 的
+ * `checkoutBranchTo` 辅助函数完成 —— 与远程一样,工作区不干净时拒绝切换。
  */
 import { ipcMain } from "electron";
 
@@ -16,9 +16,9 @@ export const registerLocalGitHandlers = () => {
     "local-git:probe",
     async (_event, payload: { path: string }) => {
       const probe = await probeLocalGit(payload.path);
-      // Probe doubles as "renderer is opening this workspace" — start
-      // the HEAD watcher so chat-driven `git checkout` syncs the chip.
-      // No-op for non-git dirs (watcher returns early on missing HEAD).
+      // probe 同时也意味着「渲染进程正在打开此工作区」—— 启动
+      // HEAD watcher,使聊天驱动的 `git checkout` 能同步分支标签。
+      // 对非 git 目录为空操作(HEAD 缺失时 watcher 会提前返回)。
       if (probe.isGitRepo) void startHeadWatcher(payload.path);
       return probe;
     },

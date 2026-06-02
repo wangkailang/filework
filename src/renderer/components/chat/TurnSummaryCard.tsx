@@ -21,7 +21,7 @@ function shortPath(p: string): string {
   return parts.length <= 2 ? p : `…/${parts.slice(-2).join("/")}`;
 }
 
-/** Ask App to open this file in the ContextDock (mirrors open-settings). */
+/** 请求 App 在 ContextDock 中打开此文件(与 open-settings 一致)。 */
 function openFile(path: string) {
   window.dispatchEvent(
     new CustomEvent("filework:open-file", { detail: { path } }),

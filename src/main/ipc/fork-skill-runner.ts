@@ -1,19 +1,19 @@
 /**
- * Fork-mode skill runner.
+ * Fork 模式技能 runner。
  *
- * The runtime half of `skills-runtime/executor.ts:executeSubagent` after
- * the M2 PR 3 migration. Owns:
- *   - per-call `LocalWorkspace` + `ToolRegistry` (built via `buildAgentToolRegistry`)
- *   - the same `beforeToolCall` approval hook the main agent path uses
- *   - an `AgentLoop` instance, with its own `AbortController` linked to
- *     the parent's signal so aborts propagate cleanly
- *   - IPC translation onto the existing `ai:stream-*` channels (delta,
- *     tool-call, tool-result, retry, error). DOES NOT emit `ai:stream-done`
- *     — that stays with the parent (`ai-handlers.ts:376`).
+ * M2 PR 3 迁移后,`skills-runtime/executor.ts:executeSubagent` 的运行时一半。
+ * 负责:
+ *   - 每次调用的 `LocalWorkspace` + `ToolRegistry`(通过 `buildAgentToolRegistry` 构建)
+ *   - 与主 agent 路径相同的 `beforeToolCall` 审批钩子
+ *   - 一个 `AgentLoop` 实例,带有自己的 `AbortController`,
+ *     并链接到父级 signal,使中止能干净地传播
+ *   - 将事件转换到现有 `ai:stream-*` 通道上的 IPC(delta、
+ *     tool-call、tool-result、retry、error)。不发出 `ai:stream-done`
+ *     —— 那由父级负责(`ai-handlers.ts:376`)。
  *
- * Skills-runtime's `executeSubagent` calls into this via the new
- * `ExecutorDeps.runSubagent` callback. That keeps skills-runtime free of
- * IPC / Electron / AgentLoop concerns.
+ * skills-runtime 的 `executeSubagent` 通过新的
+ * `ExecutorDeps.runSubagent` 回调调用本模块。这使 skills-runtime 无需
+ * 关心 IPC / Electron / AgentLoop。
  */
 
 import type { ModelMessage } from "ai";
@@ -46,27 +46,27 @@ export interface ForkSkillRunnerDeps {
   taskId: string;
   parentSignal: AbortSignal;
   workspacePath: string;
-  /** Used as fallback when the skill's `model` frontmatter override fails. */
+  /** 当技能的 `model` frontmatter 覆盖失败时用作回退。 */
   llmConfigId?: string;
 }
 
 export interface RunSubagentOptions {
-  /** Already wrapped with `wrapWithSecurityBoundary` by skills-runtime. */
+  /** 已由 skills-runtime 用 `wrapWithSecurityBoundary` 包装。 */
   systemPrompt: string;
   workspacePath: string;
-  /** User-facing prompt — fed into AgentLoop as the new turn. */
+  /** 面向用户的 prompt —— 作为新一轮输入喂给 AgentLoop。 */
   prompt: string;
   history?: ModelMessage[];
-  /** Skill frontmatter `allowed-tools` list. Empty/undefined → zero tools. */
+  /** 技能 frontmatter 的 `allowed-tools` 列表。空/undefined → 零工具。 */
   allowedTools?: string[];
-  /** Skill frontmatter `model` override. Falls back to llmConfigId on failure. */
+  /** 技能 frontmatter 的 `model` 覆盖项。失败时回退到 llmConfigId。 */
   modelOverrideId?: string;
-  /** Override the per-turn step cap (default 20). */
+  /** 覆盖每轮的步数上限(默认 20)。 */
   maxStepsPerTurn?: number;
   /**
-   * Sub-agent contract. When supplied, output format / termination cap
-   * the runner. When omitted, defaults to a free-form summary run so
-   * legacy fork-skill callers continue to work.
+   * 子 agent 契约。提供时,output 格式 / termination 会约束
+   * runner。省略时,默认走自由格式的 summary 运行,
+   * 使旧的 fork-skill 调用方继续可用。
    */
   contract?: SubAgentContract;
 }
@@ -83,9 +83,9 @@ const fallbackContract = (prompt: string): SubAgentContract => ({
 });
 
 /**
- * Char-based summary fallback. Token-accurate summarization is a
- * phase-2 concern — for MVP we cap at ~4 chars per token so the
- * report stays in budget without an extra LLM call.
+ * 基于字符数的 summary 回退。精确按 token 的摘要属于
+ * 二期事项 —— MVP 阶段按每 token 约 4 字符封顶,
+ * 使报告无需额外 LLM 调用即可控制在预算内。
  */
 const truncateForSummary = (text: string, maxTokens: number): string => {
   const charCap = maxTokens * 4;
@@ -94,9 +94,9 @@ const truncateForSummary = (text: string, maxTokens: number): string => {
 };
 
 /**
- * Build a `runSubagent` callback bound to the active task. Each invocation
- * resolves model/adapter, constructs the AgentLoop, and translates events
- * back to the renderer over the existing IPC channels.
+ * 构建一个绑定到当前任务的 `runSubagent` 回调。每次调用都会
+ * 解析 model/adapter、构造 AgentLoop,并将事件
+ * 通过现有 IPC 通道转换回渲染层。
  */
 export const createForkSkillRunner = (
   deps: ForkSkillRunnerDeps,
@@ -106,7 +106,7 @@ export const createForkSkillRunner = (
   return async (opts) => {
     const startTime = Date.now();
     const effectiveContract = opts.contract ?? fallbackContract(opts.prompt);
-    // ── Resolve model + adapter ─────────────────────────────────────
+    // ── 解析 model + adapter ─────────────────────────────────────
     let resolved: ReturnType<typeof getModelAndAdapterByConfigId>;
     if (opts.modelOverrideId) {
       try {
@@ -123,11 +123,11 @@ export const createForkSkillRunner = (
     }
     const { model, adapter, modelId } = resolved;
 
-    // ── Per-call pieces ─────────────────────────────────────────────
+    // ── 每次调用的组件 ─────────────────────────────────────────────
     const workspace = new LocalWorkspace(opts.workspacePath);
     const isGitWorkspace = isGitBackedWorkspace(workspace);
-    // Force [] when undefined so the registry's allow() filter (zero-tool
-    // default) matches the legacy `executor.ts:395-397` behavior.
+    // undefined 时强制为 [],使 registry 的 allow() 过滤(零工具
+    // 默认)与旧的 `executor.ts:395-397` 行为一致。
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId,
@@ -137,8 +137,8 @@ export const createForkSkillRunner = (
     });
     const beforeToolCall = buildApprovalHook({ sender, taskId, workspace });
 
-    // Child AbortController so the runner can react to its own
-    // failures without aborting the parent. Forward parent abort once.
+    // 子 AbortController,使 runner 能对自身的
+    // 失败做出反应而不中止父级。父级中止只转发一次。
     const childController = new AbortController();
     const onParentAbort = () => {
       if (!childController.signal.aborted) childController.abort();
@@ -149,9 +149,9 @@ export const createForkSkillRunner = (
       parentSignal.addEventListener("abort", onParentAbort, { once: true });
     }
 
-    // Wall-clock guard. Unbounded by default for legacy callers; armed
-    // only when the contract opts in (explicit maxWallMs > 0, or any
-    // contract supplied — in which case the default kicks in).
+    // 墙钟时间守卫。对旧调用方默认无上限;仅当
+    // 契约显式启用时才生效(显式 maxWallMs > 0,或提供了任意
+    // 契约 —— 此时启用默认值)。
     let timedOut = false;
     const rawWallMs = effectiveContract.termination.maxWallMs;
     const effectiveWallMs =
@@ -215,7 +215,7 @@ export const createForkSkillRunner = (
       },
     });
 
-    // Aggregators that feed buildReport at agent_end.
+    // 在 agent_end 时供 buildReport 使用的聚合器。
     let toolCallCount = 0;
     let finalTextAccum = "";
     let endEventStatus: "completed" | "failed" | "cancelled" = "completed";
@@ -230,8 +230,8 @@ export const createForkSkillRunner = (
 
         switch (ev.type) {
           case "agent_start":
-            // ai:stream-start is the parent's responsibility (parity with
-            // the main agent path).
+            // ai:stream-start 由父级负责(与
+            // 主 agent 路径保持一致)。
             break;
           case "message_update":
             watchdog.activity();
@@ -289,8 +289,8 @@ export const createForkSkillRunner = (
                 });
               }
             }
-            // Both completed / cancelled / failed fall through to the
-            // report-building tail below. Parent still owns ai:stream-done.
+            // completed / cancelled / failed 都会落到下面
+            // 构建报告的尾部逻辑。ai:stream-done 仍由父级负责。
             break;
           }
         }
@@ -302,7 +302,7 @@ export const createForkSkillRunner = (
       if (wallTimer) clearTimeout(wallTimer);
     }
 
-    // ── Build the SubAgentReport ───────────────────────────────────
+    // ── 构建 SubAgentReport ───────────────────────────────────
     const AGENT_END_TO_REPORT_STATUS: Record<
       typeof endEventStatus,
       SubAgentStatus
@@ -348,8 +348,8 @@ export const createForkSkillRunner = (
       error: endEventError,
     });
 
-    // Fire-and-forget capture for the iterative-optimization layer.
-    // No-op when no store path has been configured (see pattern-store).
+    // 为迭代优化层做 fire-and-forget 采集。
+    // 未配置存储路径时为空操作(参见 pattern-store)。
     void appendPattern({
       kind: "subagent",
       ts: new Date().toISOString(),

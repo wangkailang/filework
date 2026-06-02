@@ -1,19 +1,19 @@
 /**
- * Trajectory quality metrics aggregated across a GAIA run.
+ * 跨整个 GAIA 运行聚合的轨迹质量指标。
  *
- * These sit alongside accuracy/cost in `RunSummary`. They answer
- * questions that pass-rate alone can't:
+ * 这些指标与 `RunSummary` 中的准确率/成本并列。它们回答了仅靠
+ * 通过率无法回答的问题:
  *
- *   - "Reflection-gate is on. Is it actually helping?"
+ *   - "反思门控已开启。它真的有帮助吗?"
  *       → `reflectionFireRate` + `reflectionPassRate` vs `noReflectionPassRate`
- *   - "Did we get more efficient or more wasteful with steps?"
- *       → `medianStepsToCorrect` over time
- *   - "Is the agent thrashing on the same tool call?"
+ *   - "随着时间推移,我们在步数上变得更高效还是更浪费?"
+ *       → `medianStepsToCorrect` 的变化趋势
+ *   - "agent 是否在同一个工具调用上反复打转?"
  *       → `toolRedundancyRate`
  *
- * Pure module: takes the per-question results and returns metrics. No
- * I/O. Lives outside `runner.ts` so the diff CLI and any future
- * consumer can compute the same numbers from a loaded run.
+ * 纯模块:接收按题目划分的结果并返回指标。无 I/O。置于
+ * `runner.ts` 之外,使 diff CLI 及未来任何消费方都能从已加载的
+ * 运行数据计算出相同的数字。
  */
 
 import { createHash } from "node:crypto";
@@ -22,29 +22,29 @@ import { median } from "./scorer";
 import type { QuestionResult } from "./types";
 
 export interface QualityMetrics {
-  /** Median `stepCount` among passed tasks. `null` when none passed. */
+  /** 通过的任务中 `stepCount` 的中位数。无任务通过时为 `null`。 */
   medianStepsToCorrect: number | null;
-  /** Median `stepCount` among failed tasks. `null` when none failed. */
+  /** 失败的任务中 `stepCount` 的中位数。无任务失败时为 `null`。 */
   medianStepsToFail: number | null;
   /**
-   * Fraction in [0,1] of tool calls that exactly repeat a prior call
-   * (same name + stable-stringified args) within the same task. `null`
-   * when there were no tool calls at all across the run.
+   * [0,1] 区间内的比例:同一任务内精确重复了先前调用
+   * (名称相同 + 稳定序列化后的参数相同)的工具调用占比。当整个
+   * 运行中完全没有工具调用时为 `null`。
    */
   toolRedundancyRate: number | null;
-  /** Fraction in [0,1] of tasks where the reflection-gate fired at least once. */
+  /** [0,1] 区间内的比例:反思门控至少触发一次的任务占比。 */
   reflectionFireRate: number;
-  /** Pass rate among tasks where reflection fired. `null` when none fired. */
+  /** 反思已触发的任务中的通过率。无任务触发时为 `null`。 */
   reflectionPassRate: number | null;
-  /** Pass rate among tasks where reflection did NOT fire. `null` when all fired. */
+  /** 反思未触发的任务中的通过率。全部任务都触发时为 `null`。 */
   noReflectionPassRate: number | null;
 }
 
-// ─── Stable args hash (mirrors replay.ts) ────────────────────────────
+// ─── 稳定参数哈希(与 replay.ts 保持一致) ────────────────────────────
 
 /**
- * Local copy of replay.ts's stable-stringify so metrics.ts stays
- * independent. If a third caller appears, extract to a shared util.
+ * replay.ts 中稳定序列化逻辑的本地副本,使 metrics.ts 保持独立。
+ * 若出现第三处调用方,应抽取为共享工具函数。
  */
 const stableStringify = (value: unknown): string => {
   const seen = new WeakSet();
@@ -67,7 +67,7 @@ const argsHash = (name: string, args: unknown): string =>
     .digest("hex")
     .slice(0, 16);
 
-// ─── Metric computations ─────────────────────────────────────────────
+// ─── 指标计算 ─────────────────────────────────────────────
 
 const computeRedundancyRate = (
   results: readonly QuestionResult[],
@@ -120,7 +120,7 @@ export const computeQualityMetrics = (
   };
 };
 
-// ─── Markdown rendering helpers ──────────────────────────────────────
+// ─── Markdown 渲染辅助函数 ──────────────────────────────────────
 
 const fmtPct = (v: number | null): string =>
   v === null ? "—" : `${(v * 100).toFixed(1)}%`;
@@ -143,7 +143,7 @@ export interface QualityMetricsDelta {
   metric: keyof QualityMetrics;
   baseline: number | null;
   current: number | null;
-  /** `null` when either side is `null` (no comparable baseline). */
+  /** 任一侧为 `null` 时(无可比较的基线)该值为 `null`。 */
   delta: number | null;
 }
 

@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 /**
- * `pnpm gaia-eval-replay` entry point — three modes:
+ * `pnpm gaia-eval-replay` 入口 —— 三种模式:
  *
- *   1. Single trajectory:
+ *   1. 单条轨迹:
  *      pnpm gaia-eval-replay <events.jsonl>
  *
- *   2. Pair diff (two events.jsonl):
+ *   2. 成对 diff(两个 events.jsonl):
  *      pnpm gaia-eval-replay <baseline.jsonl> <current.jsonl>
  *
- *   3. Batch (two run output dirs):
+ *   3. 批量(两个运行输出目录):
  *      pnpm gaia-eval-replay --batch <baseline-dir> <current-dir> [--output <path>]
  *
- * Exit codes:
- *   0 — single signature printed, or no drift detected
- *   1 — config error
- *   2 — runtime error
- *   3 — trajectory drift detected (pair or batch mode)
+ * 退出码:
+ *   0 —— 已打印单条签名,或未检测到漂移
+ *   1 —— 配置错误
+ *   2 —— 运行时错误
+ *   3 —— 检测到轨迹漂移(成对或批量模式)
  *
- * The non-zero "drift" exit code is intentional: it lets CI gate on
- * "trajectory must be identical" when running deterministic fixtures.
+ * 非零的"漂移"退出码是有意为之:它让 CI 在运行确定性夹具时
+ * 能以"轨迹必须完全一致"作为门控条件。
  */
 
 import { writeFile } from "node:fs/promises";

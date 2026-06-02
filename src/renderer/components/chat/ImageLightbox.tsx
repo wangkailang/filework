@@ -6,21 +6,21 @@ import { createPortal } from "react-dom";
 interface ImageLightboxProps {
   src: string;
   alt?: string;
-  /** Shown beneath the image (prompt, filename, etc). */
+  /** 显示在图片下方(提示词、文件名等)。 */
   caption?: ReactNode;
   /**
-   * Absolute filesystem path. When provided, surfaces a "reveal in Finder"
-   * button — only meaningful for `local-file://` sources we own.
+   * 文件系统绝对路径。提供后会显示一个「在 Finder 中显示」
+   * 按钮 —— 仅对我们自有的 `local-file://` 来源有意义。
    */
   revealPath?: string;
   onClose: () => void;
 }
 
 /**
- * Single-image lightbox. Esc and backdrop click close. Sibling carousel
- * exists in ImageGallery; that one stays gallery-scoped (keyboard
- * navigation between gallery items). This component is for one-off image
- * previews on user attachments and generated images.
+ * 单图灯箱。按 Esc 或点击背景关闭。同级的轮播
+ * 实现位于 ImageGallery,那个保持在图集作用域内(在图集
+ * 各项之间键盘导航)。本组件用于用户附件和生成图片的
+ * 单张图片预览。
  */
 export const ImageLightbox = ({
   src,
@@ -29,10 +29,10 @@ export const ImageLightbox = ({
   revealPath,
   onClose,
 }: ImageLightboxProps) => {
-  // Parents pass an inline arrow for `onClose`, so its identity changes
-  // every render. Keep the keydown listener attached once (empty deps)
-  // and read the latest handler through a ref to avoid add/remove
-  // thrash and the tiny no-listener gap that comes with it.
+  // 父组件以内联箭头函数传入 `onClose`,因此它的引用
+  // 每次渲染都会变化。让 keydown 监听器只挂载一次(空依赖),
+  // 并通过 ref 读取最新的处理函数,以避免反复添加/移除
+  // 监听器以及由此带来的短暂无监听器空档。
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {

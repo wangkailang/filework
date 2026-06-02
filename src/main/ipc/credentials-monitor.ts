@@ -1,16 +1,16 @@
 /**
- * Credential health monitor (M7).
+ * 凭证健康监控(M7)。
  *
- * Runs once per app launch (fire-and-forget from `main/index.ts`).
- * Re-tests every stored credential whose `lastTestedAt` is older than
- * 24h, persists `testStatus` + `lastTestError` so the CredentialsPanel
- * can show a status dot without blocking on a network round-trip.
+ * 每次应用启动时运行一次(由 `main/index.ts` 以 fire-and-forget 方式触发)。
+ * 重新测试每个 `lastTestedAt` 超过
+ * 24 小时的已存储凭证,持久化 `testStatus` + `lastTestError`,使 CredentialsPanel
+ * 无需阻塞在网络往返上即可显示状态点。
  *
- * `gitlab_pat` credentials need a host. We use `lastTestedHost` if set
- * (populated by the user's first manual test via the GitLab connect
- * modal); otherwise we default to `gitlab.com`. Self-hosted users who
- * have never run a manual test will see "error" until they do — the
- * tradeoff matches the GIT_ASKPASS PR scope.
+ * `gitlab_pat` 凭证需要 host。若已设置则使用 `lastTestedHost`
+ * (由用户首次通过 GitLab 连接弹窗手动测试时填充);
+ * 否则默认使用 `gitlab.com`。从未手动测试过的自托管用户
+ * 在测试前会一直看到 "error" —— 该取舍
+ * 与 GIT_ASKPASS PR 的范围一致。
  */
 
 import {
@@ -20,7 +20,7 @@ import {
   recordCredentialTest,
 } from "../db";
 
-const HEALTH_DEBOUNCE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const HEALTH_DEBOUNCE_MS = 24 * 60 * 60 * 1000; // 24 小时
 
 interface TestResult {
   ok: boolean;
@@ -67,7 +67,7 @@ const testGitlabToken = async (
   }
 };
 
-/** Should this credential be re-tested now? */
+/** 该凭证现在是否需要重新测试? */
 export const isStale = (
   c: Pick<Credential, "lastTestedAt" | "testStatus">,
   now = Date.now(),
@@ -80,9 +80,9 @@ export const isStale = (
 };
 
 /**
- * Re-test every stale credential. Updates the `testStatus` columns via
- * `recordCredentialTest()`. Errors during a single credential are
- * isolated — the monitor never throws.
+ * 重新测试每个过期凭证。通过 `recordCredentialTest()` 更新
+ * `testStatus` 列。单个凭证的错误会被
+ * 隔离 —— 该监控器永远不会抛出异常。
  */
 export const batchTestCredentials = async (): Promise<{
   tested: number;

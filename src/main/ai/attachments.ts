@@ -1,21 +1,19 @@
 /**
- * User-attachment → ModelMessage content adapter.
+ * 用户附件 → ModelMessage 内容适配器。
  *
- * The chat composer attaches files as `AttachmentPart` entries on the
- * user message. The message converter walks them here to build the
- * provider-shaped content array that the Vercel AI SDK forwards to the
- * model.
+ * 聊天输入框会把文件作为 user 消息上的 `AttachmentPart` 条目附加进来。
+ * 消息转换器在此遍历它们,构建出符合 provider 形态的内容数组,再由
+ * Vercel AI SDK 转发给模型。
  *
- * Provider capability matters: Anthropic's `claude` family accepts
- * native `file` content (used for PDFs); OpenAI and DeepSeek only
- * accept `image` content for vision; MiniMax chat accepts images;
- * Ollama is text-only. Anything outside the matrix falls back to a
- * text notice so the model can still acknowledge the attachment
- * exists but doesn't see broken / unsupported content.
+ * provider 的能力很关键:Anthropic 的 `claude` 系列接受原生的 `file`
+ * 内容(用于 PDF);OpenAI 和 DeepSeek 的视觉能力只接受 `image` 内容;
+ * MiniMax chat 接受图像;Ollama 仅支持文本。任何不在该能力矩阵内的内容
+ * 都会回退为一条文本提示,这样模型仍能知道附件存在,而不会看到损坏 /
+ * 不受支持的内容。
  *
- * Known gap: token estimation in `truncate-to-fit.ts` does not yet
- * count image bytes. Large image attachments will under-report.
- * Acceptable for now — track usage via the post-stream usage event.
+ * 已知不足:`truncate-to-fit.ts` 中的 token 估算目前尚未计入图像字节。
+ * 大图像附件会被低估。目前可以接受 —— 通过流结束后的 usage 事件来追踪
+ * 实际用量。
  */
 
 import { readFile } from "node:fs/promises";
@@ -43,9 +41,8 @@ interface ProviderCaps {
 }
 
 /**
- * Static capability matrix. Conservative: if a provider isn't listed
- * we default to image-only (covers most OpenAI-compatible vision
- * endpoints) — text always works.
+ * 静态能力矩阵。保守策略:若某个 provider 未被列出,默认仅支持图像
+ *(覆盖大多数 OpenAI 兼容的视觉端点)—— 文本始终可用。
  */
 const PROVIDER_CAPS: Record<string, ProviderCaps> = {
   anthropic: { image: true, pdf: true },
@@ -61,7 +58,7 @@ const PROVIDER_CAPS: Record<string, ProviderCaps> = {
 };
 
 const DEFAULT_CAPS: ProviderCaps = { image: true, pdf: false };
-const TEXT_MAX_BYTES = 200 * 1024; // 200 KB inline cap per file
+const TEXT_MAX_BYTES = 200 * 1024; // 每个文件内联上限 200 KB
 
 const capsForProvider = (providerId?: string): ProviderCaps => {
   if (!providerId) return DEFAULT_CAPS;
@@ -69,10 +66,9 @@ const capsForProvider = (providerId?: string): ProviderCaps => {
 };
 
 /**
- * Build the user-message content array given the typed text and any
- * attached files. Reads each file from disk; on failure / unsupported,
- * appends a text notice rather than throwing so a single bad attachment
- * never blocks the whole submit.
+ * 根据输入的文本及任意附件,构建 user 消息的内容数组。会从磁盘读取每个
+ * 文件;在失败 / 不受支持时,追加一条文本提示而非抛出异常,这样单个
+ * 损坏的附件永远不会阻塞整次提交。
  */
 export async function buildUserContentWithAttachments(
   baseText: string,
@@ -85,10 +81,9 @@ export async function buildUserContentWithAttachments(
 
   if (baseText) out.push({ type: "text", text: baseText });
 
-  // Read all supported-and-eligible attachments in parallel — disk reads
-  // are independent and N×serial latency adds up fast on a multi-PDF
-  // submit. Each Promise resolves to a part-or-notice tuple so we can
-  // preserve input order in the output pass.
+  // 并行读取所有受支持且符合条件的附件 —— 磁盘读取彼此独立,在多个 PDF
+  // 一起提交时,N 倍的串行延迟会迅速累积。每个 Promise 解析为一个
+  // part-or-notice 元组,以便在输出阶段保留输入顺序。
   type Resolved = { part: UserContentPart } | { notice: string };
   const reads: Promise<Resolved>[] = attachments.map(async (a) => {
     try {
@@ -99,7 +94,7 @@ export async function buildUserContentWithAttachments(
           };
         }
         const buf = await readFile(a.path);
-        // Node's Buffer is already a Uint8Array — no copy.
+        // Node 的 Buffer 本身就是 Uint8Array —— 无需拷贝。
         return {
           part: {
             type: "image" as const,
@@ -110,11 +105,10 @@ export async function buildUserContentWithAttachments(
       }
       if (a.kind === "pdf") {
         if (!caps.pdf) {
-          // Provider can't accept a native PDF file part. Instead of
-          // dropping the binary and leaving the model with only a
-          // "not sent" notice (which used to trigger hallucinated
-          // listDirectory calls hunting for the file), extract the
-          // text inline so the model can analyze the contents directly.
+          // provider 无法接受原生的 PDF 文件 part。与其丢弃二进制内容、
+          // 只给模型留一条「未发送」提示(这曾导致模型幻觉式地调用
+          // listDirectory 去找文件),不如内联提取文本,使模型可以直接
+          // 分析其内容。
           const extracted = await extractPdfText(a.path);
           if (!extracted.ok) {
             return {
@@ -140,10 +134,9 @@ export async function buildUserContentWithAttachments(
           },
         };
       }
-      // text / code — inline. Cap per file so a stray 5MB log doesn't
-      // blow the context window. TextDecoder is non-fatal so a multi-byte
-      // codepoint split at the truncation boundary yields U+FFFD rather
-      // than throwing.
+      // 文本 / 代码 —— 内联。对每个文件设上限,避免一个误入的 5MB 日志
+      // 撑爆上下文窗口。TextDecoder 设为非致命模式,这样在截断边界被截开
+      // 的多字节码点会产出 U+FFFD,而不会抛出异常。
       const buf = await readFile(a.path);
       const truncated = buf.byteLength > TEXT_MAX_BYTES;
       const slice = truncated ? buf.subarray(0, TEXT_MAX_BYTES) : buf;
@@ -167,11 +160,10 @@ export async function buildUserContentWithAttachments(
       notices.push(r.notice);
       continue;
     }
-    // Schema-safety guard against a future regression that
-    // JSON-roundtrips the message (e.g. via a clone helper) and turns
-    // the Buffer into `{type:"Buffer",data:[...]}`. The AI SDK's prompt
-    // schema requires `instanceof Uint8Array`; a plain object would
-    // fail validation with an opaque error.
+    // Schema 安全防护:防止未来出现某种回归,使消息经过 JSON 往返
+    //(例如经由某个 clone 辅助函数)而把 Buffer 变成
+    // `{type:"Buffer",data:[...]}`。AI SDK 的 prompt schema 要求
+    // `instanceof Uint8Array`;普通对象会以一个晦涩的错误校验失败。
     const binary =
       r.part.type === "image"
         ? r.part.image
@@ -198,9 +190,9 @@ export async function buildUserContentWithAttachments(
     });
   }
 
-  // Defensive: an empty content array is rejected by some provider
-  // adapters even though `userModelMessageSchema` permits it. Fall back
-  // to a single text part so the model gets *something* to act on.
+  // 防御性处理:尽管 `userModelMessageSchema` 允许空内容数组,某些
+  // provider 适配器仍会拒绝它。回退为单个文本 part,让模型至少有
+  // *某些内容*可以据以处理。
   if (out.length === 0) {
     out.push({
       type: "text",

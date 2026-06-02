@@ -8,7 +8,7 @@ import { ToolRegistry } from "../agent/tool-registry";
 import type { Workspace } from "../workspace/types";
 
 // ---------------------------------------------------------------------------
-// Mock the ai package — provides a controllable streamText.
+// 模拟 ai 包 —— 提供一个可控的 streamText。
 // ---------------------------------------------------------------------------
 
 type FullStreamPart = Record<string, unknown>;
@@ -17,7 +17,7 @@ const scriptedRuns: Array<{
   parts: FullStreamPart[];
   totalUsage?: unknown;
   providerMetadata?: unknown;
-  /** Throw when fullStream is iterated, after emitting these parts. */
+  /** 在发出这些分块后、迭代 fullStream 时抛出。 */
   throwAfter?: Error;
 }> = [];
 
@@ -46,7 +46,7 @@ vi.mock("ai", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 辅助函数
 // ---------------------------------------------------------------------------
 
 function stubWorkspace(): Workspace {
@@ -80,7 +80,7 @@ async function collect(loop: AgentLoop, prompt: string): Promise<AgentEvent[]> {
 const fakeModel = {} as LanguageModel;
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 describe("AgentLoop", () => {
@@ -248,9 +248,9 @@ describe("AgentLoop", () => {
   });
 
   it("tool-error part 应产出 tool_execution_end{success=false}", async () => {
-    // AI SDK turns a thrown tool `execute` (e.g. MCP timeout / not-connected)
-    // into a `tool-error` fullStream part. Without an explicit case the part
-    // is silently dropped and the tool bubble is stuck in "执行中" forever.
+    // AI SDK 会将抛出异常的工具 `execute`（例如 MCP 超时 / 未连接）
+    // 转换为 `tool-error` 的 fullStream 分块。若不显式处理该分块，
+    // 它会被悄无声息地丢弃，导致工具气泡永远卡在「执行中」。
     scriptedRuns.push({
       parts: [
         { type: "start-step" },
@@ -292,7 +292,7 @@ describe("AgentLoop", () => {
       error: 'MCP server "email" is not connected',
     });
 
-    // The whole turn still completes — the error must not abort the agent.
+    // 整个回合仍会完成 —— 该错误不得中止 agent。
     const end = events[events.length - 1];
     if (end.type !== "agent_end") throw new Error("expected agent_end");
     expect(end.status).toBe("completed");
@@ -525,8 +525,8 @@ describe("AgentLoop", () => {
   });
 
   it("strips tools on the retry pass when verdict carries forceNoTools=true", async () => {
-    // First pass: model emits text but no FINAL ANSWER (mocked away here —
-    // the test only checks tool-set wiring, not the rule itself).
+    // 第一轮：模型输出文本但没有 FINAL ANSWER（此处已 mock 掉 ——
+    // 该测试只检查工具集的接线，而非规则本身）。
     scriptedRuns.push({
       parts: [
         { type: "start-step" },
@@ -534,7 +534,7 @@ describe("AgentLoop", () => {
         { type: "finish-step", finishReason: "stop", usage: {} },
       ],
     });
-    // Second pass (tool-less retry): emits the final answer.
+    // 第二轮（无工具重试）：输出最终答案。
     scriptedRuns.push({
       parts: [
         { type: "start-step" },
@@ -587,7 +587,7 @@ describe("AgentLoop", () => {
   });
 
   it("only clears tools for one pass — a subsequent retry without forceNoTools restores tools", async () => {
-    // 3 scripted passes: each emits some text and stops.
+    // 3 个脚本轮次：每轮输出一些文本后停止。
     for (let i = 0; i < 3; i++) {
       scriptedRuns.push({
         parts: [
@@ -605,7 +605,7 @@ describe("AgentLoop", () => {
         feedback: "no tools",
         forceNoTools: true,
       })
-      // Second verdict opts back into tools (no forceNoTools).
+      // 第二次裁决重新启用工具（不带 forceNoTools）。
       .mockResolvedValueOnce({ kind: "retry", feedback: "try again" })
       .mockResolvedValueOnce({ kind: "continue" });
 
@@ -624,7 +624,7 @@ describe("AgentLoop", () => {
       }),
       systemPrompt: "system",
       hooks: { reflect: reflectMock },
-      // Need 3 reflections to reach the third pass.
+      // 需要 3 次反思才能到达第三轮。
       maxReflections: 3,
     });
 
@@ -636,9 +636,9 @@ describe("AgentLoop", () => {
         string,
         unknown
       >;
-    expect(Object.keys(toolsForCall(0))).toContain("echo"); // initial
-    expect(toolsForCall(1)).toEqual({}); // tool-less retry
-    expect(Object.keys(toolsForCall(2))).toContain("echo"); // tools restored
+    expect(Object.keys(toolsForCall(0))).toContain("echo"); // 初始
+    expect(toolsForCall(1)).toEqual({}); // 无工具重试
+    expect(Object.keys(toolsForCall(2))).toContain("echo"); // 工具已恢复
   });
 
   it("passes turn summary with collected tool calls to reflect hook", async () => {

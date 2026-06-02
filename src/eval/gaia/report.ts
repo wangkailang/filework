@@ -1,25 +1,23 @@
 /**
- * Human-readable Markdown reports emitted alongside summary.json.
+ * 与 summary.json 一同产出的人读 Markdown 报告。
  *
- * Two reports — both rendered from in-memory `QuestionResult[]` +
- * `RunSummary` so they stay testable as pure string-builders:
+ * 两份报告 —— 都从内存中的 `QuestionResult[]` + `RunSummary` 渲染,
+ * 因而能作为纯字符串构造器保持可测试:
  *
- *   - `failures.md`     — failure breakdown grouped by tag, 3 example
- *                         questions per tag, sorted by frequency.
- *                         Diagnostic-first: every tag has a one-line
- *                         explanation so a reviewer can skim the file
- *                         and know where to look.
+ *   - `failures.md`     —— 按标签分组的失败拆解,每个标签 3 个示例
+ *                         题目,按频次排序。诊断优先:每个标签都有
+ *                         一行说明,使审阅者能快速浏览文件并知道
+ *                         该看哪里。
  *
- *   - `tool-usage.md`   — table of every tool that fired during the
- *                         run, with call count, median duration, and
- *                         error rate. Surfaces "which tool is least
- *                         reliable" for the next round of fixes.
+ *   - `tool-usage.md`   —— 本次运行中触发过的每个工具的表格,含
+ *                         调用次数、时长中位数和错误率。为下一轮
+ *                         修复显现"哪个工具最不可靠"。
  */
 
 import { formatCost } from "./pricing";
 import type { FailureTag, QuestionResult, RunSummary } from "./types";
 
-// ─── Failure report ──────────────────────────────────────────────────
+// ─── 失败报告 ──────────────────────────────────────────────────
 
 const TAG_DESCRIPTIONS: Record<FailureTag, string> = {
   no_tool_calls:
@@ -68,8 +66,8 @@ const dollarBlurb = (s: RunSummary): string => {
 };
 
 /**
- * Render the failures.md body. Returns a Markdown string (not a path);
- * the runner is responsible for writing it. Pure function — testable.
+ * 渲染 failures.md 正文。返回 Markdown 字符串(而非路径);
+ * 由 runner 负责写入。纯函数 —— 可测试。
  */
 export const buildFailureReport = (
   results: readonly QuestionResult[],
@@ -101,7 +99,7 @@ export const buildFailureReport = (
     }
   }
 
-  // Stable sort: documented order first, then anything unknown.
+  // 稳定排序:先按文档约定的顺序,再排其余未知标签。
   const knownInOrder = TAG_ORDER.filter((t) => byTag.has(t));
   const unknown = [...byTag.keys()].filter(
     (t) => !TAG_ORDER.includes(t),
@@ -134,7 +132,7 @@ export const buildFailureReport = (
   return lines.join("\n").replace(/\n+$/, "\n");
 };
 
-// ─── Tool usage report ───────────────────────────────────────────────
+// ─── 工具使用报告 ───────────────────────────────────────────────
 
 export interface ToolStats {
   name: string;
@@ -158,8 +156,8 @@ const formatDuration = (ms: number): string => {
 };
 
 /**
- * Aggregate per-tool statistics across every question's `toolCalls[]`.
- * Returned in descending order of call count.
+ * 跨每道题目的 `toolCalls[]` 聚合各工具的统计数据。
+ * 按调用次数降序返回。
  */
 export const buildToolStats = (
   results: readonly QuestionResult[],
@@ -207,7 +205,7 @@ export const buildToolUsageReport = (
 };
 
 /**
- * Bundle both reports so the runner can grab them with one call.
+ * 将两份报告打包,使 runner 一次调用即可取得。
  */
 export const renderReports = (
   results: readonly QuestionResult[],
@@ -217,5 +215,5 @@ export const renderReports = (
   toolUsage: buildToolUsageReport(results, summary),
 });
 
-/** Test seam. */
+/** 测试接缝。 */
 export const _internals = { TAG_DESCRIPTIONS, TAG_ORDER };

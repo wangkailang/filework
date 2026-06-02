@@ -33,8 +33,8 @@ interface UpdatePayload {
 }
 
 /**
- * Validate required fields based on provider type.
- * Returns an error message string if validation fails, or null if valid.
+ * 根据 provider 类型校验必填字段。
+ * 校验失败时返回错误信息字符串,校验通过时返回 null。
  */
 export function validateLlmConfigPayload(data: CreatePayload): string | null {
   if (!data.name || data.name.trim() === "") {
@@ -60,9 +60,9 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     return `Invalid provider: ${data.provider}`;
   }
 
-  // Hosted providers all require apiKey. MiniMax always needs one
-  // regardless of modality (chat / image / video share the same key).
-  // Xiaomi MiMo also requires an apiKey from the Xiaomi open platform.
+  // 托管类 provider 都需要 apiKey。MiniMax 无论何种 modality 都需要
+  // (chat / image / video 共用同一个 key)。
+  // 小米 MiMo 同样需要小米开放平台提供的 apiKey。
   if (
     ["openai", "anthropic", "deepseek", "minimax", "xiaomi"].includes(
       data.provider,
@@ -73,9 +73,9 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     }
   }
 
-  // ollama/custom/xiaomi require an explicit baseUrl. Xiaomi's open
-  // platform has no default endpoint baked into any SDK we depend on;
-  // users paste it from the Xiaomi developer console.
+  // ollama/custom/xiaomi 需要显式指定 baseUrl。我们依赖的任何 SDK 都
+  // 没有内置小米开放平台的默认 endpoint;
+  // 用户需从小米开发者控制台粘贴。
   if (["ollama", "custom", "xiaomi"].includes(data.provider)) {
     if (!data.baseUrl || data.baseUrl.trim() === "") {
       return "baseUrl is required for this provider";
@@ -113,8 +113,8 @@ export const registerLlmConfigHandlers = () => {
         return { error: validationError };
       }
 
-      // Validation already guarantees required fields, but we still guard here
-      // to satisfy lint rules (no non-null assertions) and keep runtime safe.
+      // 校验已保证必填字段存在,但这里仍做一次防护
+      // 以满足 lint 规则(禁止非空断言)并保证运行时安全。
       const name = data.name ?? "";
       const provider = data.provider ?? "";
       const model = data.model ?? "";

@@ -1,24 +1,21 @@
 /**
- * hidden-browser — load a URL in a sandboxed, hidden Electron
- * BrowserWindow and return the rendered HTML. Powers the
- * `webFetchRendered` agent tool (Layer 2' of the web-access stack).
+ * hidden-browser —在沙箱化的隐藏 Electron BrowserWindow 中加载 URL
+ * 并返回渲染后的 HTML。用于驱动 `webFetchRendered` agent 工具
+ *（web-access 栈的第 2' 层）。
  *
- * Why Electron instead of Playwright: the app already ships a Chromium;
- * spawning hidden windows piggybacks on it (zero bundle add, real Chrome
- * fingerprint that anti-bot rules accept more often than a synthetic
- * headless UA). Trade-off: fewer knobs than Playwright — no rich
- * `evaluate(fn)` ergonomics, no built-in stealth — but for "load the
- * page, let it hydrate, grab outerHTML" that's plenty.
+ * 为何用 Electron 而非 Playwright: 应用本身已内置 Chromium;派生隐藏
+ * 窗口可直接复用它（零包体增量,真实的 Chrome 指纹,比合成的
+ * headless UA 更易被反爬规则接受）。代价: 可调项比 Playwright 少 ——
+ * 没有丰富的 `evaluate(fn)` 体验,也没有内置 stealth —— 但对于"加载
+ * 页面、等其水合、抓取 outerHTML"这类需求已足够。
  *
- * Isolation: each load uses a `headless-<uuid>` session partition so
- * cookies/localStorage never bleed into the user's main session.
- * `contextIsolation`, `sandbox`, no preload → the loaded page can't
- * reach Node.
+ * 隔离: 每次加载使用 `headless-<uuid>` 会话分区,使 cookie/localStorage
+ * 绝不会渗入用户的主会话。`contextIsolation`、`sandbox`、无 preload
+ * → 被加载页面无法触及 Node。
  *
- * Concurrency: capped at 2 parallel renders so the agent can't fork 50
- * fetches and balloon memory. Stateful interactive sessions live in
- * `interactive-browser.ts`; window setup + teardown primitives are
- * shared via `browser-window-utils.ts`.
+ * 并发: 限制为最多 2 个并行渲染,使 agent 无法 fork 出 50 个 fetch
+ * 而撑爆内存。有状态的交互式会话位于 `interactive-browser.ts`;窗口
+ * 创建 + 销毁原语通过 `browser-window-utils.ts` 共享。
  */
 import { randomUUID } from "node:crypto";
 
@@ -34,19 +31,18 @@ import {
 export interface RenderedFetchResult {
   html: string;
   finalUrl: string;
-  /** Best-effort HTTP status from `did-finish-load`. null when load failed. */
+  /** 来自 `did-finish-load` 的尽力而为的 HTTP 状态码。加载失败时为 null。 */
   status: number | null;
 }
 
 interface RenderOpts {
-  /** Hard timeout for `loadURL`. Default 15s. */
+  /** `loadURL` 的硬超时。默认 15s。 */
   timeoutMs?: number;
-  /** Settle delay AFTER did-finish-load for SPA hydration. Default 1500ms. */
+  /** did-finish-load 之后用于 SPA 水合的静默延迟。默认 1500ms。 */
   settleMs?: number;
   /**
-   * Optional cancellation. Honored both while queued (rejects without
-   * spawning a window) and during load (waitForPageLoad observes the
-   * signal directly).
+   * 可选的取消信号。在排队期间（不派生窗口即 reject）和加载期间
+   *（waitForPageLoad 直接监听该信号）均会被遵守。
    */
   signal?: AbortSignal;
 }

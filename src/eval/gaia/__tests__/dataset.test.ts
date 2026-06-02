@@ -11,7 +11,7 @@ import {
   parseRecord,
 } from "../dataset";
 
-// ─── parseLine ───────────────────────────────────────────────────────
+// ─── parseLine 解析单行 ───────────────────────────────────────────────────────
 
 describe("parseLine", () => {
   it("normalises a well-formed record", () => {
@@ -59,7 +59,7 @@ describe("parseLine", () => {
           task_id: "x",
           Question: "q",
           Level: 1,
-          "Final answer": 42, // wrong type
+          "Final answer": 42, // 类型错误
           file_name: "",
         }),
       ),
@@ -111,12 +111,12 @@ describe("parseLine", () => {
   });
 });
 
-// ─── parseRecord (shared between JSONL + parquet paths) ──────────────
+// ─── parseRecord(JSONL 与 parquet 路径共用) ──────────────
 
 describe("parseRecord", () => {
   it("accepts Level as a string-formatted integer (parquet shape)", () => {
-    // GAIA's metadata.parquet stores Level as a string "1"/"2"/"3",
-    // while the legacy JSONL stores it as a number. Both must parse.
+    // GAIA 的 metadata.parquet 将 Level 存为字符串 "1"/"2"/"3",
+    // 而旧版 JSONL 将其存为数字。两者都必须能解析。
     const q = parseRecord({
       task_id: "x",
       Question: "q",
@@ -215,7 +215,7 @@ describe("parseRecord", () => {
   });
 });
 
-// ─── loadGaiaDataset ─────────────────────────────────────────────────
+// ─── loadGaiaDataset 加载数据集 ─────────────────────────────────────────────────
 
 describe("loadGaiaDataset", () => {
   let dir: string;
@@ -263,7 +263,7 @@ describe("loadGaiaDataset", () => {
   });
 });
 
-// ─── filterQuestions ─────────────────────────────────────────────────
+// ─── filterQuestions 过滤问题 ─────────────────────────────────────────────────
 
 const make = (level: 1 | 2 | 3, id: string) => ({
   taskId: id,

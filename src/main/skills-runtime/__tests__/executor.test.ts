@@ -8,7 +8,7 @@ import {
 } from "../executor";
 import type { UnifiedSkill } from "../types";
 
-// ─── Helpers ─────────────────────────────────────────────────────────
+// ─── 辅助函数 ─────────────────────────────────────────────────────────
 
 function makeSkill(overrides: Partial<UnifiedSkill> = {}): UnifiedSkill {
   return {
@@ -188,7 +188,7 @@ describe("buildSkillCatalogXml", () => {
 
 // ─── executeSkill ───────────────────────────────────────────────────
 
-// Mock the hooks module to avoid actual script execution
+// mock hooks 模块,避免真正执行脚本
 vi.mock("../hooks", () => ({
   runHook: vi.fn(async () => ({ success: true })),
 }));
@@ -207,7 +207,7 @@ describe("executeSkill", () => {
     expect(result).toContain("--- SKILL INSTRUCTIONS BEGIN");
     expect(result).toContain("--- SKILL INSTRUCTIONS END ---");
     expect(result).toContain("You are a test skill.");
-    // Default mode does NOT delegate to runSubagent.
+    // 默认模式不会委托给 runSubagent。
     expect(deps.runSubagent).not.toHaveBeenCalled();
   });
 

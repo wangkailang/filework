@@ -1,47 +1,46 @@
 /**
- * Model price table for GAIA cost accounting.
+ * 用于 GAIA 成本核算的模型价格表。
  *
- * Prices are USD per million tokens, taken from each provider's
- * official pricing page at PR-creation time. They WILL drift — when a
- * provider re-tiers, update this table or set the cost field to `null`
- * in summaries.
+ * 价格单位为每百万 token 的美元数,取自各服务商在 PR 创建时的
+ * 官方定价页。它们一定会漂移 —— 当某服务商重新调整价格档位时,
+ * 需更新此表,或在汇总中将成本字段置为 `null`。
  *
- * Unknown / un-priced models return `null` from `calculateCost` so
- * downstream callers can distinguish "couldn't price" from "$0".
+ * 未知 / 未定价的模型会让 `calculateCost` 返回 `null`,以便
+ * 下游调用方能区分"无法定价"与"$0"。
  */
 
 import type { TokenUsage } from "./types";
 
 export interface ModelPrice {
-  /** USD per million input tokens (uncached). */
+  /** 每百万输入 token 的美元价(未命中缓存)。 */
   inputUsdPerMTok: number;
-  /** USD per million output tokens. */
+  /** 每百万输出 token 的美元价。 */
   outputUsdPerMTok: number;
-  /** USD per million cache-read tokens. Anthropic / OpenAI prompt cache. */
+  /** 每百万缓存读取 token 的美元价。Anthropic / OpenAI 提示缓存。 */
   cacheReadUsdPerMTok?: number;
-  /** USD per million cache-write tokens. */
+  /** 每百万缓存写入 token 的美元价。 */
   cacheWriteUsdPerMTok?: number;
 }
 
 /**
- * Strip provider-specific date / region suffixes so configs like
- * `claude-sonnet-4-6-20251022` map to the canonical `claude-sonnet-4-6`
- * entry without us maintaining one row per dated snapshot.
+ * 剥除服务商特定的日期 / 区域后缀,使诸如
+ * `claude-sonnet-4-6-20251022` 的配置映射到规范的 `claude-sonnet-4-6`
+ * 条目,无需为每个带日期的快照维护一行。
  */
 export const normalizeModelId = (id: string): string =>
   id
-    // `-YYYYMMDD` suffix
+    // `-YYYYMMDD` 后缀
     .replace(/-(2\d{3}\d{4})$/i, "")
-    // Anthropic `-latest` alias
+    // Anthropic `-latest` 别名
     .replace(/-latest$/i, "");
 
 /**
- * Static price table. Keys are the canonical (date-stripped) model ids.
- * Add a row when a new model joins the project's adapter list.
+ * 静态价格表。键为规范化(剥除日期)后的模型 id。
+ * 当有新模型加入项目的适配器列表时,在此新增一行。
  */
 export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = Object.freeze(
   {
-    // Anthropic Claude 4.x
+    // Anthropic Claude 4.x 系列
     "claude-opus-4-7": {
       inputUsdPerMTok: 15,
       outputUsdPerMTok: 75,
@@ -97,20 +96,18 @@ export const MODEL_PRICES: Readonly<Record<string, ModelPrice>> = Object.freeze(
 );
 
 /**
- * Returns the canonical price row for `model`, or `null` when we have
- * no entry. Useful for tooling that wants to surface "this model isn't
- * priced — update the table" warnings.
+ * 返回 `model` 对应的规范价格行,无对应条目时返回 `null`。
+ * 适用于希望提示"该模型未定价 —— 请更新价格表"告警的工具。
  */
 export const getModelPrice = (model: string): ModelPrice | null =>
   MODEL_PRICES[normalizeModelId(model)] ?? null;
 
 /**
- * Compute the USD cost of a single agent run, using the basic
- * input/output pricing (cache deltas not surfaced — caller doesn't
- * have those broken out in `TokenUsage`).
+ * 计算单次 agent 运行的美元成本,使用基础的输入/输出定价
+ * (不区分缓存差额 —— 调用方在 `TokenUsage` 中并未拆分出这些)。
  *
- * Returns `null` when the model isn't in `MODEL_PRICES` so the runner
- * can record "unpriced" rather than miscalculate as $0.
+ * 当模型不在 `MODEL_PRICES` 中时返回 `null`,使 runner 可以记录
+ * "未定价",而非错误地按 $0 计算。
  */
 export const calculateCost = (
   model: string,
@@ -124,7 +121,7 @@ export const calculateCost = (
   return inputCost + outputCost;
 };
 
-/** Format a cost number for human display. Treats `null` as "—". */
+/** 将成本数值格式化为便于人读的形式。将 `null` 视为 "—"。 */
 export const formatCost = (usd: number | null | undefined): string => {
   if (usd === null || usd === undefined) return "—";
   if (usd === 0) return "$0.00";

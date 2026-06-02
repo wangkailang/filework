@@ -8,7 +8,7 @@ import { DiffHunkView } from "./DiffHunkView";
 interface WriteFilePreviewCardProps {
   preview: WriteFilePreview;
   LL: TranslationFunctions;
-  /** Shown to assistive tech when the body is collapsed. */
+  /** 主体折叠时展示给辅助技术(无障碍)。 */
   fallbackDescription?: string;
 }
 

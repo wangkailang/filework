@@ -1,12 +1,12 @@
 /**
- * IPC: github:* — talk to the GitHub REST API + manage local clones.
+ * IPC: github:* —与 GitHub REST API 交互 + 管理本地克隆。
  *
- * Uses the raw `fetch` API (Node 18+) to avoid pulling in @octokit/rest.
- * GitHub PAT-authenticated clients have a 5000 req/hr rate limit; the
- * renderer is responsible for caching repo lists and avoiding polling.
+ * 使用原生 `fetch` API（Node 18+）以避免引入 @octokit/rest。
+ * 经 GitHub PAT 认证的客户端有 5000 次/小时的速率限制;由渲染进程
+ * 负责缓存仓库列表并避免轮询。
  *
- * Cloning is delegated to `GitHubWorkspace.create()` which handles the
- * shallow clone, freshness check, and re-auth on each entry.
+ * 克隆委托给 `GitHubWorkspace.create()`,它负责浅克隆、新鲜度检查,
+ * 以及每次进入时的重新认证。
  */
 
 import { ipcMain } from "electron";
@@ -72,7 +72,7 @@ const listAllRepos = async (
   token: string,
   fetchImpl: typeof fetch,
 ): Promise<GitHubRepoSummary[]> => {
-  // 200 repos covers the vast majority of users; later PRs will paginate fully.
+  // 200 个仓库可覆盖绝大多数用户;后续 PR 会实现完整分页。
   const out: GitHubRepoSummary[] = [];
   for (let page = 1; page <= 2; page++) {
     const url = `https://api.github.com/user/repos?per_page=100&sort=pushed&page=${page}`;
@@ -105,31 +105,30 @@ const listBranches = async (
 };
 
 export interface GitHubHandlerDeps {
-  /** Decrypts a stored credential id into the underlying token. */
+  /** 将存储的凭证 id 解密为底层 token。 */
   resolveToken: (credentialId: string) => Promise<string>;
-  /** Same root passed to GitHubWorkspace.create(). */
+  /** 与传给 GitHubWorkspace.create() 的根目录相同。 */
   cacheDir: string;
-  /** GIT_ASKPASS helper script (M7). */
+  /** GIT_ASKPASS 辅助脚本（M7）。 */
   askpassPath?: string;
   /**
-   * Optional per-request proxy-aware fetch. Defaults to global `fetch`.
-   * Production wires this to `proxy-fetch.ts` so each request consults
-   * `session.resolveProxy(url)` instead of inheriting the one-shot
-   * `EnvHttpProxyAgent` from `proxy-bootstrap.ts`.
+   * 可选的逐请求代理感知 fetch。默认使用全局 `fetch`。生产环境将其
+   * 接入 `proxy-fetch.ts`,使每个请求查询 `session.resolveProxy(url)`,
+   * 而非继承来自 `proxy-bootstrap.ts` 的一次性 `EnvHttpProxyAgent`。
    */
   fetchFn?: typeof fetch;
   /**
-   * Per-host proxy resolver for spawned `git` children (see
-   * `core/workspace/git-proxy-env.ts`). Production wires this to
-   * `session.defaultSession.resolveProxy`; tests can leave it undefined.
+   * 用于派生的 `git` 子进程的逐主机代理解析器（参见
+   * `core/workspace/git-proxy-env.ts`）。生产环境将其接入
+   * `session.defaultSession.resolveProxy`;测试中可留空。
    */
   resolveProxy?: ProxyResolver;
 }
 
 export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
-  // Resolve fetch on each call so test harnesses can `vi.stubGlobal("fetch", …)`
-  // after this handler is registered. Capturing at registration time would
-  // snapshot the original global before the stub lands.
+  // 每次调用时再解析 fetch,以便测试框架可在该 handler 注册之后执行
+  // `vi.stubGlobal("fetch", …)`。若在注册时捕获,会在 stub 生效前就
+  // 快照了原始全局对象。
   const fetchImpl: typeof fetch = (input, init) =>
     (deps.fetchFn ?? fetch)(input, init);
   const wsDeps: GitHubWorkspaceDeps = {
@@ -189,9 +188,9 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
         credentialId: string;
         owner: string;
         repo: string;
-        /** Branch the workspace was opened at — used to build the ref. */
+        /** 工作区打开时所在的分支 —— 用于构建 ref。 */
         ref: string;
-        /** Target branch to switch to. */
+        /** 要切换到的目标分支。 */
         branch: string;
       },
     ) => {
@@ -233,7 +232,7 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
         ref: payload.ref,
         credentialId: payload.credentialId,
       };
-      // Force a refresh by passing TTL=0; ensureClone will re-fetch.
+      // 通过传入 TTL=0 强制刷新;ensureClone 会重新拉取。
       const ws = await GitHubWorkspace.create(ref, {
         ...wsDeps,
         freshnessTtlMs: 0,
@@ -243,7 +242,7 @@ export const registerGitHubHandlers = (deps: GitHubHandlerDeps) => {
   );
 };
 
-/** Default `resolveToken` backed by `getCredentialToken`. */
+/** 由 `getCredentialToken` 支撑的默认 `resolveToken`。 */
 export const credentialResolver = async (
   credentialId: string,
 ): Promise<string> => getCredentialToken(credentialId);

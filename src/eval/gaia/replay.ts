@@ -1,28 +1,26 @@
 /**
- * Trajectory replay (signature + diff) for the GAIA harness.
+ * 用于 GAIA 框架的轨迹回放(签名 + diff)。
  *
- * Reads an `events/<task_id>.jsonl` (produced by `runGaia`) and reduces
- * the stream into a deterministic *signature*: an ordered tuple of
- * tool calls (name + stable hash of args), reflection verdicts, and the
- * terminal status. Same trajectory → same hash, independent of token
- * timings, retries, or message deltas.
+ * 读取 `events/<task_id>.jsonl`(由 `runGaia` 生成),将事件流归约
+ * 为一个确定性的*签名*:由工具调用(名称 + 参数的稳定哈希)、
+ * 反思裁决以及终止状态组成的有序元组。相同轨迹 → 相同哈希,
+ * 与 token 时序、重试或消息增量无关。
  *
- * Use cases:
+ * 使用场景:
  *
- *   1. After tweaking agent-loop / reflection-gate / system prompt,
- *      compare two runs to answer "did the path actually change?"
- *      Without this, you can't separate LLM jitter from code regressions.
+ *   1. 在调整 agent 循环 / 反思门控 / 系统提示后,对比两次运行,
+ *      回答"路径是否真的变了?"。没有它,你无法把 LLM 抖动与
+ *      代码回归区分开。
  *
- *   2. Cheap, LLM-free fixture tests: snapshot a known-good trajectory
- *      and assert future runs still produce the same signature for
- *      deterministic flows.
+ *   2. 廉价、无需 LLM 的夹具测试:对一条已知良好的轨迹打快照,
+ *      并断言未来运行在确定性流程下仍产生相同的签名。
  *
- *   3. Drift triage on a real run pair — batch mode walks both
- *      `events/` directories and reports which tasks diverged.
+ *   3. 对真实运行对的漂移定位 —— 批量模式会遍历两个 `events/`
+ *      目录,并报告哪些任务发生了分叉。
  *
- * NOT in v1: re-executing agent-loop against recorded LLM responses.
- * That's v2 and needs a streamText shim. v1 is purely a reduction +
- * comparison of what was already recorded.
+ * v1 不包含:针对录制的 LLM 响应重新执行 agent 循环。那是 v2 的
+ * 内容,需要一个 streamText 垫片。v1 纯粹是对已录制内容的归约 +
+ * 比较。
  */
 
 import { createHash } from "node:crypto";
@@ -31,41 +29,41 @@ import path from "node:path";
 
 import type { AgentEvent } from "../../main/core/agent/events";
 
-// ─── Signature shape ─────────────────────────────────────────────────
+// ─── 签名结构 ─────────────────────────────────────────────────
 
 export type ReflectionVerdictKind = "continue" | "retry" | "abort";
 
 export interface SignedToolCall {
-  /** 0-based position in the tool call sequence. */
+  /** 在工具调用序列中的位置(从 0 开始)。 */
   index: number;
-  /** Turn the call happened in. */
+  /** 该调用发生在哪一轮。 */
   turnIndex: number;
   name: string;
-  /** 16-char sha256 prefix of stable-stringified args. */
+  /** 稳定序列化参数的 sha256 前 16 字符。 */
   argsHash: string;
-  /** ≤80 char preview for human-readable reports. */
+  /** 用于人读报告的预览,≤80 字符。 */
   argsPreview: string;
   success: boolean;
 }
 
 export interface TrajectorySignature {
   taskId: string;
-  /** Top-level fingerprint: 16-char sha256 of (tool seq + verdicts + endStatus). */
+  /** 顶层指纹:(工具序列 + 裁决 + endStatus)的 sha256 前 16 字符。 */
   hash: string;
   totalTurns: number;
   toolCalls: SignedToolCall[];
   reflectionVerdicts: ReflectionVerdictKind[];
   endStatus: "completed" | "failed" | "cancelled" | null;
-  /** Coarse signal — surfaces when the agent went silent vs verbose. */
+  /** 粗粒度信号 —— 用于显现 agent 是沉默还是冗长。 */
   finalTextLength: number;
 }
 
-// ─── Stable stringify / hashing ──────────────────────────────────────
+// ─── 稳定序列化 / 哈希 ──────────────────────────────────────
 
 /**
- * Deterministic JSON.stringify — sorted keys, drops `undefined` fields,
- * replaces cycles with `"[Circular]"`. Used so `{a:1,b:2}` and
- * `{b:2,a:1}` produce identical hashes.
+ * 确定性的 JSON.stringify —— 键排序、丢弃 `undefined` 字段、
+ * 将循环引用替换为 `"[Circular]"`。这样 `{a:1,b:2}` 与
+ * `{b:2,a:1}` 会产生相同的哈希。
  */
 const stableStringify = (value: unknown): string => {
   const seen = new WeakSet();
@@ -90,9 +88,9 @@ const previewArgs = (args: unknown, max = 80): string => {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 };
 
-// ─── Event stream loading ────────────────────────────────────────────
+// ─── 事件流加载 ────────────────────────────────────────────
 
-/** Parse a JSONL file into AgentEvents. Throws with line number on bad input. */
+/** 将 JSONL 文件解析为 AgentEvent。输入非法时抛错并附带行号。 */
 export const loadEventStream = async (
   filePath: string,
 ): Promise<AgentEvent[]> => {
@@ -113,7 +111,7 @@ export const loadEventStream = async (
   return out;
 };
 
-// ─── Reduce events → signature ───────────────────────────────────────
+// ─── 将事件归约为签名 ───────────────────────────────────────
 
 export const computeSignature = (
   taskId: string,
@@ -177,7 +175,7 @@ export const computeSignature = (
   };
 };
 
-// ─── Diff two signatures ─────────────────────────────────────────────
+// ─── 对两个签名做 diff ─────────────────────────────────────────────
 
 export type SequenceDiffOp =
   | {
@@ -200,7 +198,7 @@ export interface SignatureDiff {
   identical: boolean;
   baseline: TrajectorySignature;
   current: TrajectorySignature;
-  /** Per-step alignment of tool sequences. */
+  /** 工具序列的逐步对齐结果。 */
   ops: SequenceDiffOp[];
   toolSequenceChanged: boolean;
   reflectionVerdictsChanged: boolean;
@@ -208,17 +206,16 @@ export interface SignatureDiff {
 }
 
 /**
- * Greedy aligned diff of tool call sequences.
+ * 工具调用序列的贪心对齐 diff。
  *
- * Matches by `name` left-to-right; equal names with differing `argsHash`
- * are tagged `args-changed` (same-step mutation). When names diverge,
- * looks ahead 3 steps to decide whether current has an insertion or
- * baseline has a deletion. Falls back to paired remove+add when neither
- * side reconverges within the window.
+ * 从左到右按 `name` 匹配;名称相同但 `argsHash` 不同的会标记为
+ * `args-changed`(同一步发生变更)。当名称分叉时,向前看 3 步以
+ * 判断 current 端是插入还是 baseline 端是删除。若窗口内两端都未
+ * 重新收敛,则回退为成对的 remove+add。
  *
- * Intentionally simpler than Myers — for typical trajectory drift (1–2
- * inserted/dropped calls) it produces clean diffs, and we surface
- * "trajectory changed" as a binary signal anyway.
+ * 刻意做得比 Myers 算法更简单 —— 对于典型的轨迹漂移(插入/删除
+ * 1~2 个调用)它能产出清晰的 diff,而且无论如何我们只把
+ * "轨迹已变更"作为二值信号呈现。
  */
 export const diffSignatures = (
   baseline: TrajectorySignature,
@@ -303,7 +300,7 @@ export const diffSignatures = (
   };
 };
 
-// ─── Batch mode: walk two run dirs ───────────────────────────────────
+// ─── 批量模式:遍历两个运行目录 ───────────────────────────────────
 
 export interface BatchReplayEntry {
   taskId: string;
@@ -417,7 +414,7 @@ export const runBatchReplay = async (
   };
 };
 
-// ─── Rendering ───────────────────────────────────────────────────────
+// ─── 渲染 ───────────────────────────────────────────────────────
 
 const escapePipe = (s: string): string => s.replace(/\|/g, "\\|");
 

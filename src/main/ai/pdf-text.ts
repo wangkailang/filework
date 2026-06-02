@@ -18,7 +18,7 @@ export type PdfExtractResult =
   | { ok: false; error: string };
 
 export interface PdfPage {
-  /** 1-based 页码。 */
+  /** 从 1 开始的页码。 */
   num: number;
   text: string;
 }

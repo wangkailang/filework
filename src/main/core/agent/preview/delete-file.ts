@@ -1,8 +1,7 @@
 /**
- * deleteFile preview generator. Inspects the target without removing
- * it: stat for files, recursive list (capped) for directories, and
- * optional head text snippet so the approval card can show *what* is
- * about to be deleted.
+ * deleteFile 预览生成器。在不删除目标的前提下检查它:
+ * 对文件执行 stat,对目录执行递归列举(设有上限),并可选地
+ * 提取头部文本片段,以便审批卡片能展示*将要*被删除的内容。
  */
 
 import path from "node:path";
@@ -54,15 +53,15 @@ export async function computeDeleteFilePreview(
     try {
       const entries = await workspace.fs.list(rel, { recursive: true });
       childCount = entries.length;
-      // Cap how many entries we account for so the byte sum stays
-      // bounded for huge trees; the cap matches `Math.min(...)` below
-      // so the displayed `+N` and the size add up.
+      // 限制纳入统计的条目数量,使字节总和在巨型目录树下保持有界;
+      // 该上限与下方的 `Math.min(...)` 一致,
+      // 因此显示的 `+N` 与体积能对得上。
       const limit = Math.min(entries.length, CHILD_COUNT_CAP);
       for (let i = 0; i < limit; i++) {
         totalBytes += entries[i].size;
       }
     } catch {
-      // Best-effort — keep partial counts.
+      // 尽力而为——保留部分计数。
     }
     return {
       kind: "delete",

@@ -28,9 +28,8 @@ export const registerWorkspaceHandlers = () => {
         metadata: opts?.metadata ?? null,
       });
 
-      // Project-skill discovery walks the filesystem, so it's only
-      // meaningful for local workspaces. GitHub workspaces use the
-      // clone dir but project-skill registration is a separate concern.
+      // 项目技能发现会遍历文件系统,因此仅对本地工作目录有意义。
+      // GitHub 工作目录使用克隆目录,但项目技能注册是另一回事。
       if (kind === "local") {
         try {
           await skillRegistry.refreshProjectSkills(pathOrId);

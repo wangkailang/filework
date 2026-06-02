@@ -1,10 +1,9 @@
 /**
- * Workspace factory — turns a `WorkspaceRef` into a runtime `Workspace`.
+ * 工作区工厂 —— 把 `WorkspaceRef` 转成运行时的 `Workspace`。
  *
- * Used by `ipc/ai-handlers.ts` and `ipc/chat-handlers.ts` whenever they
- * need a workspace for a task. Building Workspace per-task is intentional:
- * it keeps the AgentLoop boundary clean and lets GitHubWorkspace re-check
- * clone freshness on every entry point without a cache-invalidation dance.
+ * 由 `ipc/ai-handlers.ts` 和 `ipc/chat-handlers.ts` 在需要为任务获取工作区时
+ * 调用。按任务构建 Workspace 是有意为之:它保持 AgentLoop 边界清晰,并让
+ * GitHubWorkspace 能在每个入口处重新校验克隆是否最新,而无需缓存失效的繁琐处理。
  */
 
 import { existsSync } from "node:fs";
@@ -18,22 +17,22 @@ import type { Workspace } from "./types";
 import type { WorkspaceRef } from "./workspace-ref";
 
 export interface WorkspaceFactoryDeps {
-  /** Decrypts a stored credential id into the underlying token. */
+  /** 把存储的凭据 id 解密成底层 token。 */
   resolveToken: (credentialId: string) => Promise<string>;
-  /** Root for ephemeral GitHub clones. */
+  /** 临时 GitHub 克隆的根目录。 */
   githubCacheDir: string;
-  /** Root for ephemeral GitLab clones. */
+  /** 临时 GitLab 克隆的根目录。 */
   gitlabCacheDir: string;
   /**
-   * Absolute path to the GIT_ASKPASS helper. Wired by main bootstrap
-   * via `git-credentials.ts:ensureAskpassScript()`. When omitted (e.g.
-   * in tests), git invocations fall back to inheriting `process.env`.
+   * GIT_ASKPASS 助手的绝对路径。由主进程引导通过
+   * `git-credentials.ts:ensureAskpassScript()` 接入。省略时(例如
+   * 测试中),git 调用回退为继承 `process.env`。
    */
   askpassPath?: string;
   /**
-   * Per-host proxy resolver for spawned `git` children (see
-   * `git-proxy-env.ts`). Wired by `index.ts` to
-   * `session.defaultSession.resolveProxy`.
+   * 为派生的 `git` 子进程提供的按主机代理解析器(见
+   * `git-proxy-env.ts`)。由 `index.ts` 接入
+   * `session.defaultSession.resolveProxy`。
    */
   resolveProxy?: ProxyResolver;
 }
@@ -43,9 +42,9 @@ export const createWorkspace = async (
   deps: WorkspaceFactoryDeps,
 ): Promise<Workspace> => {
   if (ref.kind === "local") {
-    // Idempotent — no-op for non-git directories (startHeadWatcher
-    // returns early when .git/HEAD can't be read). Gives local repos
-    // the same chat-driven-checkout sync as remote workspaces.
+    // 幂等 —— 对非 git 目录是空操作(startHeadWatcher 在读不到
+    // .git/HEAD 时提前返回)。让本地仓库获得与远程工作区相同的
+    // 由聊天驱动的 checkout 同步能力。
     void startHeadWatcher(ref.path);
     return new LocalWorkspace(ref.path);
   }
@@ -70,19 +69,17 @@ export const createWorkspace = async (
 };
 
 /**
- * True when the workspace is git-backed — either a remote-cloned GitHub /
- * GitLab workspace, or a LocalWorkspace whose root contains a `.git`
- * entry. Used by the prompt builders to gate injection of the L1 git
- * principles block and by `buildAgentToolRegistry` to gate the L2
- * protocol embedded in `runCommand`'s description.
+ * 当工作区由 git 支撑时返回 true —— 要么是远程克隆的 GitHub / GitLab
+ * 工作区,要么是根目录含 `.git` 项的 LocalWorkspace。供提示词构建器据此
+ * 决定是否注入 L1 git 原则块,也供 `buildAgentToolRegistry` 据此决定是否
+ * 注入嵌在 `runCommand` description 中的 L2 协议。
  *
- * Sync `existsSync` is intentional: the check runs once per task on
- * worktree paths the main process already trusts. An async check would
- * force the call sites (system prompt + tool registry build) to become
- * async without a real benefit.
+ * 使用同步的 `existsSync` 是有意为之:该检查每个任务只跑一次,针对的是
+ * 主进程已经信任的 worktree 路径。改成异步检查会迫使调用方(系统提示词 +
+ * 工具注册表构建)变成异步,却没有实际收益。
  *
- * `.git` may be a file (worktree / submodule) instead of a directory,
- * so this only tests for presence, not directory-ness.
+ * `.git` 可能是文件(worktree / 子模块)而非目录,因此这里只测试是否存在,
+ * 不判断是否为目录。
  */
 export const isGitBackedWorkspace = (workspace: Workspace): boolean => {
   if (workspace.kind !== "local") return true;

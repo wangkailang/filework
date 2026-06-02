@@ -1,8 +1,7 @@
 /**
- * Incremental File Scanner
+ * 增量文件扫描器
  *
- * Provides efficient directory scanning by caching file metadata
- * and only scanning changed files on subsequent requests.
+ * 通过缓存文件元数据来高效扫描目录,后续请求只扫描发生变化的文件。
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -71,7 +70,7 @@ export interface IncrementalScanResult {
 }
 
 /**
- * Cache Manager for file system snapshots
+ * 文件系统快照的缓存管理器
  */
 class CacheManager {
   private cachePath: string;
@@ -82,7 +81,7 @@ class CacheManager {
   }
 
   /**
-   * Load cache from disk and memory
+   * 从磁盘和内存加载缓存
    */
   async loadCache(): Promise<void> {
     try {
@@ -97,7 +96,7 @@ class CacheManager {
         throw new Error("Invalid cache metadata");
       }
 
-      // Convert serialized cache back to in-memory format
+      // 将序列化的缓存还原为内存格式
       for (const [dirPath, snapshot] of Object.entries(cache.directories)) {
         if (Number.isNaN(Date.parse(snapshot.lastScan))) {
           continue;
@@ -122,7 +121,7 @@ class CacheManager {
         });
       }
     } catch (_error) {
-      // Cache file doesn't exist or is corrupted, start fresh
+      // 缓存文件不存在或已损坏,重新开始
       console.debug(
         "[IncrementalScanner] Cache not found or corrupted, starting fresh",
       );
@@ -130,13 +129,13 @@ class CacheManager {
   }
 
   /**
-   * Save cache to disk
+   * 将缓存保存到磁盘
    */
   async saveCache(): Promise<void> {
     try {
       await mkdir(dirname(this.cachePath), { recursive: true });
 
-      // Convert in-memory cache to serializable format
+      // 将内存缓存转换为可序列化格式
       const serializableDirectories: ScanCache["directories"] = {};
 
       for (const [dirPath, snapshot] of this.memoryCache.entries()) {
@@ -173,28 +172,28 @@ class CacheManager {
   }
 
   /**
-   * Get cached snapshot for directory
+   * 获取目录的缓存快照
    */
   getSnapshot(dirPath: string): DirectorySnapshot | null {
     return this.memoryCache.get(dirPath) || null;
   }
 
   /**
-   * Update cached snapshot for directory
+   * 更新目录的缓存快照
    */
   updateSnapshot(dirPath: string, snapshot: DirectorySnapshot): void {
     this.memoryCache.set(dirPath, snapshot);
   }
 
   prune(policy: CachePolicy, now = Date.now()): void {
-    // Remove expired snapshots first
+    // 先移除过期的快照
     for (const [dirPath, snapshot] of this.memoryCache.entries()) {
       if (now - snapshot.lastScan.getTime() > policy.ttlMs) {
         this.memoryCache.delete(dirPath);
       }
     }
 
-    // Then enforce size limits by evicting oldest snapshots
+    // 然后通过淘汰最旧的快照来强制满足容量上限
     const ordered = Array.from(this.memoryCache.entries()).sort(
       ([, a], [, b]) => a.lastScan.getTime() - b.lastScan.getTime(),
     );
@@ -220,21 +219,21 @@ class CacheManager {
   }
 
   /**
-   * Remove cached snapshot for directory
+   * 移除目录的缓存快照
    */
   removeSnapshot(dirPath: string): void {
     this.memoryCache.delete(dirPath);
   }
 
   /**
-   * Clear all cache
+   * 清空所有缓存
    */
   clearCache(): void {
     this.memoryCache.clear();
   }
 
   /**
-   * Get cache statistics
+   * 获取缓存统计信息
    */
   getCacheStats(): {
     directories: number;
@@ -256,7 +255,7 @@ class CacheManager {
 }
 
 /**
- * Incremental Directory Scanner
+ * 增量目录扫描器
  */
 export class IncrementalScanner {
   private cacheManager: CacheManager;
@@ -264,9 +263,9 @@ export class IncrementalScanner {
   private saveQueue: Promise<void> = Promise.resolve();
   private policy: CachePolicy;
 
-  // Files and directories to ignore
+  // 需要忽略的文件和目录
   private readonly IGNORE_PATTERNS = [
-    /^\./, // hidden files
+    /^\./, // 隐藏文件
     /^node_modules$/,
     /^\.git$/,
     /^\.DS_Store$/,
@@ -288,7 +287,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Initialize the scanner (load cache)
+   * 初始化扫描器(加载缓存)
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -299,7 +298,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Queue cache persistence to avoid concurrent write races.
+   * 将缓存持久化排队,避免并发写竞争。
    */
   private queueCacheSave(): Promise<void> {
     this.saveQueue = this.saveQueue
@@ -311,7 +310,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Check if file should be ignored
+   * 检查文件是否应被忽略
    */
   private shouldIgnore(name: string): boolean {
     return this.IGNORE_PATTERNS.some((pattern) => pattern.test(name));
@@ -358,7 +357,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Convert FileMetadata to FileEntry
+   * 将 FileMetadata 转换为 FileEntry
    */
   private toFileEntry(metadata: FileMetadata): FileEntry {
     return {
@@ -372,7 +371,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Compare current files with cached snapshot
+   * 将当前文件与缓存快照进行比较
    */
   private compareWithCache(
     currentFiles: Map<string, FileMetadata>,
@@ -389,7 +388,7 @@ export class IncrementalScanner {
     const deleted: string[] = [];
 
     if (!cachedSnapshot) {
-      // No cache, everything is new
+      // 无缓存,全部视为新增
       for (const file of currentFiles.values()) {
         added.push(this.toFileEntry(file));
       }
@@ -398,7 +397,7 @@ export class IncrementalScanner {
 
     const cachedFiles = cachedSnapshot.files;
 
-    // Check for added and modified files
+    // 检测新增和修改的文件
     for (const [fileName, currentFile] of currentFiles.entries()) {
       const cachedFile = cachedFiles.get(fileName);
 
@@ -414,7 +413,7 @@ export class IncrementalScanner {
       }
     }
 
-    // Check for deleted files
+    // 检测已删除的文件
     for (const [fileName, cachedFile] of cachedFiles.entries()) {
       if (!currentFiles.has(fileName)) {
         deleted.push(cachedFile.path);
@@ -425,7 +424,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Perform incremental scan of directory
+   * 对目录执行增量扫描
    */
   async scanIncremental(
     dirPath: string,
@@ -446,14 +445,14 @@ export class IncrementalScanner {
       cachedSnapshot = null;
     }
 
-    // Note: Removed unsafe directory mtime optimization that could miss file changes
-    // Modifying existing files doesn't update parent directory mtime, leading to stale results
+    // 注意:已移除可能漏检文件变更的不安全目录 mtime 优化
+    // 修改已有文件不会更新父目录的 mtime,会导致结果过时
 
-    // Perform actual directory scan
+    // 执行实际的目录扫描
     const currentFiles = await this.scanDirectory(dirPath);
     const changes = this.compareWithCache(currentFiles, cachedSnapshot);
 
-    // Update cache
+    // 更新缓存
     const newSnapshot: DirectorySnapshot = {
       path: dirPath,
       lastScan: new Date(),
@@ -468,7 +467,7 @@ export class IncrementalScanner {
     this.cacheManager.updateSnapshot(dirPath, newSnapshot);
     this.cacheManager.prune(this.policy);
 
-    // Save cache to disk (asynchronously, serialized)
+    // 将缓存保存到磁盘(异步、串行化)
     this.queueCacheSave().catch((error) => {
       console.error("[IncrementalScanner] Failed to save cache:", error);
     });
@@ -481,7 +480,7 @@ export class IncrementalScanner {
   }
 
   /**
-   * Force full rescan of directory
+   * 强制对目录进行全量重新扫描
    */
   async scanFull(dirPath: string): Promise<FileEntry[]> {
     const result = await this.scanIncremental(dirPath, true);
@@ -489,14 +488,14 @@ export class IncrementalScanner {
   }
 
   /**
-   * Get cache statistics
+   * 获取缓存统计信息
    */
   getCacheStats() {
     return this.cacheManager.getCacheStats();
   }
 
   /**
-   * Clear cache for specific directory or all
+   * 清除指定目录或全部目录的缓存
    */
   async clearCache(dirPath?: string): Promise<void> {
     if (dirPath) {
@@ -508,18 +507,18 @@ export class IncrementalScanner {
   }
 
   /**
-   * Flush pending cache writes. Primarily used by tests.
+   * 刷写挂起的缓存写入。主要供测试使用。
    */
   async flushPendingWrites(): Promise<void> {
     await this.saveQueue;
   }
 }
 
-// Global instance for reuse across requests
+// 跨请求复用的全局实例
 let globalScanner: IncrementalScanner | null = null;
 
 /**
- * Get or create global scanner instance
+ * 获取或创建全局扫描器实例
  */
 export function getIncrementalScanner(): IncrementalScanner {
   if (!globalScanner) {

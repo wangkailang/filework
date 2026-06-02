@@ -1,24 +1,21 @@
 /**
- * Shared clone-cache utilities for GitHubWorkspace / GitLabWorkspace.
+ * GitHubWorkspace / GitLabWorkspace 共享的克隆缓存工具。
  *
- * Three concerns live here so both providers behave identically:
+ * 这里集中处理三件事,使两个 provider 行为一致:
  *
- *   1. Per-directory serialization (`withCloneLock`). The clone-per-repo
- *      layout means two concurrent tasks targeting the same repo on
- *      different branches would otherwise step on each other's
- *      `git checkout`. We serialize at the directory level rather than
- *      with a process-wide lock so different repos stay parallel.
+ *   1. 按目录串行化(`withCloneLock`)。每仓库一个克隆的布局意味着
+ *      两个并发任务若针对同一仓库的不同分支,否则会互相干扰各自的
+ *      `git checkout`。我们在目录级别串行化,而非使用进程级全局锁,
+ *      以便不同仓库保持并行。
  *
- *   2. Branch switching (`checkoutBranchTo`). Refuses to operate on a
- *      dirty tree — surfaces a `DirtyTreeError` instead of silently
- *      stashing or clobbering. If the local branch doesn't exist yet,
- *      creates it tracking `origin/<branch>`.
+ *   2. 分支切换(`checkoutBranchTo`)。拒绝在脏工作树上操作 —— 抛出
+ *      `DirtyTreeError`,而非静默 stash 或覆盖。若本地分支尚不存在,
+ *      则创建并跟踪 `origin/<branch>`。
  *
- *   3. Legacy-cache migration (`cleanupLegacyAtRefCache`). The old
- *      `<project>@<ref>` directory layout from pre-branch-switch
- *      milestones is incompatible with the new "one clone per repo"
- *      design; sweep them up at startup before any workspace is
- *      materialized so users don't waste disk on dead clones.
+ *   3. 旧缓存迁移(`cleanupLegacyAtRefCache`)。来自分支切换之前各
+ *      里程碑的旧 `<project>@<ref>` 目录布局,与新的「每仓库一个
+ *      克隆」设计不兼容;在任何工作区物化之前于启动时清扫,使用户
+ *      不会在失效克隆上浪费磁盘。
  */
 
 import { spawn as nodeSpawn } from "node:child_process";
@@ -27,15 +24,14 @@ import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 // ---------------------------------------------------------------------------
-// Lock
+// 锁
 // ---------------------------------------------------------------------------
 
 const cloneLocks = new Map<string, Promise<void>>();
 
 /**
- * Serialize operations against a single clone directory. Multiple
- * callers targeting different directories run in parallel; multiple
- * callers on the same directory queue.
+ * 串行化针对单个克隆目录的操作。针对不同目录的多个调用者并行运行;
+ * 针对同一目录的多个调用者排队。
  */
 export const withCloneLock = async <T>(
   cloneDir: string,
@@ -53,8 +49,8 @@ export const withCloneLock = async <T>(
     return await fn();
   } finally {
     release();
-    // Only clear if no later caller has chained onto us. Otherwise
-    // a subsequent withCloneLock for the same dir would skip the wait.
+    // 仅当没有后续调用者链接到我们时才清除。否则针对同一目录的
+    // 后续 withCloneLock 会跳过等待。
     if (cloneLocks.get(cloneDir) === chained) {
       cloneLocks.delete(cloneDir);
     }
@@ -62,9 +58,8 @@ export const withCloneLock = async <T>(
 };
 
 // ---------------------------------------------------------------------------
-// runGit (mirror of the providers' helper, exported for sibling modules
-// like `local-git.ts` that need to invoke git without pulling in a whole
-// Workspace class)
+// runGit(provider 辅助函数的镜像,导出给 `local-git.ts` 等兄弟模块,
+// 它们需要调用 git 而不必引入整个 Workspace 类)
 // ---------------------------------------------------------------------------
 
 export const runGit = async (
@@ -98,13 +93,13 @@ export const runGit = async (
 };
 
 // ---------------------------------------------------------------------------
-// Branch switching
+// 分支切换
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown when a branch switch is requested on a clone with uncommitted
- * changes. Upper layers (IPC handlers, SCM tools) translate this into a
- * user-visible "commit, stash, or discard first" error.
+ * 当在存在未提交更改的克隆上请求分支切换时抛出。上层(IPC handler、
+ * SCM 工具)会将其转换为面向用户的 "commit, stash, or discard first"
+ * 错误。
  */
 export class DirtyTreeError extends Error {
   constructor(
@@ -153,10 +148,9 @@ const localBranchExists = async (
 };
 
 /**
- * Switch the working tree to `branch`. No-op when already on it. If
- * the local branch doesn't exist yet, creates it tracking
- * `origin/<branch>`. Throws `DirtyTreeError` when the tree has
- * uncommitted changes — never auto-stashes.
+ * 将工作树切换到 `branch`。已在该分支上时为空操作。若本地分支尚不
+ * 存在,则创建并跟踪 `origin/<branch>`。当工作树存在未提交更改时
+ * 抛出 `DirtyTreeError` —— 绝不自动 stash。
  */
 export const checkoutBranchTo = async (
   cloneDir: string,
@@ -192,17 +186,16 @@ export const checkoutBranchTo = async (
 };
 
 // ---------------------------------------------------------------------------
-// Legacy-cache migration
+// 旧缓存迁移
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively sweep each `<root>` for directories whose name contains
- * `@` — the marker of the pre-branch-switch `<project>@<ref>` layout —
- * and delete those that actually look like clones (contain a `.git`
- * subdirectory). Idempotent and safe to call on a missing root.
+ * 递归扫描每个 `<root>`,查找名称包含 `@` 的目录 —— 即分支切换之前
+ * `<project>@<ref>` 布局的标记 —— 并删除那些确实看起来像克隆的目录
+ * (包含 `.git` 子目录)。幂等,且对不存在的 root 调用是安全的。
  *
- * The new layout never produces directory names with `@`, so this is
- * unambiguous for cache directories we control.
+ * 新布局绝不会产生带 `@` 的目录名,因此对我们控制的缓存目录而言,
+ * 这一判定毫无歧义。
  */
 export const cleanupLegacyAtRefCache = async (
   roots: string[],
@@ -227,11 +220,10 @@ const sweep = async (dir: string): Promise<number> => {
     if (!entry.isDirectory()) continue;
     const child = path.join(dir, entry.name);
     if (entry.name.includes("@")) {
-      // Legacy layout encoded the ref as a path component, so refs
-      // with slashes like "feature/v1.3" produce nested clones
-      // (`<project>@feature/v1.3/.git`). Probe the whole subtree
-      // rather than only the immediate child — otherwise slash-ref
-      // clones leak through.
+      // 旧布局将 ref 编码为路径组件,因此像 "feature/v1.3" 这样
+      // 带斜杠的 ref 会产生嵌套克隆(`<project>@feature/v1.3/.git`)。
+      // 探测整个子树而非仅直接子目录 —— 否则带斜杠 ref 的克隆会
+      // 漏过。
       if (await subtreeContainsGitDir(child)) {
         await rm(child, { recursive: true, force: true });
         removed += 1;
@@ -253,7 +245,7 @@ const subtreeContainsGitDir = async (
     const st = await stat(path.join(dir, ".git"));
     if (st.isDirectory()) return true;
   } catch {
-    // Not at this level — try one level deeper.
+    // 不在此层级 —— 再深入一层尝试。
   }
   if (depth >= MAX_LEGACY_REF_DEPTH) return false;
   let entries: Dirent[];
@@ -271,7 +263,7 @@ const subtreeContainsGitDir = async (
   return false;
 };
 
-// Test-only re-exports.
+// 仅供测试的重新导出。
 export const __test__ = {
   runGit,
   isCleanTree,

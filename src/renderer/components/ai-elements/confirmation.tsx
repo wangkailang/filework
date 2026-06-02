@@ -10,14 +10,14 @@ import { PreviewEntryRow } from "./preview";
 import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
-// Types — re-exported from the shared core types so the JSONL session store
-// and the renderer agree on a single source of truth.
+// 类型 —— 从共享的核心类型中重新导出,使 JSONL 会话存储与渲染进程
+// 共享同一份事实来源。
 // ---------------------------------------------------------------------------
 
 export type { ApprovalState } from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
-// Root
+// 根容器
 // ---------------------------------------------------------------------------
 
 interface ConfirmationProps extends HTMLAttributes<HTMLDivElement> {
@@ -46,7 +46,7 @@ export const Confirmation = ({
 );
 
 // ---------------------------------------------------------------------------
-// Request (shown while waiting for user decision)
+// 请求(等待用户决定时显示)
 // ---------------------------------------------------------------------------
 
 export const ConfirmationRequest = ({
@@ -64,7 +64,7 @@ export const ConfirmationRequest = ({
 );
 
 // ---------------------------------------------------------------------------
-// Accepted
+// 已批准
 // ---------------------------------------------------------------------------
 
 export const ConfirmationAccepted = ({
@@ -82,7 +82,7 @@ export const ConfirmationAccepted = ({
 );
 
 // ---------------------------------------------------------------------------
-// Rejected
+// 已拒绝
 // ---------------------------------------------------------------------------
 
 export const ConfirmationRejected = ({
@@ -100,7 +100,7 @@ export const ConfirmationRejected = ({
 );
 
 // ---------------------------------------------------------------------------
-// Actions (approve / reject buttons)
+// 操作(批准 / 拒绝按钮)
 // ---------------------------------------------------------------------------
 
 export const ConfirmationActions = ({
@@ -117,7 +117,7 @@ export const ConfirmationActions = ({
 );
 
 // ---------------------------------------------------------------------------
-// Action button
+// 操作按钮
 // ---------------------------------------------------------------------------
 
 interface ConfirmationActionProps extends HTMLAttributes<HTMLButtonElement> {
@@ -154,7 +154,7 @@ export const ConfirmationAction = ({
 );
 
 // ---------------------------------------------------------------------------
-// Batch — one card for N destructive calls coalesced by approval-batcher
+// 批量 —— 由 approval-batcher 合并的 N 个破坏性调用共用一张卡片
 // ---------------------------------------------------------------------------
 
 interface ConfirmationBatchProps {
@@ -167,7 +167,7 @@ interface ConfirmationBatchProps {
    */
   onApprove: (remember: boolean) => void;
   onDeny: () => void;
-  /** Max entries shown before "+N more" collapse. Default 5. */
+  /** 折叠为 "+N more" 之前最多显示的条目数。默认 5。 */
   previewLimit?: number;
   className?: string;
 }

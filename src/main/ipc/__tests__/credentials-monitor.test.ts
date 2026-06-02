@@ -10,7 +10,7 @@ interface FakeCredential {
   testStatus: "unknown" | "ok" | "error" | null;
   lastTestError: string | null;
   lastTestedHost: string | null;
-  /** Test-only — the resolved token. */
+  /** 仅供测试使用 —— 解析出的 token。 */
   _token: string;
 }
 
@@ -197,7 +197,7 @@ describe("batchTestCredentials", () => {
       }),
     );
     const out = await batchTestCredentials();
-    // Both attempted; first surfaced as error result, second ok.
+    // 两者都被尝试;第一个以错误结果呈现,第二个成功。
     expect(out.tested).toBe(2);
   });
 });

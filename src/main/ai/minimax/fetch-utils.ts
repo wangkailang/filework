@@ -1,13 +1,13 @@
 /**
- * Shared HTTP response handling for MiniMax clients.
+ * MiniMax 客户端共用的 HTTP 响应处理。
  *
- * Both image-client and video-client speak the same envelope:
- *   - HTTP status must be 2xx, otherwise we surface the body text.
- *   - The JSON body carries a `base_resp.status_code` — `0` means success;
- *     anything else is an upstream error that should propagate to the UI.
+ * image-client 和 video-client 使用相同的响应封装:
+ *   - HTTP 状态必须是 2xx,否则将响应体文本暴露出来。
+ *   - JSON 响应体携带 `base_resp.status_code` —— `0` 表示成功;
+ *     其他值是上游错误,应传播到 UI。
  *
- * Centralised so adding a new MiniMax endpoint (audio, voice clone…) is
- * one import instead of another copy of the same guard pair.
+ * 集中处理,这样新增 MiniMax 端点(音频、声音克隆等)只需一次 import,
+ * 而不必再复制一份相同的守卫逻辑。
  */
 
 import { MinimaxApiError } from "./types";

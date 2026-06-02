@@ -1,21 +1,21 @@
 /**
- * Cross-run diff for the GAIA harness.
+ * GAIA 工具的跨运行 diff。
  *
- * Loads two run output directories (each produced by `runGaia`),
- * computes deltas, and renders a Markdown report. The intended
- * workflow:
+ * 加载两个运行输出目录(各自由 `runGaia` 生成),
+ * 计算差值,并渲染 Markdown 报告。预期的
+ * 工作流:
  *
- *   1. Run `pnpm gaia-eval` once to establish a baseline.
- *   2. Land a PR that should move the needle (new tool, better
- *      reflection prompt, …).
- *   3. Run `pnpm gaia-eval` again into a new output dir.
- *   4. Run `pnpm gaia-eval-diff <baseline> <new>` — get a Markdown
- *      summary of what changed, which questions newly pass, which
- *      regressed, and how the failure-tag histogram shifted.
+ *   1. 运行一次 `pnpm gaia-eval` 以建立基线。
+ *   2. 合入一个应当带来改进的 PR(新工具、更好的
+ *      反思提示等)。
+ *   3. 再次运行 `pnpm gaia-eval` 到一个新的输出目录。
+ *   4. 运行 `pnpm gaia-eval-diff <baseline> <new>`——得到一份
+ *      Markdown 摘要,说明发生了哪些变化、哪些问题新通过、哪些
+ *      回退,以及失败标签直方图如何变化。
  *
- * Diff loading is best-effort: questions present in one run but not
- * the other are tagged separately, so reruns with different `--limit`
- * or `--level` filters degrade gracefully instead of crashing.
+ * diff 加载尽力而为:只在某一个运行中出现而另一个
+ * 中没有的问题会被单独标记,因此使用不同 `--limit`
+ * 或 `--level` 过滤的重新运行会优雅降级,而非崩溃。
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -29,14 +29,14 @@ import {
 import { formatCost } from "./pricing";
 import type { FailureTag, QuestionResult, RunSummary } from "./types";
 
-// ─── Loading ─────────────────────────────────────────────────────────
+// ─── 加载 ─────────────────────────────────────────────────────────
 
 export interface LoadedRun {
-  /** Absolute path to the run directory. */
+  /** 运行目录的绝对路径。 */
   dir: string;
   summary: RunSummary;
   results: QuestionResult[];
-  /** Quick lookup `taskId → result`. */
+  /** 快速查找 `taskId → result`。 */
   byTaskId: Map<string, QuestionResult>;
 }
 
@@ -62,7 +62,7 @@ export const loadRun = async (dir: string): Promise<LoadedRun> => {
   return { dir, summary, results, byTaskId };
 };
 
-// ─── Diff computation ────────────────────────────────────────────────
+// ─── diff 计算 ────────────────────────────────────────────────
 
 export interface ChangedQuestion {
   taskId: string;
@@ -96,16 +96,16 @@ export interface RunDiff {
   >;
   costDeltaUsd: number | null;
   medianDurationDeltaMs: number;
-  /** Failed in baseline, passed in current. */
+  /** 在基线中失败,在当前中通过。 */
   newlyPassed: ChangedQuestion[];
-  /** Passed in baseline, failed in current — the regressions to investigate. */
+  /** 在基线中通过,在当前中失败——需要排查的回退。 */
   regressions: ChangedQuestion[];
-  /** In baseline but not current (skipped via --limit or --level change). */
+  /** 在基线中存在但当前中没有(因 --limit 或 --level 变更而跳过)。 */
   removed: ChangedQuestion[];
-  /** In current but not baseline. */
+  /** 在当前中存在但基线中没有。 */
   added: ChangedQuestion[];
   failureTagDeltas: FailureTagDelta[];
-  /** Per-metric deltas of trajectory quality. Empty when either side lacks `quality`. */
+  /** 轨迹质量的逐项指标差值。任一侧缺少 `quality` 时为空。 */
   qualityDeltas: QualityMetricsDelta[];
 }
 
@@ -225,7 +225,7 @@ export const computeDiff = (
   };
 };
 
-// ─── Markdown rendering ──────────────────────────────────────────────
+// ─── Markdown 渲染 ──────────────────────────────────────────────
 
 const signedPct = (n: number): string => {
   const pp = n * 100;
@@ -297,7 +297,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
   lines.push(`- Current:  \`${diff.currentDir}\`  (\`${c.config.model}\`)`);
   lines.push("");
 
-  // Top-level table.
+  // 顶层表格。
   lines.push("## Top-level");
   lines.push("");
   lines.push("| Metric | Baseline | Current | Δ |");
@@ -318,7 +318,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
   );
   lines.push("");
 
-  // Newly passed.
+  // 新通过。
   if (diff.newlyPassed.length > 0) {
     lines.push(`## Newly passed (${diff.newlyPassed.length})`);
     lines.push("");
@@ -326,7 +326,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
     lines.push("");
   }
 
-  // Regressions — emphasised because they're the alarm signal.
+  // 回退——重点标注,因为它们是告警信号。
   if (diff.regressions.length > 0) {
     lines.push(`## ⚠️ Regressions (${diff.regressions.length})`);
     lines.push("");
@@ -343,7 +343,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
     lines.push("");
   }
 
-  // Added/removed (coverage drift).
+  // 新增/移除(覆盖范围漂移)。
   if (diff.added.length > 0 || diff.removed.length > 0) {
     lines.push(`## Coverage drift`);
     lines.push("");
@@ -363,7 +363,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
     }
   }
 
-  // Failure tag deltas.
+  // 失败标签差值。
   if (diff.failureTagDeltas.length > 0) {
     lines.push("## Failure tag deltas");
     lines.push("");
@@ -376,7 +376,7 @@ export const formatDiffMarkdown = (diff: RunDiff): string => {
     lines.push("");
   }
 
-  // Trajectory quality deltas.
+  // 轨迹质量差值。
   if (diff.qualityDeltas.length > 0) {
     lines.push("## Trajectory quality");
     lines.push("");

@@ -1,11 +1,10 @@
 /**
- * Large Tool Result Summarization
+ * 大体积工具结果摘要
  *
- * When tool results exceed a size threshold (default 60KB), uses a lightweight
- * LLM call to generate a concise summary instead of simple truncation.
- * This preserves semantic information while dramatically reducing token usage.
+ * 当工具结果超过尺寸阈值(默认 60KB)时,使用一次轻量级 LLM 调用生成简洁摘要,
+ * 而非简单截断。这样可在大幅降低 token 用量的同时保留语义信息。
  *
- * Inspired by Craft Agents' response compression pattern.
+ * 灵感来自 Craft Agents 的响应压缩模式。
  */
 
 import type { LanguageModel, ModelMessage } from "ai";
@@ -15,14 +14,14 @@ import { createTimeoutController } from "./stream-watchdog";
 import { TOOL_RESULT_COMPRESS_THRESHOLD_CHARS } from "./token-budget";
 
 // ---------------------------------------------------------------------------
-// Constants
+// 常量
 // ---------------------------------------------------------------------------
 
-/** Threshold in characters above which LLM summarization kicks in */
+/** 超过该字符数阈值即触发 LLM 摘要 */
 const SUMMARIZE_THRESHOLD = 60_000;
-/** Timeout for each summarization call */
+/** 单次摘要调用的超时时间 */
 const SUMMARIZE_TIMEOUT_MS = 30_000;
-/** Max input chars sent to the summarizer (avoid feeding 1MB+ to a small model) */
+/** 发送给摘要器的最大输入字符数(避免把 1MB+ 喂给小模型) */
 const MAX_SUMMARIZE_INPUT = 200_000;
 
 const SUMMARIZE_PROMPT = `你是一个工具结果摘要助手。请将以下工具执行结果压缩为简洁的结构化摘要。
@@ -39,25 +38,24 @@ const SUMMARIZE_PROMPT = `你是一个工具结果摘要助手。请将以下工
 `;
 
 // ---------------------------------------------------------------------------
-// Public API
+// 公开 API
 // ---------------------------------------------------------------------------
 
 export interface SummarizeOptions {
   model: LanguageModel;
   signal?: AbortSignal;
-  /** Task ID for memory-debug tracking */
+  /** 用于 memory-debug 追踪的任务 ID */
   taskId?: string;
-  /** User prompt snippet for memory-debug association */
+  /** 用于关联 memory-debug 的用户 prompt 片段 */
   promptSnippet?: string;
 }
 
 /**
- * Process a message array and summarize any tool results exceeding the
- * size threshold. Returns a new array — original messages are not mutated.
+ * 处理消息数组,并对任何超过尺寸阈值的工具结果进行摘要。返回一个新数组 ——
+ * 原始消息不会被修改。
  *
- * Tool results below the threshold are left as-is (the existing sync
- * `compressToolResults` handles the 2KB–60KB range with placeholder
- * replacement).
+ * 低于阈值的工具结果原样保留(已有的同步 `compressToolResults` 以占位符替换的
+ * 方式处理 2KB–60KB 区间)。
  */
 export async function summarizeLargeToolResults(
   messages: ModelMessage[],
@@ -84,7 +82,7 @@ export async function summarizeLargeToolResults(
       continue;
     }
 
-    // Clone and summarize large parts
+    // 克隆并对大体积分片进行摘要
     const cloned = JSON.parse(JSON.stringify(msg)) as Extract<
       ModelMessage,
       { role: "tool" }
@@ -127,7 +125,7 @@ export async function summarizeLargeToolResults(
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// 内部辅助函数
 // ---------------------------------------------------------------------------
 
 function isVeryLarge(

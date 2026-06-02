@@ -19,11 +19,10 @@ interface PreviewEntryRowProps {
 }
 
 /**
- * Dispatch table for approval-card rows. The IPC layer attaches a
- * structured `entry.preview` to most destructive-tool requests; we pick
- * the matching card by `preview.kind`. Old sessions (no preview field)
- * and tool kinds we don't have a card for yet fall back to the
- * description-only row, preserving the pre-preview look.
+ * 审批卡片行的分发表。IPC 层会为大多数破坏性工具请求附加一个结构化的
+ * `entry.preview`;我们按 `preview.kind` 选择匹配的卡片。旧会话(无 preview
+ * 字段)以及尚无对应卡片的工具类型会回退到仅展示描述的行,保留引入预览前
+ * 的外观。
  */
 export function PreviewEntryRow({ entry, LL }: PreviewEntryRowProps) {
   const preview = entry.preview;
@@ -47,6 +46,6 @@ export function PreviewEntryRow({ entry, LL }: PreviewEntryRowProps) {
         return <RunCommandPreviewCard preview={preview} LL={LL} />;
     }
   }
-  // Old sessions and any tool we don't have a preview for fall back here.
+  // 旧会话以及任何没有对应预览的工具都会回退到此处。
   return <div className="truncate">· {entry.description}</div>;
 }

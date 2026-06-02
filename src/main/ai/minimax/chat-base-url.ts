@@ -1,19 +1,18 @@
 /**
- * MiniMax base-URL resolution.
+ * MiniMax base-URL 解析。
  *
- * MiniMax runs two regional endpoints with identical API surface:
- *  - https://api.minimaxi.com/v1 (Mainland China, default)
- *  - https://api.minimax.io/v1   (International)
+ * MiniMax 提供两个 API 接口一致的区域端点:
+ *  - https://api.minimaxi.com/v1 (中国大陆,默认)
+ *  - https://api.minimax.io/v1   (国际版)
  *
- * Users can override per-config via the LLM config's `baseUrl` field
- * (e.g. a private gateway, or to flip regions). When unset we default to
- * Mainland — flip the default here if the international tier becomes
- * more common.
+ * 用户可通过 LLM 配置的 `baseUrl` 字段按配置覆盖
+ * (例如私有网关,或切换区域)。未设置时默认使用
+ * 大陆端点 —— 若国际版变得更常用,可在此切换默认值。
  */
 
 export const MINIMAX_DEFAULT_BASE_URL = "https://api.minimaxi.com/v1";
 
-/** Normalize a base URL: strip trailing slash so callers can append "/..." safely. */
+/** 规范化 base URL:去除末尾斜杠,使调用方能安全地追加 "/..."。 */
 const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, "");
 
 export const resolveMinimaxBaseUrl = (

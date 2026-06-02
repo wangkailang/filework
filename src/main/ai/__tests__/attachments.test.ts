@@ -49,7 +49,7 @@ describe("buildUserContentWithAttachments", () => {
     imagePath = join(tmpDir, "shot.png");
     pdfPath = join(tmpDir, "doc.pdf");
     textPath = join(tmpDir, "snippet.ts");
-    // PNG magic header + a few bytes — enough to round-trip as image.
+    // PNG 魔数头 + 几个字节 —— 足以作为图片往返处理。
     await writeFile(
       imagePath,
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]),
@@ -91,7 +91,7 @@ describe("buildUserContentWithAttachments", () => {
     if (out[2].type === "file") {
       expect(out[2].mediaType).toBe("application/pdf");
     }
-    // Anthropic path is binary-native; extractor should not be called.
+    // Anthropic 路径原生支持二进制;不应调用提取器。
     expect(mockedExtract).not.toHaveBeenCalled();
   });
 
@@ -238,8 +238,8 @@ describe("buildUserContentWithAttachments", () => {
       .map((p) => (p as { type: "text"; text: string }).text)
       .join("\n");
 
-    expect(joined).toMatch(/shot\.png/); // image notice
-    expect(joined).toMatch(/ollama-visible body/); // pdf extracted text
+    expect(joined).toMatch(/shot\.png/); // 图片提示
+    expect(joined).toMatch(/ollama-visible body/); // pdf 提取出的文本
     expect(joined).toMatch(/--- attached PDF: doc\.pdf/);
   });
 

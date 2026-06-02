@@ -1,8 +1,8 @@
 /**
- * Delta Batcher — batches text-delta stream events into time windows
+ * Delta Batcher —— 将 text-delta 流事件按时间窗口批量合并
  *
- * Reduces IPC event frequency by collecting deltas within a configurable
- * window (default 30ms) and flushing as a single concatenated string.
+ * 通过在可配置的窗口(默认 30ms)内收集增量,并以单个拼接后的字符串刷出,
+ * 从而降低 IPC 事件频率。
  */
 
 export class DeltaBatcher {
@@ -16,7 +16,7 @@ export class DeltaBatcher {
     this.flush = opts.flush;
   }
 
-  /** Enqueue a text delta. It will be flushed after the current window expires. */
+  /** 入队一个文本增量。会在当前窗口到期后刷出。 */
   push(text: string): void {
     this.buffer += text;
     if (!this.timer) {
@@ -24,7 +24,7 @@ export class DeltaBatcher {
     }
   }
 
-  /** Force-flush any buffered text immediately (e.g. on stream end). */
+  /** 立即强制刷出所有缓冲文本(例如流结束时)。 */
   drain(): void {
     if (this.timer) {
       clearTimeout(this.timer);

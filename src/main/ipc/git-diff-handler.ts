@@ -1,19 +1,18 @@
 /**
- * IPC: git:getBranchDiff — aggregate diff between the current branch
- * and its base (default `main`). Powers the right-side drawer.
+ * IPC: git:getBranchDiff — 聚合当前分支与其基线（默认 `main`）之间的
+ * 差异。用于驱动右侧抽屉。
  *
- * Strategy:
- *  1. Confirm the workspace is a git working tree.
- *  2. Resolve merge-base of HEAD against baseBranch.
- *  3. Run `git diff --no-color -U3 <base>` and `--name-status` against
- *     the merge-base. The single-arg form (no `...HEAD`) compares the
- *     base commit to the **working tree**, so it includes both branch
- *     commits AND uncommitted (staged + unstaged) edits — what users
- *     actually mean by "what changed on my branch".
- *  4. Parse with `diff` npm pkg's `parsePatch`, map to BranchDiff.
+ * 策略:
+ *  1. 确认工作区是一个 git 工作树。
+ *  2. 解析 HEAD 相对 baseBranch 的 merge-base。
+ *  3. 针对 merge-base 运行 `git diff --no-color -U3 <base>` 和
+ *     `--name-status`。单参数形式（无 `...HEAD`）会将基线提交与
+ *     **工作树** 对比,因此同时包含分支提交和未提交（已暂存 + 未暂存）
+ *     的改动 —— 这正是用户所说的"我的分支上改了什么"的本意。
+ *  4. 用 `diff` npm 包的 `parsePatch` 解析,映射为 BranchDiff。
  *
- * Caps mirror the codex-preview generators: ≤200 files total, ≤200
- * hunks per file, ≤64 KB per hunk text, ≤1 MB total per file diff.
+ * 上限与 codex-preview 生成器保持一致: 总计 ≤200 个文件,每个文件
+ * ≤200 个 hunk,每个 hunk 文本 ≤64 KB,每个文件 diff 总计 ≤1 MB。
  */
 
 import { parsePatch } from "diff";
@@ -74,15 +73,14 @@ async function computeBranchDiff(
   const headBranchRes = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], {
     cwd,
   });
-  // `--abbrev-ref` returns literal "HEAD" on detached HEAD (exit 0).
-  // Substitute the short SHA so the drawer doesn't read as "HEAD vs main".
+  // 在游离 HEAD 状态下 `--abbrev-ref` 返回字面量 "HEAD"（exit 0）。
+  // 用短 SHA 替换,避免抽屉显示成 "HEAD vs main"。
   const rawBranch =
     headBranchRes.exitCode === 0 ? headBranchRes.stdout.trim() : "";
   const headBranch = !rawBranch || rawBranch === "HEAD" ? head : rawBranch;
 
-  // Prefer the remote tracking ref so the diff matches what a PR
-  // against `<baseBranch>` would show. Fall back to the local branch
-  // when origin isn't configured (eg fresh `git init`).
+  // 优先使用远程跟踪 ref,使 diff 与针对 `<baseBranch>` 的 PR 所展示
+  // 的内容一致。当未配置 origin 时（例如全新 `git init`）回退到本地分支。
   const remoteRef = `origin/${baseBranch}`;
   const remoteProbe = await runGit(
     ["rev-parse", "--verify", "--quiet", remoteRef],
@@ -97,21 +95,21 @@ async function computeBranchDiff(
   const base = mergeBase.stdout.trim().slice(0, 12);
   const baseFull = mergeBase.stdout.trim();
 
-  // Status badges. All best-effort — handler still returns a usable
-  // BranchDiff if any of these git invocations fail.
+  // 状态徽标。全部尽力而为 —— 即使其中任一 git 调用失败,handler
+  // 仍返回可用的 BranchDiff。
   const [aheadBehind, uncommitted] = await Promise.all([
     collectAheadBehind(cwd, headBranch),
     collectUncommitted(cwd),
   ]);
 
-  // --name-status drives rename detection (R100  oldPath\tnewPath).
-  // Single-arg form (no `...HEAD`) compares base → working tree.
+  // --name-status 驱动重命名检测（R100  oldPath\tnewPath）。
+  // 单参数形式（无 `...HEAD`）对比 base → 工作树。
   const nameStatus = await runGit(
     ["diff", "--no-color", "--name-status", "--find-renames", baseFull],
     { cwd },
   );
-  // Tolerate a failed --name-status by parsing only valid stdout —
-  // renames degrade to add+delete pairs but the main diff still ships.
+  // 容忍 --name-status 失败,仅解析有效的 stdout —— 重命名会退化为
+  // 增 + 删配对,但主 diff 仍正常产出。
   const statusByPath =
     nameStatus.exitCode === 0
       ? parseNameStatus(nameStatus.stdout)
@@ -152,9 +150,9 @@ async function computeBranchDiff(
     files.push(file);
   }
 
-  // Append untracked files as synthesized "added" diffs. Tracked files
-  // get first claim on MAX_FILES so a noisy untracked area (e.g. a
-  // gitignore-missed cache dir) can't crowd out real edits.
+  // 将未跟踪文件作为合成的 "added" diff 追加。已跟踪文件优先占用
+  // MAX_FILES 名额,这样嘈杂的未跟踪区域（例如被 gitignore 遗漏的
+  // 缓存目录）不会挤掉真实改动。
   if (!truncated) {
     const untracked = await collectUntrackedDiffs(
       cwd,
@@ -193,7 +191,7 @@ async function collectAheadBehind(
   cwd: string,
   headBranch: string,
 ): Promise<AheadBehind> {
-  // Detached HEAD / no upstream → silently skip badges.
+  // 游离 HEAD / 无上游 → 静默跳过徽标。
   if (!headBranch || headBranch === "HEAD" || /^[0-9a-f]+$/.test(headBranch)) {
     return {};
   }
@@ -202,8 +200,7 @@ async function collectAheadBehind(
     cwd,
   });
   if (probe.exitCode !== 0) {
-    // Branch hasn't been pushed yet — surfacing 0 here would imply
-    // "everything is pushed", so leave undefined.
+    // 分支尚未推送 —— 此处返回 0 会暗示"全部已推送",故留作 undefined。
     return {};
   }
   const res = await runGit(
@@ -211,7 +208,7 @@ async function collectAheadBehind(
     { cwd },
   );
   if (res.exitCode !== 0) return {};
-  // Format: "<behind>\t<ahead>" (left side is upstream, right is HEAD).
+  // 格式: "<behind>\t<ahead>"（左侧为上游,右侧为 HEAD）。
   const [behindStr, aheadStr] = res.stdout.trim().split(/\s+/);
   const behind = Number.parseInt(behindStr ?? "", 10);
   const ahead = Number.parseInt(aheadStr ?? "", 10);
@@ -222,11 +219,10 @@ async function collectAheadBehind(
 }
 
 async function collectUncommitted(cwd: string): Promise<number | undefined> {
-  // `-uall` expands untracked directories so each file gets its own
-  // `??` row. Without it, an untracked directory like
-  // `src/games/NinjaRun/` collapses to a single line, and the badge
-  // would read `1` while the drawer (via ls-files) lists every file
-  // independently. Keeps the count in lock-step with the drawer.
+  // `-uall` 会展开未跟踪目录,使每个文件各占一行 `??`。否则像
+  // `src/games/NinjaRun/` 这样的未跟踪目录会折叠成单行,徽标会显示
+  // `1`,而抽屉（通过 ls-files）却会独立列出每个文件。这样可让计数
+  // 与抽屉保持同步。
   const res = await runGit(["status", "--porcelain", "-uall"], { cwd });
   if (res.exitCode !== 0) return undefined;
   if (!res.stdout) return 0;
@@ -234,29 +230,27 @@ async function collectUncommitted(cwd: string): Promise<number | undefined> {
 }
 
 /**
- * Collect untracked files (filtered by .gitignore) and synthesize a
- * GitFileDiff per file by running `git diff --no-index /dev/null <path>`.
+ * 收集未跟踪文件（按 .gitignore 过滤）,并通过运行
+ * `git diff --no-index /dev/null <path>` 为每个文件合成一个 GitFileDiff。
  *
- * Why: `git diff <merge-base>` only sees tracked content, so a new
- * feature like `src/games/NinjaRun/*` is invisible in the branch-diff
- * panel until first `git add`. This helper closes that gap.
+ * 原因: `git diff <merge-base>` 只能看到已跟踪内容,因此像
+ * `src/games/NinjaRun/*` 这样的新功能在首次 `git add` 之前对分支
+ * diff 面板不可见。此辅助函数弥补了这一缺口。
  *
- * Caps: receives `capRemaining` (files MAX_FILES has not yet
- * consumed) so the combined list stays under the global ceiling.
- * `git diff --no-index` returns exit code 1 on the (normal) "files
- * differ" case — we tolerate that explicitly. Binary blobs surface as
- * empty-hunks ParsedFile and `mapToFileDiff`'s `isBinary` detection
- * takes care of them.
+ * 上限: 接收 `capRemaining`（MAX_FILES 尚未消耗的名额）,使合并后的
+ * 列表保持在全局上限之下。`git diff --no-index` 在（正常的）"文件存在
+ * 差异"情况下返回退出码 1 —— 我们明确地容忍它。二进制 blob 会表现为
+ * 空 hunk 的 ParsedFile,由 `mapToFileDiff` 的 `isBinary` 检测处理。
  */
 async function collectUntrackedDiffs(
   cwd: string,
   capRemaining: number,
 ): Promise<{ diffs: GitFileDiff[]; truncated: boolean }> {
   if (capRemaining <= 0) return { diffs: [], truncated: false };
-  // `-z` ⇒ NUL-separated paths, robust against spaces / unicode / quotes.
-  // `-c core.quotePath=false` keeps non-ASCII paths (e.g. `naïve.txt`)
-  // as readable UTF-8 rather than `na\303\257ve.txt` escape sequences,
-  // so the drawer's filename matches what the user sees on disk.
+  // `-z` ⇒ 以 NUL 分隔路径,对空格 / unicode / 引号都更健壮。
+  // `-c core.quotePath=false` 使非 ASCII 路径（例如 `naïve.txt`）保持
+  // 为可读的 UTF-8,而非 `na\303\257ve.txt` 这样的转义序列,使抽屉中
+  // 的文件名与用户在磁盘上看到的一致。
   const ls = await runGit(
     [
       "-c",
@@ -292,11 +286,10 @@ async function collectUntrackedDiffs(
       ],
       { cwd },
     );
-    // 0-byte file is byte-identical to /dev/null, so `git diff
-    // --no-index` exits 0 with empty stdout. Without a synthesized
-    // entry the file vanishes from the panel — `touch foo.tsx` would
-    // be invisible. Render it as an empty "added" file so the user
-    // at least sees the path.
+    // 0 字节文件与 /dev/null 逐字节相同,因此 `git diff --no-index`
+    // 会以空 stdout 退出码 0 返回。若不合成条目,该文件会从面板消失
+    // —— `touch foo.tsx` 将不可见。将其渲染为空的 "added" 文件,使
+    // 用户至少能看到路径。
     if (res.exitCode === 0 && !res.stdout) {
       diffs.push({
         path: p,
@@ -308,9 +301,9 @@ async function collectUntrackedDiffs(
       });
       continue;
     }
-    // exitCode 0 with non-empty stdout shouldn't happen vs /dev/null
-    // but tolerate; exitCode 1 = differ (the expected normal case);
-    // anything else = real error, skip this file but keep going.
+    // 相对 /dev/null 时,退出码 0 却带非空 stdout 本不应发生,但仍容忍;
+    // 退出码 1 = 存在差异（预期的正常情况）;其他任何值 = 真实错误,
+    // 跳过此文件但继续处理。
     if (res.exitCode !== 0 && res.exitCode !== 1) continue;
     if (!res.stdout) continue;
 
@@ -326,9 +319,9 @@ async function collectUntrackedDiffs(
         continue;
       }
       if (!file) continue;
-      // Force status to "added": --no-index against /dev/null already
-      // yields this via mapToFileDiff's line-268 branch, but pin it so
-      // a future tweak to that logic can't silently flip the label.
+      // 强制 status 为 "added": 相对 /dev/null 的 --no-index 已通过
+      // mapToFileDiff 第 268 行分支得出此结果,但仍固定下来,以防
+      // 未来对该逻辑的改动悄悄翻转标签。
       file.status = "added";
       diffs.push(file);
     }
@@ -418,12 +411,12 @@ function mapToFileDiff(
       const value = `${run.lines.join("\n")}\n`;
       const bytes = Buffer.byteLength(value, "utf8");
       const overSized = bytes > MAX_HUNK_BYTES;
-      // When the run gets sliced we can no longer count every line —
-      // the rendered text only contains the leading bytes. Estimate
-      // kept lines as `value.slice(0, MAX_HUNK_BYTES).split("\n").length`.
+      // 当 run 被切片后,我们就无法统计每一行 —— 渲染文本只包含开头
+      // 的字节。将保留行数估算为
+      // `value.slice(0, MAX_HUNK_BYTES).split("\n").length`。
       const slicedValue = overSized ? sliceUtf8(value, MAX_HUNK_BYTES) : value;
       const keptLineCount = overSized
-        ? Math.max(0, slicedValue.split("\n").length - 2) // minus the "…\n" sentinel
+        ? Math.max(0, slicedValue.split("\n").length - 2) // 减去 "…\n" 哨兵
         : run.lines.length;
       totalBytes += overSized ? MAX_HUNK_BYTES : bytes;
       if (run.kind === "added") added += keptLineCount;
@@ -441,11 +434,10 @@ function mapToFileDiff(
     if (truncated) break;
   }
 
-  // `git diff` emits `Binary files X and Y differ` for binary blobs,
-  // which parsePatch surfaces as a ParsedFile with valid filenames but
-  // an empty `hunks` array. Pure renames (no content change) also have
-  // empty hunks, but those carry the rename status from --name-status.
-  // Anything else with zero hunks is binary.
+  // 对于二进制 blob,`git diff` 会输出 `Binary files X and Y differ`,
+  // parsePatch 将其表现为带有效文件名但 `hunks` 数组为空的 ParsedFile。
+  // 纯重命名（无内容变更）同样有空 hunk,但它们带有来自 --name-status
+  // 的重命名状态。其余 hunk 数为零的情况即视为二进制。
   const isBinary =
     hunks.length === 0 && status !== "renamed" && parsedHunks.length === 0;
 
@@ -470,7 +462,7 @@ function groupHunkLines(rawLines: string[]): HunkRun[] {
   const runs: HunkRun[] = [];
   let current: HunkRun | null = null;
   for (const raw of rawLines) {
-    if (raw.startsWith("\\")) continue; // "\ No newline at end of file"
+    if (raw.startsWith("\\")) continue; // "\ No newline at end of file"（文件末尾无换行符）
     const prefix = raw[0];
     const content = raw.length > 0 ? raw.slice(1) : "";
     const kind: PreviewDiffHunk["kind"] =

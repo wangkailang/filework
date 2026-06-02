@@ -1,18 +1,17 @@
 /**
- * local-git — git operations for *local* (non-clone) workspaces.
+ * local-git — *本地*(非克隆)工作区的 git 操作。
  *
- * The github/gitlab workspace classes own clone freshness, auth, and
- * remote-tracking semantics; locals have none of that. This module
- * exposes the two operations the renderer needs to show a branch chip:
+ * github/gitlab 工作区类负责克隆新鲜度、认证和远程跟踪语义;
+ * 本地工作区没有这些。本模块暴露渲染进程显示分支标签所需的两个操作:
  *
- *   - `probeLocalGit` — is this directory a git repo? if so, what's HEAD?
- *   - `listLocalBranches` — local refs/heads/* only (no remote-tracking).
+ *   - `probeLocalGit` —— 该目录是否是 git 仓库?若是,HEAD 是什么?
+ *   - `listLocalBranches` —— 仅本地 refs/heads/*(不含远程跟踪)。
  *
- * Branch switching reuses `checkoutBranchTo` from `clone-cache.ts` —
- * same dirty-tree refusal, same lock semantics.
+ * 分支切换复用 `clone-cache.ts` 的 `checkoutBranchTo` ——
+ * 相同的脏工作树拒绝策略、相同的锁语义。
  *
- * Detached HEAD is reported as `currentBranch: null` so the renderer can
- * suppress the branch chip rather than render a misleading "branch" name.
+ * 游离 HEAD 报告为 `currentBranch: null`,这样渲染进程可以隐藏分支标签,
+ * 而不是渲染一个具有误导性的「分支」名称。
  */
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
@@ -22,20 +21,20 @@ import { runGit } from "./clone-cache";
 
 export interface LocalGitProbe {
   isGitRepo: boolean;
-  /** Branch name, or null for detached HEAD / non-git directories. */
+  /** 分支名,游离 HEAD / 非 git 目录时为 null。 */
   currentBranch: string | null;
 }
 
 export interface LocalBranchSummary {
   name: string;
-  /** Always false locally — protection is a hosted-provider concept. */
+  /** 本地始终为 false —— 保护是托管服务方的概念。 */
   protected: boolean;
 }
 
 const isGitDir = async (absPath: string): Promise<boolean> => {
   try {
     const st = await stat(path.join(absPath, ".git"));
-    // `.git` is a directory in a normal repo, a file in a worktree.
+    // `.git` 在普通仓库中是目录,在 worktree 中是文件。
     return st.isDirectory() || st.isFile();
   } catch {
     return false;
@@ -57,9 +56,9 @@ export const probeLocalGit = async (
     return { isGitRepo: true, currentBranch: null };
   }
   const branch = res.stdout.trim();
-  // `rev-parse --abbrev-ref HEAD` prints the literal "HEAD" when
-  // detached — surface that as null so the chip stays hidden instead
-  // of rendering the word "HEAD" as if it were a branch name.
+  // `rev-parse --abbrev-ref HEAD` 在游离状态下会打印字面量 "HEAD" ——
+  // 将其呈现为 null,使标签保持隐藏,而不是把 "HEAD" 这个词
+  // 当作分支名渲染出来。
   return {
     isGitRepo: true,
     currentBranch: branch === "HEAD" || branch.length === 0 ? null : branch,

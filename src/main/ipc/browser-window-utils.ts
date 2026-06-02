@@ -1,18 +1,18 @@
 /**
- * Shared primitives for hidden Electron `BrowserWindow` usage.
+ * 隐藏 Electron `BrowserWindow` 使用的共享原语。
  *
- * Two consumers today: `hidden-browser.ts` (stateless one-shot render
- * for `webFetchRendered`) and `interactive-browser.ts` (stateful
- * sessions for `browserOpen`/`browserClick`/`browserType`/...). Both
- * need the same sandbox config, the same `did-finish-load` /
- * `did-fail-load` race, and the same close + partition-clear teardown.
+ * 目前有两个使用方:`hidden-browser.ts`(为 `webFetchRendered` 做的
+ * 无状态一次性渲染)与 `interactive-browser.ts`(为
+ * `browserOpen`/`browserClick`/`browserType`/... 提供的有状态会话)。
+ * 两者都需要相同的沙箱配置、相同的 `did-finish-load` /
+ * `did-fail-load` 竞态处理,以及相同的关闭 + 清理分区的拆解流程。
  *
- * The window options here MUST stay aligned across consumers — they
- * define the security boundary (no Node access, isolated partition).
+ * 此处的窗口选项必须在各使用方之间保持一致 —— 它们定义了安全边界
+ * (无 Node 访问、隔离分区)。
  */
 import { BrowserWindow, session } from "electron";
 
-/** Sandbox webPreferences shared by every hidden window in the app. */
+/** 应用中每个隐藏窗口共享的沙箱 webPreferences。 */
 export const HIDDEN_WINDOW_PREFS = {
   contextIsolation: true,
   nodeIntegration: false,
@@ -21,9 +21,8 @@ export const HIDDEN_WINDOW_PREFS = {
 } as const;
 
 /**
- * Spawn a hidden, sandboxed BrowserWindow bound to the given session
- * partition. The window has no preload, no Node integration, and
- * isolated storage — safe to point at arbitrary third-party URLs.
+ * 创建一个绑定到给定会话分区的隐藏、沙箱化 BrowserWindow。该窗口无
+ * preload、无 Node 集成、存储隔离 —— 可安全指向任意第三方 URL。
  */
 export const createHiddenWindow = (partition: string): BrowserWindow =>
   new BrowserWindow({
@@ -35,12 +34,11 @@ export const createHiddenWindow = (partition: string): BrowserWindow =>
   });
 
 /**
- * Wait for the given `webContents` to finish loading, with a hard
- * timeout and optional abort. Resolves with `200` on `did-finish-load`,
- * rejects on `did-fail-load`, timeout, or signal abort.
+ * 等待给定的 `webContents` 完成加载,带有硬超时和可选的中止。在
+ * `did-finish-load` 时以 `200` resolve,在 `did-fail-load`、超时或信号
+ * 中止时 reject。
  *
- * The caller is responsible for kicking off the load (e.g. via
- * `loadURL`). This helper only listens.
+ * 调用方负责发起加载(例如通过 `loadURL`)。此辅助函数仅做监听。
  */
 export const waitForPageLoad = (
   win: BrowserWindow,
@@ -83,10 +81,9 @@ export const waitForPageLoad = (
   });
 
 /**
- * Close the window (if still alive) and clear its session partition.
- * Both steps are best-effort and swallow errors — by the time we get
- * here we're already in teardown, so any failure (already-destroyed
- * window, partition never touched) is non-fatal.
+ * 关闭窗口(若仍存活)并清理其会话分区。两步均为尽力而为并吞掉
+ * 错误 —— 走到这里时我们已处于拆解阶段,因此任何失败(窗口已被
+ * 销毁、分区从未被触及)都不致命。
  */
 export const destroyHiddenWindow = async (
   win: BrowserWindow | null,
@@ -95,16 +92,16 @@ export const destroyHiddenWindow = async (
   try {
     if (win && !win.isDestroyed()) win.close();
   } catch {
-    /* swallow */
+    /* 吞掉 */
   }
   try {
     await session.fromPartition(partition).clearStorageData();
   } catch {
-    /* swallow */
+    /* 吞掉 */
   }
 };
 
-/** `await sleep(ms)` — Promise-friendly setTimeout. */
+/** `await sleep(ms)` —— 对 Promise 友好的 setTimeout。 */
 export const sleep = (ms: number): Promise<void> =>
   new Promise((r) => {
     setTimeout(r, ms);

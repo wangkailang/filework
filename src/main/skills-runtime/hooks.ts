@@ -1,9 +1,8 @@
 /**
- * Hooks module for AI Skills Runtime.
+ * AI 技能运行时的钩子模块。
  *
- * Executes lifecycle hook scripts (pre-activate, post-complete) defined
- * in a skill's frontmatter. Hook failures are logged but never interrupt
- * the main skill execution flow.
+ * 执行技能 frontmatter 中定义的生命周期钩子脚本(pre-activate、post-complete)。
+ * 钩子失败会被记录,但绝不会中断主技能执行流程。
  */
 
 import { exec } from "node:child_process";
@@ -11,23 +10,23 @@ import { resolve } from "node:path";
 
 import { buildSafeEnv } from "./security";
 
-/** Default timeout for hook script execution (ms). */
+/** 钩子脚本执行的默认超时(毫秒)。 */
 const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
 
 /**
- * Execute a hook script associated with a skill.
+ * 执行与某个技能关联的钩子脚本。
  *
- * The hook script path is resolved relative to the skill directory,
- * and the script runs with the workspace root as its working directory.
- * A safe environment (sensitive vars filtered) is used for the subprocess.
+ * 钩子脚本路径相对于技能目录解析,
+ * 脚本以工作区根目录作为其工作目录运行。
+ * 子进程使用安全环境(已过滤敏感变量)。
  *
- * Hook failures are caught and returned as `{ success: false, error }` —
- * they NEVER throw or interrupt the caller.
+ * 钩子失败会被捕获并以 `{ success: false, error }` 形式返回 ——
+ * 它们绝不会抛出异常或中断调用方。
  *
- * @param hookScript - Relative path to the hook script (e.g. `./scripts/setup.sh`)
- * @param skillDir - Absolute path to the skill directory
- * @param workspacePath - Absolute path to the workspace root (used as cwd)
- * @param timeoutMs - Maximum execution time in milliseconds (default 30 s)
+ * @param hookScript - 钩子脚本的相对路径(如 `./scripts/setup.sh`)
+ * @param skillDir - 技能目录的绝对路径
+ * @param workspacePath - 工作区根目录的绝对路径(用作 cwd)
+ * @param timeoutMs - 最大执行时间,单位毫秒(默认 30 秒)
  */
 export async function runHook(
   hookScript: string,

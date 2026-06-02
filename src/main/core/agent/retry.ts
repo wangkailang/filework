@@ -1,19 +1,18 @@
 /**
- * Domain-neutral retry helper.
+ * 与领域无关的重试辅助工具。
  *
- * Mirrors the behavior of `src/main/ai/error-classifier.ts:withRetry` but
- * keeps `core/` free of the user-facing error strings and Chinese-locale
- * recovery messages that live in the IPC layer.
+ * 行为与 `src/main/ai/error-classifier.ts:withRetry` 一致,但让 `core/`
+ * 不依赖那些位于 IPC 层、面向用户的错误字符串与中文本地化恢复信息。
  *
- * The IPC layer plugs in an `ErrorClassifier` that delegates to the
- * existing `classifyError`. SDK consumers default to no retry.
+ * IPC 层会接入一个委托给现有 `classifyError` 的 `ErrorClassifier`。
+ * SDK 使用方默认不重试。
  */
 
 export interface ClassifiedRetryError {
   type: string;
   retryable: boolean;
   maxRetries: number;
-  /** Base backoff in ms; doubled per attempt. */
+  /** 基础退避时长(毫秒);每次尝试翻倍。 */
   backoffMs: number;
 }
 

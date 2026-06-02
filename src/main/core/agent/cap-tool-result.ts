@@ -1,29 +1,28 @@
 /**
- * Universal source-side cap on a tool's return value, applied at the
- * ToolRegistry boundary so NO tool (built-in, web, MCP, future) can put an
- * unbounded blob into the model context in the step that consumes it.
+ * 在工具返回值的源头施加通用上限,作用于 ToolRegistry 边界,
+ * 使得任何工具(内置、网络、MCP、未来新增)都无法在消费它的那一步
+ * 把无界的大块数据塞进模型上下文。
  *
- * This complements the per-step compaction (`compact-tool-results.ts`, which
- * shrinks OLDER results on resend): together, the current result is ≤ ceiling
- * and older ones ≤ a few KB, so context is bounded regardless of tool.
+ * 这与逐步压缩(`compact-tool-results.ts`,在重发时收缩较旧的结果)互补:
+ * 两者结合后,当前结果 ≤ 上限,较旧结果 ≤ 几 KB,因此无论使用何种工具,
+ * 上下文都是有界的。
  *
- * Strategy: recursively clamp every string field (head+tail), preserving the
- * result's structure/keys so the model still gets a usable shape. As a last
- * resort for pathological array-heavy results (e.g. thousands of tiny
- * segments), if the serialized whole still exceeds a hard ceiling, fall back
- * to a single truncated string. Pure and side-effect free.
+ * 策略:递归地裁剪每个字符串字段(保留头部+尾部),并保留结果的结构/键,
+ * 使模型仍能拿到一个可用的形态。对于病态的数组密集型结果
+ * (例如成千上万个微小片段)作为最后手段:若序列化后整体仍超过硬上限,
+ * 则退化为单个被截断的字符串。纯函数,无副作用。
  */
 
-/** Per-string field cap. Generous — only runaway text fields hit it. */
+/** 单个字符串字段的上限。设得较宽松——只有失控的文本字段才会触及。 */
 const DEFAULT_PER_STRING = 200_000;
-/** Hard ceiling on the serialized result; last-resort whole-blob truncate. */
+/** 序列化结果的硬上限;最后手段——整块截断。 */
 const DEFAULT_CEILING = 400_000;
 const HEAD_FRAC = 0.75;
 
 function truncString(s: string, cap: number): string {
   if (s.length <= cap) return s;
   const marker = (n: number) => `\n…[truncated ${n} chars]…\n`;
-  // Reserve room for the marker so the result stays within `cap`.
+  // 为标记预留空间,使结果保持在 `cap` 之内。
   const budget = Math.max(0, cap - marker(s.length).length);
   const head = Math.floor(budget * HEAD_FRAC);
   const tail = budget - head;
@@ -32,7 +31,7 @@ function truncString(s: string, cap: number): string {
   return out.length <= cap ? out : out.slice(0, cap);
 }
 
-/** Returns the SAME reference when nothing was clamped (no needless alloc). */
+/** 未发生裁剪时返回同一引用(避免不必要的分配)。 */
 function clampStrings(value: unknown, perString: number): unknown {
   if (typeof value === "string") {
     return value.length > perString ? truncString(value, perString) : value;
@@ -72,14 +71,14 @@ export function capToolResult(
   const clamped = clampStrings(result, perString);
   if (typeof clamped === "string") return truncString(clamped, ceiling);
 
-  // Last-resort total bound (covers array-heavy results clampStrings can't shrink).
+  // 最后手段的整体上限(覆盖 clampStrings 无法收缩的数组密集型结果)。
   try {
     const serialized = JSON.stringify(clamped);
     if (serialized != null && serialized.length > ceiling) {
       return truncString(serialized, ceiling);
     }
   } catch {
-    // Circular / non-serializable — leave the per-field clamp as-is.
+    // 循环引用 / 不可序列化——保留逐字段裁剪的结果。
   }
   return clamped;
 }

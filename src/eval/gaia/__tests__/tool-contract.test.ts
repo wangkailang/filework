@@ -1,14 +1,14 @@
 /**
- * Contract tests for the eval-mode tool registry.
+ * eval 模式工具注册表的契约测试。
  *
- * Builds `buildEvalToolRegistry` with mock dependencies and asserts the
- * shape — which tools register, what their schemas accept, that
- * conditional tools respect their feature flags. LLM-free, no real I/O.
+ * 使用 mock 依赖构建 `buildEvalToolRegistry`,并断言其形态 ——
+ * 哪些工具会注册、它们的 schema 接受什么、以及条件工具是否
+ * 遵守各自的 feature flag。无需 LLM,不进行真实 I/O。
  *
- * Why this exists: before this file, the eval registry assembly had
- * zero coverage (only `capToolResult` was tested). A skill renaming a
- * tool or a new build dropping `webFetch` could ship without anything
- * catching it until a real GAIA run failed.
+ * 存在意义:在本文件之前,eval 注册表的组装毫无测试覆盖
+ *(仅 `capToolResult` 有测试)。某个 skill 重命名工具,或某次
+ * 新构建漏掉 `webFetch`,都可能直接发布,直到一次真实的 GAIA
+ * 运行失败才会被发现。
  */
 
 import { describe, expect, it } from "vitest";
@@ -16,21 +16,21 @@ import type { z } from "zod/v4";
 
 import { buildEvalToolRegistry } from "../tool-registry";
 
-// Sentinel — every test that runs registry.toAiSdkTools needs a stub
-// fetchImpl; we never let a test actually hit the network.
+// 哨兵 —— 每个运行 registry.toAiSdkTools 的测试都需要一个桩
+// fetchImpl;我们绝不让任何测试真正访问网络。
 const mockFetch: typeof fetch = async () => {
   throw new Error("network access not permitted in contract tests");
 };
 
-// ─── Required tool names ─────────────────────────────────────────────
+// ─── 必需的工具名 ─────────────────────────────────────────────
 
 /**
- * Tools the eval harness MUST register unconditionally. Adding/removing
- * a tool here is a deliberate signal — if you touch a name on this list,
- * also update `docs/gaia.md`'s "工具子集" section.
+ * eval 框架必须无条件注册的工具。在此处增删工具是一个有意为之的
+ * 信号 —— 如果你改动了此列表中的某个名字,
+ * 也请同步更新 `docs/gaia.md` 的「工具子集」一节。
  */
 const REQUIRED_TOOLS: readonly string[] = [
-  // File ops
+  // 文件操作
   "listDirectory",
   "readFile",
   "writeFile",
@@ -39,13 +39,13 @@ const REQUIRED_TOOLS: readonly string[] = [
   "deleteFile",
   "runCommand",
   "directoryStats",
-  // Web (always-on)
+  // Web(始终开启)
   "webFetch",
   "youtubeTranscript",
-  // Skills (built-in document parsers) — exact names as registered by
-  // src/main/skills/*.ts. NB: runner.ts's system prompt at L141 still
-  // mentions `readXlsxSheet`, but the actual xlsx tools are
-  // `listSheets` + `readSheet`. That drift is a separate bug.
+  // Skills(内置文档解析器)—— 名称与 src/main/skills/*.ts 注册的
+  // 完全一致。注意:runner.ts 在 L141 的系统提示中仍提到
+  // `readXlsxSheet`,但实际的 xlsx 工具是
+  // `listSheets` + `readSheet`。该漂移是一个独立的 bug。
   "readPdfText",
   "readDocxText",
   "listSheets",
@@ -54,15 +54,15 @@ const REQUIRED_TOOLS: readonly string[] = [
 ];
 
 /**
- * Tools that only register when an API key is configured. Driven by the
- * `tavilyKey` / `firecrawlKey` flags in `BuildEvalRegistryOptions`.
+ * 仅在配置了 API key 时才注册的工具。由 `BuildEvalRegistryOptions`
+ * 中的 `tavilyKey` / `firecrawlKey` 标志驱动。
  */
 const CONDITIONAL_TOOLS = {
   tavilyKey: "webSearch",
   firecrawlKey: "webScrape",
 } as const;
 
-// ─── Registry assembly ───────────────────────────────────────────────
+// ─── 注册表组装 ───────────────────────────────────────────────
 
 describe("buildEvalToolRegistry — required tools", () => {
   const registry = buildEvalToolRegistry({ fetchImpl: mockFetch });
@@ -134,12 +134,11 @@ describe("buildEvalToolRegistry — conditional registration", () => {
   });
 });
 
-// ─── Per-tool schema fixtures ────────────────────────────────────────
+// ─── 各工具的 schema fixture ────────────────────────────────────────
 
 /**
- * For a small set of high-value tools, exercise the input schema with
- * one valid sample and one invalid sample. Catches schema breakage
- * without spinning up a workspace.
+ * 针对一小组高价值工具,用一个合法样本和一个非法样本来检验其
+ * 输入 schema。无需启动工作区即可捕获 schema 破坏。
  */
 const SCHEMA_FIXTURES: ReadonlyArray<{
   name: string;
@@ -184,7 +183,7 @@ const SCHEMA_FIXTURES: ReadonlyArray<{
   {
     name: "readSheet",
     valid: { path: "book.xlsx", sheet: "Sheet1" },
-    // `sheet` is optional in the schema; only `path` is required.
+    // `sheet` 在 schema 中是可选的;只有 `path` 是必需的。
     invalid: { sheet: "Sheet1" },
   },
 ];
@@ -208,7 +207,7 @@ describe("tool input schemas — sample inputs", () => {
   }
 });
 
-// ─── ai-sdk export ───────────────────────────────────────────────────
+// ─── ai-sdk 导出 ───────────────────────────────────────────────────
 
 describe("buildEvalToolRegistry — ai-sdk export", () => {
   it("exposes every registered tool through toAiSdkTools()", () => {

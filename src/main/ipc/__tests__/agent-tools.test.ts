@@ -1,12 +1,10 @@
 /**
- * Tests for `buildAgentToolRegistry` — focused on the blocking
- * suspension contract of `askClarification`.
+ * `buildAgentToolRegistry` 的测试 —— 聚焦于 `askClarification` 的阻塞式
+ * 挂起契约。
  *
- * The skill `allowed-tools` allow-list path is exercised implicitly by
- * other code paths; here we pin the askClarification behavior so a
- * regression can't re-introduce the non-blocking `{ asked: true }`
- * shortcut that let the model continue generating before the user
- * picked an option.
+ * skill 的 `allowed-tools` 白名单路径由其他代码路径隐式覆盖;这里固定
+ * askClarification 的行为,防止回归重新引入非阻塞的 `{ asked: true }`
+ * 捷径 —— 该捷径会让模型在用户选定选项之前就继续生成。
  */
 import type { WebContents } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,20 +16,19 @@ import {
   pendingClarifications,
 } from "../ai-task-control";
 
-// Belt-and-braces: keep the module-level Map clean between tests so a
-// case that forgets to drain can't poison the next one.
+// 双重保险:在测试之间保持模块级 Map 干净,避免某个忘记 drain 的
+// 用例污染下一个用例。
 afterEach(() => {
   pendingClarifications.clear();
 });
 
 describe("askClarification tool — blocks until user answers", () => {
-  // The whole point of this fix: the tool must NOT resolve synchronously.
-  // Without the pendingClarifications suspension, the model receives a
-  // fake `{ asked: true }` immediately and keeps generating before the
-  // user can pick an option. These tests pin the suspension contract.
+  // 此修复的核心:该工具绝不能同步 resolve。若缺少 pendingClarifications
+  // 挂起机制,模型会立即收到一个假的 `{ asked: true }`,并在用户选定选项
+  // 之前继续生成。这些测试固定该挂起契约。
 
-  // ai-sdk normalizes execute to accept a typed args + context; for
-  // shape testing we only care about the returned Promise.
+  // ai-sdk 将 execute 规范化为接受类型化的 args + context;就形状测试而言
+  // 我们只关心返回的 Promise。
   type ToolLike = {
     execute: (
       args: { question: string; options?: string[] },
@@ -39,8 +36,8 @@ describe("askClarification tool — blocks until user answers", () => {
     ) => Promise<unknown>;
   };
 
-  /** Capture the clarificationId emitted in the IPC payload — that's
-   *  the key the renderer feeds back to drainClarificationResolver. */
+  /** 捕获 IPC payload 中发出的 clarificationId —— 即 renderer 回传给
+   *  drainClarificationResolver 的 key。 */
   const setupTool = (taskId: string) => {
     const sendSpy = vi.fn();
     const sender = {
@@ -61,14 +58,14 @@ describe("askClarification tool — blocks until user answers", () => {
       {} as unknown,
     );
 
-    // Race against a settled-promise sentinel — if execute() resolved
-    // synchronously this would lose the race.
+    // 与一个已 settled 的 promise 哨兵竞速 —— 若 execute() 同步 resolve,
+    // 则会输掉这场竞速。
     const sentinel = Symbol("pending");
     const race = await Promise.race([callPromise, Promise.resolve(sentinel)]);
     expect(race).toBe(sentinel);
 
-    // Pull the clarificationId out of the emitted IPC payload — each
-    // call generates its own UUID.
+    // 从发出的 IPC payload 中取出 clarificationId —— 每次调用都会
+    // 生成自己的 UUID。
     expect(sendSpy).toHaveBeenCalledTimes(1);
     const payload = sendSpy.mock.calls[0]?.[1] as {
       clarificationId: string;
@@ -76,8 +73,8 @@ describe("askClarification tool — blocks until user answers", () => {
     expect(payload.clarificationId).toBeTypeOf("string");
     expect(pendingClarifications.has(payload.clarificationId)).toBe(true);
 
-    // Now drain — the tool's Promise should resolve with the user's
-    // answer wrapped as { answer: "..." } so the model sees the choice.
+    // 现在 drain —— 工具的 Promise 应以包装成 { answer: "..." } 的用户
+    // 答案 resolve,使模型看到该选择。
     drainClarificationResolver(payload.clarificationId, "A");
     await expect(callPromise).resolves.toEqual({ answer: "A" });
     expect(pendingClarifications.has(payload.clarificationId)).toBe(false);
@@ -114,15 +111,14 @@ describe("askClarification tool — blocks until user answers", () => {
     expect(p.id).toBe(tid);
     expect(typeof p.clarificationId).toBe("string");
     expect(p.question).toBe("Lang?");
-    expect(p.options).toEqual(["Python", "Go"]); // empty string filtered out
+    expect(p.options).toEqual(["Python", "Go"]); // 空字符串已被过滤
     drainClarificationResolver(p.clarificationId, "Python");
     await callPromise;
   });
 
   it("concurrent calls on the same taskId each get an independent resolver — no overwrite", async () => {
-    // Regression for the pre-fix bug where Map.set keyed by taskId let
-    // the second call clobber the first resolver, hanging the first
-    // Promise forever.
+    // 针对修复前 bug 的回归测试:当 Map.set 以 taskId 为 key 时,第二次
+    // 调用会覆盖第一个 resolver,使第一个 Promise 永远挂起。
     const tid = "task-clarify-4";
     const { tool, sendSpy } = setupTool(tid);
     const p1 = tool!.execute({ question: "Q1" }, {} as unknown);
@@ -152,8 +148,7 @@ describe("askClarification tool — blocks until user answers", () => {
     expect(pendingClarifications.size).toBe(0);
     await expect(p1).rejects.toThrow(/cancelled/i);
     await expect(p2).rejects.toThrow(/cancelled/i);
-    // Sender stub is unused after the sweep but referenced for ESLint
-    // satisfaction.
+    // sweep 之后 sender stub 不再使用,但为满足 ESLint 而引用一次。
     expect(sendSpy).toHaveBeenCalledTimes(2);
   });
 
@@ -166,7 +161,7 @@ describe("askClarification tool — blocks until user answers", () => {
     drainClarificationsForTask("task-A");
     expect(pendingClarifications.size).toBe(1);
     await expect(pA).rejects.toThrow(/cancelled/i);
-    // task-B's resolver still pending — feed an answer.
+    // task-B 的 resolver 仍处于 pending —— 喂入一个答案。
     const cidB = (sB.mock.calls[0]?.[1] as { clarificationId: string })
       .clarificationId;
     drainClarificationResolver(cidB, "answer-B");

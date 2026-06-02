@@ -4,11 +4,11 @@ import type { JsonlSessionStore } from "../core/session/jsonl-store";
 import type { ChatMessage, ChatSession } from "../core/session/types";
 
 /**
- * Register chat-session IPC handlers backed by `JsonlSessionStore`.
+ * 注册由 `JsonlSessionStore` 支撑的聊天会话 IPC handler。
  *
- * IPC contract is byte-equivalent to the pre-M3 SQLite path. The
- * underlying storage is now `~/.filework/sessions/<workspace-key>/<id>.jsonl`
- * managed by `core/session/jsonl-store.ts`.
+ * IPC 契约与 M3 之前的 SQLite 路径逐字节等价。底层存储现为
+ * `~/.filework/sessions/<workspace-key>/<id>.jsonl`,由
+ * `core/session/jsonl-store.ts` 管理。
  */
 export const registerChatHandlers = (store: JsonlSessionStore) => {
   ipcMain.handle(

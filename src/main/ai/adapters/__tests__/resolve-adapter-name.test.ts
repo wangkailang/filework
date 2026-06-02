@@ -14,15 +14,15 @@ describe("resolveAdapterName", () => {
   });
 
   it("routes custom configs pointing at Xiaomi MiMo to the xiaomi adapter", () => {
-    // Real Xiaomi endpoint seen in production logs.
+    // 生产日志中出现的真实小米端点。
     expect(
       resolveAdapterName("custom", "https://token-plan-sgp.xiaomimimo.com/v1"),
     ).toBe("xiaomi");
   });
 
   it("routes plain openai-typed configs at Xiaomi to xiaomi too", () => {
-    // Older configs created before the xiaomi provider existed often
-    // carry `provider: 'openai'` with the Xiaomi baseUrl.
+    // 在 xiaomi provider 出现之前创建的旧配置,通常
+    // 带着 Xiaomi 的 baseUrl 却使用 `provider: 'openai'`。
     expect(resolveAdapterName("openai", "https://api.xiaomimimo.com/v1")).toBe(
       "xiaomi",
     );
@@ -35,7 +35,7 @@ describe("resolveAdapterName", () => {
   });
 
   it("does not match xiaomi look-alike hosts", () => {
-    // Anti-spoof: must be the actual xiaomimimo.com domain.
+    // 防伪造:必须是真正的 xiaomimimo.com 域名。
     expect(
       resolveAdapterName(
         "custom",
@@ -60,10 +60,10 @@ describe("createModelWithAdapter (Xiaomi auto-routing)", () => {
       baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
       model: "mimo-v2.5-pro",
     });
-    // The dedicated XiaomiAdapter wraps DeepSeek with a fetch
-    // interceptor that re-stamps reasoning_content on every prior
-    // assistant turn — fixes Xiaomi's "must be passed back" 400 on the
-    // 2nd+ turn that the raw deepseek adapter would otherwise drop.
+    // 专用的 XiaomiAdapter 通过 fetch 拦截器包装 DeepSeek,
+    // 在之前每一个 assistant 回合上重新写入 reasoning_content ——
+    // 修复了 Xiaomi 在第 2 个及以后回合出现的 "must be passed back" 400 错误,
+    // 该字段原本会被裸 deepseek adapter 丢弃。
     expect(adapter.name).toBe("xiaomi");
   });
 });

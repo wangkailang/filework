@@ -1,27 +1,24 @@
 /**
- * Per-invocation proxy env for spawned `git` children.
+ * 为派生的 `git` 子进程逐次调用构建代理环境变量。
  *
- * `proxy-bootstrap.ts` seeds `process.env.HTTPS_PROXY` at startup based
- * on a single probe URL, and every git subprocess inherits that env via
- * `buildAskpassEnv({ ...process.env, ... })`. Under split-routing setups
- * (Mihomo / Clash / corporate PAC) where some hosts route DIRECT and
- * others via proxy, that one-shot probe forces the wrong choice for any
- * host whose PAC verdict differs from the probe — typically a CN
- * self-hosted GitLab blocked behind a `LibreSSL SSL_ERROR_SYSCALL`
- * because git's HTTPS connection gets fed into a proxy that won't relay
- * it.
+ * `proxy-bootstrap.ts` 在启动时基于单次探测 URL 注入
+ * `process.env.HTTPS_PROXY`,而每个 git 子进程通过
+ * `buildAskpassEnv({ ...process.env, ... })` 继承该环境。在分流路由
+ * 配置下(Mihomo / Clash / 企业 PAC),某些 host 走 DIRECT、其他
+ * 走代理,这一次性探测会为任何 PAC 判定与探测不同的 host 强制选错
+ * —— 典型如某个国内自建 GitLab 因 git 的 HTTPS 连接被喂进不会转发
+ * 它的代理而卡在 `LibreSSL SSL_ERROR_SYSCALL`。
  *
- * `proxy-fetch.ts` solved the same class of bug for main-process
- * `fetch()` by consulting `session.resolveProxy(url)` per request. This
- * module is the equivalent for git: given the actual remote URL the
- * child will hit, resolve the proxy for *that* host and override the
- * inherited env vars accordingly. DIRECT scrubs every proxy hint;
- * PROXY pins HTTPS_PROXY/HTTP_PROXY to the resolved value.
+ * `proxy-fetch.ts` 通过对每个请求调用 `session.resolveProxy(url)`
+ * 解决了主进程 `fetch()` 上同一类 bug。本模块是 git 的对应实现:
+ * 给定子进程将访问的实际远程 URL,为「该」host 解析代理,并据此
+ * 覆盖继承来的环境变量。DIRECT 清除所有代理提示;
+ * PROXY 将 HTTPS_PROXY/HTTP_PROXY 固定为解析出的值。
  */
 
 import { parseChromeProxyList } from "../../proxy-bootstrap";
 
-/** Chromium-style proxy resolver — same shape `proxy-fetch.ts` consumes. */
+/** Chromium 风格的代理解析器 —— 与 `proxy-fetch.ts` 所消费的形态相同。 */
 export type ProxyResolver = (url: string) => Promise<string>;
 
 const PROXY_ENV_KEYS = [
@@ -34,17 +31,17 @@ const PROXY_ENV_KEYS = [
 ] as const;
 
 /**
- * Build env for a git subprocess that targets `remoteUrl`.
+ * 为目标是 `remoteUrl` 的 git 子进程构建环境变量。
  *
- * - When `resolveProxy` is undefined (tests, or before the resolver is
- *   wired), returns `baseEnv` unchanged.
- * - When the resolver says DIRECT for this URL, scrubs every proxy hint
- *   so the child can't pick one up from the polluted `process.env`.
- * - When the resolver returns a `PROXY host:port` entry, overrides
- *   HTTPS_PROXY/HTTP_PROXY with that value.
+ * - 当 `resolveProxy` 未定义(测试中,或解析器接入之前)时,
+ *   原样返回 `baseEnv`。
+ * - 当解析器对该 URL 判定为 DIRECT 时,清除所有代理提示,使子进程
+ *   无法从被污染的 `process.env` 中拾取到代理。
+ * - 当解析器返回 `PROXY host:port` 条目时,用该值覆盖
+ *   HTTPS_PROXY/HTTP_PROXY。
  *
- * Resolver failures fall back to `baseEnv`: better to attempt the call
- * with whatever was inherited than to silently drop the request.
+ * 解析器失败时回退到 `baseEnv`:用继承来的任何值尝试调用,好过
+ * 静默丢弃请求。
  */
 export const buildGitProxyEnv = async (
   baseEnv: NodeJS.ProcessEnv,

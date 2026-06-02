@@ -1,9 +1,9 @@
 /**
- * Shared types for MiniMax non-chat APIs (image / video generation).
+ * MiniMax 非对话类 API(图像 / 视频生成)的共用类型。
  *
- * Chat goes through the OpenAI-compatible /v1/chat/completions endpoint
- * via the OpenAIAdapter — these types only cover the bespoke endpoints
- * (/v1/image_generation, /v1/video_generation, /v1/query/...).
+ * 对话走 OpenAI 兼容的 /v1/chat/completions 端点,经由 OpenAIAdapter ——
+ * 这些类型只覆盖专用端点
+ * (/v1/image_generation、/v1/video_generation、/v1/query/...)。
  */
 
 export interface MinimaxBaseResp {
@@ -11,7 +11,7 @@ export interface MinimaxBaseResp {
   status_msg: string;
 }
 
-/** Response shape for POST /v1/image_generation. */
+/** POST /v1/image_generation 的响应结构。 */
 export interface MinimaxImageResponse {
   id?: string;
   data?: {
@@ -21,9 +21,9 @@ export interface MinimaxImageResponse {
   base_resp: MinimaxBaseResp;
 }
 
-// ─── Video generation ───────────────────────────────────────────────
+// ─── 视频生成 ───────────────────────────────────────────────
 
-/** Server-side state returned by /v1/query/video_generation. */
+/** /v1/query/video_generation 返回的服务端状态。 */
 export type MinimaxVideoStatus =
   | "Queueing"
   | "Preparing"
@@ -31,34 +31,34 @@ export type MinimaxVideoStatus =
   | "Success"
   | "Fail";
 
-/** Response shape for POST /v1/video_generation. */
+/** POST /v1/video_generation 的响应结构。 */
 export interface MinimaxVideoSubmitResponse {
   task_id?: string;
   base_resp: MinimaxBaseResp;
 }
 
-/** Response shape for GET /v1/query/video_generation?task_id=... */
+/** GET /v1/query/video_generation?task_id=... 的响应结构。 */
 export interface MinimaxVideoQueryResponse {
   task_id?: string;
   status?: MinimaxVideoStatus;
-  /** Populated when status === "Success". */
+  /** 当 status === "Success" 时填充。 */
   file_id?: string;
   base_resp: MinimaxBaseResp;
 }
 
-/** Response shape for GET /v1/files/retrieve?file_id=... */
+/** GET /v1/files/retrieve?file_id=... 的响应结构。 */
 export interface MinimaxFileRetrieveResponse {
   file?: {
     file_id?: string;
     bytes?: number;
-    /** Short-lived signed CDN URL. */
+    /** 短时效的签名 CDN URL。 */
     download_url?: string;
     filename?: string;
   };
   base_resp: MinimaxBaseResp;
 }
 
-/** Thrown when the MiniMax API rejects a request or returns a non-zero status_code. */
+/** 当 MiniMax API 拒绝请求或返回非零 status_code 时抛出。 */
 export class MinimaxApiError extends Error {
   readonly statusCode: number;
   readonly httpStatus: number;

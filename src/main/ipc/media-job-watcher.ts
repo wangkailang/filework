@@ -1,15 +1,15 @@
 /**
- * Media Job Watcher (Phase 3).
+ * 媒体任务 Watcher(Phase 3)。
  *
- * MiniMax video generation runs 1–5 minutes asynchronously. After the
- * `media:create-video-job` IPC submits a job and writes a row to
- * `media_jobs`, this watcher polls `/v1/query/video_generation` every
- * TICK_MS, updates the DB row, and emits `ai:media-job-update` IPC events
- * so the renderer's `VideoJobPart` card can show progress / final video.
+ * MiniMax 视频生成需异步运行 1–5 分钟。在
+ * `media:create-video-job` IPC 提交任务并向 `media_jobs`
+ * 写入一行后,该 watcher 每隔 TICK_MS 轮询
+ * `/v1/query/video_generation`,更新 DB 行,并发出 `ai:media-job-update` IPC 事件,
+ * 使渲染进程的 `VideoJobPart` 卡片能展示进度 / 最终视频。
  *
- * Modeled after `ci-watcher.ts` — same singleton + AbortSignal pattern.
- * Difference: we persist to the DB so a renderer reload can re-attach
- * to an in-flight job via `media:subscribe-job`.
+ * 仿照 `ci-watcher.ts` —— 采用相同的单例 + AbortSignal 模式。
+ * 区别在于:我们将状态持久化到 DB,使渲染进程重新加载后可通过
+ * `media:subscribe-job` 重新挂接到进行中的任务。
  */
 
 import type { WebContents } from "electron";
@@ -24,10 +24,10 @@ import {
 } from "../db";
 import { saveMediaToDisk } from "./media-storage";
 
-// 20s cadence — MiniMax video typically runs 1–5 min, so this lands
-// ~3-15 polls per job vs ~4-20 at 15s. Saves roughly a quarter of the
-// idle "Queueing" queries with no UX impact (status flips still arrive
-// well before user attention re-engages).
+// 20 秒间隔 —— MiniMax 视频通常运行 1–5 分钟,因此每个任务约
+// 轮询 3-15 次,相比 15 秒间隔的约 4-20 次。在不影响 UX 的前提下
+// 省去约四分之一的空闲 "Queueing" 查询(状态翻转仍会在
+// 用户重新关注之前及时到达)。
 export const TICK_MS = 20_000;
 export const TIMEOUT_MS = 10 * 60_000;
 
@@ -36,11 +36,11 @@ interface WatchDeps {
 }
 
 /**
- * Captured at subscribe-time so `tick()` doesn't re-resolve the LLM
- * config + media-job row from the DB every 20s. The watcher only needs
- * these scalar fields; if a row mutates upstream (cancel, etc.) the
- * AbortSignal listener tears the watch down rather than racing with DB
- * reads.
+ * 在订阅时捕获,使 `tick()` 不必每 20 秒从 DB 重新解析 LLM
+ * config 与 media-job 行。watcher 只需要这些标量字段;
+ * 若某行在上游被修改(取消等),
+ * AbortSignal 监听器会拆除该 watch,而非与 DB
+ * 读取产生竞态。
  */
 interface WatchEntry {
   jobId: string;
@@ -53,9 +53,9 @@ interface WatchEntry {
   timeoutId: ReturnType<typeof setTimeout>;
   signal: AbortSignal;
   abortListener: () => void;
-  /** Optional caller hook fired when a watch entry exits for any reason. */
+  /** 可选的调用方回调,在 watch entry 因任何原因退出时触发。 */
   onUnsubscribe?: (jobId: string) => void;
-  /** Latest status emitted, so we suppress repeat "running" notifications. */
+  /** 最近一次发出的状态,用于抑制重复的 "running" 通知。 */
   emittedStatus: MediaJobStatus;
 }
 
@@ -63,7 +63,7 @@ export interface SubscribeInput {
   jobId: string;
   sender: WebContents;
   signal: AbortSignal;
-  /** Optional cleanup hook — used by media-handlers to free its AbortController. */
+  /** 可选的清理回调 —— media-handlers 用它来释放自身的 AbortController。 */
   onUnsubscribe?: (jobId: string) => void;
 }
 
@@ -88,9 +88,9 @@ class MediaJobWatcher {
   }
 
   /**
-   * Subscribe to an existing media_jobs row. Duplicates are deduped on
-   * `jobId` — a renderer reload that re-subscribes won't double-poll.
-   * Returns `false` if the job is already terminal or not found.
+   * 订阅一个已存在的 media_jobs 行。按 `jobId` 去重 ——
+   * 渲染进程重新加载后再次订阅不会导致重复轮询。
+   * 若任务已处于终止状态或不存在,则返回 `false`。
    */
   subscribe(input: SubscribeInput): boolean {
     if (!this.deps) {
@@ -157,10 +157,10 @@ class MediaJobWatcher {
           this.unsubscribe(input.jobId);
           return;
         }
-        // Queueing / Preparing / Processing — keep polling. MiniMax
-        // doesn't expose a real percentage; we flip the persisted
-        // status to "running" once polling shows we're past the queue
-        // and only emit when that bucket actually changes.
+        // Queueing / Preparing / Processing —— 继续轮询。MiniMax
+        // 不提供真实百分比;一旦轮询显示已越过排队阶段,
+        // 我们就将持久化状态翻转为 "running",
+        // 且仅在该状态实际变化时才发出事件。
         const wantsRunning =
           result.status === "Preparing" || result.status === "Processing";
         const nextStatus: MediaJobStatus = wantsRunning ? "running" : "queued";
@@ -182,7 +182,7 @@ class MediaJobWatcher {
         console.warn(
           `[media-job-watcher] tick error for ${input.jobId}: ${msg}`,
         );
-        // Network blip — wait for next tick. Real errors will repeat.
+        // 网络抖动 —— 等待下一次 tick。真正的错误会重复出现。
       }
     };
 
@@ -204,10 +204,10 @@ class MediaJobWatcher {
     }, TIMEOUT_MS);
 
     const abortListener = () => {
-      // Abort comes from the user clicking Cancel or the renderer being
-      // destroyed. The cancel handler in media-handlers.ts is the side
-      // that writes status=canceled to the DB; this listener only tears
-      // down the timers.
+      // Abort 来自用户点击取消或渲染进程被销毁。
+      // media-handlers.ts 中的取消处理器才是负责
+      // 向 DB 写入 status=canceled 的一方;此监听器仅拆除
+      // 定时器。
       this.unsubscribe(input.jobId);
     };
     input.signal.addEventListener("abort", abortListener, { once: true });
@@ -227,8 +227,8 @@ class MediaJobWatcher {
       emittedStatus: job.status,
     });
 
-    // Kick off the first poll immediately so the UI doesn't sit on
-    // "queued" for a full TICK_MS before the first transition.
+    // 立即触发首次轮询,避免 UI 在首次状态转换前
+    // 卡在 "queued" 长达整整一个 TICK_MS。
     void tick();
     return true;
   }

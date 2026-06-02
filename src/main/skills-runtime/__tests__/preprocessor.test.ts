@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { preprocessSkill } from "../preprocessor";
 
-// ─── $ARGUMENTS replacement ─────────────────────────────────────────
+// ─── $ARGUMENTS 替换 ─────────────────────────────────────────
 
 describe("preprocessSkill — $ARGUMENTS replacement", () => {
   it("replaces $ARGUMENTS with the full argument string", async () => {
@@ -31,7 +31,7 @@ describe("preprocessSkill — $ARGUMENTS replacement", () => {
   });
 });
 
-// ─── $ARGUMENTS[N] / $N replacement ─────────────────────────────────
+// ─── $ARGUMENTS[N] / $N 替换 ─────────────────────────────────
 
 describe("preprocessSkill — indexed argument replacement", () => {
   it("replaces $ARGUMENTS[0] with the first argument", async () => {
@@ -79,7 +79,7 @@ describe("preprocessSkill — indexed argument replacement", () => {
   });
 });
 
-// ─── !command execution ──────────────────────────────────────────────
+// ─── !command 执行 ──────────────────────────────────────────────
 
 describe("preprocessSkill — !command execution", () => {
   it("replaces !echo with command output", async () => {
@@ -142,7 +142,7 @@ describe("preprocessSkill — !command execution", () => {
   });
 });
 
-// ─── Truncation ──────────────────────────────────────────────────────
+// ─── 截断 ──────────────────────────────────────────────────────
 
 describe("preprocessSkill — truncation", () => {
   it("does not truncate content within maxChars", async () => {
@@ -162,7 +162,7 @@ describe("preprocessSkill — truncation", () => {
     expect(result.systemPrompt).toContain(
       "[...truncated, read full content from: /path/to/SKILL.md]",
     );
-    // The content before the marker should be exactly maxChars
+    // 标记之前的内容长度应恰好等于 maxChars
     const markerIndex = result.systemPrompt.indexOf("\n[...truncated");
     expect(markerIndex).toBe(100);
   });
@@ -191,12 +191,12 @@ describe("preprocessSkill — truncation", () => {
   });
 });
 
-// ─── Processing order ────────────────────────────────────────────────
+// ─── 处理顺序 ────────────────────────────────────────────────
 
 describe("preprocessSkill — processing order", () => {
   it("processes $ARGUMENTS before !command so commands can use args", async () => {
     const result = await preprocessSkill("!echo $ARGUMENTS", "hello", "/tmp");
-    // $ARGUMENTS is replaced first, then !echo hello is executed
+    // 先替换 $ARGUMENTS,然后执行 !echo hello
     expect(result.systemPrompt).toBe("hello");
   });
 

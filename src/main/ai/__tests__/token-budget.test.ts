@@ -9,7 +9,7 @@ import {
 } from "../token-budget";
 
 // ---------------------------------------------------------------------------
-// Helper to build messages quickly
+// 快速构建消息的辅助函数
 // ---------------------------------------------------------------------------
 
 function userMsg(text: string): ModelMessage {
@@ -59,33 +59,33 @@ describe("estimateTokens", () => {
   });
 
   it("estimates Latin text at ~4 chars per token", () => {
-    // "Hello" = 5 Latin chars → ceil(5/4) = 2
+    // "Hello" = 5 个拉丁字符 → ceil(5/4) = 2
     expect(estimateTokens([userMsg("Hello")])).toBe(2);
   });
 
   it("estimates longer Latin text correctly", () => {
-    // 100 Latin chars → ceil(100/4) = 25
+    // 100 个拉丁字符 → ceil(100/4) = 25
     const text = "a".repeat(100);
     expect(estimateTokens([userMsg(text)])).toBe(25);
   });
 
   it("estimates CJK text at ~1.5 chars per token", () => {
-    // 6 CJK chars → ceil(6/1.5) = 4
+    // 6 个 CJK 字符 → ceil(6/1.5) = 4
     expect(estimateTokens([userMsg("你好世界测试")])).toBe(4);
   });
 
   it("handles mixed CJK and Latin text", () => {
-    // "Hello你好" = 5 Latin + 2 CJK → ceil(2/1.5 + 5/4) = ceil(1.33 + 1.25) = 3
+    // "Hello你好" = 5 个拉丁字符 + 2 个 CJK 字符 → ceil(2/1.5 + 5/4) = ceil(1.33 + 1.25) = 3
     expect(estimateTokens([userMsg("Hello你好")])).toBe(3);
   });
 
   it("sums tokens across multiple messages", () => {
-    // "abcd" = 4 Latin → 1 token, "efgh" = 4 Latin → 1 token
+    // "abcd" = 4 个拉丁字符 → 1 token,"efgh" = 4 个拉丁字符 → 1 token
     expect(estimateTokens([userMsg("abcd"), assistantMsg("efgh")])).toBe(2);
   });
 
   it("handles single character string", () => {
-    // 1 Latin char → ceil(1/4) = 1
+    // 1 个拉丁字符 → ceil(1/4) = 1
     expect(estimateTokens([userMsg("x")])).toBe(1);
   });
 
@@ -94,16 +94,16 @@ describe("estimateTokens", () => {
   });
 
   it("CJK estimates are significantly higher than old chars/4 method", () => {
-    // 100 CJK chars: old method would give ceil(100/4)=25, new gives ceil(100/1.5)=67
+    // 100 个 CJK 字符:旧方法得 ceil(100/4)=25,新方法得 ceil(100/1.5)=67
     const cjkText = "测".repeat(100);
     const estimate = estimateTokens([userMsg(cjkText)]);
     expect(estimate).toBe(67);
-    expect(estimate).toBeGreaterThan(25); // confirms the fix
+    expect(estimate).toBeGreaterThan(25); // 验证修复生效
   });
 });
 
 // ---------------------------------------------------------------------------
-// truncateToFit — empty / within budget
+// truncateToFit —— 空 / 在预算范围内
 // ---------------------------------------------------------------------------
 
 describe("truncateToFit", () => {
@@ -121,7 +121,7 @@ describe("truncateToFit", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Tool result compression
+  // 工具结果压缩
   // -------------------------------------------------------------------------
 
   it("compresses large tool results (> 2000 chars)", () => {
@@ -130,11 +130,11 @@ describe("truncateToFit", () => {
       assistantWithToolCall("tc1", "readFile"),
       toolResultMsg("tc1", "readFile", largeValue),
     ];
-    // Budget large enough to hold compressed but not original
+    // 预算足以容纳压缩后的结果,但容不下原始结果
     const originalTokens = estimateTokens(msgs);
     const result = truncateToFit(msgs, originalTokens - 1);
 
-    // Should have compressed the tool result
+    // 应已压缩工具结果
     const toolMsg = result.messages.find((m) => m.role === "tool");
     expect(toolMsg).toBeDefined();
     if (toolMsg && Array.isArray(toolMsg.content)) {
@@ -169,26 +169,26 @@ describe("truncateToFit", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Early message removal
+  // 移除靠前的消息
   // -------------------------------------------------------------------------
 
   it("removes early messages when over budget", () => {
     const msgs: ModelMessage[] = [
-      userMsg("a".repeat(400)), // 100 tokens
-      assistantMsg("b".repeat(400)), // 100 tokens
-      userMsg("c".repeat(400)), // 100 tokens
+      userMsg("a".repeat(400)), // 100 个 token
+      assistantMsg("b".repeat(400)), // 100 个 token
+      userMsg("c".repeat(400)), // 100 个 token
     ];
-    // Budget of 150 tokens — should remove early messages, keep recent
+    // 预算为 150 个 token —— 应移除靠前的消息,保留最近的
     const result = truncateToFit(msgs, 150);
     expect(result.wasTruncated).toBe(true);
-    // The last message should be preserved
+    // 最后一条消息应被保留
     const lastMsg = result.messages[result.messages.length - 1];
     expect(lastMsg.role).toBe("user");
     expect(lastMsg.content).toBe("c".repeat(400));
   });
 
   // -------------------------------------------------------------------------
-  // Truncation notice
+  // 截断提示
   // -------------------------------------------------------------------------
 
   it("inserts truncation notice when messages are truncated", () => {
@@ -197,22 +197,22 @@ describe("truncateToFit", () => {
       assistantMsg("b".repeat(400)),
       userMsg("c".repeat(40)),
     ];
-    // Small budget to force truncation
+    // 用较小的预算强制触发截断
     const result = truncateToFit(msgs, 50);
     expect(result.wasTruncated).toBe(true);
-    // First message should be the truncation notice
+    // 第一条消息应为截断提示
     expect(result.messages[0].role).toBe("system");
     expect(result.messages[0].content).toContain("省略");
   });
 
   // -------------------------------------------------------------------------
-  // Budget <= 0 fallback
+  // 预算 <= 0 时的回退
   // -------------------------------------------------------------------------
 
   it("uses DEFAULT_TOKEN_BUDGET when budget is 0", () => {
     const msgs: ModelMessage[] = [userMsg("Hello")];
     const result = truncateToFit(msgs, 0);
-    // "Hello" = 2 tokens, well within 80000 default
+    // "Hello" = 2 个 token,远在 80000 默认值之内
     expect(result.wasTruncated).toBe(false);
     expect(result.messages).toEqual(msgs);
   });
@@ -231,12 +231,12 @@ describe("truncateToFit", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Single message over budget — text truncation
+  // 单条消息超出预算 —— 文本截断
   // -------------------------------------------------------------------------
 
   it("truncates text of a single message that exceeds budget", () => {
-    // 1000 Latin chars = 250 tokens. Budget of 10 tokens.
-    // With conservative CJK ratio (1.5 chars/token), maxChars = 10 * 1.5 = 15
+    // 1000 个拉丁字符 = 250 个 token。预算为 10 个 token。
+    // 采用保守的 CJK 比率(1.5 字符/token),maxChars = 10 * 1.5 = 15
     const msgs: ModelMessage[] = [userMsg("a".repeat(1000))];
     const result = truncateToFit(msgs, 10);
     expect(result.wasTruncated).toBe(true);
@@ -247,7 +247,7 @@ describe("truncateToFit", () => {
   });
 
   // -------------------------------------------------------------------------
-  // DEFAULT_TOKEN_BUDGET constant
+  // DEFAULT_TOKEN_BUDGET 常量
   // -------------------------------------------------------------------------
 
   it("exports DEFAULT_TOKEN_BUDGET as 80000", () => {
@@ -265,7 +265,7 @@ describe("truncateToFit", () => {
 
 describe("getTokenBudgetForModel", () => {
   it("returns correct budget for Claude models", () => {
-    // 200K context - 8192 output - 2000 safety = 189808
+    // 200K 上下文 - 8192 输出 - 2000 安全余量 = 189808
     expect(getTokenBudgetForModel("claude-3.5-sonnet-20241022")).toBe(189_808);
     expect(getTokenBudgetForModel("claude-opus-4-20250514")).toBe(189_808);
   });

@@ -1,21 +1,20 @@
 /**
- * Plan runner — drives an approved Plan through the AgentLoop, one step
- * at a time, streaming each step's output to the renderer over the
- * pre-existing `ai:stream-*` and `ai:plan-step-*` IPC channels.
+ * 计划执行器——驱动已批准的 Plan 逐步通过 AgentLoop 执行,
+ * 并通过既有的 `ai:stream-*` 和 `ai:plan-step-*` IPC 通道
+ * 将每一步的输出流式发送给渲染进程。
  *
- * Replaces `src/main/planner/executor.ts`. Behavior parity:
- * - "Read Before Decide": re-reads the plan file before each step
- * - Per-step timeout (5 min default) via `createTimeoutController`
- * - Stream watchdog per step
- * - Sub-step progress emitted on each tool result (capped at totalSubSteps-1
- *   so the final sub-step only completes when the step itself succeeds)
- * - Cancellation paths: external `cancelPlan`, manual stop flag,
- *   AbortError from upstream
- * - Step failure persisted into task_plan.md with contextual error message
+ * 取代 `src/main/planner/executor.ts`。行为对齐:
+ * - "先读后决策":每步执行前重新读取计划文件
+ * - 通过 `createTimeoutController` 实现单步超时(默认 5 分钟)
+ * - 每步配备流式看门狗(stream watchdog)
+ * - 每次工具结果触发子步骤进度上报(上限为 totalSubSteps-1,
+ *   以便最后一个子步骤只在该步骤本身成功时才完成)
+ * - 取消路径:外部 `cancelPlan`、手动停止标志、上游抛出的 AbortError
+ * - 步骤失败时连同上下文错误信息一并持久化到 task_plan.md
  *
- * The driver is now `AgentLoop` (single per-step `streamText` call wrapped
- * in retry + event translator) instead of the inline `streamText`/fullStream
- * loop that lived in planner/executor.ts.
+ * 现在的驱动器是 `AgentLoop`(单步一次 `streamText` 调用,外层包裹
+ * 重试 + 事件转译),而非此前 planner/executor.ts 中内联的
+ * `streamText`/fullStream 循环。
  */
 
 import type { LanguageModel } from "ai";
@@ -41,16 +40,16 @@ import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan, PlanStepArtifact } from "./plan-types";
 import { buildPlanStepSystemPrompt } from "./system-prompt";
 
-/** Default per-step timeout: 5 minutes */
+/** 默认单步超时:5 分钟 */
 const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Truncate text to a max length, appending "..." if truncated. */
+/** 将文本截断到最大长度,被截断时追加 "..."。 */
 const truncateText = (text: string, max: number): string | undefined =>
   text ? (text.length > max ? `${text.slice(0, max)}...` : text) : undefined;
 
 /**
- * Deep-truncate long string values in an object for artifact display.
- * Returns the original value if already small enough.
+ * 深度截断对象中的长字符串值,用于产物(artifact)展示。
+ * 若已足够小则原样返回。
  */
 const truncateDeep = (value: unknown, maxStringLen = 200): unknown => {
   if (value == null) return value;
@@ -78,11 +77,11 @@ interface PlanRunnerOptions {
   sender: WebContents;
   taskId: string;
   abortSignal?: AbortSignal;
-  /** Resolved LLM identifier; surfaces in commit message Co-Authored-By trailers. */
+  /** 解析后的 LLM 标识;会出现在提交信息的 Co-Authored-By 尾注中。 */
   modelName?: string;
 }
 
-/** Cancelled plan ids — set by the cancel handler. */
+/** 已取消的计划 id——由取消处理器写入。 */
 const cancelledPlans = new Set<string>();
 
 export const cancelPlan = (planId: string): void => {
@@ -90,8 +89,8 @@ export const cancelPlan = (planId: string): void => {
 };
 
 /**
- * Execute a plan step by step, streaming each step's output to the renderer.
- * Returns the final updated plan.
+ * 逐步执行计划,并将每一步的输出流式发送给渲染进程。
+ * 返回最终更新后的计划。
  */
 export const executePlan = async ({
   plan,
@@ -149,12 +148,12 @@ export const executePlan = async ({
       createTimeoutController(DEFAULT_STEP_TIMEOUT_MS, abortSignal);
 
     try {
-      // "Read Before Decide" — re-read plan file to refresh goals in context
+      // "先读后决策"——重新读取计划文件,刷新上下文中的目标
       let planContext = "";
       try {
         planContext = await readPlanFile(plan.workspacePath);
       } catch {
-        // Plan file might not exist yet on first step.
+        // 首步执行时计划文件可能尚不存在。
       }
 
       const previousResults = plan.steps
@@ -178,7 +177,7 @@ export const executePlan = async ({
 
       const stepPrompt = `Execute step ${step.id}: ${step.description}`;
 
-      // Watchdog scoped to this step.
+      // 作用域限定于本步骤的看门狗。
       const watchdog = new StreamWatchdog({
         taskId,
         sender,
@@ -188,8 +187,8 @@ export const executePlan = async ({
       });
       watchdog.start();
 
-      // Build a fresh ToolRegistry per step. The registry is cheap to
-      // construct (just a Map) and per-step lifecycle keeps state isolated.
+      // 每步构建一个全新的 ToolRegistry。该注册表构造开销很低(只是一个 Map),
+      // 且按步骤的生命周期能让状态保持隔离。
       const toolRegistry = buildAgentToolRegistry({
         sender,
         taskId,
@@ -241,7 +240,7 @@ export const executePlan = async ({
             console.log("[Plan] Manual stop flag detected for taskId:", taskId);
             manualStop = true;
             if (!stepController.signal.aborted) stepController.abort();
-            // Continue draining so agent_end is observed.
+            // 继续消费流,以便能观察到 agent_end。
           }
 
           if (cancelledPlans.has(plan.id)) {
@@ -313,15 +312,13 @@ export const executePlan = async ({
               break;
             }
             case "agent_end":
-              // Surfacing the loop's terminal status as an exception lets
-              // the existing catch branch differentiate timeout / abort /
-              // failure with the same logic as before.
+              // 把循环的终止状态以异常形式抛出,可让既有的 catch 分支
+              // 沿用与此前相同的逻辑来区分超时 / 中止 / 失败。
               if (ev.status === "failed") {
                 throw new Error(ev.error?.message ?? "Plan step failed");
               }
               if (ev.status === "cancelled") {
-                // Convert cancellation into an AbortError so the catch
-                // branch picks the user-abort path.
+                // 将取消转换为 AbortError,使 catch 分支走用户中止路径。
                 const ab = new Error("aborted");
                 ab.name = "AbortError";
                 throw ab;

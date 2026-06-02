@@ -1,15 +1,15 @@
 /**
- * Executor module for AI Skills Runtime.
+ * AI 技能运行时的执行器模块。
  *
- * Handles skill execution in two modes:
- * - Default mode: injects preprocessed skill body into the system prompt
- * - Fork mode (subagent): delegates to the IPC-layer `runSubagent` callback
- *   which drives an AgentLoop with the same approval gate as the main path
+ * 以两种模式处理技能执行:
+ * - 默认模式:将预处理后的技能正文注入系统提示词
+ * - Fork 模式(子代理):委托给 IPC 层的 `runSubagent` 回调,
+ *   由其驱动 AgentLoop,并使用与主路径相同的审批门控
  *
- * Also provides:
- * - Security boundary wrapping for prompt injection mitigation
- * - Eager/Lazy injection mode determination
- * - XML catalog generation for lazy loading
+ * 同时还提供:
+ * - 用于缓解提示词注入的安全边界包裹
+ * - Eager/Lazy 注入模式判定
+ * - 用于懒加载的 XML 目录生成
  */
 
 import { execSync } from "node:child_process";
@@ -19,21 +19,21 @@ import type { ModelMessage } from "ai";
 import { runHook } from "./hooks";
 import type { UnifiedSkill } from "./types";
 
-// ─── Constants ───────────────────────────────────────────────────────
+// ─── 常量 ───────────────────────────────────────────────────────
 
-/** Default threshold for auto-switching from eager to lazy injection. */
+/** 从 eager 自动切换到 lazy 注入的默认阈值。 */
 const DEFAULT_LAZY_THRESHOLD = 10;
 
-// ─── Interfaces ──────────────────────────────────────────────────────
+// ─── 接口 ──────────────────────────────────────────────────────
 
 /**
- * Dependencies injected into executor functions.
+ * 注入到执行器函数中的依赖项。
  *
- * Pre-M2-PR3 this interface carried `getModel`, `allTools`, `rawExecutors`,
- * `safeTools` so `executeSubagent` could call `streamText` directly. After
- * the migration, the IPC layer owns model resolution, tool-set assembly,
- * and the AgentLoop, exposed via a single `runSubagent` callback. See
- * `src/main/ipc/fork-skill-runner.ts:createForkSkillRunner`.
+ * 在 M2-PR3 之前,该接口携带 `getModel`、`allTools`、`rawExecutors`、
+ * `safeTools`,以便 `executeSubagent` 能直接调用 `streamText`。迁移之后,
+ * IPC 层负责模型解析、工具集组装以及 AgentLoop,统一通过单个
+ * `runSubagent` 回调暴露。参见
+ * `src/main/ipc/fork-skill-runner.ts:createForkSkillRunner`。
  */
 export interface ExecutorDeps {
   /**
@@ -42,15 +42,15 @@ export interface ExecutorDeps {
    * the value continue to compile.
    */
   runSubagent: (opts: {
-    /** System prompt — already wrapped with `wrapWithSecurityBoundary`. */
+    /** 系统提示词 —— 已通过 `wrapWithSecurityBoundary` 包裹。 */
     systemPrompt: string;
     workspacePath: string;
-    /** User-facing prompt — fed into the AgentLoop as the new turn. */
+    /** 面向用户的提示词 —— 作为新一轮对话送入 AgentLoop。 */
     prompt: string;
     history?: ModelMessage[];
-    /** Skill frontmatter `allowed-tools` list. Empty/undefined → zero tools. */
+    /** 技能 frontmatter 的 `allowed-tools` 列表。空/未定义 → 零工具。 */
     allowedTools?: string[];
-    /** Skill frontmatter `model` field. Falls back to default on failure. */
+    /** 技能 frontmatter 的 `model` 字段。失败时回退到默认值。 */
     modelOverrideId?: string;
   }) => Promise<unknown>;
 }
@@ -62,24 +62,24 @@ export interface ExecutionContext {
   workspacePath: string;
   sender: Electron.WebContents;
   taskId: string;
-  /** Optional task-level abort signal from main execution controller. */
+  /** 来自主执行控制器的可选任务级中止信号。 */
   abortSignal?: AbortSignal;
-  /** Injection mode for this execution. */
+  /** 本次执行的注入模式。 */
   injectionMode: "eager" | "lazy";
-  /** Converted conversation history for multi-turn context. */
+  /** 转换后的对话历史,用于多轮上下文。 */
   history?: import("ai").ModelMessage[];
 }
 
-// ─── Security Boundary ──────────────────────────────────────────────
+// ─── 安全边界 ──────────────────────────────────────────────
 
 /**
- * Wrap a skill body with security boundary markers.
+ * 用安全边界标记包裹技能正文。
  *
- * These markers help the AI model identify user-configured skill
- * instructions and resist prompt injection attempts within them.
+ * 这些标记帮助 AI 模型识别用户配置的技能指令,
+ * 并抵御其中潜在的提示词注入攻击。
  *
- * @param body - The preprocessed skill body content
- * @param source - Human-readable source identifier (e.g. file path or skill name)
+ * @param body - 预处理后的技能正文内容
+ * @param source - 人类可读的来源标识(如文件路径或技能名称)
  */
 export function wrapWithSecurityBoundary(body: string, source: string): string {
   return [
@@ -90,17 +90,17 @@ export function wrapWithSecurityBoundary(body: string, source: string): string {
   ].join("\n");
 }
 
-// ─── Injection Mode ─────────────────────────────────────────────────
+// ─── 注入模式 ─────────────────────────────────────────────────
 
 /**
- * Determine the injection mode based on external skill count and config.
+ * 根据外部技能数量与配置判定注入模式。
  *
- * - If `forceMode` is specified ("eager" or "lazy"), use it directly.
- * - Otherwise, auto-switch to lazy when external skill count exceeds the threshold.
+ * - 若指定了 `forceMode`("eager" 或 "lazy"),直接采用。
+ * - 否则,当外部技能数量超过阈值时自动切换为 lazy。
  *
- * @param externalSkillCount - Number of registered external skills
- * @param forceMode - Optional forced mode from configuration
- * @param threshold - Skill count threshold for auto-switching (default 10)
+ * @param externalSkillCount - 已注册的外部技能数量
+ * @param forceMode - 来自配置的可选强制模式
+ * @param threshold - 自动切换的技能数量阈值(默认 10)
  */
 export function determineInjectionMode(
   externalSkillCount: number,
@@ -109,30 +109,30 @@ export function determineInjectionMode(
 ): "eager" | "lazy" {
   if (forceMode === "eager") return "eager";
   if (forceMode === "lazy") return "lazy";
-  // "auto" or undefined: switch based on threshold
+  // "auto" 或未定义:根据阈值切换
   return externalSkillCount > threshold ? "lazy" : "eager";
 }
 
-// ─── Catalog XML ────────────────────────────────────────────────────
+// ─── 目录 XML ────────────────────────────────────────────────────
 
 /**
- * Generate an `<available_skills>` XML catalog block for lazy loading.
+ * 生成用于懒加载的 `<available_skills>` XML 目录块。
  *
- * Each skill entry includes name, description, and the absolute path
- * to its SKILL.md file so the model can read it on demand via readFile.
+ * 每个技能条目包含名称、描述,以及其 SKILL.md 文件的绝对路径,
+ * 以便模型可按需通过 readFile 读取。
  *
- * Only external skills with a sourcePath are included. Skills with
- * `disable-model-invocation: true` are excluded since the model
- * should not auto-invoke them.
+ * 仅包含带有 sourcePath 的外部技能。设置了
+ * `disable-model-invocation: true` 的技能会被排除,
+ * 因为模型不应自动调用它们。
  *
- * @param skills - Array of unified skills to include in the catalog
+ * @param skills - 要纳入目录的统一技能数组
  */
 export function buildSkillCatalogXml(skills: UnifiedSkill[]): string {
   const entries = skills
     .filter((s) => {
-      // Only include external skills that have a source path
+      // 仅包含带有来源路径的外部技能
       if (!s.external?.sourcePath) return false;
-      // Exclude skills that opt out of model invocation
+      // 排除选择退出模型调用的技能
       if (s.external.frontmatter["disable-model-invocation"] === true)
         return false;
       return true;
@@ -153,17 +153,16 @@ export function buildSkillCatalogXml(skills: UnifiedSkill[]): string {
   return ["<available_skills>", ...entries, "</available_skills>"].join("\n");
 }
 
-// ─── Pip Dependency Auto-Install ────────────────────────────────────
+// ─── Pip 依赖自动安装 ────────────────────────────────────
 
 /**
- * Ensure all pip dependencies declared in `requires.pip` are installed.
+ * 确保 `requires.pip` 中声明的所有 pip 依赖均已安装。
  *
- * For each package, checks if the module is importable. If not, runs
- * `python3 -m pip install <package>` automatically. Logs results but
- * does not throw — failures are reported as warnings so the skill can
- * still attempt execution.
+ * 对每个包检查其模块是否可导入。若不可导入,则自动运行
+ * `python3 -m pip install <package>`。会记录结果但不抛出异常 ——
+ * 失败以警告形式上报,使技能仍可尝试执行。
  *
- * @param pipDeps - Array of pip package specifiers (e.g. ["markitdown[pptx,pdf]", "Pillow"])
+ * @param pipDeps - pip 包说明符数组(如 ["markitdown[pptx,pdf]", "Pillow"])
  */
 export async function ensurePipDeps(pipDeps: string[]): Promise<void> {
   const pythonBin = "python3";
@@ -195,22 +194,22 @@ export async function ensurePipDeps(pipDeps: string[]): Promise<void> {
   }
 }
 
-// ─── Execute Skill ──────────────────────────────────────────────────
+// ─── 执行技能 ──────────────────────────────────────────────────
 
 /**
- * Execute a skill based on its context mode.
+ * 根据技能的上下文模式执行该技能。
  *
- * - For `context: fork` skills, delegates to {@link executeSubagent}.
- * - For default-mode skills, wraps the processed prompt with security
- *   boundaries and returns it for the caller (ai-handlers) to inject
- *   into the system prompt of the main streamText call.
+ * - 对于 `context: fork` 技能,委托给 {@link executeSubagent}。
+ * - 对于默认模式技能,用安全边界包裹处理后的提示词,
+ *   并返回给调用方(ai-handlers),由其注入到主 streamText
+ *   调用的系统提示词中。
  *
- * Lifecycle hooks (pre-activate, post-complete) are executed around
- * the skill execution regardless of mode.
+ * 无论何种模式,都会在技能执行前后运行生命周期钩子
+ * (pre-activate、post-complete)。
  *
- * @param ctx - The execution context
- * @param deps - Injected dependencies (model, tools, etc.)
- * @returns The wrapped system prompt string for default mode, or void for fork mode
+ * @param ctx - 执行上下文
+ * @param deps - 注入的依赖项(模型、工具等)
+ * @returns 默认模式下返回包裹后的系统提示词字符串,fork 模式下返回 void
  */
 export async function executeSkill(
   ctx: ExecutionContext,
@@ -222,54 +221,53 @@ export async function executeSkill(
     ? dirname(skill.external.sourcePath)
     : workspacePath;
 
-  // ── Pre-activate hook ──
+  // ── pre-activate 钩子 ──
   if (fm?.hooks?.["pre-activate"]) {
     await runHook(fm.hooks["pre-activate"], skillDir, workspacePath);
   }
 
-  // ── Auto-install pip dependencies ──
+  // ── 自动安装 pip 依赖 ──
   const pipDeps = fm?.requires?.pip;
   if (pipDeps && pipDeps.length > 0) {
     await ensurePipDeps(pipDeps);
   }
 
   try {
-    // Determine execution mode
+    // 判定执行模式
     if (fm?.context === "fork") {
       await executeSubagent(ctx, deps);
       return;
     }
 
-    // Default mode: wrap with security boundary and return for injection
+    // 默认模式:用安全边界包裹并返回以供注入
     const source = skill.external?.sourcePath ?? skill.name;
     const wrappedPrompt = wrapWithSecurityBoundary(ctx.processedPrompt, source);
     return wrappedPrompt;
   } finally {
-    // ── Post-complete hook ──
+    // ── post-complete 钩子 ──
     if (fm?.hooks?.["post-complete"]) {
       await runHook(fm.hooks["post-complete"], skillDir, workspacePath);
     }
   }
 }
 
-// ─── Execute Subagent ───────────────────────────────────────────────
+// ─── 执行子代理 ───────────────────────────────────────────────
 
 /**
- * Execute a skill in an isolated subagent context (fork mode).
+ * 在隔离的子代理上下文中执行技能(fork 模式)。
  *
- * Delegates to the IPC-provided `deps.runSubagent` callback which:
- *   - Resolves the model (with `frontmatter.model` override + fallback)
- *   - Builds a per-task `ToolRegistry` filtered to `allowed-tools`
- *   - Wires the same `beforeToolCall` approval hook as the main agent path
- *   - Drives an `AgentLoop` and translates events to existing IPC channels
+ * 委托给 IPC 提供的 `deps.runSubagent` 回调,其职责为:
+ *   - 解析模型(支持 `frontmatter.model` 覆盖 + 回退)
+ *   - 构建按 `allowed-tools` 过滤的每任务 `ToolRegistry`
+ *   - 接入与主代理路径相同的 `beforeToolCall` 审批钩子
+ *   - 驱动 `AgentLoop` 并将事件转换到现有 IPC 通道
  *
- * Pre-M2-PR3 this function called `streamText` directly with a custom
- * tool wrapper that **bypassed approval**. Post-PR fork-mode skills get
- * the same approval gate as the main path — destructive tools listed in
- * `allowed-tools` now prompt the user.
+ * 在 M2-PR3 之前,该函数使用一个**绕过审批**的自定义工具包装器
+ * 直接调用 `streamText`。该 PR 之后,fork 模式技能获得与主路径
+ * 相同的审批门控 —— `allowed-tools` 中列出的破坏性工具现在会提示用户。
  *
- * @param ctx - The execution context
- * @param deps - Injected dependencies (provides `runSubagent`)
+ * @param ctx - 执行上下文
+ * @param deps - 注入的依赖项(提供 `runSubagent`)
  */
 export async function executeSubagent(
   ctx: ExecutionContext,
@@ -288,7 +286,7 @@ export async function executeSubagent(
   });
 }
 
-/** Escape special XML characters in a string. */
+/** 转义字符串中的 XML 特殊字符。 */
 function escapeXml(str: string): string {
   return str
     .replace(/&/g, "&amp;")

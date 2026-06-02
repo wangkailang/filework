@@ -1,13 +1,13 @@
 /**
- * Build the `beforeToolCall` hook that AgentLoop uses to gate destructive
- * tools through the existing approval IPC flow.
+ * 构建 AgentLoop 使用的 `beforeToolCall` 钩子,通过现有审批 IPC 流程对
+ * 破坏性工具进行门控。
  *
- * Approval logic precedence:
- *   1. writeFile + plan-approved task + path inside workspace → auto-approve
- *   2. tool already user-approved this task (whitelist) → auto-approve (inside requestApproval)
- *   3. moveFile/deleteFile/runCommand: workspace bounds check (deny if outside)
- *   4. Otherwise: enqueue into the batched approval card (ai:stream-tool-batch-approval)
- *      via requestApproval → approval-batcher, await user decision.
+ * 审批逻辑优先级:
+ *   1. writeFile + 计划已审批任务 + 路径在 workspace 内 → 自动批准
+ *   2. 工具在本任务已被用户批准(白名单)→ 自动批准(在 requestApproval 内部)
+ *   3. moveFile/deleteFile/runCommand:workspace 边界检查(越界则拒绝)
+ *   4. 否则:通过 requestApproval → approval-batcher 入队到批量审批卡片
+ *      (ai:stream-tool-batch-approval),等待用户决策。
  */
 
 import type { WebContents } from "electron";
@@ -28,10 +28,9 @@ interface BuildApprovalHookOptions {
   sender: WebContents;
   taskId: string;
   /**
-   * Workspace that owns this task. Threaded into the approval batcher
-   * so it can read pre-image files and produce a structured change
-   * preview for the approval card. Optional for backward compat —
-   * absent workspaces fall back to a description-only card.
+   * 拥有此任务的 workspace。传入审批批处理器,使其能读取变更前的
+   * 文件并为审批卡片生成结构化的变更预览。为向后兼容而设为可选 ——
+   * 缺失 workspace 时回落为仅描述的卡片。
    */
   workspace?: Workspace;
 }
@@ -54,14 +53,13 @@ export const buildApprovalHook = ({
   workspace,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
   return async (call) => {
-    // ── Plan-approved writeFile fast path ───────────────────────────
+    // ── 计划已审批的 writeFile 快速路径 ───────────────────────────
     if (call.toolName === "writeFile") {
       const args = call.args as { path?: string };
       if (args.path && (await canAutoApproveWrite(taskId, args.path))) {
-        // Plan-approved writes skip the batcher (and therefore the
-        // batch-level preview generation). Run it once here so the
-        // post-execute tool card still shows the diff straight from a
-        // snapshot, matching the manual approval path.
+        // 计划已审批的写入会跳过批处理器(因而也跳过批级别的预览
+        // 生成)。在此处运行一次,使执行后的工具卡片仍能直接从快照
+        // 展示 diff,与手动审批路径保持一致。
         if (workspace) {
           try {
             const preview = await Promise.race([
@@ -72,7 +70,7 @@ export const buildApprovalHook = ({
             ]);
             if (preview) rememberPreview(call.toolCallId, preview);
           } catch {
-            // Preview is best-effort.
+            // 预览为尽力而为。
           }
         }
         if (!sender.isDestroyed()) {
@@ -87,9 +85,9 @@ export const buildApprovalHook = ({
       }
     }
 
-    // ── Workspace-bounds check (preserves pre-M2 deny reason) ───────
-    // Surface a friendly Chinese reason instead of letting the raw
-    // WorkspaceEscapeError from inside the tool body bubble up.
+    // ── workspace 边界检查(保留 M2 之前的拒绝原因)───────
+    // 给出友好的中文原因,而不是让工具体内部的原始
+    // WorkspaceEscapeError 冒泡上来。
     if (call.toolName === "moveFile") {
       const args = call.args as { source?: string; destination?: string };
       const targets = [args.source, args.destination].filter(
@@ -127,7 +125,7 @@ export const buildApprovalHook = ({
       // escalate 或需弹窗 → 落到下方 requestApproval。
     }
 
-    // ── User approval (whitelist short-circuit lives inside) ────────
+    // ── 用户审批(白名单短路逻辑在其内部)────────
     const approved = await requestApproval(
       sender,
       taskId,

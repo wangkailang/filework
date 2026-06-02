@@ -3,8 +3,8 @@ import { useBrowserRouter } from "./context";
 
 interface LinkHandlers {
   onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
-  /** Middle-click on `<a>` fires `auxclick` in Chromium, not `click`.
-   *  Anchors must bind both to make the OS-browser escape work. */
+  /** 在 Chromium 中,中键点击 `<a>` 触发的是 `auxclick` 而非 `click`。
+   *  锚点必须同时绑定两者,才能让"在系统浏览器打开"生效。 */
   onAuxClick: (event: MouseEvent<HTMLAnchorElement>) => void;
 }
 
@@ -12,18 +12,18 @@ const PANEL_SCHEMES = /^https?:$/i;
 const OS_HANDOFF_SCHEMES = /^(mailto|tel):$/i;
 
 /**
- * Click handler for `<a>` tags that routes URLs into the right-side
- * BrowserPanel.
+ * `<a>` 标签的点击处理器,将 URL 路由到右侧的
+ * BrowserPanel。
  *
- * Security: every primary click is preventDefault'd before scheme
- * inspection — that stops a stray `javascript:` / `data:` href from
- * executing in the renderer if the route branch falls through.
- * Right-click → "Open Link" bypasses onClick entirely; that vector
- * is handled by the main-process will-navigate trap on mainWindow.
+ * 安全性:每次主键点击都在协议检查之前 preventDefault ——
+ * 以防路由分支落空时,游离的 `javascript:` / `data:` href
+ * 在渲染进程中执行。
+ * 右键 → "打开链接"会完全绕过 onClick;该路径
+ * 由主进程在 mainWindow 上的 will-navigate 拦截处理。
  *
- * Cmd/Ctrl-click → OS browser. Middle-click → OS browser (via
- * onAuxClick). Plain left-click → panel for http(s), OS hand-off for
- * mailto:/tel:, dropped (with a warn) for anything else.
+ * Cmd/Ctrl-点击 → 系统浏览器。中键点击 → 系统浏览器(经由
+ * onAuxClick)。普通左键点击 → http(s) 走面板,
+ * mailto:/tel: 交给系统处理,其他一律丢弃(并打印 warn)。
  */
 export function useLinkRouter(): LinkHandlers {
   const router = useBrowserRouter();
@@ -59,8 +59,8 @@ export function useLinkRouter(): LinkHandlers {
   return {
     onClick: (event) => {
       const forceOs = event.metaKey || event.ctrlKey;
-      // Only react to primary button on click; secondary clicks bubble
-      // to the OS context menu which is trapped in the main process.
+      // click 仅响应主键;次键点击会冒泡
+      // 到系统上下文菜单,该菜单在主进程中被拦截。
       if (event.button !== 0 && !forceOs) {
         event.preventDefault();
         return;
@@ -68,9 +68,9 @@ export function useLinkRouter(): LinkHandlers {
       route(event, forceOs);
     },
     onAuxClick: (event) => {
-      // event.button === 1 = middle. Anything else (2 = secondary) is
-      // the context-menu button; let it through so the OS menu opens,
-      // then will-navigate catches any chosen navigation.
+      // event.button === 1 表示中键。其他值(2 = 次键)是
+      // 上下文菜单键;放行以便系统菜单打开,
+      // 随后 will-navigate 会捕获用户选择的任何导航。
       if (event.button !== 1) return;
       route(event, true);
     },

@@ -1,9 +1,9 @@
 /**
- * Task Trace IPC Handlers
+ * 任务追踪 IPC 处理器
  *
- * Exposes durable task trace events to the renderer.
+ * 向渲染进程暴露持久化的任务追踪事件。
  *
- * Live streaming is handled by `emitTaskTraceEvent` emitting `ai:task-trace-event`.
+ * 实时流式推送由 `emitTaskTraceEvent` 发出 `ai:task-trace-event` 处理。
  */
 
 import { ipcMain } from "electron";

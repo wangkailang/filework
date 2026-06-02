@@ -1,10 +1,10 @@
 /**
- * Shared approval / sandbox helpers used by both the legacy per-tool
- * approval wrappers in `ai-tool-permissions.ts` (fork-mode skill path)
- * and the new `beforeToolCall` hook driving AgentLoop.
+ * 共享的审批 / 沙箱辅助函数,由 `ai-tool-permissions.ts` 中的遗留
+ * 逐工具审批包装器(fork 模式 skill 路径)与驱动 AgentLoop 的新
+ * `beforeToolCall` 钩子共同使用。
  *
- * Logic is unchanged from the pre-M2 inline copies in `ai-tool-permissions.ts:27-128`;
- * extraction lets both paths share a single source of truth.
+ * 逻辑与 `ai-tool-permissions.ts:27-128` 中 M2 之前的内联副本一致;
+ * 抽取出来使两条路径共享同一份事实来源。
  */
 
 import { realpath } from "node:fs/promises";
@@ -13,11 +13,11 @@ import path from "node:path";
 import { getPlanApprovedWorkspace, getTaskWorkspace } from "./ai-task-control";
 
 /**
- * Verify that all `paths` resolve inside the task's workspace, after
- * symlink resolution. Used to gate destructive tools (move, delete, etc.).
+ * 校验所有 `paths` 在符号链接解析后均落在任务的 workspace 内。
+ * 用于门控破坏性工具(move、delete 等)。
  *
- * Returns false if no workspace is registered, on any realpath failure,
- * or if any target escapes the workspace boundary.
+ * 若未注册 workspace、任一 realpath 失败,或任一目标越过 workspace
+ * 边界,则返回 false。
  */
 export const isInWorkspace = async (
   taskId: string,
@@ -53,9 +53,9 @@ export const isInWorkspace = async (
 };
 
 /**
- * Auto-approval predicate for writeFile in plan-approved tasks.
- * Resolves symlinks via realpath to prevent workspace-escape writes.
- * For new files, validates the parent directory.
+ * 计划已审批任务中 writeFile 的自动批准判定。
+ * 通过 realpath 解析符号链接以防止越出 workspace 的写入。
+ * 对于新文件,校验其父目录。
  */
 export const canAutoApproveWrite = async (
   taskId: string,

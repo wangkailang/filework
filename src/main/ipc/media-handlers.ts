@@ -1,13 +1,13 @@
 /**
- * Media IPC handlers — image/video generation for non-chat LLM configs.
+ * 媒体 IPC 处理器 —— 面向非 chat 类 LLM 配置的图像/视频生成。
  *
- * Routing is gated by `llmConfig.modality`:
- *   - modality === "image" → MiniMax /v1/image_generation, sync
- *   - modality === "video" → MiniMax /v1/video_generation, async (watcher polls)
+ * 路由由 `llmConfig.modality` 决定:
+ *   - modality === "image" → MiniMax /v1/image_generation,同步
+ *   - modality === "video" → MiniMax /v1/video_generation,异步(由 watcher 轮询)
  *
- * Generated artifacts live under ~/.filework/generated/{sessionId}/ so
- * they don't pollute user repos. The renderer renders them via the
- * existing `local-file://` custom protocol.
+ * 生成的产物存放在 ~/.filework/generated/{sessionId}/ 下,
+ * 避免污染用户仓库。渲染进程通过现有的
+ * `local-file://` 自定义协议进行渲染。
  */
 
 import { ipcMain } from "electron";
@@ -36,27 +36,27 @@ interface GenerateImagePayload {
   llmConfigId: string;
   sessionId: string;
   prompt: string;
-  /** Optional MiniMax aspect_ratio (e.g. "1:1", "16:9"). */
+  /** 可选的 MiniMax aspect_ratio(例如 "1:1"、"16:9")。 */
   aspectRatio?: string;
 }
 
 interface GenerateImageOk {
-  /** Absolute path on disk to the saved image. */
+  /** 已保存图像在磁盘上的绝对路径。 */
   path: string;
-  /** Echoed back so the renderer can render without a second IPC. */
+  /** 回传给渲染进程,使其无需第二次 IPC 即可渲染。 */
   prompt: string;
   configId: string;
-  /** Random short id — used as the message-part key. */
+  /** 随机短 id —— 用作 message-part 的 key。 */
   imageId: string;
 }
 
 type GenerateImageResult = GenerateImageOk | { error: string };
 
 /**
- * Common pre-flight checks for any media-generation request. Returns a
- * narrowed config when valid; otherwise an `{error}` payload ready to
- * IPC-return. Centralised so image and video handlers stay in lockstep
- * — adding a new modality (audio, voice clone…) is one extra branch.
+ * 任何媒体生成请求的通用前置校验。校验通过时返回收窄后的
+ * config;否则返回可直接通过 IPC 返回的 `{error}` 负载。集中处理,
+ * 使图像与视频处理器保持一致
+ * —— 新增一种 modality(音频、声音克隆……)只需多加一个分支。
  */
 const validateMediaConfig = (
   llmConfigId: string,
@@ -139,7 +139,7 @@ const handleGenerateImage = async (
 };
 
 // ────────────────────────────────────────────────────────────────────
-// Video generation (Phase 3) — async, watcher-driven
+// 视频生成(Phase 3)—— 异步,由 watcher 驱动
 // ────────────────────────────────────────────────────────────────────
 
 interface CreateVideoJobPayload {
@@ -159,9 +159,9 @@ interface CreateVideoJobOk {
 type CreateVideoJobResult = CreateVideoJobOk | { error: string };
 
 /**
- * Per-job AbortController. The renderer's cancel button → DB write +
- * `abort()` here, which the watcher listens to. Cleared on job finalize
- * inside the watcher.
+ * 每个任务对应一个 AbortController。渲染进程的取消按钮 → 写入 DB +
+ * 这里的 `abort()`,watcher 会监听该信号。任务在 watcher 内
+ * 终结时清除。
  */
 const jobAbortControllers = new Map<string, AbortController>();
 
@@ -215,8 +215,8 @@ const handleCreateVideoJob = async (
     jobId: job.id,
     sender,
     signal: controller.signal,
-    // Watcher invokes this on any terminal path (success / fail / timeout
-    // / abort), so the controller Map doesn't grow with completed jobs.
+    // watcher 在任意终止路径(成功 / 失败 / 超时 / 中止)下都会
+    // 调用此回调,因此 controller Map 不会随已完成任务而无限增长。
     onUnsubscribe: (id) => {
       jobAbortControllers.delete(id);
     },

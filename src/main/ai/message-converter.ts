@@ -5,7 +5,7 @@ import {
 } from "./attachments";
 
 // ---------------------------------------------------------------------------
-// Part types (slimmed-down versions of the renderer's MessagePart types)
+// Part 类型(渲染进程 MessagePart 类型的精简版)
 // ---------------------------------------------------------------------------
 
 export interface TextPart {
@@ -14,12 +14,11 @@ export interface TextPart {
 }
 
 /**
- * Hidden reasoning emitted by reasoning-capable models. Persisted to the
- * session JSONL and replayed here so adapters that require reasoning to
- * be threaded back to the assistant message on follow-up turns
- * (Xiaomi MiMo, DeepSeek-Reasoner) get the previous turn's
- * reasoning_content. Adapters that ignore reasoning parts (OpenAI Chat
- * Completions) silently drop them — safe no-op.
+ * 由具备推理能力的模型产生的隐藏推理内容。会持久化到会话 JSONL 并在此回放,
+ * 使得那些要求在后续轮次将推理内容回填到 assistant 消息的适配器
+ * (Xiaomi MiMo、DeepSeek-Reasoner)能拿到上一轮的
+ * reasoning_content。忽略推理 part 的适配器(OpenAI Chat
+ * Completions)会静默丢弃它们 —— 属于安全的空操作。
  */
 export interface ReasoningPart {
   type: "reasoning";
@@ -48,8 +47,8 @@ export type MessagePart =
   | AttachmentHistoryEntry;
 
 /**
- * Slimmed-down version of ChatMessage for IPC transport.
- * Excludes id, sessionId, timestamp to reduce payload size.
+ * 用于 IPC 传输的 ChatMessage 精简版。
+ * 排除 id、sessionId、timestamp 以减小负载体积。
  */
 export interface HistoryMessage {
   role: "user" | "assistant";
@@ -60,18 +59,18 @@ export interface HistoryMessage {
 const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
 
 /**
- * Convert frontend HistoryMessage[] to Vercel AI SDK ModelMessage[].
+ * 将前端的 HistoryMessage[] 转换为 Vercel AI SDK 的 ModelMessage[]。
  *
- * Conversion rules:
- * - user message → { role: "user", content } (string) by default
- * - user message with attachment parts → { role: "user", content: [...] }
- *   with image / file / inline-text content parts, gated by provider caps
- *   (see `attachments.ts`)
+ * 转换规则:
+ * - user 消息 → 默认 { role: "user", content }(字符串)
+ * - 带附件 part 的 user 消息 → { role: "user", content: [...] },
+ *   包含 image / file / inline-text 内容 part,受 provider 能力约束
+ *   (见 `attachments.ts`)
  * - assistant TextPart → { role: "assistant", content: [{ type: "text", text }] }
- * - assistant ToolPart → assistant tool-call content part + separate tool role message
- * - PlanMessagePart → ignored
- * - ToolPart missing result → placeholder text used
- * - Message chronological order is preserved
+ * - assistant ToolPart → assistant 的 tool-call 内容 part + 独立的 tool 角色消息
+ * - PlanMessagePart → 忽略
+ * - ToolPart 缺少 result → 使用占位文本
+ * - 保留消息的时间先后顺序
  */
 export async function convertToCoreMessages(
   history: HistoryMessage[],
@@ -92,9 +91,9 @@ export async function convertToCoreMessages(
           attachments,
           opts?.providerId,
         );
-        // Our `UserContentPart` mirrors a subset of AI SDK's UserContent
-        // (text / image / file). Cast through `UserContent` so the
-        // ModelMessage union narrows correctly at the provider boundary.
+        // 我们的 `UserContentPart` 对应 AI SDK 的 UserContent 的一个子集
+        // (text / image / file)。通过 `UserContent` 做类型断言,
+        // 使 ModelMessage 联合类型在 provider 边界处正确收窄。
         result.push({
           role: "user",
           content: content as unknown as UserContent,
@@ -103,9 +102,9 @@ export async function convertToCoreMessages(
       continue;
     }
 
-    // assistant message — process parts
+    // assistant 消息 —— 处理 parts
     if (!msg.parts || msg.parts.length === 0) {
-      // No parts, use content string directly
+      // 没有 parts,直接使用 content 字符串
       if (msg.content) {
         result.push({ role: "assistant", content: msg.content });
       }
@@ -157,16 +156,16 @@ export async function convertToCoreMessages(
           });
           break;
         }
-        // "plan" and any other unknown types are ignored
+        // "plan" 及其他任何未知类型均被忽略
         default:
           break;
       }
     }
 
-    // Build assistant message content array. Reasoning must appear before
-    // text/tool-call parts so adapters (DeepSeek / Xiaomi) that scan for
-    // the first `reasoning` part attach it to the assistant message's
-    // `reasoning_content` field.
+    // 构造 assistant 消息的内容数组。推理 part 必须排在
+    // text/tool-call part 之前,这样那些扫描第一个 `reasoning` part 的
+    // 适配器(DeepSeek / Xiaomi)才能将其附加到 assistant 消息的
+    // `reasoning_content` 字段。
     const assistantContent: Array<
       | { type: "reasoning"; text: string }
       | { type: "text"; text: string }
@@ -182,7 +181,7 @@ export async function convertToCoreMessages(
       result.push({ role: "assistant", content: assistantContent });
     }
 
-    // Generate tool role messages for each tool call
+    // 为每个工具调用生成 tool 角色消息
     if (toolResults.length > 0) {
       result.push({
         role: "tool",
@@ -200,7 +199,7 @@ export async function convertToCoreMessages(
 }
 
 /**
- * Format a tool result into the ToolResultOutput format expected by the AI SDK.
+ * 将工具结果格式化为 AI SDK 所需的 ToolResultOutput 格式。
  */
 function formatToolResult(result: unknown): { type: "text"; value: string } {
   if (typeof result === "string") {

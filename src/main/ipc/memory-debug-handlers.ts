@@ -1,8 +1,8 @@
 /**
- * Memory Debug IPC Handlers
+ * 记忆调试 IPC 处理器
  *
- * Exposes the in-memory memory-debug event log to the renderer
- * for the Memory Debug Panel.
+ * 将内存中的记忆调试事件日志暴露给渲染进程,
+ * 供记忆调试面板使用。
  */
 
 import { ipcMain } from "electron";
@@ -26,7 +26,7 @@ export const registerMemoryDebugHandlers = () => {
     return { ok: true };
   });
 
-  // Seed mock events for testing the visualization charts (dev only)
+  // 注入模拟事件以测试可视化图表(仅开发环境)
   if (!process.env.ELECTRON_RENDERER_URL) return;
   ipcMain.handle("memory-debug:seed", async () => {
     const types: {
@@ -78,9 +78,9 @@ export const registerMemoryDebugHandlers = () => {
     for (let i = 0; i < count; i++) {
       const pick = types[Math.floor(Math.random() * types.length)];
       addMemoryEvent(`seed-task-${i}`, pick.type, pick.detail(), pick.snippet);
-      // Backdate timestamps so the timeline looks realistic.
-      // getMemoryEvents returns shallow copies that share object references
-      // with the store, so this mutation updates the canonical event in-place.
+      // 回填时间戳,使时间线看起来更真实。
+      // getMemoryEvents 返回的浅拷贝与 store 共享对象引用,
+      // 因此此处的修改会就地更新规范事件本身。
       const event = getMemoryEvents(1)[0];
       if (event) {
         event.timestamp = new Date(

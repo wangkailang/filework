@@ -216,10 +216,9 @@ describe("missingFinalAnswer 规则（GAIA 选用）", () => {
   });
 
   it("endReason 为 tool_calls（步数预算在工具流程中耗尽）时以预算耗尽话术 retry", () => {
-    // At the gate's call site (post-callStreamText), endReason=tool_calls
-    // means the SDK halted `stopWhen` while the model was still planning
-    // tool calls — i.e. budget exhausted. This is exactly when we want a
-    // retry, not a skip.
+    // 在 gate 的调用点(callStreamText 之后),endReason=tool_calls
+    // 表示模型仍在规划工具调用时,SDK 因 `stopWhen` 中止 —— 即步数预算耗尽。
+    // 这正是我们想要 retry 而非跳过的场景。
     const v = missingFinalAnswer(
       mkTurn({
         finalText: "Let me try another tool.",
@@ -242,7 +241,7 @@ describe("missingFinalAnswer 规则（GAIA 选用）", () => {
     );
     expect(v?.kind).toBe("retry");
     if (v?.kind === "retry") {
-      // Natural-end wording explicitly references the missing line, not budget.
+      // 自然结束话术应明确指向缺失的那一行,而非预算。
       expect(v.feedback).toMatch(/required `FINAL ANSWER/);
       expect(v.feedback).not.toMatch(/budget/i);
       expect(v.forceNoTools).toBe(true);
@@ -330,9 +329,9 @@ describe("defaultRules 规则集", () => {
   });
 
   it("askClarification 后助手沉默时不 retry", async () => {
-    // The most important false-positive case: model calls askClarification,
-    // tool returns {asked: true}, model legitimately stays silent waiting
-    // for user input. Default rules must NOT force a retry here.
+    // 最重要的误报场景:模型调用 askClarification,
+    // 工具返回 {asked: true},模型合理地保持沉默以等待用户输入。
+    // 默认规则集在此处绝不能强制 retry。
     const hook = createReflectionGate({ rules: defaultRules() });
     const v = await hook(
       mkTurn({
@@ -557,8 +556,8 @@ describe("createReflectionGate", () => {
   });
 
   it("不给规则驱动的 retry 裁决标记 forceNoTools（仅 LLM 裁决）", async () => {
-    // A deterministic rule fires retry first; llmForceNoTools should not
-    // mutate that verdict because the LLM path was not taken.
+    // 某条确定性规则先触发 retry;由于未走 LLM 路径,
+    // llmForceNoTools 不应改写该裁决。
     mockedGenerate.mockReset();
     const fakeModel = {} as LanguageModel;
     const hook = createReflectionGate({
@@ -578,8 +577,8 @@ describe("createReflectionGate", () => {
     );
     expect(v.kind).toBe("retry");
     if (v.kind === "retry") {
-      // pdfParseFailure rule does not set forceNoTools, so the flag must
-      // remain unset (undefined or false).
+      // pdfParseFailure 规则不设置 forceNoTools,因此该标记必须
+      // 保持未设置状态(undefined 或 false)。
       expect(v.forceNoTools).toBeUndefined();
     }
     expect(mockedGenerate).not.toHaveBeenCalled();

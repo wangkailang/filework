@@ -1,19 +1,17 @@
 /**
- * GAIA runner — for each question, instantiate AgentLoop, capture
- * the full event stream, extract the final answer, score it, and
- * write everything to disk.
+ * GAIA runner —— 对每道题实例化 AgentLoop,捕获完整事件流,
+ * 提取最终答案,评分,并将全部内容写入磁盘。
  *
- * Layout of `outputDir`:
+ * `outputDir` 的目录结构:
  *
  *   <outputDir>/
  *     summary.json
  *     per-question/<task_id>.json
  *     events/<task_id>.jsonl
- *     workspaces/<task_id>/...    (cleaned up after each question)
+ *     workspaces/<task_id>/...    (每道题处理完后清理)
  *
- * Concurrency is currently hard-coded to 1 — sequential runs are
- * easier to debug, and the agent's tool calls (web, file I/O) don't
- * benefit much from parallelism on a single machine.
+ * 并发目前硬编码为 1 —— 顺序执行更易于调试,且 agent 的工具
+ * 调用(web、文件 I/O)在单机上从并行中获益有限。
  */
 
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -54,22 +52,20 @@ const DEFAULT_PER_QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_ANSWER_TAIL_FOR_VERIFIER = 1200;
 
 /**
- * Builds the LLM verifier prompt sent by the reflection-gate's llmFallback
- * after deterministic rules abstain. The verifier checks ONLY answer
- * form/unit/magnitude alignment with the question — not factual
- * correctness. It is intentionally conservative ("prefer continue when
- * uncertain") so that correct answers aren't false-flagged.
+ * 构造 reflection-gate 的 llmFallback 在确定性规则弃权后发送的
+ * LLM 校验 prompt。校验器只检查答案的形式/单位/量级与题目是否
+ * 对齐 —— 不检查事实正确性。它刻意保守("不确定时优先 continue"),
+ * 以免把正确答案误判。
  *
- * The most expensive prior failure this targets is the Kipchoge case:
- * question says "how many thousand hours", model answered 17000 (raw
- * hours) instead of 17 (thousands).
+ * 它针对的代价最高的历史失败是 Kipchoge 案例:题目问 "how many
+ * thousand hours",模型答了 17000(原始小时数)而非 17(千)。
  */
 const buildAnswerVerifierPrompt = (
   questionText: string,
   finalText: string,
 ): string => {
-  // Send only the tail of finalText — the FINAL ANSWER line lives at
-  // the end, and the verifier doesn't need the full reasoning trail.
+  // 只发送 finalText 的尾部 —— FINAL ANSWER 行位于末尾,
+  // 校验器不需要完整的推理过程。
   const tail = finalText.slice(-MAX_ANSWER_TAIL_FOR_VERIFIER);
   return [
     "You are an answer-FORM verifier for the GAIA benchmark.",
@@ -175,7 +171,7 @@ const buildSystemPrompt = (
   return sections.join("\n");
 };
 
-// ─── Per-question execution ──────────────────────────────────────────
+// ─── 单题执行 ──────────────────────────────────────────
 
 interface CollectedEvents {
   toolCalls: ToolCallRecord[];
@@ -329,9 +325,9 @@ interface PerQuestionDeps {
   model: string;
   baseUrl?: string;
   /**
-   * Resolved sampling temperature. `number` → pass through; `null` →
-   * skip the parameter entirely (for OpenAI reasoning models). The CLI
-   * layer translates `--temperature` into this value.
+   * 已解析的采样温度。`number` → 直接透传;`null` → 完全跳过该
+   * 参数(用于 OpenAI 推理模型)。CLI 层将 `--temperature` 转换
+   * 为此值。
    */
   temperature: number | null;
 }
@@ -376,14 +372,13 @@ const runOneQuestion = async (
       baseUrl: deps.baseUrl,
     });
 
-    // Reflection gate enforces the FINAL ANSWER protocol via deterministic
-    // rules, then runs an LLM verifier that checks the emitted answer's
-    // unit/magnitude/format against the literal question. `missingFinalAnswer`
-    // is GAIA-specific so it's composed here rather than baked into
-    // builtinRules. The LLM verifier short-circuits when any rule already
-    // fired retry/abort — it only spends a model call on turns that
-    // already passed protocol checks. Temperature follows `deps.temperature`
-    // — null means "omit entirely" (required for OpenAI reasoning models).
+    // Reflection gate 先通过确定性规则强制执行 FINAL ANSWER 协议,
+    // 再运行 LLM 校验器,检查所发出答案的单位/量级/格式是否符合
+    // 题目字面要求。`missingFinalAnswer` 是 GAIA 专用的,因此在此
+    // 组合而非内置进 builtinRules。当任一规则已触发 retry/abort 时,
+    // LLM 校验器会短路 —— 它只对已通过协议检查的轮次花费一次模型
+    // 调用。温度遵循 `deps.temperature` —— null 表示"完全省略"
+    // (OpenAI 推理模型要求如此)。
     const temperatureForSdk =
       deps.temperature === null ? undefined : deps.temperature;
     const reflectGate = createReflectionGate({
@@ -485,7 +480,7 @@ const runOneQuestion = async (
   return result;
 };
 
-// ─── Summary ─────────────────────────────────────────────────────────
+// ─── 汇总 ─────────────────────────────────────────────────────────
 
 const buildSummary = (
   results: QuestionResult[],
@@ -513,9 +508,8 @@ const buildSummary = (
     };
   }
 
-  // Cost aggregation. `estimatedCostUsd` is undefined for unpriced
-  // models — those rows are excluded from both total and median so we
-  // don't dilute the figure with synthetic zeros.
+  // 成本聚合。对于未定价的模型,`estimatedCostUsd` 为 undefined ——
+  // 这些行被同时排除在总和与中位数之外,以免用人造的零值稀释数据。
   const costs = results
     .map((r) => r.estimatedCostUsd)
     .filter((c): c is number => typeof c === "number");
@@ -550,7 +544,7 @@ const buildSummary = (
   };
 };
 
-// ─── Public entry ────────────────────────────────────────────────────
+// ─── 公开入口 ────────────────────────────────────────────────────
 
 export interface RunGaiaResult {
   summary: RunSummary;
@@ -559,11 +553,11 @@ export interface RunGaiaResult {
 
 export const runGaia = async (
   opts: RunnerOptions & {
-    /** When omitted the runner uses Node's global `fetch`. */
+    /** 省略时 runner 使用 Node 的全局 `fetch`。 */
     fetchImpl?: typeof fetch;
     tavilyKey?: string | null;
     firecrawlKey?: string | null;
-    /** Per-question progress callback — surfaced to the CLI. */
+    /** 单题进度回调 —— 暴露给 CLI。 */
     onProgress?: (info: {
       index: number;
       total: number;
@@ -586,9 +580,9 @@ export const runGaia = async (
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeoutMs =
     opts.perQuestionTimeoutMs ?? DEFAULT_PER_QUESTION_TIMEOUT_MS;
-  // `opts.temperature` semantics: `undefined` → deterministic default (0);
-  // `null` → omit the parameter entirely (OpenAI reasoning models);
-  // `number` → pass through.
+  // `opts.temperature` 语义:`undefined` → 确定性默认值(0);
+  // `null` → 完全省略该参数(OpenAI 推理模型);
+  // `number` → 直接透传。
   const temperature: number | null =
     opts.temperature === undefined ? 0 : opts.temperature;
   const deps: PerQuestionDeps = {
@@ -616,8 +610,8 @@ export const runGaia = async (
     opts.onProgress?.({ index: i, total: filtered.length, result });
   }
 
-  // groupByLevel is still useful when callers want a quick lookup; not
-  // exported in the summary but kept available for downstream tooling.
+  // 当调用方需要快速查表时 groupByLevel 仍有用;它不出现在 summary
+  // 中,但保留以供下游工具使用。
   void groupByLevel(filtered);
 
   const summary = buildSummary(results, opts, startedAt);
@@ -627,8 +621,8 @@ export const runGaia = async (
     "utf-8",
   );
 
-  // Phase 2: human-readable companions to summary.json. Kept best-
-  // effort — a render failure here shouldn't lose the JSON results.
+  // 阶段 2:summary.json 的人类可读配套文件。采用尽力而为策略 ——
+  // 此处渲染失败不应导致丢失 JSON 结果。
   try {
     const { failures, toolUsage } = renderReports(results, summary);
     await writeFile(

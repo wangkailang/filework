@@ -72,7 +72,7 @@ describe("buildWebFetchTool", () => {
     expect(out.status).toBe(200);
     expect(out.title).toBe("Hello");
     expect(out.markdown).toContain("first paragraph");
-    // markdown carries the content → raw is dropped to avoid doubling tokens.
+    // markdown 已承载内容 → 丢弃 raw 以避免 token 翻倍。
     expect(out.raw).toBe("");
     expect(out.truncated).toBe(false);
   });

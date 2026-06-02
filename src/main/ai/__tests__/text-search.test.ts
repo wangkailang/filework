@@ -46,7 +46,7 @@ describe("searchText", () => {
 
   it("preserves original order of matched chunks", () => {
     const hit = searchText(doc, "apples Bananas", { chunkChars: 80 });
-    // chunk 1 (apples) should come before chunk 3 (bananas) in output
+    // 输出中 chunk 1(apples)应排在 chunk 3(bananas)之前
     const a = hit.markdown.indexOf("apples");
     const b = hit.markdown.indexOf("Bananas");
     expect(a).toBeGreaterThanOrEqual(0);

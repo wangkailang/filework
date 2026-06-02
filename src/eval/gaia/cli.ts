@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * `pnpm gaia-eval` entry point.
+ * `pnpm gaia-eval` 入口点。
  *
- * Plain-Node CLI — runs `tsx src/eval/gaia/cli.ts`. Argument parsing
- * uses `util.parseArgs` (stable since Node 18) so we don't add a CLI
- * library.
+ * 纯 Node CLI——运行 `tsx src/eval/gaia/cli.ts`。参数解析
+ * 使用 `util.parseArgs`(自 Node 18 起稳定),因此不引入 CLI
+ * 库。
  *
- * Exit codes:
- *   0 — completed (including all-fail runs); summary written.
- *   1 — config error (missing required arg, bad dataset path, etc.).
- *   2 — runtime error during the run (re-thrown after summary attempt).
+ * 退出码:
+ *   0 — 已完成(包括全部失败的运行);已写入摘要。
+ *   1 — 配置错误(缺少必需参数、数据集路径错误等)。
+ *   2 — 运行过程中的运行时错误(在尝试写入摘要后重新抛出)。
  */
 
 import path from "node:path";
@@ -28,8 +28,8 @@ interface ParsedFlags {
   model: string;
   baseUrl?: string;
   /**
-   * `number` → pass to streamText / verifier; `null` → omit the
-   * parameter (OpenAI reasoning models). Default is `0` (deterministic).
+   * `number` → 传给 streamText / verifier;`null` → 省略该
+   * 参数(OpenAI 推理模型)。默认值为 `0`(确定性)。
    */
   temperature: number | null;
   smoke: boolean;
@@ -127,8 +127,8 @@ const parseFlags = (argv: string[]): ParsedFlags | string => {
     (v["api-key"] as string | undefined) ?? process.env.GAIA_EVAL_API_KEY;
   if (!apiKey) return "--api-key (or env GAIA_EVAL_API_KEY) is required";
 
-  // Temperature: numeric strings → number; "none" / "default" / "off" → null
-  // (omit the parameter — needed for OpenAI reasoning models).
+  // 温度:数字字符串 → number;"none" / "default" / "off" → null
+  //(省略该参数——OpenAI 推理模型需要如此)。
   const tempArg = String(v.temperature ?? "0")
     .trim()
     .toLowerCase();

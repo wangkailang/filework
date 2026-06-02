@@ -1,11 +1,10 @@
 /**
- * Shared on-disk layout + download helper for generated media.
+ * 生成媒体的磁盘布局与下载辅助方法(共享)。
  *
- * Phase 2 image and Phase 3 video both produce files under
- * `~/.filework/generated/{sessionId}/{timestamp}-{shortId}.{ext}` after
- * downloading a short-lived CDN URL returned by the upstream provider.
- * Two callers were doing the same dance, including a private `tsSlug()`
- * each — consolidate here so adding a new modality is a single import.
+ * 第二阶段图像和第三阶段视频在下载上游提供方返回的短时效 CDN URL 后,
+ * 都会把文件写入 `~/.filework/generated/{sessionId}/{timestamp}-{shortId}.{ext}`。
+ * 两个调用方此前各自重复同样的逻辑,且都内置了一份私有的 `tsSlug()`——
+ * 在此统一收敛,使新增一种媒体形态只需一次 import。
  */
 
 import crypto from "node:crypto";
@@ -16,13 +15,13 @@ import { extname, join } from "node:path";
 const GENERATED_ROOT = join(homedir(), ".filework", "generated");
 const ATTACHMENTS_ROOT = join(homedir(), ".filework", "attachments");
 
-/** Public for path-validation in protocol handlers. */
+/** 导出供协议处理器做路径校验使用。 */
 export const generatedRoot = (): string => GENERATED_ROOT;
 
-/** Public for path-validation in protocol handlers. */
+/** 导出供协议处理器做路径校验使用。 */
 export const attachmentsRoot = (): string => ATTACHMENTS_ROOT;
 
-/** Filesystem-safe ISO timestamp: `YYYYMMDDTHHMMSSZ`. */
+/** 文件系统安全的 ISO 时间戳:`YYYYMMDDTHHMMSSZ`。 */
 export const tsSlug = (): string =>
   new Date()
     .toISOString()
@@ -30,18 +29,18 @@ export const tsSlug = (): string =>
     .replace(/\.\d+Z$/, "Z");
 
 export interface SavedMedia {
-  /** Absolute path written. */
+  /** 写入的绝对路径。 */
   path: string;
-  /** 8-char random hex paired with the timestamp; safe for use as a React key. */
+  /** 与时间戳配对的 8 位随机十六进制串;可安全用作 React key。 */
   shortId: string;
 }
 
 /**
- * Download a media URL and persist it under
- * `~/.filework/generated/{sessionId}/{ts}-{shortId}.{ext}`.
+ * 下载一个媒体 URL 并持久化到
+ * `~/.filework/generated/{sessionId}/{ts}-{shortId}.{ext}`。
  *
- * Throws on HTTP error so the caller can surface it via the IPC error
- * channel. Uses the injected fetch so split-routing proxy rules apply.
+ * 遇到 HTTP 错误时抛出,以便调用方通过 IPC 错误通道上报。使用注入的 fetch,
+ * 从而让分流代理规则得以生效。
  */
 export const saveMediaToDisk = async (
   fetchFn: typeof fetch,
@@ -63,19 +62,18 @@ export const saveMediaToDisk = async (
 };
 
 export interface SavedAttachment {
-  /** Absolute path written under `~/.filework/attachments/{sessionId}/`. */
+  /** 写入到 `~/.filework/attachments/{sessionId}/` 下的绝对路径。 */
   path: string;
-  /** 8-char hex; doubles as React key. */
+  /** 8 位十六进制串;同时用作 React key。 */
   shortId: string;
 }
 
 /**
- * Copy a user-picked / dropped file into
- * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}`.
+ * 将用户选择 / 拖入的文件复制到
+ * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}`。
  *
- * Uses `fs.copyFile` rather than read→write so multi-megabyte PDFs don't
- * load into memory. Preserves the source extension so the renderer's
- * `local-file://` protocol handler can pick a MIME from the suffix.
+ * 使用 `fs.copyFile` 而非读取→写入,从而避免数兆字节的 PDF 被载入内存。
+ * 保留源文件扩展名,使渲染进程的 `local-file://` 协议处理器能根据后缀推断 MIME。
  */
 export const saveAttachmentToDisk = async (
   sourcePath: string,
@@ -91,20 +89,18 @@ export const saveAttachmentToDisk = async (
 };
 
 /**
- * Write a renderer-supplied byte buffer (clipboard paste, in-memory blob)
- * into the same attachments directory as `saveAttachmentToDisk`. Caller
- * picks the extension so the on-disk file matches the MIME the renderer
- * already classified — keeps `local-file://` MIME sniffing consistent.
+ * 将渲染进程提供的字节缓冲(剪贴板粘贴、内存中的 blob)写入与
+ * `saveAttachmentToDisk` 相同的附件目录。由调用方指定扩展名,使磁盘上的文件
+ * 与渲染进程已分类好的 MIME 保持一致——从而让 `local-file://` 的 MIME 嗅探保持一致。
  */
 export const saveBytesAttachmentToDisk = async (
   bytes: Uint8Array,
   sessionId: string,
   ext: string,
 ): Promise<SavedAttachment> => {
-  // Defense in depth: even though today's only caller (`chat:attachBlob`)
-  // sources ext from extFromMime's 11-entry whitelist + "bin", strip any
-  // non-alphanumerics + cap length so a future caller can't traverse via
-  // ext or produce an invalid filename ("png?v=1", "../evil", etc.).
+  // 纵深防御:尽管当前唯一的调用方(`chat:attachBlob`)的 ext 来自
+  // extFromMime 的 11 项白名单 + "bin",仍剥离所有非字母数字字符并限制长度,
+  // 防止未来的调用方借 ext 做路径穿越或生成非法文件名("png?v=1"、"../evil" 等)。
   const cleanExt =
     ext
       .toLowerCase()

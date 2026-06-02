@@ -1,8 +1,7 @@
 /**
- * moveFile preview generator. Validates that source/destination resolve
- * inside the workspace and surfaces the structural shape of the move:
- * does the source exist, is it a file or directory, and is the
- * destination occupied (overwrite risk).
+ * moveFile 预览生成器。校验 source/destination 解析后位于工作区内部,
+ * 并呈现此次移动的结构特征:source 是否存在、它是文件还是目录,
+ * 以及 destination 是否已被占用(覆盖风险)。
  */
 
 import path from "node:path";

@@ -1,29 +1,28 @@
 /**
- * Storage shape for chat message parts.
+ * 聊天消息 part 的存储形态。
  *
- * Hosted in `core/` so the JSONL session store, the future headless SDK,
- * and the renderer all read the same source of truth. Renderer modules
- * (chat/types.ts, ai-elements/confirmation.tsx, ai-elements/tool.tsx,
- * ai-elements/plan-viewer.tsx) re-export from here — no parallel
- * definitions to keep in sync.
+ * 放在 `core/` 中,以便 JSONL 会话存储、未来的无头 SDK
+ * 和渲染器都读取同一份真相来源。渲染器模块
+ * (chat/types.ts、ai-elements/confirmation.tsx、ai-elements/tool.tsx、
+ * ai-elements/plan-viewer.tsx)从这里再导出 —— 不存在需要
+ * 同步维护的平行定义。
  *
- * These are intentionally pure type definitions: no React, no DOM, no
- * Electron. The renderer's UI components live separately and consume
- * these shapes.
+ * 这些刻意是纯类型定义:不含 React、DOM、Electron。
+ * 渲染器的 UI 组件单独存放并消费这些形态。
  */
 
 import type { ToolPreview } from "../agent/preview/types";
 
 export type { ToolPreview } from "../agent/preview/types";
 
-// ─── Confirmation / Approval ────────────────────────────────────────
+// ─── 确认 / 审批 ────────────────────────────────────────────────────
 
 export type ApprovalState =
   | "approval-requested"
   | "approval-accepted"
   | "approval-rejected";
 
-// ─── Tool execution state ───────────────────────────────────────────
+// ─── 工具执行状态 ───────────────────────────────────────────────────
 
 export type ToolState =
   | "input-streaming"
@@ -37,10 +36,9 @@ export interface ToolApproval {
   description: string;
   state: ApprovalState;
   /**
-   * Structured preview of the pending change. Populated by the
-   * main-process preview generator during the approval phase. Not
-   * persisted to JSONL — stale on reload, so only kept in renderer
-   * memory. Renderer falls back to `description` when absent.
+   * 待执行变更的结构化预览。在审批阶段由主进程的预览
+   * 生成器填充。不持久化到 JSONL —— 重新加载后会过期,
+   * 因此仅保存在渲染器内存中。缺失时渲染器回退到 `description`。
    */
   preview?: ToolPreview;
 }
@@ -49,11 +47,11 @@ export interface BatchApprovalEntry {
   toolCallId: string;
   args: unknown;
   description: string;
-  /** See {@link ToolApproval.preview}. Not persisted. */
+  /** 参见 {@link ToolApproval.preview}。不持久化。 */
   preview?: ToolPreview;
 }
 
-// ─── Plan viewer (data shape — UI lives in plan-viewer.tsx) ─────────
+// ─── 计划查看器(数据形态 —— UI 位于 plan-viewer.tsx) ─────────────
 
 export interface PlanSubStepView {
   label: string;
@@ -79,12 +77,11 @@ export interface PlanStepView {
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   error?: string;
   /**
-   * Accumulated reasoning text emitted while this step was the active
-   * `running` step. Populated by `useStreamSubscription` from
-   * `ai:stream-reasoning` deltas — when a delta arrives and a plan step
-   * is currently `running`, the delta is appended here instead of being
-   * surfaced as a top-level `ReasoningPart`. Persisted to JSONL so the
-   * thinking trace stays attached to the step it produced.
+   * 在该步骤处于活跃 `running` 状态期间累积的推理文本。
+   * 由 `useStreamSubscription` 从 `ai:stream-reasoning` 的增量中
+   * 填充 —— 当增量到达且某个计划步骤当前正在 `running` 时,
+   * 该增量被追加到这里,而不是作为顶层的 `ReasoningPart` 呈现。
+   * 持久化到 JSONL,以便思考轨迹始终附着在它所产生的那个步骤上。
    */
   reasoning?: string;
 }
@@ -102,11 +99,11 @@ export interface PlanView {
     | "cancelled";
 }
 
-// ─── Recovery actions surfaced on errors ────────────────────────────
+// ─── 错误时呈现的恢复操作 ──────────────────────────────────────────
 
 export type RecoveryAction = "retry" | "settings" | "new_chat";
 
-// ─── MessagePart variants ───────────────────────────────────────────
+// ─── MessagePart 变体 ───────────────────────────────────────────────
 
 export interface TextPart {
   type: "text";
@@ -114,15 +111,15 @@ export interface TextPart {
 }
 
 /**
- * Hidden reasoning / extended thinking from reasoning-capable models
- * (OpenAI o-series, DeepSeek-Reasoner, Claude extended thinking). Rendered
- * as a collapsible block above the assistant text. Persisted to JSONL so
- * the user can re-open the chat and inspect the model's reasoning.
+ * 来自具备推理能力的模型(OpenAI o 系列、DeepSeek-Reasoner、
+ * Claude 扩展思考)的隐藏推理 / 扩展思考。渲染为助手文本
+ * 上方的可折叠块。持久化到 JSONL,以便用户可以重新打开
+ * 对话并查看模型的推理过程。
  */
 export interface ReasoningPart {
   type: "reasoning";
   text: string;
-  /** True once `reasoning_end` fires — UI uses this to stop the spinner. */
+  /** `reasoning_end` 触发后即为 true —— UI 据此停止加载动画。 */
   done?: boolean;
 }
 
@@ -135,9 +132,9 @@ export interface ToolPart {
   state: ToolState;
   approval?: ToolApproval;
   /**
-   * Pre-execution preview captured by the approval batcher and threaded
-   * through `ai:stream-tool-call`. Renderer presenters prefer this over
-   * re-reading the (now overwritten) pre-image. Not persisted to JSONL.
+   * 由审批批处理器捕获、并经 `ai:stream-tool-call` 串联传递的
+   * 执行前预览。渲染器的呈现器优先使用它,而非重新读取
+   * (此刻已被覆盖的)前镜像。不持久化到 JSONL。
    */
   previewSnapshot?: ToolPreview;
 }
@@ -168,116 +165,114 @@ export interface ClarificationPart {
   question: string;
   options?: string[];
   /**
-   * Task id this clarification was emitted for. Kept for diagnostics
-   * and (legacy) renderer logic; routing now goes by clarificationId.
+   * 该澄清所针对的任务 id。保留用于诊断
+   * 以及(遗留的)渲染器逻辑;路由现在改用 clarificationId。
    */
   taskId?: string;
   /**
-   * Per-call UUID generated by `askClarificationTool`. Renderer routes
-   * the user's reply back to the suspended tool via
-   * `window.filework.answerClarification({ clarificationId, answer })`.
-   * Optional for back-compat with parts persisted before this field
-   * existed — when absent or stale (e.g. the task is gone after a
-   * restart), the IPC returns `{ok:false}` and the renderer falls back
-   * to treating the pick as a fresh chat turn.
+   * 由 `askClarificationTool` 为每次调用生成的 UUID。渲染器经由
+   * `window.filework.answerClarification({ clarificationId, answer })`
+   * 将用户的回复路由回挂起的工具。
+   * 设为可选以兼容此字段出现之前持久化的 part —— 当其缺失
+   * 或已过期(例如重启后任务已不存在)时,IPC 返回
+   * `{ok:false}`,渲染器回退为把这次选择当作一次新的对话轮次处理。
    */
   clarificationId?: string;
   /**
-   * The option the user picked. Set once the user clicks a button so
-   * the card can re-render in answered state across re-mounts /
-   * session reload. Mutually exclusive with the still-pending UI.
+   * 用户选中的选项。用户点击按钮后即设置,以便卡片
+   * 在重新挂载 / 会话重载时能以已回答状态重新渲染。
+   * 与仍处于待回答的 UI 互斥。
    */
   answeredOption?: string;
 }
 
 /**
- * Inline generated image. Written by `media-handlers.ts` after a
- * MiniMax image_generation call succeeds; rendered via `MediaImageCard`
- * using the `local-file://` custom protocol.
+ * 内联生成的图片。在一次 MiniMax image_generation 调用成功后
+ * 由 `media-handlers.ts` 写入;通过 `MediaImageCard` 使用
+ * `local-file://` 自定义协议渲染。
  *
- * Persisted to the JSONL session store so the image survives reloads.
- * The file at `path` lives under `~/.filework/generated/{sessionId}/`.
+ * 持久化到 JSONL 会话存储,以便图片在重载后依然存在。
+ * `path` 指向的文件位于 `~/.filework/generated/{sessionId}/` 下。
  */
 export interface ImagePart {
   type: "image";
-  /** Absolute filesystem path to the saved image. */
+  /** 已保存图片的绝对文件系统路径。 */
   path: string;
-  /** Original user prompt — shown under the image. */
+  /** 原始用户提示词 —— 显示在图片下方。 */
   prompt: string;
-  /** LLM config id that produced this — supports re-generate later. */
+  /** 生成它的 LLM 配置 id —— 支持稍后重新生成。 */
   configId: string;
-  /** Short hex id from the generation call; useful as a React key. */
+  /** 来自生成调用的短十六进制 id;适合用作 React key。 */
   imageId: string;
-  /** Model identifier (e.g. "image-01"). Optional for back-compat. */
+  /** 模型标识符(例如 "image-01")。设为可选以向后兼容。 */
   modelId?: string;
 }
 
 /**
- * Image gallery surfaced by web tools. Emitted by the renderer side of
- * the stream subscription when `webSearch` (with `includeImages`) or
- * `webFetch` returns a non-empty `images` array — appended as a sibling
- * part right after the corresponding `tool` part so the user sees a
- * clickable thumbnail grid instead of a wall of image URLs.
+ * 由 web 工具呈现的图片画廊。当 `webSearch`(带 `includeImages`)
+ * 或 `webFetch` 返回非空 `images` 数组时,由流式订阅的渲染器侧
+ * 发出 —— 作为同级 part 紧跟在对应的 `tool` part 之后追加,
+ * 这样用户看到的是一个可点击的缩略图网格,而不是一堆图片 URL。
  *
- * Distinct from `ImagePart` (single MiniMax-generated image saved to
- * disk under `~/.filework/generated/`): gallery images are *remote URLs*
- * with no local copy, and may load slowly / fail. The renderer must
- * tolerate `onError` per-image without breaking the card.
+ * 区别于 `ImagePart`(单张 MiniMax 生成、保存在
+ * `~/.filework/generated/` 下的本地图片):画廊图片是 *远程 URL*,
+ * 没有本地副本,可能加载缓慢 / 失败。渲染器必须能逐张
+ * 容忍 `onError` 而不破坏整张卡片。
  */
 export interface ImageGalleryPart {
   type: "image-gallery";
-  /** Which tool produced the images — drives the card title. */
+  /** 哪个工具产出了这些图片 —— 决定卡片标题。 */
   source: "web-search" | "web-fetch" | "other";
-  /** Query / URL that triggered the call, shown in the card header. */
+  /** 触发该调用的查询 / URL,显示在卡片头部。 */
   context?: string;
   images: Array<{
-    /** Absolute http(s) image URL. */
+    /** 绝对的 http(s) 图片 URL。 */
     url: string;
-    /** Optional click-through (page the image was found on). */
+    /** 可选的点击跳转(发现该图片所在的页面)。 */
     sourceUrl?: string;
-    /** Optional caption (Tavily description or img alt). */
+    /** 可选的说明文字(Tavily 描述或 img alt)。 */
     description?: string;
   }>;
 }
 
 /**
- * Embeddable videos surfaced by web tools. Counterpart to
- * `ImageGalleryPart`: when `webFetch` returns a non-empty `videos`
- * array (YouTube/Vimeo/Bilibili iframes, <video> elements, og:video),
- * the renderer appends one of these so the user gets thumbnail-and-play
- * cards instead of a wall of embed URLs.
+ * 由 web 工具呈现的可嵌入视频。对应于
+ * `ImageGalleryPart`:当 `webFetch` 返回非空 `videos`
+ * 数组(YouTube/Vimeo/Bilibili 的 iframe、<video> 元素、og:video)时,
+ * 渲染器追加一个这样的 part,使用户得到缩略图加播放
+ * 的卡片,而不是一堆嵌入 URL。
  *
- * Click-to-load: thumbnails render first, the iframe / <video> only
- * mounts after the user clicks, keeping the page light and respecting
- * privacy for YouTube embeds.
+ * 点击加载:先渲染缩略图,iframe / <video> 仅在
+ * 用户点击后才挂载,以保持页面轻量,并对 YouTube 嵌入
+ * 尊重隐私。
  */
 export interface VideoGalleryPart {
   type: "video-gallery";
   source: "web-fetch" | "other";
-  /** URL / context that triggered the call (for the card header). */
+  /** 触发该调用的 URL / 上下文(用于卡片头部)。 */
   context?: string;
   videos: Array<{
     url: string;
-    /** youtube / vimeo / bilibili / twitter / other / undefined for direct <video>. */
+    /** youtube / vimeo / bilibili / twitter / other / 直接 <video> 时为 undefined。 */
     provider?: string;
-    /** Optional poster image (from <video poster=> or YouTube oEmbed-style hint). */
+    /** 可选的封面图(来自 <video poster=> 或 YouTube oEmbed 风格的提示)。 */
     poster?: string;
-    /** Optional iframe title. */
+    /** 可选的 iframe 标题。 */
     title?: string;
-    /** Page the video was found on — click-through chip. */
+    /** 发现该视频所在的页面 —— 点击跳转的小标签。 */
     sourceUrl?: string;
   }>;
 }
 
 /**
- * Lightweight article-meta strip rendered above the gallery parts.
- * Composed from `webFetch` / `webFetchRendered` / `webScrape` results
- * when the page had at least one of byline / siteName / publishedTime.
- * Visual: favicon · siteName · • · byline · • · publishedTime.
+ * 渲染在画廊 part 上方的轻量文章元信息条。
+ * 当页面至少具备 byline / siteName / publishedTime 之一时,
+ * 由 `webFetch` / `webFetchRendered` / `webScrape` 的结果组合而成。
+ * 外观:favicon · siteName · • · byline · • · publishedTime。
  */
 export interface ArticleMetaPart {
   type: "article-meta";
-  /** Click-through URL for the whole chip. */
+  /** 整个小标签的点击跳转 URL。 */
   pageUrl?: string;
   meta: {
     byline?: string;
@@ -289,21 +284,21 @@ export interface ArticleMetaPart {
 }
 
 /**
- * In-flight or completed video-generation job. Phase 3 — MiniMax videos
- * take 1–5 minutes, so the main process runs a watcher that updates this
- * part's `status` / `progressPct` / `resultPath` via the
- * `ai:media-job-update` IPC event.
+ * 进行中或已完成的视频生成任务。第 3 阶段 —— MiniMax 视频
+ * 需要 1–5 分钟,因此主进程运行一个 watcher,经由
+ * `ai:media-job-update` IPC 事件更新该 part 的
+ * `status` / `progressPct` / `resultPath`。
  *
- * Persisted to JSONL like other parts, so a renderer reload still shows
- * the latest known state. The watcher writes to the DB even when the
- * renderer is gone; on next load the renderer re-subscribes by `jobId`.
+ * 与其他 part 一样持久化到 JSONL,因此渲染器重载后仍能显示
+ * 最新已知状态。即便渲染器已不在,watcher 仍会写入 DB;
+ * 下次加载时渲染器按 `jobId` 重新订阅。
  */
 export interface VideoJobPart {
   type: "video-job";
   jobId: string;
   status: "queued" | "running" | "succeeded" | "failed" | "canceled";
   progressPct?: number | null;
-  /** Absolute filesystem path once the video is downloaded. */
+  /** 视频下载完成后的绝对文件系统路径。 */
   resultPath?: string | null;
   errorMessage?: string | null;
   prompt: string;
@@ -312,42 +307,42 @@ export interface VideoJobPart {
 }
 
 /**
- * User-attached file (image / pdf / text). Created by `chat:attachFile`
- * after the renderer drops or picks a file: the source is copied into
- * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}` so the
- * attachment survives across app restarts and JSONL stays small (path +
- * metadata only).
+ * 用户附加的文件(image / pdf / text)。在渲染器拖入或选取文件后
+ * 由 `chat:attachFile` 创建:源文件被复制到
+ * `~/.filework/attachments/{sessionId}/{ts}-{shortId}.{ext}`,
+ * 使附件在应用重启后依然存在,且 JSONL 保持精简(仅路径 +
+ * 元数据)。
  *
- * Distinct from `ImagePart` (which is a *generated* image): this part
- * lives on user messages, drives composer-side chips, and the message
- * converter walks `parts` to build the user-message content array sent
- * to the LLM.
+ * 区别于 `ImagePart`(它是 *生成的* 图片):该 part
+ * 挂在用户消息上,驱动编辑器侧的小标签,且消息
+ * 转换器会遍历 `parts` 来构建发送给 LLM 的用户消息
+ * 内容数组。
  *
- * `kind` is the coarse routing flag used by both renderer (icon vs.
- * thumbnail) and converter (image content / file content / inline text).
+ * `kind` 是粗粒度的路由标志,供渲染器(图标 vs.
+ * 缩略图)和转换器(image content / file content / 内联文本)共同使用。
  */
 export type AttachmentKind = "image" | "pdf" | "text";
 
 export interface AttachmentPart {
   type: "attachment";
-  /** Absolute path under `~/.filework/attachments/{sessionId}/`. */
+  /** 位于 `~/.filework/attachments/{sessionId}/` 下的绝对路径。 */
   path: string;
-  /** Original filename shown in the chip. */
+  /** 在小标签中显示的原始文件名。 */
   name: string;
-  /** MIME sniffed from the extension at attach time. */
+  /** 附加时从扩展名嗅探得到的 MIME。 */
   mimeType: string;
-  /** Bytes, captured at attach time. */
+  /** 字节数,在附加时捕获。 */
   size: number;
-  /** Routing flag — image / pdf / text. */
+  /** 路由标志 —— image / pdf / text。 */
   kind: AttachmentKind;
-  /** 8-char hex paired with the timestamp; safe React key. */
+  /** 与时间戳配对的 8 字符十六进制;可安全用作 React key。 */
   attachmentId: string;
 }
 
 /**
- * Batched destructive-tool approval card. Emitted when the LLM fires N
- * concurrent destructive calls in one turn and the main process coalesces
- * them via `approval-batcher`. One card → one click for all entries.
+ * 批量 destructive 工具审批卡片。当 LLM 在一个轮次内发起 N 个
+ * 并发 destructive 调用、且主进程通过 `approval-batcher` 将其
+ * 合并时发出。一张卡片 → 一次点击即可处理所有条目。
  */
 export interface BatchApprovalPart {
   type: "batch-approval";
@@ -358,38 +353,38 @@ export interface BatchApprovalPart {
 }
 
 /**
- * Machine-generated deliverable for one assistant turn. Appended by the
- * renderer's stream subscription when a turn finalizes (right before the
- * UsagePart), aggregated purely from the turn's own tool parts — so the
- * file counts and command outcomes are *facts* the model cannot misstate.
+ * 单个助手轮次的机器生成交付物。在一个轮次终结时(紧挨在
+ * UsagePart 之前)由渲染器的流式订阅追加,完全从该轮次自身的
+ * 工具 part 聚合而来 —— 因此文件计数和命令结果都是模型无法
+ * 篡改的 *事实*。
  *
- * Distinct from the per-tool cards (the narrative of *how* the work was
- * done): this is the *what got done* surface — a Codex-style changelist
- * the user can scan and click into the diff dock. Persisted to JSONL so
- * reopening the session still shows the deliverable.
+ * 区别于逐工具卡片(关于工作是 *如何* 完成的叙述):这是
+ * *做了什么* 的呈现面 —— 一份 Codex 风格的变更清单,用户
+ * 可以扫读并点击进入 diff dock。持久化到 JSONL,以便
+ * 重新打开会话时仍能显示该交付物。
  *
- * Omitted entirely for pure Q&A turns (no files touched, no commands run).
+ * 对纯问答轮次(未触碰文件、未运行命令)则完全省略。
  */
 export interface TurnSummaryFile {
-  /** Workspace-relative or absolute path as the tool reported it. */
+  /** 工具上报的工作区相对路径或绝对路径。 */
   path: string;
   op: "create" | "modify" | "delete";
-  /** Net added lines across all writes to this path this turn. */
+  /** 本轮次对该路径所有写入的净新增行数。 */
   added: number;
-  /** Net removed lines across all writes to this path this turn. */
+  /** 本轮次对该路径所有写入的净删除行数。 */
   removed: number;
-  /** How many write calls hit this path — UI shows ⟳ N when > 1. */
+  /** 有多少次写入调用命中该路径 —— 当 > 1 时 UI 显示 ⟳ N。 */
   writeCount: number;
-  /** Diff stat was unavailable/unreliable (binary, too large, errored). */
+  /** diff 统计不可用/不可靠(二进制、过大、出错)。 */
   unknownStat?: boolean;
 }
 
 export interface TurnSummaryCommand {
   command: string;
-  /** Process exit code; null when interrupted or unknown. */
+  /** 进程退出码;被中断或未知时为 null。 */
   exitCode: number | null;
   kind: "test" | "build" | "generic";
-  /** Present only for test-kind commands whose output parsed cleanly. */
+  /** 仅当 test 类命令的输出被成功解析时才存在。 */
   testStats?: { passed: number; failed: number };
 }
 

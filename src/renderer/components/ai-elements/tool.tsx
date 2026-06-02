@@ -20,8 +20,8 @@ import {
 import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
-// Types — re-exported from the shared core types so the JSONL session store
-// and the renderer agree on a single source of truth.
+// 类型 —— 从共享的核心类型重新导出,使 JSONL 会话存储与渲染层
+// 共用同一份事实来源。
 // ---------------------------------------------------------------------------
 
 export type { ToolState } from "../../../main/core/session/message-parts";
@@ -32,7 +32,7 @@ export type { ToolState } from "../../../main/core/session/message-parts";
 
 interface ToolProps extends HTMLAttributes<HTMLDivElement> {
   defaultOpen?: boolean;
-  /** When true, forces the tool open (overrides internal state) */
+  /** 为 true 时强制展开该工具(覆盖内部状态) */
   forceOpen?: boolean;
 }
 
@@ -70,7 +70,7 @@ export const Tool = ({
 interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   toolName: string;
   state: ToolState;
-  /** Optional one-line summary rendered after the tool name (e.g. "src/index.ts · 142 lines") */
+  /** 可选的单行摘要,渲染在工具名称之后(例如 "src/index.ts · 142 lines") */
   summary?: ReactNode;
 }
 
@@ -170,7 +170,7 @@ export const ToolContent = ({
 );
 
 // ---------------------------------------------------------------------------
-// Input (tool arguments)
+// Input(工具参数)
 // ---------------------------------------------------------------------------
 
 interface ToolInputProps extends HTMLAttributes<HTMLDivElement> {
@@ -200,7 +200,7 @@ export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
 };
 
 // ---------------------------------------------------------------------------
-// Output (tool result)
+// Output(工具结果)
 // ---------------------------------------------------------------------------
 
 interface ToolOutputProps extends HTMLAttributes<HTMLDivElement> {

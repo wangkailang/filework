@@ -82,9 +82,9 @@ describe("ensureClone (GitLab)", () => {
 
     expect(result).toBe(expectedDir);
     const cloneCall = calls.find((c) => c.args[0] === "clone");
-    // New layout: partial clone (no --depth, no --single-branch). The
-    // branch is still pinned via --branch so the initial checkout
-    // matches ref.ref; subsequent switches go through SCM.checkoutBranch.
+    // 新布局:部分克隆(无 --depth、无 --single-branch)。仍通过
+    // --branch 固定分支,使初始检出匹配 ref.ref;后续切换走
+    // SCM.checkoutBranch。
     expect(cloneCall?.args).toContain("--filter=blob:none");
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
@@ -128,8 +128,8 @@ describe("ensureClone (GitLab)", () => {
     const subs = calls.map((c) => c.args[0]);
     expect(subs).toContain("remote");
     expect(subs).toContain("fetch");
-    // No more reset --hard — the working tree may carry session-branch
-    // commits we must not clobber on refresh.
+    // 不再 reset --hard —— 工作树可能携带会话分支的提交,刷新时
+    // 不能将其覆盖。
     expect(subs).not.toContain("reset");
   });
 
@@ -202,10 +202,10 @@ describe("GitLabWorkspace.create", () => {
   });
 
   it("normalizes a persisted https://-prefixed host (replayed pre-fix ref)", async () => {
-    // Simulates a workspace ref persisted before the host-normalize fix
-    // landed: `host` was the literal `https://gitlab.example.com/` from
-    // the modal's text input. The factory replays it via .create() and
-    // we must heal it before building clone dir / remote URL.
+    // 模拟在 host 归一化修复落地之前持久化的工作区 ref:`host` 是
+    // 来自弹窗文本输入框的字面值 `https://gitlab.example.com/`。工厂
+    // 通过 .create() 重放它,我们必须在构建克隆目录 / 远程 URL 前
+    // 将其修正。
     const dirtyRef: GitLabRef = {
       ...fakeRef,
       host: "https://gitlab.example.com/",

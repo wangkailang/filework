@@ -1,42 +1,42 @@
 /**
- * Wire the main process up to whatever HTTP proxy the user already trusts.
+ * 将主进程接入用户已信任的 HTTP 代理。
  *
- * Electron's renderer reads the OS proxy automatically; the main process
- * Node.js `fetch` (undici-backed) does not. On macOS, double-clicked apps
- * also don't inherit the shell's `HTTPS_PROXY` env. Net result: every
- * provider handler that uses `fetch` (github / gitlab) and every
- * `spawn('git', ...)` clone bypasses the user's proxy and fails on hosts
- * that only resolve via the proxy.
+ * Electron 的渲染进程会自动读取操作系统代理;但主进程的
+ * Node.js `fetch`(基于 undici)不会。在 macOS 上,双击启动的应用
+ * 也不会继承 shell 的 `HTTPS_PROXY` 环境变量。最终结果:每个
+ * 使用 `fetch` 的 provider 处理器(github / gitlab)以及每个
+ * `spawn('git', ...)` 克隆操作都会绕过用户的代理,在只能经由代理
+ * 解析的主机上失败。
  *
- * This module probes for a proxy at startup, seeds `process.env` so spawned
- * git children inherit it, and installs an `EnvHttpProxyAgent` as the
- * undici global dispatcher so all `fetch()` calls re-read the env on each
- * request (which also gives us NO_PROXY support for free).
+ * 本模块在启动时探测代理,写入 `process.env` 以便派生的 git 子进程
+ * 继承,并将 `EnvHttpProxyAgent` 安装为 undici 的全局 dispatcher,
+ * 使所有 `fetch()` 调用在每次请求时重新读取环境变量(也顺带免费
+ * 获得 NO_PROXY 支持)。
  */
 
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 
 export interface ProxyBootstrapDeps {
   /**
-   * Chromium-style proxy resolver. In production this is
-   * `session.defaultSession.resolveProxy.bind(session.defaultSession)`.
-   * Returns strings like `"DIRECT"`, `"PROXY 127.0.0.1:7890"`, or
-   * `"SOCKS5 127.0.0.1:7891; DIRECT"`.
+   * Chromium 风格的代理解析器。生产环境中即
+   * `session.defaultSession.resolveProxy.bind(session.defaultSession)`。
+   * 返回形如 `"DIRECT"`、`"PROXY 127.0.0.1:7890"` 或
+   * `"SOCKS5 127.0.0.1:7891; DIRECT"` 的字符串。
    */
   resolveProxy: (url: string) => Promise<string>;
-  /** Defaults to `process.env`. Mutated in place when a proxy is found. */
+  /** 默认为 `process.env`。找到代理时原地修改。 */
   env?: NodeJS.ProcessEnv;
   /**
-   * Defaults to undici's `setGlobalDispatcher`. Injected for tests so we
-   * don't actually flip the global dispatcher under vitest.
+   * 默认为 undici 的 `setGlobalDispatcher`。用于测试注入,使我们在
+   * vitest 下不会真正切换全局 dispatcher。
    */
   setDispatcher?: (agent: EnvHttpProxyAgent) => void;
-  /** Defaults to `console.log` with a `[proxy]` prefix. */
+  /** 默认为带 `[proxy]` 前缀的 `console.log`。 */
   log?: (msg: string) => void;
   /**
-   * URL used for the system-proxy probe. Defaults to a github URL because
-   * (a) it's representative of what we'll actually fetch and (b) most
-   * proxy rule sets won't carve out a special path for it.
+   * 用于系统代理探测的 URL。默认使用 github URL,因为
+   * (a) 它能代表我们实际会请求的内容,且 (b) 大多数代理规则集
+   * 不会为它单独开辟特殊路径。
    */
   probeUrl?: string;
 }
@@ -55,14 +55,14 @@ const hasEnvProxy = (env: NodeJS.ProcessEnv): boolean =>
   );
 
 /**
- * Parse Chromium's PAC-style output. Picks the first PROXY entry — SOCKS
- * is currently unsupported (undici doesn't speak it natively).
+ * 解析 Chromium 的 PAC 风格输出。选取第一个 PROXY 条目 —— 当前
+ * 不支持 SOCKS(undici 原生不支持它)。
  *
- * Examples:
+ * 示例:
  *   "DIRECT"                            -> null
  *   "PROXY 127.0.0.1:7890"              -> "http://127.0.0.1:7890"
  *   "PROXY 127.0.0.1:7890; DIRECT"      -> "http://127.0.0.1:7890"
- *   "SOCKS5 127.0.0.1:7891; DIRECT"     -> null (unsupported)
+ *   "SOCKS5 127.0.0.1:7891; DIRECT"     -> null (不支持)
  */
 export const parseChromeProxyList = (raw: string): string | null => {
   for (const entry of raw.split(";").map((s) => s.trim())) {
@@ -81,8 +81,8 @@ export const bootstrapProxy = async (
   const apply = deps.setDispatcher ?? setGlobalDispatcher;
   const probeUrl = deps.probeUrl ?? DEFAULT_PROBE_URL;
 
-  // Always install EnvHttpProxyAgent — it's a no-op when env has no proxy
-  // vars, and it lets us seed env below without re-wiring fetch.
+  // 始终安装 EnvHttpProxyAgent —— 当环境变量中没有代理变量时它是空操作,
+  // 且能让我们在下面写入环境变量而无需重新接线 fetch。
   apply(new EnvHttpProxyAgent());
 
   if (hasEnvProxy(env)) {

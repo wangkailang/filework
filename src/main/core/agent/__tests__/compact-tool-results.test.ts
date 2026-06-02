@@ -44,7 +44,7 @@ describe("compactToolResults", () => {
 
     expect(oldOut.length).toBeLessThan(big.length);
     expect(oldOut).toContain("elided to save context");
-    expect(newOut).toBe(big); // latest tool result untouched
+    expect(newOut).toBe(big); // 最新的工具结果保持不变
   });
 
   it("leaves small older results unchanged (returns null)", () => {

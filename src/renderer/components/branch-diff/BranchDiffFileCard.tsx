@@ -22,7 +22,7 @@ import { DiffHunkView } from "../ai-elements/preview/DiffHunkView";
 interface BranchDiffFileCardProps {
   file: GitFileDiff;
   LL: TranslationFunctions;
-  /** Default-open at mount. */
+  /** 挂载时默认展开。 */
   defaultOpen?: boolean;
 }
 

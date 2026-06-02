@@ -1,6 +1,6 @@
-// SubAgentContract = structured input for Lead → Sub delegation
-// (goal/input/output/termination). SubAgentReport = structured return
-// the Lead consumes as a tool-result on its next turn.
+// SubAgentContract = Lead → Sub 委派的结构化输入
+// (goal/input/output/termination)。SubAgentReport = 结构化返回值,
+// Lead 在下一回合将其作为 tool-result 消费。
 
 import type { ModelMessage } from "ai";
 import type { z } from "zod/v4";
@@ -10,35 +10,35 @@ import type { TokenUsage } from "./events";
 export type SubAgentOutputFormat = "summary" | "json" | "patch" | "answer";
 
 export interface SubAgentContract {
-  /** Single-sentence statement of what this sub-agent must accomplish. */
+  /** 用一句话陈述该 sub-agent 必须完成的目标。 */
   goal: string;
 
-  /** Everything the sub needs to start. */
+  /** sub-agent 启动所需的一切。 */
   input: {
-    /** User-facing prompt fed into the sub-agent's first turn. */
+    /** 喂入 sub-agent 首个回合、面向用户的 prompt。 */
     prompt: string;
-    /** Files the sub can analyse. Provider-cap negotiation happens downstream. */
+    /** sub 可分析的文件。Provider 上限协商在下游进行。 */
     attachments?: AttachmentHistoryEntry[];
-    /** Explicit slice of the Lead's history. Empty → fresh context. */
+    /** 从 Lead 历史中显式切出的片段。为空 → 全新上下文。 */
     contextSlice?: ModelMessage[];
   };
 
-  /** How the sub must shape its output. */
+  /** sub 必须如何组织其输出。 */
   output: {
     format: SubAgentOutputFormat;
-    /** Required when format = "json". Used in buildReport's safeParse step. */
+    /** format = "json" 时必填。用于 buildReport 的 safeParse 步骤。 */
     schema?: z.ZodType;
-    /** Compressed summary target. Default 1500. */
+    /** 压缩后摘要的目标长度。默认 1500。 */
     maxTokens?: number;
   };
 
-  /** Termination conditions. */
+  /** 终止条件。 */
   termination: {
-    /** Cap on agent-loop turns. Mapped to AgentLoop.maxStepsPerTurn. */
+    /** agent-loop 回合数上限。映射到 AgentLoop.maxStepsPerTurn。 */
     maxTurns?: number;
-    /** Wall-clock cap in ms. Default 120_000. */
+    /** 墙钟时间上限(毫秒)。默认 120_000。 */
     maxWallMs?: number;
-    /** If the assistant text contains any of these substrings, stop early. */
+    /** 若助手文本包含其中任一子串,则提前停止。 */
     stopOn?: string[];
   };
 }
@@ -48,14 +48,14 @@ export type SubAgentStatus = "ok" | "failed" | "cancelled" | "timeout";
 export interface SubAgentReport {
   agentId: string;
   status: SubAgentStatus;
-  /** Compressed natural-language summary. Always present. */
+  /** 压缩后的自然语言摘要。始终存在。 */
   summary: string;
-  /** Structured payload when format=json/patch. Validated against contract.output.schema. */
+  /** format=json/patch 时的结构化载荷。会针对 contract.output.schema 做校验。 */
   artifacts?: Record<string, unknown>;
   usage: TokenUsage;
   toolCallCount: number;
   durationMs: number;
-  /** Populated when status != "ok". */
+  /** 当 status != "ok" 时填充。 */
   error?: string;
 }
 
@@ -71,22 +71,21 @@ export interface BuildReportInput {
   usage: TokenUsage | undefined;
   toolCallCount: number;
   durationMs: number;
-  /** Already-extracted payload when format=json/patch. Source-specific. */
+  /** format=json/patch 时已提取的载荷。来源相关。 */
   candidateArtifacts?: Record<string, unknown>;
-  /** Pre-compressed summary when caller already invoked compressContext. */
+  /** 调用方已调用 compressContext 时预先压缩好的摘要。 */
   precomputedSummary?: string;
   error?: string;
 }
 
 /**
- * Materialise a `SubAgentReport` from a finished AgentLoop run.
+ * 从一次已结束的 AgentLoop 运行中物化出 `SubAgentReport`。
  *
- * The caller is responsible for invoking `compressContext` from
- * `src/main/ai/context-compressor.ts` ahead of time when the summary
- * would exceed `contract.output.maxTokens` — `precomputedSummary` is
- * how it gets back here. For format=json, this function validates
- * `candidateArtifacts` against the contract schema and downgrades to
- * status="failed" on a schema miss.
+ * 当摘要会超过 `contract.output.maxTokens` 时,调用方负责提前调用
+ * `src/main/ai/context-compressor.ts` 中的 `compressContext` ——
+ * `precomputedSummary` 正是其回传到这里的途径。对 format=json,
+ * 本函数会针对 contract schema 校验 `candidateArtifacts`,校验不通过
+ * 时降级为 status="failed"。
  */
 export function buildReport(input: BuildReportInput): SubAgentReport {
   const {
@@ -146,15 +145,15 @@ export function buildReport(input: BuildReportInput): SubAgentReport {
 }
 
 /**
- * Best-effort `candidateArtifacts` extractor for format=json. Walks the
- * assistant's final text for the last fenced ```json``` block or the
- * outermost JSON object literal. Returns undefined if no JSON could be
- * isolated — the caller flips to status=failed via buildReport.
+ * 面向 format=json 的尽力而为型 `candidateArtifacts` 提取器。在助手的
+ * 最终文本中查找最后一个 ```json``` 围栏块或最外层的 JSON 对象字面量。
+ * 若无法分离出任何 JSON 则返回 undefined —— 调用方会经由 buildReport
+ * 翻转为 status=failed。
  */
 export function extractJsonArtifacts(
   finalText: string,
 ): Record<string, unknown> | undefined {
-  // Prefer fenced ```json blocks — they survive prose around the answer.
+  // 优先使用 ```json 围栏块 —— 它们能在答案周围夹杂散文时依然可靠提取。
   const fenceMatch = finalText.match(/```json\s*([\s\S]*?)\s*```/i);
   const candidate = fenceMatch
     ? fenceMatch[1]

@@ -1,8 +1,8 @@
 /**
- * Parser module for SKILL.md files.
+ * SKILL.md 文件的解析器模块。
  *
- * Provides `parseSkillMd` to parse SKILL.md content (YAML frontmatter + Markdown body)
- * into a structured `ParsedSkill`, and `printSkillMd` to format it back.
+ * 提供 `parseSkillMd` 将 SKILL.md 内容(YAML frontmatter + Markdown 正文)
+ * 解析为结构化的 `ParsedSkill`,并提供 `printSkillMd` 将其格式化回原样。
  */
 
 import matter from "gray-matter";
@@ -10,15 +10,15 @@ import matter from "gray-matter";
 import type { ParsedSkill, SkillFrontmatter } from "./types";
 import { SkillParseError, SkillValidationError } from "./types";
 
-/** Regex for valid kebab-case name: lowercase alphanumeric segments separated by hyphens */
+/** 校验合法 kebab-case 名称的正则:用连字符分隔的小写字母数字段 */
 const KEBAB_CASE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/** Maximum allowed length for the `name` field */
+/** `name` 字段允许的最大长度 */
 const MAX_NAME_LENGTH = 64;
 
 /**
- * Pick only the recognised `SkillFrontmatter` fields from a raw object,
- * silently discarding anything unknown.
+ * 仅从原始对象中挑选已识别的 `SkillFrontmatter` 字段,
+ * 静默丢弃任何未知字段。
  */
 function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
   const fm: SkillFrontmatter = {};
@@ -88,17 +88,17 @@ function pickKnownFields(raw: Record<string, unknown>): SkillFrontmatter {
 }
 
 /**
- * Parse SKILL.md file content into a structured `ParsedSkill`.
+ * 将 SKILL.md 文件内容解析为结构化的 `ParsedSkill`。
  *
- * - Uses `gray-matter` to split YAML frontmatter from Markdown body.
- * - When no frontmatter is present the entire content becomes the body
- *   and frontmatter defaults to `{}`.
- * - Validates the `name` field (kebab-case, ≤ 64 chars).
- * - Unrecognised frontmatter fields are silently ignored.
- * - Empty content throws `SkillParseError`.
+ * - 使用 `gray-matter` 从 Markdown 正文中分离 YAML frontmatter。
+ * - 当不存在 frontmatter 时,整个内容作为正文,
+ *   frontmatter 默认为 `{}`。
+ * - 校验 `name` 字段(kebab-case,≤ 64 字符)。
+ * - 未识别的 frontmatter 字段会被静默忽略。
+ * - 空内容会抛出 `SkillParseError`。
  *
- * @throws {SkillParseError} when content is empty or YAML is malformed
- * @throws {SkillValidationError} when `name` fails validation
+ * @throws {SkillParseError} 当内容为空或 YAML 格式错误时
+ * @throws {SkillValidationError} 当 `name` 校验失败时
  */
 export function parseSkillMd(content: string, sourcePath: string): ParsedSkill {
   if (!content || content.trim().length === 0) {
@@ -113,12 +113,12 @@ export function parseSkillMd(content: string, sourcePath: string): ParsedSkill {
     throw new SkillParseError(sourcePath, `YAML parse error: ${message}`);
   }
 
-  // Extract only known fields from the raw frontmatter data
+  // 仅从原始 frontmatter 数据中提取已知字段
   const rawData = parsed.data as Record<string, unknown>;
   const hasAnyFrontmatter = Object.keys(rawData).length > 0;
   const frontmatter = hasAnyFrontmatter ? pickKnownFields(rawData) : {};
 
-  // Validate name field if present
+  // 如果存在 name 字段则进行校验
   if (frontmatter.name !== undefined) {
     if (!KEBAB_CASE_RE.test(frontmatter.name)) {
       throw new SkillValidationError(
@@ -144,13 +144,13 @@ export function parseSkillMd(content: string, sourcePath: string): ParsedSkill {
 }
 
 /**
- * Format a `ParsedSkill` back into SKILL.md file content.
+ * 将 `ParsedSkill` 格式化回 SKILL.md 文件内容。
  *
- * - If frontmatter has any fields, outputs a YAML frontmatter block
- *   (`---\n…\n---\n`) followed by the body.
- * - If frontmatter is an empty object, outputs just the body.
- * - Ensures roundtrip consistency: `parseSkillMd(printSkillMd(skill))`
- *   produces an equivalent result.
+ * - 若 frontmatter 含有任意字段,输出一个 YAML frontmatter 块
+ *   (`---\n…\n---\n`)后接正文。
+ * - 若 frontmatter 为空对象,则仅输出正文。
+ * - 确保往返一致性:`parseSkillMd(printSkillMd(skill))`
+ *   会产生等价的结果。
  */
 export function printSkillMd(skill: ParsedSkill): string {
   const hasFields = Object.keys(skill.frontmatter).length > 0;
@@ -159,6 +159,6 @@ export function printSkillMd(skill: ParsedSkill): string {
     return skill.body;
   }
 
-  // Use gray-matter's stringify to produce the YAML frontmatter block
+  // 使用 gray-matter 的 stringify 生成 YAML frontmatter 块
   return matter.stringify(skill.body, skill.frontmatter);
 }

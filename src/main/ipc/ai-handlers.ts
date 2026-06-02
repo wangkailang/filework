@@ -1,8 +1,8 @@
 /**
- * AI Handlers - Main IPC Handler Registration
+ * AI Handlers - 主 IPC Handler 注册
  *
- * Orchestrates AI-related IPC handlers and task execution.
- * This is the refactored, smaller main handler file.
+ * 编排 AI 相关的 IPC handler 与任务执行。
+ * 这是重构后更精简的主 handler 文件。
  */
 
 import crypto from "node:crypto";
@@ -90,11 +90,11 @@ import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
 import { registerWorkspaceMemoryHandlers } from "./workspace-memory-handlers";
 
-// buildSystemPrompt extracted to ./system-prompt.ts (M2 PR 2 — domain-neutral).
+// buildSystemPrompt 已抽取到 ./system-prompt.ts(M2 PR 2 —— 领域中立)。
 
 /**
- * Resolve a task payload's workspace ref. Backward compat: if the
- * renderer only sent `workspacePath` (legacy), treat it as a local ref.
+ * 解析任务 payload 的 workspace ref。向后兼容:若渲染层只发了
+ * `workspacePath`(遗留方式),则将其当作 local ref 处理。
  */
 const resolveWorkspaceRef = (payload: {
   workspaceRefJson?: string;
@@ -112,7 +112,7 @@ const resolveWorkspaceRef = (payload: {
 
 let workspaceFactoryDeps: WorkspaceFactoryDeps | null = null;
 
-/** Wire workspace factory deps once during main bootstrap. */
+/** 在主进程 bootstrap 期间一次性接入 workspace factory 依赖。 */
 export const setWorkspaceFactoryDeps = (deps: WorkspaceFactoryDeps): void => {
   workspaceFactoryDeps = deps;
 };
@@ -127,21 +127,20 @@ const requireWorkspaceFactoryDeps = (): WorkspaceFactoryDeps => {
 };
 
 /**
- * Main task execution handler
+ * 主任务执行 handler
  */
 const handleTaskExecutionInner = async (
   event: Electron.IpcMainInvokeEvent,
   payload: {
     prompt: string;
-    /** Encoded WorkspaceRef (preferred). Falls back to workspacePath. */
+    /** 编码后的 WorkspaceRef(优先)。回落到 workspacePath。 */
     workspaceRefJson?: string;
-    /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
+    /** 遗留:绝对路径。被当作 `{kind:"local", path}` 处理。 */
     workspacePath?: string;
     /**
-     * Chat session id. Used as the per-session scope for github
-     * auto-branching (`claude/<sessionId.slice(0,8)>`). When absent
-     * (skills, tests, ad-hoc invocations), the workspace falls back to
-     * a ref-derived stable scope.
+     * 聊天 session id。用作 github 自动分支
+     * (`claude/<sessionId.slice(0,8)>`)的按会话作用域。缺失时
+     * (skills、测试、临时调用),workspace 回落到由 ref 派生的稳定作用域。
      */
     sessionId?: string;
     /** 渲染层为本回合预生成的助手消息 id;登记进重连表,刷新后据此重挂。 */
@@ -151,9 +150,9 @@ const handleTaskExecutionInner = async (
   },
 ) => {
   const ref = resolveWorkspaceRef(payload);
-  // For sandbox + skill discovery we need a concrete on-disk path. For
-  // local refs that's just `ref.path`; for github it's the clone dir,
-  // which we won't know until we materialize the Workspace below.
+  // 沙箱 + skill 发现需要一个具体的磁盘路径。对 local ref 来说就是
+  // `ref.path`;对 github 来说是 clone 目录,要到下面把 Workspace
+  // 物化出来后才知道。
   const legacyWorkspacePath =
     ref.kind === "local" ? ref.path : (payload.workspacePath ?? "");
   const id = crypto.randomUUID();
@@ -202,9 +201,8 @@ const handleTaskExecutionInner = async (
       sender.send("ai:stream-start", { id });
     }
 
-    // setTaskWorkspace is called once we know the on-disk root. For
-    // local refs that's immediate; for GitHub refs we set it after the
-    // clone is materialized below.
+    // 一旦知道磁盘根目录就调用 setTaskWorkspace。对 local ref 立即可知;
+    // 对 GitHub ref 则在下面 clone 物化后再设置。
     if (ref.kind === "local") {
       setTaskWorkspace(id, ref.path);
     }
@@ -225,12 +223,11 @@ const handleTaskExecutionInner = async (
       ? getLlmConfig(payload.llmConfigId)
       : getDefaultLlmConfig();
 
-    // Phase 1 guard: only "chat" modality runs through the agent loop.
-    // Image/video configs have a different provider API (e.g. MiniMax
-    // /v1/image_generation, /v1/video_generation) and will be wired up in
-    // Phase 2/3. Without this check, image/video model names get forwarded
-    // to /v1/chat/completions and the upstream returns a confusing
-    // "unknown model" error.
+    // Phase 1 守卫:只有 "chat" modality 走 agent 循环。图像/视频配置
+    // 使用不同的 provider API(例如 MiniMax /v1/image_generation、
+    // /v1/video_generation),将在 Phase 2/3 接入。没有这个检查的话,
+    // 图像/视频模型名会被转发到 /v1/chat/completions,上游会返回令人
+    // 困惑的 "unknown model" 错误。
     if (llmConfig?.modality && llmConfig.modality !== "chat") {
       throw new Error(
         `此 LLM 配置的 modality 是 "${llmConfig.modality}"，聊天路径只支持 "chat"。${
@@ -253,7 +250,7 @@ const handleTaskExecutionInner = async (
       },
     });
 
-    // ── Skill matching: /command format first, then prompt-based ──
+    // ── Skill 匹配:先按 /command 格式,再按 prompt 内容 ──
     let skill: UnifiedSkill | undefined;
     let skillArgs = "";
     const isExplicitSkillCommand = payload.prompt.startsWith("/");
@@ -299,7 +296,7 @@ const handleTaskExecutionInner = async (
       skill = skillRegistry.matchByPrompt(payload.prompt);
     }
 
-    // ── Convert history early so both fork and non-fork paths can use it ──
+    // ── 提前转换 history,使 fork 与非 fork 路径都能使用 ──
     let convertedHistory: import("ai").ModelMessage[] | undefined;
     if (Array.isArray(payload.history) && payload.history.length > 0) {
       try {
@@ -322,9 +319,8 @@ const handleTaskExecutionInner = async (
         ) => {
           compressorCalled = true;
 
-          // Summarize very large tool results (>60KB) before compression.
-          // Only runs when context actually exceeds budget, avoiding
-          // unnecessary LLM calls on short conversations.
+          // 在压缩前先对超大的工具结果(>60KB)做摘要。仅当上下文确实
+          // 超出预算时才运行,避免在短对话上做不必要的 LLM 调用。
           let preprocessed = msgs;
           try {
             preprocessed = await summarizeLargeToolResults(msgs, {
@@ -347,7 +343,7 @@ const handleTaskExecutionInner = async (
             taskId: id,
             promptSnippet: payload.prompt,
           });
-          // Forward to renderer via IPC (compressContext already wrote to store)
+          // 通过 IPC 转发给渲染层(compressContext 已写入 store)
           if (!sender.isDestroyed()) {
             const eventType = result.hadError
               ? "compression-error"
@@ -392,7 +388,7 @@ const handleTaskExecutionInner = async (
           },
         });
 
-        // Track when messages were silently dropped by simple truncation
+        // 记录消息被简单截断悄然丢弃的情形
         if (truncationResult.messagesDropped > 0 && !sender.isDestroyed()) {
           emitMemoryEvent(
             sender,
@@ -406,8 +402,8 @@ const handleTaskExecutionInner = async (
           );
         }
 
-        // If compressor was never called (history fits within budget),
-        // still emit a compression-skip event so the debug panel shows activity
+        // 若 compressor 从未被调用(history 在预算内),仍发出一个
+        // compression-skip 事件,让调试面板显示有活动
         if (!compressorCalled) {
           emitMemoryEvent(
             sender,
@@ -425,7 +421,7 @@ const handleTaskExecutionInner = async (
       }
     }
 
-    // ── Skill preprocessing & execution mode ──
+    // ── Skill 预处理与执行模式 ──
     let skillPrompt = "";
     if (skill) {
       if (!sender.isDestroyed()) {
@@ -514,13 +510,13 @@ const handleTaskExecutionInner = async (
     }
     const skillTools = skill?.tools ?? {};
 
-    // ── Build messages from history (if available) ──
+    // ── 从 history 构建消息(若可用) ──
     const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
 
-    // ── AgentLoop driver + IPC translator ──────────────────────────
+    // ── AgentLoop 驱动 + IPC 转译 ──────────────────────────
     const providerOptions = adapter.buildProviderOptions();
 
-    // Watchdog runs across the whole agent run.
+    // Watchdog 贯穿整个 agent 运行过程。
     const watchdog = new StreamWatchdog({
       taskId: id,
       sender,
@@ -528,7 +524,7 @@ const handleTaskExecutionInner = async (
     });
     watchdog.start();
 
-    // Coalesce text deltas into 30ms windows to throttle renderer re-renders.
+    // 把文本 delta 合并进 30ms 窗口,以抑制渲染层的重渲染。
     const deltaBatcher = new DeltaBatcher({
       flush: (text) => {
         if (!sender.isDestroyed()) {
@@ -548,15 +544,15 @@ const handleTaskExecutionInner = async (
         ? new LocalWorkspace(ref.path)
         : await createWorkspace(ref, requireWorkspaceFactoryDeps());
 
-    // For GitHub workspaces, register the clone dir for sandbox checks now.
+    // 对 GitHub workspace,此刻把 clone 目录登记给沙箱检查。
     if (ref.kind !== "local") {
       setTaskWorkspace(id, workspace.root);
     }
 
-    // Detect whether the workspace is git-backed once per task. Used by
-    // both the system prompt (L1 git principles) and the tool registry
-    // (L2 git protocol embedded in `runCommand`'s description). See
-    // `system-prompt.buildGitPrinciples` / `buildGitRunCommandProtocol`.
+    // 每个任务检测一次 workspace 是否由 git 托管。系统提示词
+    // (L1 git 原则)与工具 registry(嵌入 `runCommand` 描述的 L2 git
+    // 协议)都会用到。参见 `system-prompt.buildGitPrinciples` /
+    // `buildGitRunCommandProtocol`。
     const isGitWorkspace = isGitBackedWorkspace(workspace);
 
     // 读取工作目录记忆（AGENTS.md / CLAUDE.md），注入系统提示词，
@@ -579,10 +575,10 @@ const handleTaskExecutionInner = async (
       systemPrompt.substring(0, 200),
     );
 
-    // ── Build the per-task ToolRegistry and merge with skill-specific tools ──
-    // Registry tools (file ops + askClarification) flow through the
-    // beforeToolCall approval hook. Skill-bundled tools (e.g. pdf-processor)
-    // are pre-built ai-sdk Tool objects and are merged in unguarded.
+    // ── 构建按任务隔离的 ToolRegistry,并与 skill 专属工具合并 ──
+    // Registry 工具(文件操作 + askClarification)会经过 beforeToolCall
+    // 审批 hook。skill 自带的工具(如 pdf-processor)是预先构建好的
+    // ai-sdk Tool 对象,合并时不加守卫。
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId: id,
@@ -602,8 +598,8 @@ const handleTaskExecutionInner = async (
         toolCallId,
       }),
       beforeToolCall,
-      // Block any tool while this task's draft plan awaits approval; resolves
-      // immediately when no plan is pending.
+      // 当此任务的草稿计划在等待审批时,阻塞任何工具;无计划待审时
+      // 立即解决。
       planGate: async () => {
         const gate = awaitPlanGate(id);
         return gate ? await gate : true;
@@ -611,11 +607,11 @@ const handleTaskExecutionInner = async (
     });
     const agentTools = { ...registryTools, ...skillTools };
 
-    // Default: zero-LLM rules layer (pdfParseFailure + toolDeniedSequence)
-    // attached on every task. When the skill opts in with `reflect: true`
-    // — either via SKILL.md frontmatter (external skills) or via the
-    // built-in TS skill's `reflect` field — we add
-    // `emptyAssistantWithTools` + LLM verdict on top.
+    // 默认:在每个任务上附加零 LLM 的规则层(pdfParseFailure +
+    // toolDeniedSequence)。当 skill 通过 `reflect: true` 选用时
+    // —— 无论是经 SKILL.md frontmatter(外部 skill)还是经内置 TS skill
+    // 的 `reflect` 字段 —— 我们在其之上再加 `emptyAssistantWithTools`
+    // + LLM 裁决。
     const reflectOptIn =
       skill?.external?.frontmatter.reflect === true || skill?.reflect === true;
     const reflectHook = createReflectionGate(
@@ -646,9 +642,9 @@ const handleTaskExecutionInner = async (
     });
 
     const promptForLoop = useMessagesMode ? payload.prompt : payload.prompt;
-    // When useMessagesMode is false, we still pass the user prompt — AgentLoop
-    // appends it to history (which is empty in that case), matching the
-    // pre-M1 single-shot behavior.
+    // 当 useMessagesMode 为 false 时,我们仍传入用户 prompt —— AgentLoop
+    // 会把它追加到 history(此时 history 为空),与 M1 之前的单次执行
+    // 行为一致。
 
     console.log("[Main] Starting AgentLoop for taskId:", id);
 
@@ -662,7 +658,7 @@ const handleTaskExecutionInner = async (
           console.log("[Main] Manual stop flag detected for taskId:", id);
           manualStop = true;
           if (!controller.signal.aborted) controller.abort();
-          // Continue draining events so agent_end is observed.
+          // 继续 drain 事件,以便观察到 agent_end。
         }
         // 注意:不要因 sender 销毁(关窗)就 break 终止任务 —— 否则关窗会杀掉
         // 仍想后台继续、并在重开后重连的任务。各发送点已用 isDestroyed 守卫跳过
@@ -671,15 +667,15 @@ const handleTaskExecutionInner = async (
 
         switch (ev.type) {
           case "agent_start":
-            // ai:stream-start was already emitted above (parity with pre-M1).
+            // ai:stream-start 已在上面发出(与 M1 之前保持一致)。
             break;
           case "message_update":
             fullText += ev.deltaText;
             deltaBatcher.push(ev.deltaText);
             break;
           case "reasoning_update":
-            // Reasoning deltas are typically slower than text deltas (model
-            // emits them as it thinks). No batching — they're already coarse.
+            // 推理 delta 通常比文本 delta 慢(模型边思考边发出)。
+            // 不做批处理 —— 它们本来就已经够粗。
             if (!sender.isDestroyed()) {
               sender.send("ai:stream-reasoning", {
                 id,
@@ -737,7 +733,7 @@ const handleTaskExecutionInner = async (
               `[Main] Retry attempt ${ev.attempt} for taskId: ${id}, error type: ${ev.errorType}`,
             );
             fullText = "";
-            // Get the maxRetries from a fresh classification (info only).
+            // 从一次新的分类中取得 maxRetries(仅用于信息展示)。
             const retryInfo = classifyError(new Error(ev.errorType));
             if (!sender.isDestroyed()) {
               sender.send("ai:stream-retry", {
@@ -765,8 +761,8 @@ const handleTaskExecutionInner = async (
             agentOutputTokens = ev.totalUsage?.outputTokens ?? null;
             agentTotalTokens = ev.totalUsage?.totalTokens ?? null;
             agentProviderMeta = ev.providerMetadata;
-            // Use AgentLoop's accumulated finalText if present (more accurate
-            // post-retry than our running tally).
+            // 若存在,使用 AgentLoop 累积的 finalText(重试后比我们自己
+            // 的累加值更准确)。
             if (typeof ev.finalText === "string") {
               fullText = ev.finalText;
             }
@@ -811,8 +807,9 @@ const handleTaskExecutionInner = async (
               return { id, status: "failed", message: errorMsg };
             }
 
-            // status: "completed" or "cancelled" — both finalize as completed
-            // for IPC parity (pre-M1 path also called ai:stream-done on abort).
+            // status 为 "completed" 或 "cancelled" —— 两者都收尾为
+            // completed,以保持 IPC 一致(M1 之前的路径在中止时也会调用
+            // ai:stream-done)。
             const wasCancelled = ev.status === "cancelled" || manualStop;
             updateTask(id, {
               status: "completed",
@@ -824,7 +821,7 @@ const handleTaskExecutionInner = async (
               outputTokens: agentOutputTokens,
               totalTokens: agentTotalTokens,
             });
-            // Cache events via provider adapter
+            // 通过 provider adapter 处理缓存事件
             try {
               const { cacheWriteTokens: cw, cacheReadTokens: cr } =
                 adapter.extractCacheMetrics(agentProviderMeta);
@@ -847,7 +844,7 @@ const handleTaskExecutionInner = async (
                 );
               }
             } catch {
-              // Non-critical
+              // 非关键
             }
             emitTaskTraceEvent(sender, {
               taskId: id,
@@ -874,8 +871,7 @@ const handleTaskExecutionInner = async (
         }
       }
 
-      // Iterator exhausted without agent_end (e.g. sender destroyed) —
-      // best-effort cleanup.
+      // 迭代器耗尽但未出现 agent_end(例如 sender 被销毁)—— 尽力清理。
       updateTask(id, {
         status: "completed",
         result: fullText,
@@ -920,15 +916,15 @@ const handleTaskExecutionInner = async (
     }
     return { id, status: "failed", message: errorMsg };
   } finally {
-    // Ensure controller is always cleaned up, even if errors occur
-    // before the inner try block (e.g. in getModelAndAdapterByConfigId,
-    // convertToCoreMessages, or truncateToFitAsync).
+    // 确保 controller 始终被清理,即使错误发生在内层 try 块之前
+    // (例如在 getModelAndAdapterByConfigId、convertToCoreMessages
+    // 或 truncateToFitAsync 中)。
     cleanupTask(id);
   }
 };
 
 /**
- * Register all AI-related IPC handlers
+ * 注册所有 AI 相关的 IPC handler
  */
 export const registerAIHandlers = () => {
   ipcMain.handle(
@@ -1051,9 +1047,8 @@ export const registerAIHandlers = () => {
         };
       }
 
-      // Fallback: skill is discovered but not registered (e.g. a
-      // disabled personal/additional skill). Render its metadata so the
-      // user can preview the skill and choose to enable it inline.
+      // 回落:skill 已被发现但未注册(例如已禁用的 personal/additional
+      // skill)。渲染其元数据,让用户能够预览该 skill 并就地选择启用它。
       const discovered = skillRegistry.getDiscovered(payload.skillId);
       if (!discovered) return null;
       const fm = discovered.parsed.frontmatter;
@@ -1121,8 +1116,8 @@ export const registerAIHandlers = () => {
     },
   );
 
-  // Skills modal: full inventory, including disabled-by-source and
-  // ineligible entries. Built-in skills are merged in as always-enabled.
+  // Skills 弹窗:完整清单,包含按来源禁用及不合格的条目。内置 skill
+  // 以「始终启用」的形式合并进来。
   ipcMain.handle("ai:listAllSkills", async () => {
     const builtIns = skillRegistry.listAll().filter((s) => !s.external);
     const builtInItems = builtIns.map((s) => ({
@@ -1168,8 +1163,8 @@ export const registerAIHandlers = () => {
       };
     });
 
-    // Filter out non-user-invocable external skills so the modal mirrors
-    // the existing listUserVisible() contract for invocability.
+    // 过滤掉不可由用户调用的外部 skill,使弹窗在可调用性上与既有的
+    // listUserVisible() 约定一致。
     return [
       ...builtInItems,
       ...externalItems.filter((s) => s.external?.userInvocable !== false),
@@ -1197,7 +1192,7 @@ export const registerAIHandlers = () => {
 
         skillRegistry.setSkillEnabled(payload.skillId, payload.enabled);
 
-        // Persist allow-list as a JSON-encoded array of skill IDs.
+        // 以 JSON 编码的 skill ID 数组形式持久化 allow-list。
         const ids = skillRegistry.getEnabledSkillIds();
         setSetting("skills.enabled-ids", JSON.stringify(ids));
 
@@ -1252,18 +1247,17 @@ export const registerAIHandlers = () => {
   });
 
   /**
-   * Resolve a pending askClarification suspension with the user's reply.
-   * Renderer routes button clicks here keyed by the per-call
-   * `clarificationId` (not taskId — concurrent clarifications coexist).
-   * Returns `{ok:false}` when no matching suspension is registered, so
-   * the renderer can fall back to a fresh chat turn for stale parts
-   * (e.g. a clarification persisted across app restart).
+   * 用用户的回复来解决一个挂起的 askClarification。渲染层把按钮点击
+   * 按调用级的 `clarificationId`(而非 taskId —— 并发澄清可以共存)
+   * 路由到这里。当没有匹配的挂起被登记时返回 `{ok:false}`,这样渲染层
+   * 可对陈旧的 part 回落到一次全新的聊天回合(例如跨应用重启而持久化
+   * 下来的澄清)。
    */
   ipcMain.handle(
     "ai:answerClarification",
     (_event, payload: unknown): { ok: boolean } => {
-      // Renderer payloads cross an unsafe boundary — typeof guards keep
-      // a misbehaving caller from corrupting the suspended tool result.
+      // 渲染层 payload 跨越不可信边界 —— typeof 守卫可防止行为异常的
+      // 调用方破坏挂起的工具结果。
       if (
         !payload ||
         typeof payload !== "object" ||

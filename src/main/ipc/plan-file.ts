@@ -1,7 +1,7 @@
 /**
- * Manages the .filework/task_plan.md file in the workspace directory.
- * This is the "filesystem as memory" layer — the plan file serves as both
- * the AI's working memory and the user's audit log.
+ * 管理工作区目录下的 .filework/task_plan.md 文件。
+ * 这是"以文件系统为记忆"层——计划文件既充当 AI 的工作记忆,
+ * 也充当用户的审计日志。
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -26,7 +26,7 @@ const statusEmoji = (s: string): string => {
   }
 };
 
-/** Render a Plan object into markdown content */
+/** 将 Plan 对象渲染为 markdown 内容 */
 const renderPlanMarkdown = (plan: Plan): string => {
   const lines: string[] = [
     `# Workspace Agent — Task Plan`,
@@ -65,11 +65,11 @@ const renderPlanMarkdown = (plan: Plan): string => {
   return lines.join("\n");
 };
 
-/** Get the absolute path to the plan file */
+/** 获取计划文件的绝对路径 */
 export const getPlanFilePath = (workspacePath: string): string =>
   join(workspacePath, PLAN_DIR, PLAN_FILE);
 
-/** Write or update the plan file in the workspace */
+/** 在工作区中写入或更新计划文件 */
 export const writePlanFile = async (plan: Plan): Promise<string> => {
   const dir = join(plan.workspacePath, PLAN_DIR);
   await mkdir(dir, { recursive: true });
@@ -79,7 +79,7 @@ export const writePlanFile = async (plan: Plan): Promise<string> => {
   return filePath;
 };
 
-/** Read the plan file content (for "Read Before Decide" pattern) */
+/** 读取计划文件内容(用于"先读后决策"模式) */
 export const readPlanFile = async (workspacePath: string): Promise<string> => {
   const filePath = getPlanFilePath(workspacePath);
   return readFile(filePath, "utf-8");

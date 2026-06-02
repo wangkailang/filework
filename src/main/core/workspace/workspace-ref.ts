@@ -1,14 +1,13 @@
 /**
- * WorkspaceRef — identity of a workspace at the IPC and persistence layer.
+ * WorkspaceRef —— IPC 与持久化层面工作区的身份标识。
  *
- * Distinct from `Workspace`:
- *   - `Workspace` is the runtime object tools operate on (fs/exec/scm).
- *   - `WorkspaceRef` is the *handle* that uniquely names "which workspace"
- *     and survives serialization across IPC, disk, and (eventually) sync.
+ * 与 `Workspace` 不同:
+ *   - `Workspace` 是工具实际操作的运行时对象(fs/exec/scm)。
+ *   - `WorkspaceRef` 是唯一标明「哪个工作区」的*句柄*,可跨 IPC、磁盘
+ *     以及(最终的)同步进行序列化而保持有效。
  *
- * The renderer state and `recent_workspaces` rows hold a `WorkspaceRef`.
- * The factory (`workspace-factory.ts`) builds a concrete `Workspace` from
- * a ref each time a task starts.
+ * 渲染进程状态和 `recent_workspaces` 行都持有 `WorkspaceRef`。
+ * 工厂(`workspace-factory.ts`)在每次任务开始时据 ref 构建一个具体的 `Workspace`。
  */
 
 export type WorkspaceRef =
@@ -22,21 +21,20 @@ export type WorkspaceRef =
     }
   | {
       kind: "gitlab";
-      /** e.g. "gitlab.com" or "gitlab.example.com". No protocol, no port. */
+      /** 例如 "gitlab.com" 或 "gitlab.example.com"。不含协议、不含端口。 */
       host: string;
-      /** Group / subgroup path, no leading slash (e.g. "group/subgroup"). */
+      /** 群组 / 子群组路径,无前导斜杠(例如 "group/subgroup")。 */
       namespace: string;
-      /** Project slug (last path segment). */
+      /** 项目 slug(路径最后一段)。 */
       project: string;
       ref: string;
       credentialId: string;
     };
 
 /**
- * Stable identifier for a workspace ref. Used as the input to
- * `workspaceKey()` for JSONL session bucketing, and as a sidebar/log
- * display key. Independent of credential rotation — re-issuing a PAT
- * for the same ref keeps the same id and the same session history.
+ * 工作区 ref 的稳定标识符。作为 `workspaceKey()` 的输入用于 JSONL 会话分桶,
+ * 同时作为侧边栏 / 日志的展示键。与凭据轮换无关 —— 为同一 ref 重新签发 PAT
+ * 仍保持相同的 id 和相同的会话历史。
  */
 export const workspaceRefId = (r: WorkspaceRef): string => {
   if (r.kind === "local") return `local:${r.path}`;
@@ -44,13 +42,12 @@ export const workspaceRefId = (r: WorkspaceRef): string => {
   return `gitlab:${r.host}:${r.namespace}/${r.project}@${r.ref}`;
 };
 
-/** Encode for `recent_workspaces.metadata` (TEXT column, JSON). */
+/** 编码以写入 `recent_workspaces.metadata`(TEXT 列,JSON)。 */
 export const encodeRef = (r: WorkspaceRef): string => JSON.stringify(r);
 
 /**
- * Parse a stored ref. Returns `null` if the input is not valid JSON or
- * doesn't match a known shape — callers fall back to the legacy `path`
- * column in that case.
+ * 解析存储的 ref。当输入不是合法 JSON 或不匹配任何已知结构时返回 `null` ——
+ * 此时调用方回退到旧版的 `path` 列。
  */
 export const decodeRef = (
   s: string | null | undefined,
@@ -101,7 +98,7 @@ export const decodeRef = (
   }
 };
 
-/** Human-readable label for sidebar / titles. */
+/** 供侧边栏 / 标题使用的可读标签。 */
 export const workspaceRefLabel = (r: WorkspaceRef): string => {
   if (r.kind === "local") {
     const segments = r.path.split("/").filter(Boolean);
@@ -110,7 +107,7 @@ export const workspaceRefLabel = (r: WorkspaceRef): string => {
   if (r.kind === "github") {
     return `${r.owner}/${r.repo}@${r.ref}`;
   }
-  // gitlab: drop the host from the visual label unless it's not gitlab.com
+  // gitlab:除非主机不是 gitlab.com,否则从展示标签中省略主机
   return r.host === "gitlab.com"
     ? `${r.namespace}/${r.project}@${r.ref}`
     : `${r.host}/${r.namespace}/${r.project}@${r.ref}`;

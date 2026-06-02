@@ -1,8 +1,8 @@
 /**
- * AI Plan Execution Handlers
+ * AI 计划执行处理器
  *
- * Handles plan-related IPC operations including generation,
- * approval, execution, and cancellation of planned tasks.
+ * 处理与计划相关的 IPC 操作，包括计划任务的生成、
+ * 审批、执行与取消。
  */
 
 import crypto from "node:crypto";
@@ -24,30 +24,30 @@ import { planTask } from "./plan-generator";
 import { cancelPlan, executePlan } from "./plan-runner";
 import type { Plan } from "./plan-types";
 
-/** Pending plans waiting for user approval */
+/** 等待用户审批的待处理计划 */
 const pendingPlans = new Map<string, Plan>();
 
 /**
- * Build a read-only tool set for plan generation.
- * Only includes safe tools that don't modify files or require approval.
+ * 构建用于计划生成的只读工具集。
+ * 仅包含不会修改文件、也不需要审批的安全工具。
  */
 const buildReadOnlyTools = (): Record<string, Tool> => {
-  // Only use safe tools for planning - no dangerous operations allowed
+  // 计划阶段只使用安全工具 —— 不允许任何危险操作
   return {
     listDirectory: safeTools.listDirectory,
     readFile: safeTools.readFile,
     directoryStats: safeTools.directoryStats,
-    // Note: runCommand is excluded as it could have side effects
+    // 注：runCommand 因可能产生副作用而被排除
   };
 };
 
 /**
- * Register all plan-related IPC handlers
+ * 注册所有与计划相关的 IPC 处理器
  */
 export const registerPlanHandlers = () => {
-  /** Generate a plan without executing it. Invoked only when the renderer
-   *  explicitly opts in (e.g. future `/plan` slash command or a planning
-   *  tool call from the agent). No automatic regex gate. */
+  /** 仅生成计划而不执行。只有当渲染层显式选择启用时才会调用
+   *  （例如未来的 `/plan` 斜杠命令，或 agent 发起的计划工具调用）。
+   *  不存在自动的正则门控。 */
   ipcMain.handle(
     "ai:generatePlan",
     async (
@@ -65,7 +65,7 @@ export const registerPlanHandlers = () => {
         }
 
         const model = getAIModelByConfigId(payload.llmConfigId);
-        // Use read-only tools for plan generation to avoid side effects
+        // 计划生成使用只读工具以避免副作用
         const tools = buildReadOnlyTools();
         const plan = await planTask(
           payload.prompt,
@@ -75,7 +75,7 @@ export const registerPlanHandlers = () => {
           controller.signal,
         );
 
-        // Store plan for later approval
+        // 暂存计划以备后续审批
         pendingPlans.set(plan.id, plan);
 
         if (!sender.isDestroyed()) {
@@ -112,8 +112,8 @@ export const registerPlanHandlers = () => {
   );
 
   /**
-   * Shared logic for executing an approved plan.
-   * Used by both ai:executePlan and ai:approvePlan.
+   * 执行已批准计划的共享逻辑。
+   * 同时由 ai:executePlan 与 ai:approvePlan 使用。
    */
   const runApprovedPlan = async (
     event: Electron.IpcMainInvokeEvent,
@@ -145,7 +145,7 @@ export const registerPlanHandlers = () => {
     const controller = new AbortController();
     abortControllers.set(id, controller);
 
-    // Mark as plan-approved: writeFile skips individual approval within workspace
+    // 标记为计划已批准：writeFile 在工作区内跳过逐次审批
     markPlanApproved(id, plan.workspacePath);
 
     try {
@@ -212,19 +212,19 @@ export const registerPlanHandlers = () => {
     }
   };
 
-  // Inline `createPlan` plans use deterministic id `inline-<taskId>` (see
-  // makeInlinePlanId in ai-task-control.ts). The draft pause lives inside
-  // the agent-tool execute() — approve/reject/cancel here just resolve the
-  // pending Promise so the AgentLoop continues.
+  // 内联 `createPlan` 计划使用确定性 id `inline-<taskId>`（见
+  // ai-task-control.ts 中的 makeInlinePlanId）。draft 暂停发生在
+  // agent 工具的 execute() 内部 —— 此处的 approve/reject/cancel 只是
+  // resolve 那个挂起的 Promise，让 AgentLoop 继续。
 
-  /** Execute an approved plan */
+  /** 执行一个已批准的计划 */
   ipcMain.handle(
     "ai:executePlan",
     async (event, payload: { planId: string; llmConfigId?: string }) =>
       runApprovedPlan(event, payload.planId, payload.llmConfigId),
   );
 
-  /** Approve a plan (alias for executePlan without llmConfigId) */
+  /** 批准一个计划（不带 llmConfigId 的 executePlan 别名） */
   ipcMain.handle(
     "ai:approvePlan",
     async (event, payload: { planId: string }) => {
@@ -237,15 +237,15 @@ export const registerPlanHandlers = () => {
     },
   );
 
-  /** User rejected a plan */
+  /** 用户拒绝了一个计划 */
   ipcMain.handle(
     "ai:rejectPlan",
     async (_event, payload: { planId: string }) => {
       const inlineTaskId = parseInlinePlanId(payload.planId);
       if (inlineTaskId !== null) {
-        // Resolve the pending tool with rejection (tool throws → agent loop
-        // surfaces the error) and halt the task so no in-flight work
-        // continues. drainPlanResolver is a no-op if already settled.
+        // 以拒绝结算挂起的工具（工具抛出 → agent loop 暴露错误），
+        // 并终止任务，使任何在途工作都不再继续。
+        // 若已结算，drainPlanResolver 为空操作。
         drainPlanResolver(inlineTaskId, false);
         stopTaskExecution(inlineTaskId);
         return { ok: true };
@@ -255,7 +255,7 @@ export const registerPlanHandlers = () => {
     },
   );
 
-  /** Cancel a running plan */
+  /** 取消一个正在运行的计划 */
   ipcMain.handle(
     "ai:cancelPlan",
     async (_event, payload: { planId: string }) => {

@@ -1,20 +1,19 @@
 /**
- * Shared types for the GAIA harness — kept thin so dataset/scorer/runner
- * stay decoupled. Field names that come from the GAIA dataset JSONL
- * mirror the upstream casing (e.g. `"Final answer"`) and are translated
- * into `camelCase` in `NormalizedQuestion` so downstream code reads
- * naturally.
+ * GAIA harness 的共享类型 —— 保持精简,使 dataset/scorer/runner 之间
+ * 保持解耦。来自 GAIA 数据集 JSONL 的字段名沿用上游的大小写
+ * (例如 `"Final answer"`),并在 `NormalizedQuestion` 中转换为
+ * `camelCase`,以便下游代码读起来更自然。
  */
 
-// ─── Upstream dataset shape ──────────────────────────────────────────
+// ─── 上游数据集结构 ──────────────────────────────────────────
 
-/** Raw record as it appears in GAIA's `metadata.jsonl`. */
+/** GAIA 的 `metadata.jsonl` 中出现的原始记录。 */
 export interface GaiaRawQuestion {
   task_id: string;
   Question: string;
   Level: number;
   "Final answer": string;
-  /** Empty string when the question has no attachment. */
+  /** 题目无附件时为空字符串。 */
   file_name: string;
   "Annotator Metadata"?: {
     Steps?: string;
@@ -25,7 +24,7 @@ export interface GaiaRawQuestion {
   };
 }
 
-// ─── Normalised in-process shape ─────────────────────────────────────
+// ─── 进程内归一化结构 ─────────────────────────────────────
 
 export type GaiaLevel = 1 | 2 | 3;
 
@@ -34,30 +33,30 @@ export interface NormalizedQuestion {
   level: GaiaLevel;
   question: string;
   groundTruth: string;
-  /** Filename relative to the dataset directory; `null` when no attachment. */
+  /** 相对于数据集目录的文件名;无附件时为 `null`。 */
   fileName: string | null;
-  /** Human-readable reasoning notes from the dataset — dev-only, not shown to the agent. */
+  /** 数据集中人类可读的推理注记 —— 仅供开发使用,不展示给 agent。 */
   annotatorSteps?: string;
 }
 
-// ─── Run results ─────────────────────────────────────────────────────
+// ─── 运行结果 ─────────────────────────────────────────────────────
 
 export type FailureTag =
-  /** Agent produced no tool calls at all (likely hallucinated from training). */
+  /** Agent 完全没有产生任何工具调用(很可能是凭训练记忆臆造)。 */
   | "no_tool_calls"
-  /** A tool returned an error and the agent did not recover. */
+  /** 某个工具返回了错误且 agent 未能恢复。 */
   | "tool_error"
-  /** Agent hit max steps / context cap before answering. */
+  /** Agent 在作答前撞上了最大步数 / 上下文上限。 */
   | "context_overflow"
-  /** Question has an attachment but no tool call touched the file. */
+  /** 题目带有附件,但没有任何工具调用触及该文件。 */
   | "attachment_not_processed"
-  /** Long chain of tool calls but the final extracted answer was wrong. */
+  /** 工具调用链很长,但最终提取出的答案是错的。 */
   | "wrong_answer_correct_path"
-  /** Reflection-gate didn't fire on a long chain (likely missed self-correction). */
+  /** Reflection-gate 在长链上未触发(很可能错失了自我纠正)。 */
   | "reflection_not_fired"
-  /** Per-question timeout exceeded. */
+  /** 超出单题超时限制。 */
   | "timeout"
-  /** Runner threw an uncaught exception. */
+  /** Runner 抛出了未捕获的异常。 */
   | "exception";
 
 export interface ToolCallRecord {
@@ -78,10 +77,10 @@ export interface QuestionResult {
   taskId: string;
   level: GaiaLevel;
   question: string;
-  /** Absolute path to the attachment in the question's workspace, or `null`. */
+  /** 题目工作区中附件的绝对路径,或 `null`。 */
   attachment: string | null;
   groundTruth: string;
-  /** What the agent actually said as its final answer; `null` if extraction failed. */
+  /** agent 实际给出的最终答案;提取失败时为 `null`。 */
   predicted: string | null;
   passed: boolean;
   normalized: { groundTruth: string; predicted: string };
@@ -92,9 +91,9 @@ export interface QuestionResult {
   stepCount: number;
   reflectionFired: boolean;
   failureTags: FailureTag[];
-  /** Stack trace when `failureTags` contains `"exception"`. */
+  /** 当 `failureTags` 包含 `"exception"` 时的堆栈跟踪。 */
   exception?: string;
-  /** Relative path to the JSONL with the full event stream. */
+  /** 指向包含完整事件流的 JSONL 的相对路径。 */
   eventsPath: string;
 }
 
@@ -116,37 +115,36 @@ export interface RunSummary {
   cost: { totalUsd: number; perQuestionMedianUsd: number };
   failureTags: Partial<Record<FailureTag, number>>;
   /**
-   * Trajectory quality metrics — median steps, tool redundancy, and
-   * reflection effectiveness. Optional so older `summary.json` files
-   * still load through `gaia-eval-diff`. New runs always populate it.
+   * 轨迹质量指标 —— 步数中位数、工具冗余度,以及 reflection 的有效性。
+   * 设为可选,使较旧的 `summary.json` 文件仍能通过 `gaia-eval-diff`
+   * 加载。新的运行总会填充该字段。
    */
   quality?: import("./metrics").QualityMetrics;
 }
 
-// ─── Configuration ───────────────────────────────────────────────────
+// ─── 配置 ───────────────────────────────────────────────────
 
 export interface RunnerOptions {
-  /** Absolute path to GAIA's `validation/` dir (or equivalent) containing `metadata.jsonl` + attachments. */
+  /** GAIA 的 `validation/` 目录(或等价目录)的绝对路径,内含 `metadata.jsonl` + 附件。 */
   datasetDir: string;
-  /** Where to write per-question JSON and the summary. */
+  /** 写入每道题 JSON 与汇总的位置。 */
   outputDir: string;
   level: GaiaLevel | "all";
   limit: number | null;
-  /** Model config — bypass the app's DB, pass directly so the CLI is self-contained. */
+  /** 模型配置 —— 绕过应用的 DB,直接传入,使 CLI 自包含。 */
   provider: string;
   apiKey: string;
   model: string;
   baseUrl?: string;
-  /** Per-question hard timeout in ms. Default 5 minutes. */
+  /** 单题硬超时,单位毫秒。默认 5 分钟。 */
   perQuestionTimeoutMs?: number;
-  /** Concurrency cap. v1 enforces 1 — kept here for future expansion. */
+  /** 并发上限。v1 强制为 1 —— 保留在此以备将来扩展。 */
   concurrency?: number;
   /**
-   * Sampling temperature passed to both the main streamText call and the
-   * reflection-gate's LLM verifier. Default `0` (deterministic). Pass
-   * `null` to omit the parameter entirely — required for OpenAI reasoning
-   * models (o1/o3/o5/gpt-5 reasoning) which reject any `temperature`
-   * setting and emit an SDK warning.
+   * 同时传给主 streamText 调用与 reflection-gate 的 LLM 校验器的采样
+   * 温度。默认 `0`(确定性)。传 `null` 以完全省略该参数 ——
+   * OpenAI 推理模型(o1/o3/o5/gpt-5 reasoning)要求如此,它们会拒绝
+   * 任何 `temperature` 设置并发出 SDK 警告。
    */
   temperature?: number | null;
 }

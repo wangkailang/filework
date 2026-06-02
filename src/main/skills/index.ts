@@ -13,7 +13,7 @@ import { xlsxProcessor } from "./xlsx-processor";
 
 export type { Skill } from "./types";
 
-/** All built-in skills */
+/** 所有内置 skill */
 export const skills: Skill[] = [
   fileOrganizer,
   reportGenerator,
@@ -27,24 +27,23 @@ export const skills: Skill[] = [
   pptxProcessor,
 ];
 
-/** Singleton SkillRegistry instance with built-in skills pre-registered */
+/** 预注册了内置 skill 的 SkillRegistry 单例 */
 export const skillRegistry = new SkillRegistry();
 skillRegistry.registerBuiltIn(skills);
 
-/** Get a skill by id (delegates to SkillRegistry) */
+/** 按 id 获取 skill(委托给 SkillRegistry) */
 export const getSkill = (id: string): Skill | undefined =>
   skillRegistry.getById(id);
 
 /**
- * Match the best skill for a user prompt (delegates to SkillRegistry).
+ * 为用户 prompt 匹配最合适的 skill(委托给 SkillRegistry)。
  *
- * Uses the unified scoring algorithm that works across both built-in
- * and external skills.
+ * 使用统一的评分算法,同时适用于内置和外部 skill。
  */
 export const matchSkill = (prompt: string): Skill | undefined =>
   skillRegistry.matchByPrompt(prompt);
 
-/** Get all skill suggestions (for onboarding) */
+/** 获取所有 skill 建议(用于引导) */
 export const getAllSuggestions = (): Array<{ skillId: string; text: string }> =>
   skillRegistry
     .listAll()

@@ -1,7 +1,6 @@
 /**
- * createDirectory preview generator. Reports whether the target path
- * already exists (no-op condition) and whether the parent exists (will
- * recursive mkdir create intermediates).
+ * createDirectory 预览生成器。报告目标路径是否已存在(无操作的条件),
+ * 以及父目录是否存在(递归 mkdir 是否会创建中间目录)。
  */
 
 import path from "node:path";
