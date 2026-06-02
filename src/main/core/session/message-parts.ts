@@ -394,6 +394,49 @@ export interface TurnSummaryPart {
   commands: TurnSummaryCommand[];
 }
 
+/**
+ * 一次 `spawnSubagent` fan-out 中单个子 agent 的实时视图。由
+ * `useStreamSubscription` 从 `ai:subagent-*` 事件聚合:spawn 建行
+ *(status=running),tool-call/tool-result 累加 toolCalls,child-usage
+ * 填 token,report 切终态并填 summary/error。
+ */
+export interface SubagentChildView {
+  childTaskId: string;
+  goal: string;
+  status: "running" | "ok" | "failed" | "cancelled" | "timeout" | "token_limit";
+  /** 已观察到的工具调用次数(驱动"步数"显示)。 */
+  stepCount: number;
+  toolCalls: Array<{
+    toolCallId: string;
+    toolName: string;
+    state: ToolState;
+  }>;
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+  };
+  /** report 完成后填充的压缩摘要。 */
+  summary?: string;
+  error?: string;
+  durationMs?: number;
+}
+
+/**
+ * 主 agent 一次 `spawnSubagent` 调用产生的可折叠进度卡。一张卡承载
+ * N 个并行子 agent(children),独立于 spawnSubagent 的通用 ToolPart
+ *(后者在渲染层被抑制)。持久化到 JSONL,使重载后仍能看到委派结果。
+ */
+export interface SubagentMessagePart {
+  type: "subagent";
+  /** runForkBatch 的批次 id,事件路由的定位键。 */
+  batchId: string;
+  /** 关联的 spawnSubagent 工具调用 id(折叠标题用)。 */
+  toolCallId: string;
+  concurrency: number;
+  children: SubagentChildView[];
+}
+
 export type MessagePart =
   | TextPart
   | ReasoningPart
@@ -409,4 +452,5 @@ export type MessagePart =
   | VideoJobPart
   | AttachmentPart
   | BatchApprovalPart
-  | TurnSummaryPart;
+  | TurnSummaryPart
+  | SubagentMessagePart;

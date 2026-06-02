@@ -103,6 +103,8 @@ const zhCN: Translation = {
   chat_generating: "正在生成",
   chat_generatingLong: "正在生成较长内容",
   chat_forkHere: "从此处分支",
+  chat_copy: "复制",
+  chat_copied: "已复制",
   chat_inputPlaceholder: "告诉我你想做什么... (Enter 发送)",
 
   // Error types

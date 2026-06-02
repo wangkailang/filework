@@ -19,6 +19,8 @@ const scriptedRuns: Array<{
   providerMetadata?: unknown;
   /** 在发出这些分块后、迭代 fullStream 时抛出。 */
   throwAfter?: Error;
+  /** 发出分块后、结束/抛出前 await 的毫秒数(用于让墙钟定时器有机会触发)。 */
+  holdMs?: number;
 }> = [];
 
 function nextRun() {
@@ -37,6 +39,8 @@ vi.mock("ai", () => ({
     return {
       fullStream: (async function* () {
         for (const p of run.parts) yield p;
+        if (run.holdMs)
+          await new Promise((resolve) => setTimeout(resolve, run.holdMs));
         if (run.throwAfter) throw run.throwAfter;
       })(),
       totalUsage: Promise.resolve(run.totalUsage),
@@ -765,5 +769,94 @@ describe("AgentLoop", () => {
     if (end.type !== "agent_end") throw new Error("expected agent_end");
     expect(end.status).toBe("completed");
     expect(end.finalText).toBe("ok");
+  });
+
+  // ── 三个硬上限 ────────────────────────────────────────────────────────
+
+  it("token 累计超 maxTotalTokens → agent_end{completed, stopReason:token_budget} 且不触发 reflect", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "big" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 80, outputTokens: 40 },
+        },
+      ],
+    });
+
+    const reflectMock = vi.fn().mockResolvedValue({ kind: "continue" });
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: { reflect: reflectMock },
+      maxTotalTokens: 50,
+    });
+
+    const events = await collect(loop, "hi");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.stopReason).toBe("token_budget");
+    // 命中预算应在 reflect 之前 short-circuit。
+    expect(reflectMock).not.toHaveBeenCalled();
+  });
+
+  it("墙钟超 maxWallMs → agent_end{completed, stopReason:wall_clock}", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "slow" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+      // 在流末 hold 30ms,让 5ms 的墙钟定时器先触发。
+      holdMs: 30,
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      maxWallMs: 5,
+    });
+
+    const events = await collect(loop, "hi");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.stopReason).toBe("wall_clock");
+  });
+
+  it("正常完成时 stopReason 为 undefined(回归)", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "done" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 5, outputTokens: 3 },
+        },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      maxTotalTokens: 100_000,
+      maxWallMs: 60_000,
+    });
+
+    const events = await collect(loop, "hi");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.stopReason).toBeUndefined();
   });
 });

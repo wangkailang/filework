@@ -114,6 +114,8 @@ const en: BaseTranslation = {
   chat_generating: "Generating",
   chat_generatingLong: "Generating a long response",
   chat_forkHere: "Fork from here",
+  chat_copy: "Copy",
+  chat_copied: "Copied",
   chat_inputPlaceholder: "Tell me what you want to do... (Enter to send)",
 
   // Error types

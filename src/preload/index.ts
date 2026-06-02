@@ -364,6 +364,148 @@ const api = {
     ipcRenderer.on("ai:stream-tool-result", handler);
     return () => ipcRenderer.removeListener("ai:stream-tool-result", handler);
   },
+
+  // ── subagent(spawnSubagent fan-out)事件 ──────────────────────────
+  // 全部携带 parentTaskId,渲染层据此过滤(parentTaskId === 当前主任务)
+  // 并把进度挂到对应的 SubagentMessagePart 上。
+  onSubagentSpawn: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      toolCallId: string;
+      concurrency: number;
+      children: Array<{ childTaskId: string; goal: string }>;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        toolCallId: string;
+        concurrency: number;
+        children: Array<{ childTaskId: string; goal: string }>;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-spawn", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-spawn", handler);
+  },
+  onSubagentDelta: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      childTaskId: string;
+      delta: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        childTaskId: string;
+        delta: string;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-delta", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-delta", handler);
+  },
+  onSubagentToolCall: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      childTaskId: string;
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        childTaskId: string;
+        toolCallId: string;
+        toolName: string;
+        args: unknown;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-tool-call", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-tool-call", handler);
+  },
+  onSubagentToolResult: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      childTaskId: string;
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        childTaskId: string;
+        toolCallId: string;
+        toolName: string;
+        result: unknown;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-tool-result", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-tool-result", handler);
+  },
+  onSubagentChildUsage: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      childTaskId: string;
+      usage?: {
+        inputTokens?: number | null;
+        outputTokens?: number | null;
+        totalTokens?: number | null;
+      };
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        childTaskId: string;
+        usage?: {
+          inputTokens?: number | null;
+          outputTokens?: number | null;
+          totalTokens?: number | null;
+        };
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-child-usage", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-child-usage", handler);
+  },
+  onSubagentReport: (
+    callback: (data: {
+      parentTaskId: string;
+      batchId: string;
+      childTaskId: string;
+      report: import("../main/core/agent/sub-agent-contract").SubAgentReport;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        parentTaskId: string;
+        batchId: string;
+        childTaskId: string;
+        report: import("../main/core/agent/sub-agent-contract").SubAgentReport;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:subagent-report", handler);
+    return () => ipcRenderer.removeListener("ai:subagent-report", handler);
+  },
   onStreamToolApproval: (
     callback: (data: {
       id: string;

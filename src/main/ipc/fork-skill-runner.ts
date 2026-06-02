@@ -48,6 +48,15 @@ export interface ForkSkillRunnerDeps {
   workspacePath: string;
   /** 当技能的 `model` frontmatter 覆盖失败时用作回退。 */
   llmConfigId?: string;
+  /**
+   * 设置后,本 runner 走 spawnSubagent 路径:事件改发 ai:subagent-*
+   * (携带 parentTaskId / batchId / childTaskId)而非 ai:stream-*,使渲染层
+   * 能把进度挂到对应的 subagent 进度卡而不是当成主任务文本。
+   * 缺省(legacy context:fork 技能路径)则保持 ai:stream-*,向后兼容。
+   */
+  parentTaskId?: string;
+  /** spawnSubagent 路径:所属批次 id,用于 UI 定位进度卡。 */
+  batchId?: string;
 }
 
 export interface RunSubagentOptions {
@@ -101,7 +110,14 @@ const truncateForSummary = (text: string, maxTokens: number): string => {
 export const createForkSkillRunner = (
   deps: ForkSkillRunnerDeps,
 ): RunSubagentFn => {
-  const { sender, taskId, parentSignal, llmConfigId } = deps;
+  const { sender, taskId, parentSignal, llmConfigId, parentTaskId, batchId } =
+    deps;
+  // spawnSubagent 路径:事件走 ai:subagent-* + parentTaskId 路由。
+  const isSubagent = parentTaskId !== undefined;
+  const routePayload = <T extends Record<string, unknown>>(extra: T) =>
+    isSubagent
+      ? { parentTaskId, batchId, childTaskId: taskId, ...extra }
+      : { id: taskId, ...extra };
 
   return async (opts) => {
     const startTime = Date.now();
@@ -172,7 +188,10 @@ export const createForkSkillRunner = (
     const deltaBatcher = new DeltaBatcher({
       flush: (text) => {
         if (!sender.isDestroyed()) {
-          sender.send("ai:stream-delta", { id: taskId, delta: text });
+          sender.send(
+            isSubagent ? "ai:subagent-delta" : "ai:stream-delta",
+            routePayload({ delta: text }),
+          );
         }
       },
     });
@@ -204,6 +223,10 @@ export const createForkSkillRunner = (
       agentId: taskId,
       maxStepsPerTurn:
         effectiveContract.termination.maxTurns ?? opts.maxStepsPerTurn ?? 20,
+      // 三硬上限下沉到 AgentLoop 统一强制。墙钟同时保留上面的外层
+      // setTimeout 作兜底(防 AgentLoop 卡在非 stream 的 await)。
+      maxTotalTokens: effectiveContract.termination.maxTotalTokens,
+      maxWallMs: effectiveWallMs,
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
         return {
@@ -220,6 +243,7 @@ export const createForkSkillRunner = (
     let finalTextAccum = "";
     let endEventStatus: "completed" | "failed" | "cancelled" = "completed";
     let endEventError: string | undefined;
+    let endStopReason: "max_steps" | "token_budget" | "wall_clock" | undefined;
     let endEventUsage:
       | { inputTokens?: number | null; outputTokens?: number | null }
       | undefined;
@@ -241,40 +265,51 @@ export const createForkSkillRunner = (
             deltaBatcher.drain();
             toolCallCount++;
             const previewSnapshot = consumePreview(ev.toolCallId);
-            sender.send("ai:stream-tool-call", {
-              id: taskId,
-              toolCallId: ev.toolCallId,
-              toolName: ev.toolName,
-              args: ev.args,
-              previewSnapshot,
-            });
+            sender.send(
+              isSubagent ? "ai:subagent-tool-call" : "ai:stream-tool-call",
+              routePayload({
+                toolCallId: ev.toolCallId,
+                toolName: ev.toolName,
+                args: ev.args,
+                previewSnapshot,
+              }),
+            );
             break;
           }
           case "tool_execution_end":
-            sender.send("ai:stream-tool-result", {
-              id: taskId,
-              toolCallId: ev.toolCallId,
-              toolName: ev.toolName,
-              result: ev.result,
-            });
+            sender.send(
+              isSubagent ? "ai:subagent-tool-result" : "ai:stream-tool-result",
+              routePayload({
+                toolCallId: ev.toolCallId,
+                toolName: ev.toolName,
+                result: ev.result,
+              }),
+            );
             break;
           case "retry": {
-            const retryInfo = classifyError(new Error(ev.errorType));
-            sender.send("ai:stream-retry", {
-              id: taskId,
-              attempt: ev.attempt,
-              type: ev.errorType,
-              maxRetries: retryInfo.maxRetries,
-            });
+            // 子 agent 的 retry 是内部细节,不进 UI 进度卡;仅 legacy
+            // fork 技能路径转发到主任务的 ai:stream-retry。
+            if (!isSubagent) {
+              const retryInfo = classifyError(new Error(ev.errorType));
+              sender.send("ai:stream-retry", {
+                id: taskId,
+                attempt: ev.attempt,
+                type: ev.errorType,
+                maxRetries: retryInfo.maxRetries,
+              });
+            }
             break;
           }
           case "agent_end": {
             deltaBatcher.drain();
             endEventStatus = ev.status;
             endEventError = ev.error?.message;
+            endStopReason = ev.stopReason;
             endEventUsage = ev.totalUsage as typeof endEventUsage;
             finalTextAccum = ev.finalText ?? "";
-            if (ev.status === "failed") {
+            // 子 agent 的失败由批次的 ai:subagent-report 承载,不污染主任务
+            // 的 ai:stream-error。仅 legacy fork 技能路径转发 error 到主 UI。
+            if (ev.status === "failed" && !isSubagent) {
               const cls = classifyError(
                 new Error(ev.error?.message ?? "Subagent failed"),
               );
@@ -288,6 +323,13 @@ export const createForkSkillRunner = (
                   recoveryActions: cls.recoveryActions,
                 });
               }
+            }
+            // 子 agent 路径:实时回传最终用量,UI 卡片可显示 token。
+            if (isSubagent && !sender.isDestroyed()) {
+              sender.send(
+                "ai:subagent-child-usage",
+                routePayload({ usage: ev.totalUsage }),
+              );
             }
             // completed / cancelled / failed 都会落到下面
             // 构建报告的尾部逻辑。ai:stream-done 仍由父级负责。
@@ -311,9 +353,15 @@ export const createForkSkillRunner = (
       cancelled: "cancelled",
       failed: "failed",
     };
+    // 状态优先级:外层墙钟兜底 > AgentLoop 的 stopReason(token/wall) >
+    // agent_end.status。token 截断映射为 token_limit,wall 截断映射为 timeout。
     const reportStatus: SubAgentStatus = timedOut
       ? "timeout"
-      : AGENT_END_TO_REPORT_STATUS[endEventStatus];
+      : endStopReason === "token_budget"
+        ? "token_limit"
+        : endStopReason === "wall_clock"
+          ? "timeout"
+          : AGENT_END_TO_REPORT_STATUS[endEventStatus];
 
     const maxTokens =
       effectiveContract.output.maxTokens ?? DEFAULT_SUB_AGENT_MAX_TOKENS;

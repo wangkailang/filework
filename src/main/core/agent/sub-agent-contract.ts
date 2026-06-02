@@ -38,12 +38,19 @@ export interface SubAgentContract {
     maxTurns?: number;
     /** 墙钟时间上限(毫秒)。默认 120_000。 */
     maxWallMs?: number;
+    /** 累计 token 上限(input+output)。映射到 AgentLoop.maxTotalTokens。默认 60_000。 */
+    maxTotalTokens?: number;
     /** 若助手文本包含其中任一子串,则提前停止。 */
     stopOn?: string[];
   };
 }
 
-export type SubAgentStatus = "ok" | "failed" | "cancelled" | "timeout";
+export type SubAgentStatus =
+  | "ok"
+  | "failed"
+  | "cancelled"
+  | "timeout"
+  | "token_limit";
 
 export interface SubAgentReport {
   agentId: string;
@@ -62,6 +69,8 @@ export interface SubAgentReport {
 export const DEFAULT_SUB_AGENT_MAX_TOKENS = 1500;
 export const DEFAULT_SUB_AGENT_MAX_WALL_MS = 120_000;
 export const DEFAULT_SUB_AGENT_MAX_TURNS = 10;
+/** 子 agent 累计 token 硬上限默认值(input+output)。 */
+export const DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS = 60_000;
 
 export interface BuildReportInput {
   agentId: string;

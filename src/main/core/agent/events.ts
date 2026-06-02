@@ -34,6 +34,14 @@ export type TurnEndReason = "tool_calls" | "finish" | "stop" | "error";
 
 export type AgentEndStatus = "completed" | "failed" | "cancelled";
 
+/**
+ * agent 因某个硬上限提前收束的原因。三上限统一收口到 AgentLoop:
+ * 步数到顶(max_steps)、累计 token 超预算(token_budget)、墙钟超时(wall_clock)。
+ * 命中任一时,agent_end 仍以 status="completed" 返回(产出有效,只是被截断),
+ * 借由 stopReason 区分"自然结束"与"被硬限截断"。
+ */
+export type AgentStopReason = "max_steps" | "token_budget" | "wall_clock";
+
 export type AgentEvent =
   | {
       type: "agent_start";
@@ -129,6 +137,11 @@ export type AgentEvent =
       providerMetadata?: Record<string, unknown>;
       /** 所有 assistant message_end 的 finalText 值的拼接。 */
       finalText?: string;
+      /**
+       * 命中硬上限而提前收束时填充(status 仍为 "completed")。
+       * undefined 表示自然结束(模型主动停或全部回合跑完)。
+       */
+      stopReason?: AgentStopReason;
     }
   | {
       type: "retry";
