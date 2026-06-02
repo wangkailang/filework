@@ -127,7 +127,7 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => {
     description:
       "Fetch a public URL and return clean reader-mode markdown plus the raw body, with side-channel fields: `meta` (byline/siteName/publishedTime/favicon/canonical/og), `images`, `videos`, `structuredData`. " +
       "PDFs are detected (by content-type or `.pdf` URL), downloaded, and text-extracted into `markdown` (page count in `pages`); `raw` stays empty for binary so the model reads `markdown`. " +
-      "This is a plain HTTP fetch — it does NOT run JavaScript. If the page needs JS/session rendering (search-result pages, SPAs, dynamic `.aspx`/query pages) or the body comes back looking like a generic landing/home page instead of the resource you asked for, retry with `webFetchRendered`. Do not infer data from an empty or wrong page — switch tools or keep searching.",
+      "This is a plain HTTP fetch — it does NOT run JavaScript. If the page needs JS/session rendering (search-result pages, SPAs, dynamic `.aspx`/query pages) or the body comes back looking like a generic landing/home page instead of the resource you asked for, retry with `webFetchRendered`. Do not infer data from an empty or wrong page — switch tools or keep searching. If the URL 404s or the resource is gone, retry it through the Wayback Machine (`https://web.archive.org/web/2023/<url>`, or drop the year for the latest snapshot) before concluding it's unavailable — government, legal, and historical documents are very often preserved there.",
     safety: "safe",
     inputSchema,
     execute: async (args, ctx) => {

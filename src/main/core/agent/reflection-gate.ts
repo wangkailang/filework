@@ -91,13 +91,10 @@ export const pdfParseFailure: ReflectionRule = (turn) => {
       };
     }
   }
-  const hallmarks = ["could not be parsed", "无法解析", "解析失败"];
-  const finalLower = turn.finalText.toLowerCase();
-  for (const h of hallmarks) {
-    if (finalLower.includes(h)) {
-      return { kind: "continue" };
-    }
-  }
+  // 仅在本轮有真实 PDF 工具失败时于上面的 retry 分支处理。模型只在文本里
+  // 宣称"解析失败"却没有任何失败的工具调用 —— 不在此放行:`webFetch` 原生
+  // 抽取 PDF 文本,裸称"无法解析/请重新上传"通常是过早缴械,交给
+  // `prematureConcession` 统一判断是否还有升级途径没试。
   return null;
 };
 
@@ -177,6 +174,49 @@ export const missingFinalAnswer: ReflectionRule = (turn) => {
   };
 };
 
+// 升级层工具:遇阻后本应爬到的更强取数手段。本轮只要调用过其中之一,
+// 说明模型在升级而非干等,放弃就不算"过早"。
+const ESCALATION_TOOLS = new Set([
+  "webFetchRendered",
+  "webScrape",
+  "browserOpen",
+  "browserClick",
+  "browserType",
+]);
+
+// 任务级"放弃"措辞 —— 只匹配明确宣布不可行的表达,不含"无法确定 / 看不到
+// 图片"这类正常的局部不确定,避免误伤。含 PDF 解析失败的裸声明(由收窄后的
+// `pdfParseFailure` 下沉到此)。
+const CONCESSION_RE =
+  /无法完成(这个|此|该|本)?(任务|查询|请求|工作)|超出了?(当前工具|我的能力|工具)|技术限制|无法克服|无法解析|解析失败|请重新上传|cannot complete (this|the)|unable to complete (this|the)|technical limitation|insurmountable|could not be parsed/i;
+
+// 文本若已点名升级途径(Wayback / 渲染 / Firecrawl 等),说明模型已考虑过
+// 升级,信任其结论,不再 retry。
+const ESCALATION_MENTION_RE =
+  /wayback|web\.archive|archive\.org|webFetchRendered|webScrape|firecrawl|渲染|存档|快照/i;
+
+/**
+ * 过早放弃护栏:模型宣布任务不可行 / 撞上"技术限制",但本轮既没爬过升级层
+ * 工具、文本里也没提到任何升级途径 —— 极可能是一次失败就缴械。retry 一次,
+ * 提示还有哪些手段没试。被 `maxReflections`(默认 2)兜底,不会死循环;模型
+ * 若已升级过(调用或文本提及)则放行。
+ *
+ * 收窄后的 `pdfParseFailure` 会把裸"PDF 无法解析"声明下沉到此 —— `webFetch`
+ * 原生抽取 PDF,这类声明几乎都是幻觉出来的限制。
+ */
+export const prematureConcession: ReflectionRule = (turn) => {
+  if (!CONCESSION_RE.test(turn.finalText)) return null;
+  if (ESCALATION_MENTION_RE.test(turn.finalText)) return null;
+  for (const call of turn.toolCalls) {
+    if (ESCALATION_TOOLS.has(call.name)) return null;
+  }
+  return {
+    kind: "retry",
+    feedback:
+      "你宣布任务不可行,但还没穷尽取数手段。放弃前请先升级:页面 404 / 空白时用 `webFetchRendered`(真渲染)→ `webScrape`(Firecrawl,绕反爬)→ 死链改走 Wayback(`https://web.archive.org/web/2023/<url>`);PDF 直接用 `webFetch` 指向 .pdf 链接(可带 query 逐页检索),不要当成无法解析。若这些手段确已全部尝试过,或任务本就不涉及取数,请改为具体说明每种途径分别如何失败,而不是笼统地说'技术限制'。",
+  };
+};
+
 /**
  * Default rules attached on the main agent path. Excludes
  * `emptyAssistantWithTools` because it false-positives on legitimate
@@ -184,12 +224,17 @@ export const missingFinalAnswer: ReflectionRule = (turn) => {
  * always-on use.
  */
 export function defaultRules(): ReflectionRule[] {
-  return [pdfParseFailure, toolDeniedSequence];
+  return [pdfParseFailure, toolDeniedSequence, prematureConcession];
 }
 
 /** Full rule set — opt-in via skill frontmatter `reflect: true`. */
 export function builtinRules(): ReflectionRule[] {
-  return [pdfParseFailure, toolDeniedSequence, emptyAssistantWithTools];
+  return [
+    pdfParseFailure,
+    toolDeniedSequence,
+    emptyAssistantWithTools,
+    prematureConcession,
+  ];
 }
 
 const LLM_REFLECT_PROMPT = `你是一个质量评审助手。下面是一个 AI 助手刚完成的一轮对话片段，请判断它是否合格交付。
