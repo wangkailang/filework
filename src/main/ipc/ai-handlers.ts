@@ -7,6 +7,7 @@
 
 import crypto from "node:crypto";
 import { ipcMain } from "electron";
+import { redactSecrets } from "../../shared/security/secret-detection";
 import { resolveAdapterName } from "../ai/adapters";
 import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
 import { compressContext } from "../ai/context-compressor";
@@ -260,7 +261,13 @@ const handleTaskExecutionInner = async (
       const command =
         spaceIdx > 0 ? payload.prompt.slice(0, spaceIdx) : payload.prompt;
       skillArgs = spaceIdx > 0 ? payload.prompt.slice(spaceIdx + 1) : "";
-      console.log("[Skill Matching] Command:", command, "Args:", skillArgs);
+      // skillArgs 含用户自由文本,脱敏后再写日志避免密钥落入 stdout。
+      console.log(
+        "[Skill Matching] Command:",
+        command,
+        "Args:",
+        redactSecrets(skillArgs ?? "").text,
+      );
 
       skill = skillRegistry.matchByCommand(command);
       console.log(

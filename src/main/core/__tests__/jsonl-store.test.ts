@@ -213,6 +213,29 @@ describe("JsonlSessionStore", () => {
       expect(messages.map((m) => m.id)).toEqual(["m3"]);
     });
 
+    it("落盘前对消息 content 与 parts 脱敏,读回为掩码版", async () => {
+      const KEY = "tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41";
+      const s = await store.createSession("/ws");
+      const originalMsg = {
+        id: "m-secret",
+        sessionId: s.id,
+        role: "user" as const,
+        content: `api key: ${KEY}`,
+        timestamp: "2026-05-09T22:00:00.000Z",
+        parts: [{ type: "text" as const, text: `密钥：${KEY}` }],
+      };
+      await store.saveMessages(s.id, "/ws", [originalMsg]);
+
+      // 读回内容应已脱敏
+      const read = await store.getMessages(s.id);
+      expect(read[0].content).not.toContain("sxnbvy8");
+      expect(JSON.stringify(read[0].parts)).not.toContain("sxnbvy8");
+
+      // in-memory 原对象不能被改变
+      expect(originalMsg.content).toContain("sxnbvy8");
+      expect(JSON.stringify(originalMsg.parts)).toContain("sxnbvy8");
+    });
+
     it("messages come back sorted by timestamp", async () => {
       const s = await store.createSession("/ws");
       await store.saveMessages(s.id, "/ws", [

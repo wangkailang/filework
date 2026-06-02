@@ -27,7 +27,8 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
-
+import { redactMessageParts } from "../../../shared/security/redact-message";
+import { redactSecrets } from "../../../shared/security/secret-detection";
 import type { MessagePart } from "./message-parts";
 import type {
   ChatMessage,
@@ -312,15 +313,22 @@ export class JsonlSessionStore {
 
     sessionLine.updatedAt = new Date().toISOString();
 
-    const messageLines: MessageLine[] = messages.map((m) => ({
-      kind: "message",
-      id: m.id,
-      sessionId,
-      role: m.role,
-      content: m.content,
-      timestamp: m.timestamp,
-      parts: m.parts ? stripTransientPreview(m.parts) : m.parts,
-    }));
+    const messageLines: MessageLine[] = messages.map((m) => {
+      const stripped = m.parts ? stripTransientPreview(m.parts) : m.parts;
+      // 持久化边界脱敏:落盘副本掩码,in-memory(发给 LLM 的)不受影响。
+      const safeParts = stripped
+        ? redactMessageParts(stripped).parts
+        : stripped;
+      return {
+        kind: "message",
+        id: m.id,
+        sessionId,
+        role: m.role,
+        content: redactSecrets(m.content).text,
+        timestamp: m.timestamp,
+        parts: safeParts,
+      };
+    });
 
     await this.atomicWrite(
       filePath,

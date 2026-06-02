@@ -215,6 +215,13 @@ describe("workspace-memory (structured entries, zero repo footprint)", () => {
       expect(containsSecret("我的密钥是 ab12cd34ef56gh78ij90kl12mn34")).toBe(
         true,
       );
+      // 真实泄漏写法:全角冒号「：」紧贴 token、token 前无空格 —— 旧的 \s+
+      // 切词会把 "API密钥：tp-xxxx" 粘成一个含汉字的 token 而漏放。
+      expect(
+        containsSecret(
+          "小米LLM API密钥：tp-sxnbvy8nfbqn8ocd7o974kbohq6s1hh3nmak6req8qeenm41",
+        ),
+      ).toBe(true);
     });
 
     it("flags a long standalone high-entropy token even without a keyword", () => {

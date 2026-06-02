@@ -11,6 +11,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { redactMessageParts } from "../../../shared/security/redact-message";
+import { redactSecrets } from "../../../shared/security/secret-detection";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import {
@@ -67,6 +69,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
+import { SystemNoticeCard } from "./SystemNoticeCard";
 import { TurnSummaryCard } from "./TurnSummaryCard";
 import type {
   ArticleMetaPart,
@@ -1048,55 +1051,75 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             </ConversationEmptyState>
           ) : (
             <>
-              {chat.messages.map((msg, index) => {
-                const userAttachments =
-                  msg.role === "user"
-                    ? ((msg.parts?.filter((p) => p.type === "attachment") as
-                        | AttachmentPart[]
-                        | undefined) ?? [])
-                    : [];
-                return (
-                  <div key={msg.id}>
-                    <Message from={msg.role}>
-                      <MessageContent>
-                        {msg.role === "assistant" ? (
-                          renderAssistantParts(msg.parts ?? migrateToParts(msg))
-                        ) : (
-                          <>
-                            {userAttachments.length > 0 && (
-                              <AttachmentList attachments={userAttachments} />
-                            )}
-                            {msg.content}
-                          </>
-                        )}
-                      </MessageContent>
-                    </Message>
-                    {msg.role === "user" && !chat.isLoading && (
-                      <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                        <MessageAction
-                          onClick={() => chat.handleForkSession(msg.id)}
-                          label={LL.chat_forkHere()}
-                        >
-                          <GitBranch className="size-3" />
-                        </MessageAction>
-                      </MessageActions>
-                    )}
-                    {msg.role === "assistant" &&
-                      index === chat.messages.length - 1 && (
-                        <MessageActions>
+              {(() => {
+                // 同一密钥常同时出现在用户输入与模型回显里,提示只显示一次(轻微提醒)。
+                let noticeShown = false;
+                return chat.messages.map((msg, index) => {
+                  // 检测(驱动提示)对所有角色一致;但「显示掩码」只作用于助手回显与
+                  // 工具参数——用户自己输入的消息显示原文,不掩码(自己输入的,本就清楚)。
+                  // 落盘脱敏对所有角色不变,见 jsonl-store —— 显示原文不等于会落盘。
+                  const isUser = msg.role === "user";
+                  const sourceParts = msg.parts ?? migrateToParts(msg);
+                  const redParts = redactMessageParts(sourceParts);
+                  const redContent = redactSecrets(msg.content);
+                  const secretCount = redParts.count + redContent.count;
+                  const displayParts = isUser ? sourceParts : redParts.parts;
+                  const displayContent = isUser ? msg.content : redContent.text;
+                  const showNotice = secretCount > 0 && !noticeShown;
+                  if (showNotice) noticeShown = true;
+                  const userAttachments =
+                    msg.role === "user"
+                      ? ((displayParts.filter((p) => p.type === "attachment") as
+                          | AttachmentPart[]
+                          | undefined) ?? [])
+                      : [];
+                  return (
+                    <div key={msg.id}>
+                      <Message from={msg.role}>
+                        <MessageContent>
+                          {msg.role === "assistant" ? (
+                            renderAssistantParts(displayParts)
+                          ) : (
+                            <>
+                              {userAttachments.length > 0 && (
+                                <AttachmentList attachments={userAttachments} />
+                              )}
+                              {displayContent}
+                            </>
+                          )}
+                        </MessageContent>
+                      </Message>
+                      {showNotice && (
+                        <SystemNoticeCard message="检测到疑似密钥,不会保存到会话记录或记忆" />
+                      )}
+                      {msg.role === "user" && !chat.isLoading && (
+                        <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                           <MessageAction
-                            onClick={() =>
-                              navigator.clipboard.writeText(msg.content)
-                            }
-                            label="Copy"
+                            onClick={() => chat.handleForkSession(msg.id)}
+                            label={LL.chat_forkHere()}
                           >
-                            <CopyIcon className="size-3" />
+                            <GitBranch className="size-3" />
                           </MessageAction>
                         </MessageActions>
                       )}
-                  </div>
-                );
-              })}
+                      {msg.role === "assistant" &&
+                        index === chat.messages.length - 1 && (
+                          <MessageActions>
+                            <MessageAction
+                              onClick={() =>
+                                // displayContent 已在本回调顶部脱敏,复制脱敏文本而非原文。
+                                navigator.clipboard.writeText(displayContent)
+                              }
+                              label="Copy"
+                            >
+                              <CopyIcon className="size-3" />
+                            </MessageAction>
+                          </MessageActions>
+                        )}
+                    </div>
+                  );
+                });
+              })()}
               {/* Working indicator: hidden while the model actively produces
                   visible output (the growing text is its own feedback), shown
                   with an elapsed timer once the stream goes silent for a beat

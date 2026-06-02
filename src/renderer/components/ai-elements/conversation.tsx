@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { redactMessageParts } from "../../../shared/security/redact-message";
+import { redactSecrets } from "../../../shared/security/secret-detection";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
@@ -238,12 +240,19 @@ export const messagesToMarkdown = (
     .map((msg, i) => {
       if (formatter) return formatter(msg, i);
       const role = msg.role === "user" ? roleLabels.user : roleLabels.assistant;
+      // 导出前脱敏:对 parts 和 content 均掩码,不修改入参对象。
+      const redactedParts = msg.parts
+        ? redactMessageParts(
+            msg.parts as import("../../../main/core/session/message-parts").MessagePart[],
+          ).parts
+        : undefined;
+      const redactedContent = redactSecrets(msg.content ?? "").text;
       const text =
-        msg.parts
-          ?.filter((p) => p.type === "text" && p.text)
-          .map((p) => p.text)
+        redactedParts
+          ?.filter((p) => p.type === "text" && (p as { text?: string }).text)
+          .map((p) => (p as { text?: string }).text)
           .join("\n") ??
-        msg.content ??
+        redactedContent ??
         "";
       return `### ${role}\n\n${text}`;
     })
