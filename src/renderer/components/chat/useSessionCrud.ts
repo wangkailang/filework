@@ -23,6 +23,9 @@ export function useSessionCrud(workspacePath: string) {
   // been written yet (debouncedSave is on a 500ms timer). Without this
   // guard, getChatHistory returns [] and wipes the in-flight message.
   const freshSessionIdRef = useRef<string | null>(null);
+  // 历史加载完成后的回调(由 useChatSession 接上 reattachRunningTask)。让重连严格
+  // 排在 setMessages(history) 之后触发,避免重连补的在途消息壳被历史加载覆盖。
+  const onHistoryLoadedRef = useRef<((sessionId: string) => void) | null>(null);
   activeSessionIdRef.current = activeSessionId;
   messagesRef.current = messages;
 
@@ -115,6 +118,9 @@ export function useSessionCrud(workspacePath: string) {
         }
       } catch {
         setMessages([]);
+      } finally {
+        // 历史已就位(成功或失败)→ 此刻才尝试重连,壳会叠加在已加载历史之上。
+        onHistoryLoadedRef.current?.(activeSessionId);
       }
     };
     load();
@@ -228,6 +234,7 @@ export function useSessionCrud(workspacePath: string) {
     setSessions,
     activeSessionId,
     activeSessionIdRef,
+    onHistoryLoadedRef,
     messages,
     setMessages,
     lastUsage,

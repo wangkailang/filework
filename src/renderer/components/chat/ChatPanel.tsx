@@ -788,33 +788,32 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
       }
     }
 
-    // 隐藏「正等待批准」且已被审批卡收录的工具行;批准后状态转为
-    // output-available,会重新显示并按 groupConsecutiveTools 正常折叠。
-    const visibleParts =
-      pendingBatchToolCallIds.size === 0
-        ? parts
-        : parts.filter((p) => {
-            if (p.type !== "tool") return true;
-            const tp = p as ToolPart;
-            const awaiting =
-              tp.state === "input-available" || tp.state === "input-streaming";
-            return !(awaiting && pendingBatchToolCallIds.has(tp.toolCallId));
-          });
-
-    // While a plan is still a draft awaiting「开始执行」, hide any tool cards
-    // in the same message. Models on endpoints that ignore
-    // `parallel_tool_calls` (e.g. MiniMax) emit read-only tools alongside
-    // createPlan in one step; they run before approval but deliver nothing —
-    // showing their cards reads as "executed without approval". They reappear
-    // once the plan is approved (status → executing).
     const hasDraftPlan = parts.some(
       (p) =>
         p.type === "plan" && (p as PlanMessagePart).plan.status === "draft",
     );
 
+    // 过滤两类工具行:
+    // 1) 正等待批准且已被审批卡收录的批次工具(避免同一批既在卡里又刷独立行);
+    // 2) 计划草稿待审批期间「尚未交付结果」的工具——被计划门拦下、或在忽略
+    //    parallel_tool_calls 的端点(如 MiniMax)上与 createPlan 同 step 发出
+    //    但未交付的工具;显示出来像「未经审批就执行」。
+    // 关键:已经跑完并交付结果(output-available/error)的前置只读探索
+    // (listDirectory / readFile 等)保留可见——这正是用户期望在聊天里看到的。
+    // 批准后(status→executing)其余工具会重新出现。
+    const visibleParts = parts.filter((p) => {
+      if (p.type !== "tool") return true;
+      const tp = p as ToolPart;
+      const delivered =
+        tp.state === "output-available" || tp.state === "output-error";
+      if (!delivered && pendingBatchToolCallIds.has(tp.toolCallId))
+        return false;
+      if (hasDraftPlan && !delivered) return false;
+      return true;
+    });
+
     return groupConsecutiveTools(visibleParts).map((part) => {
       if (part.type === "tool-group") {
-        if (hasDraftPlan) return null;
         return renderToolGroup(part);
       }
       if (part.type === "reasoning") {
@@ -837,7 +836,6 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         );
       }
       if (part.type === "tool") {
-        if (hasDraftPlan) return null;
         return renderToolPart(part);
       }
       if (part.type === "plan") {

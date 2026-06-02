@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import {
   type HTMLAttributes,
   memo,
@@ -123,9 +123,19 @@ const HighlightedBlock = memo(
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center justify-center border-t border-border bg-muted/30 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+            className="flex w-full items-center justify-center gap-1 border-t border-border bg-muted/30 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           >
-            {expanded ? "收起" : `展开全部 ${lineCount} 行`}
+            {expanded ? (
+              <>
+                <ChevronUp className="size-3.5" />
+                收起
+              </>
+            ) : (
+              <>
+                <ChevronDown className="size-3.5" />
+                展开全部 {lineCount} 行
+              </>
+            )}
           </button>
         )}
       </div>
