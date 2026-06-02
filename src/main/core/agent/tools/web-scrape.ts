@@ -1,11 +1,11 @@
 /**
- * webScrape — Layer 4 escape hatch. Hands the URL to Firecrawl which
- * does anti-bot bypass + JS rendering + clean extraction server-side.
- * Costs Firecrawl API quota (free tier: 500/month).
+ * webScrape — 第 4 层兜底方案。将 URL 交给 Firecrawl,由其在
+ * 服务端完成反爬绕过 + JS 渲染 + 干净抽取。
+ * 会消耗 Firecrawl API 配额(免费档:每月 500 次)。
  *
- * The agent should try `webFetch` and `webFetchRendered` first; this
- * is reserved for sites those two can't crack (captchas, Cloudflare
- * Bot Management, X without auth, etc.).
+ * agent 应优先尝试 `webFetch` 和 `webFetchRendered`;本工具
+ * 仅用于那两者攻不下的站点(验证码、Cloudflare
+ * Bot Management、未登录的 X 等)。
  */
 import { z } from "zod/v4";
 
@@ -41,10 +41,10 @@ interface RawFirecrawlResponse {
       title?: string;
       description?: string;
       sourceURL?: string;
-      // Firecrawl flattens OpenGraph + article meta into the top-level
-      // `metadata` object. Field names vary by Firecrawl release; the
-      // ones below are the stable / documented set we map into our
-      // ArticleMeta shape.
+      // Firecrawl 把 OpenGraph + article meta 拍平到顶层的
+      // `metadata` 对象里。字段名随 Firecrawl 版本而变;下面
+      // 列出的是我们映射到 ArticleMeta 结构上的稳定 / 有文档
+      // 记载的那一组。
       author?: string;
       publishedTime?: string;
       modifiedTime?: string;
@@ -57,14 +57,14 @@ interface RawFirecrawlResponse {
       ogImage?: string;
       ogVideo?: string;
       favicon?: string;
-      // Allow unknown extra fields without forcing `any`.
+      // 允许出现未知的额外字段,且不必退化为 `any`。
       [key: string]: unknown;
     };
   };
   error?: string;
 }
 
-/** Map Firecrawl's flat metadata object into our ArticleMeta shape. */
+/** 把 Firecrawl 的扁平 metadata 对象映射成我们的 ArticleMeta 结构。 */
 const firecrawlMetaToArticleMeta = (
   m: NonNullable<NonNullable<RawFirecrawlResponse["data"]>["metadata"]>,
 ): ArticleMeta => {
@@ -125,8 +125,8 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
     }
     const metadata = json.data?.metadata;
     const fullMarkdown = json.data?.markdown ?? "";
-    // With a query, BM25-retrieve only the relevant chunks instead of the
-    // whole document (the universal cap bounds size; this keeps it relevant).
+    // 带 query 时,用 BM25 只检索相关片段,而非返回整篇文档
+    // (通用上限负责约束体积;这一步保证内容相关性)。
     const q = query?.trim();
     const search = q ? searchText(fullMarkdown, q) : null;
     return {
@@ -138,10 +138,10 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
       ...(search ? { matchedChunks: search.matchedChunks } : {}),
       html: json.data?.html ?? null,
       meta: metadata ? firecrawlMetaToArticleMeta(metadata) : {},
-      // Firecrawl doesn't itemize images / videos / structured data the
-      // way our HTML extractor does; emit empties for symmetry with
-      // webFetch / webFetchRendered so renderer code can branch on a
-      // single shape.
+      // Firecrawl 不像我们的 HTML 抽取器那样逐项列出
+      // images / videos / structured data;这里输出空值以与
+      // webFetch / webFetchRendered 保持结构对称,使渲染端代码
+      // 能基于单一结构做分支。
       images: [],
       videos: [],
       structuredData: [],

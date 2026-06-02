@@ -1,11 +1,11 @@
 /**
- * webFetchRendered — Layer 2'. Renders the URL in a hidden Electron
- * BrowserWindow so client-hydrated content lands in the HTML before
- * extraction. Returns the same shape as `webFetch` for symmetry.
+ * webFetchRendered — 第 2' 层。在隐藏的 Electron BrowserWindow 中渲染 URL,
+ * 使客户端水合(hydrate)后的内容先落入 HTML, 再进行抽取。
+ * 返回结构与 `webFetch` 保持一致以求对称。
  *
- * When to use: `webFetch` came back with empty / suspiciously thin
- * markdown for a page that's clearly an SPA (Next.js docs, x.com,
- * Notion pages, anything with significant client-side rendering).
+ * 使用时机: 当 `webFetch` 对一个明显是 SPA 的页面(Next.js 文档、x.com、
+ * Notion 页面, 或任何有大量客户端渲染的页面)返回了空的 / 可疑地过于稀薄的
+ * markdown 时。
  */
 import { z } from "zod/v4";
 
@@ -82,9 +82,9 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
       structuredData: readable.structuredData,
     };
 
-    // Only ONE field carries content into context: distilled `markdown` for a
-    // page, else `raw`. Returning both doubled tokens, so drop redundant raw
-    // once markdown exists. With a query, BM25-retrieve only relevant chunks.
+    // 只有一个字段携带内容进入上下文: 页面优先用蒸馏后的 `markdown`, 否则用 `raw`。
+    // 同时返回两者会使 token 翻倍, 因此一旦 markdown 存在就丢弃冗余的 raw。
+    // 当带有 query 时, 仅用 BM25 检索相关的分片(chunk)。
     const hasMarkdown = readable.markdown.length > 0;
     const content = hasMarkdown ? readable.markdown : html;
 

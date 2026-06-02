@@ -1,12 +1,10 @@
 /**
- * webFetch — Layer 1 extraction. Fetches a public URL via the injected
- * proxy-aware fetch, then runs the body through `extractReadable` so the
- * model gets clean markdown by default (cheap in tokens) plus the raw
- * HTML as a fallback. For JSON / plain-text responses, `markdown` is
- * empty and the model reads `raw` directly.
+ * webFetch —— 第一层抽取。通过注入的代理感知 fetch 拉取公开 URL,再将正文交给
+ * `extractReadable` 处理,使模型默认得到干净的 markdown(token 开销低),并保留
+ * 原始 HTML 作为兜底。对于 JSON / 纯文本响应,`markdown` 为空,模型直接读取 `raw`。
  *
- * Safety: `safe` — read-only, same tier as `readFile`. The injected
- * `fetchImpl` is the only network capability the tool exposes.
+ * 安全级别:`safe` —— 只读,与 `readFile` 同档。注入的 `fetchImpl` 是本工具暴露的
+ * 唯一网络能力。
  */
 import { z } from "zod/v4";
 
@@ -20,11 +18,11 @@ import type { ToolDefinition } from "../tool-registry";
 import { extractReadable } from "./web-extract";
 
 export interface WebFetchDeps {
-  /** Main-process proxy-aware fetch. Production: `createProxyAwareFetch`. */
+  /** 主进程代理感知 fetch。生产环境:`createProxyAwareFetch`。 */
   fetchImpl: typeof fetch;
   /**
-   * PDF → text extractor. Defaults to the shared pdf-parse-based extractor.
-   * Injected in tests so the PDF branch can be exercised without a real PDF.
+   * PDF → 文本抽取器。默认使用基于 pdf-parse 的共享抽取器。
+   * 注入便于测试,使 PDF 分支无需真实 PDF 即可被覆盖。
    */
   extractPdf?: (data: Uint8Array) => Promise<PdfExtractResult>;
   /**
@@ -58,17 +56,16 @@ const inputSchema = z.object({
 });
 
 const DEFAULT_MAX_BYTES = 200_000;
-// Hard ceiling — we refuse to read responses bigger than this even when
-// the caller passes a larger `maxBytes`. Prevents an OOM from a server
-// that streams 100MB of HTML before we'd otherwise get to truncate.
+// 硬上限 —— 即使调用方传入更大的 `maxBytes`,也拒绝读取超过此值的响应。
+// 防止服务器在我们来得及截断前先流式推送 100MB 的 HTML 而导致 OOM。
 const ABSOLUTE_MAX_BYTES = 10_000_000;
 // PDF 会被下载进临时 buffer、抽取文本后立即丢弃 —— 这些字节从不进入模型上下文,
 // 因此可以容忍远大于 HTML 上限的体积。覆盖数 MB 的政府/档案类 PDF(例如 17MB 的
 // Federal Register issue slice),这类文件原本会被 HTML 上限直接拒绝。
 const PDF_DOWNLOAD_MAX_BYTES = 50_000_000;
 
-// Looks like a real Chrome on Mac — improves yield on sites that lightly
-// gate by UA. The "filework-agent" suffix is preserved so logs identify us.
+// 伪装成 Mac 上的真实 Chrome —— 提升对那些轻度按 UA 拦截站点的成功率。
+// 保留 "filework-agent" 后缀,使日志能识别出是我们。
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 filework-agent";
@@ -234,9 +231,9 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => {
             meta: {},
             structuredData: [],
           };
-      // Only ONE field carries the body into context: the distilled
-      // `markdown` for HTML, else `raw`. Returning both (HTML) doubled the
-      // tokens for no gain, so drop the redundant `raw` once we have markdown.
+      // 只有一个字段把正文带入上下文:HTML 用蒸馏后的 `markdown`,否则用 `raw`。
+      // 两者都返回(HTML 情况)会使 token 翻倍却无收益,因此一旦有了 markdown
+      // 就丢弃冗余的 `raw`。
       const hasMarkdown = readable.markdown.length > 0;
       const content = hasMarkdown ? readable.markdown : body;
       const sideFields = {
