@@ -1,22 +1,18 @@
 /**
- * Per-question workspace setup for the GAIA harness.
+ * GAIA harness 的单题工作区初始化。
  *
- * For every question we:
- *   1. Create a fresh temporary directory `<outputDir>/workspaces/<taskId>/`
- *   2. Copy the attachment (if any) from the dataset directory into it
- *   3. Hand back a `LocalWorkspace` bound to that directory so the
- *      agent's filesystem tools resolve relative paths inside the
- *      sandboxed temp dir
- *   4. Provide a `cleanup()` callback that rm's the workspace when the
- *      runner is done with it
+ * 对每道题我们会:
+ *   1. 创建一个全新的临时目录 `<outputDir>/workspaces/<taskId>/`
+ *   2. 将附件(如有)从数据集目录复制进去
+ *   3. 返回一个绑定到该目录的 `LocalWorkspace`,使 agent 的文件系统
+ *      工具把相对路径解析到这个沙箱化的临时目录内
+ *   4. 提供一个 `cleanup()` 回调,在 runner 用完后删除该工作区
  *
- * Why per-question dirs instead of one shared temp:
- *   - Symlink / realpath sandboxing in `LocalWorkspace` rejects escapes,
- *     but isolating per-task makes debugging easier (`workspaces/<id>/`
- *     contains *exactly* what the agent saw, including any files it
- *     created)
- *   - Lets us keep the workspaces around on failure for inspection
- *     without piling up alongside unrelated tasks.
+ * 为何用单题目录而非共享一个临时目录:
+ *   - `LocalWorkspace` 的符号链接 / realpath 沙箱会拒绝越界访问,
+ *     但按任务隔离让调试更容易(`workspaces/<id>/` 中*恰好*包含
+ *     agent 所见的内容,含它创建的任何文件)
+ *   - 让我们能在失败时保留工作区以供检查,而不会与无关任务堆在一起。
  */
 
 import { copyFile, mkdir, rm } from "node:fs/promises";
@@ -28,19 +24,19 @@ import type { NormalizedQuestion } from "./types";
 
 export interface EvalWorkspace {
   workspace: LocalWorkspace;
-  /** Absolute path to the per-question dir. */
+  /** 单题目录的绝对路径。 */
   dir: string;
-  /** Absolute path to the copied attachment, or `null` when none. */
+  /** 复制后附件的绝对路径,无附件时为 `null`。 */
   attachmentPath: string | null;
-  /** Remove the per-question dir. Safe to call multiple times. */
+  /** 删除单题目录。可安全地多次调用。 */
   cleanup: () => Promise<void>;
 }
 
 export interface SetupOptions {
   question: NormalizedQuestion;
-  /** Dataset root — `attachments` are resolved against this. */
+  /** 数据集根目录 —— `attachments` 相对于它解析。 */
   datasetDir: string;
-  /** Output root — workspaces live under `<outputDir>/workspaces/<taskId>/`. */
+  /** 输出根目录 —— 工作区位于 `<outputDir>/workspaces/<taskId>/` 下。 */
   outputDir: string;
 }
 

@@ -1,12 +1,12 @@
 import { createRequire } from "node:module";
 
-/** Single file entry returned by the native duplicate finder. */
+/** native 重复文件查找器返回的单个文件条目。 */
 export interface NativeFileEntry {
   path: string;
   size: number;
 }
 
-/** Aggregated result of a native duplicate scan. */
+/** native 重复文件扫描的聚合结果。 */
 export interface NativeDuplicateResult {
   scanned: number;
   skipped: number;
@@ -42,20 +42,20 @@ interface NativeModule {
   scanDirectoryLevel(dirPath: string): Promise<NativeDirEntry[]>;
 }
 
-// createRequire works in BOTH environments:
-// - packaged Electron main process (bundled to CommonJS by electron-vite,
-//   which supports import.meta.url in the main process), and
-// - vitest (runs as ESM and provides import.meta.url natively).
-// A bare top-level require(...) would throw "require is not defined" under
-// vitest's ESM, so we must not use it.
+// createRequire 在两种环境下都可用:
+// - 打包后的 Electron 主进程(由 electron-vite 打包为 CommonJS,
+//   主进程支持 import.meta.url),以及
+// - vitest(以 ESM 运行,原生提供 import.meta.url)。
+// 在 vitest 的 ESM 下,顶层裸 require(...) 会抛出 "require is not defined",
+// 因此不能直接使用它。
 const requireNative = createRequire(import.meta.url);
 
 let native: NativeModule | undefined;
 
-// Load lazily and memoize: the addon is a hard dependency (no JS fallback),
-// but loading it on first use rather than at import time keeps a missing or
-// unbuildable addon from crashing app startup — only the duplicate-finder
-// feature fails, with an actionable message, when it is actually invoked.
+// 延迟加载并记忆化:该 addon 是硬依赖(无 JS 兜底),
+// 但在首次使用时加载而非在导入时加载,可避免缺失或无法构建的
+// addon 导致应用启动崩溃 —— 只有在真正调用时,重复文件查找
+// 功能才会失败,并给出可操作的提示信息。
 function loadNative(): NativeModule {
   if (native) return native;
   try {
@@ -69,7 +69,7 @@ function loadNative(): NativeModule {
   return native;
 }
 
-/** Scan a directory for duplicate files using the native (Rust) implementation. */
+/** 用 native (Rust) 实现扫描目录中的重复文件。 */
 export function findDuplicates(
   rootPath: string,
   extensions?: string[],

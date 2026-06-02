@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
-/** Shape returned by the `listSkills` IPC call. */
+/** `listSkills` IPC 调用返回的数据结构。 */
 interface SkillMenuItem {
   id: string;
   name: string;
@@ -11,16 +11,16 @@ interface SkillMenuItem {
 }
 
 export interface SkillMenuProps {
-  /** Current chat input value. */
+  /** 当前聊天输入框的值。 */
   input: string;
-  /** Called when the user picks a skill – replaces input with `/name `. */
+  /** 用户选中某个技能时调用 —— 将输入替换为 `/name `。 */
   onSelect: (skillCommand: string) => void;
 }
 
 /**
- * Floating skill-picker that appears when the user types `/` at the start of
- * the chat input.  Fetches the skill list once via IPC, filters by the text
- * after `/`, and supports keyboard navigation (↑ / ↓ / Enter / Escape).
+ * 浮动的技能选择器,当用户在聊天输入框开头键入 `/` 时出现。
+ * 通过 IPC 获取一次技能列表,按 `/` 之后的文本进行过滤,
+ * 并支持键盘导航(↑ / ↓ / Enter / Escape)。
  */
 export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
   const { LL } = useI18nContext();
@@ -29,11 +29,11 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
   const [fetched, setFetched] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Only show skill menu when typing the skill name, not after selecting one
+  // 仅在键入技能名称时显示技能菜单,选中之后不再显示
   const isActive = input.startsWith("/") && !input.includes(" ");
   const query = isActive ? input.slice(1).toLowerCase() : "";
 
-  // Fetch skills when the menu first opens
+  // 菜单首次打开时获取技能列表
   useEffect(() => {
     if (!isActive) {
       setFetched(false);
@@ -66,7 +66,7 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
     };
   }, [isActive, fetched]);
 
-  // Filter skills by query
+  // 按查询词过滤技能
   const filtered = isActive
     ? skills.filter(
         (s) =>
@@ -76,12 +76,12 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
       )
     : [];
 
-  // Reset selection when the filtered list changes
+  // 过滤后的列表变化时重置选中项
   useEffect(() => {
     setSelectedIndex(0);
   }, []);
 
-  // Handle keyboard navigation (attached to document so it works while textarea has focus)
+  // 处理键盘导航(挂在 document 上,以便 textarea 获得焦点时仍能生效)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isActive) return;
@@ -95,12 +95,12 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
           prev <= 0 ? Math.max(filtered.length - 1, 0) : prev - 1,
         );
       } else if (e.key === "Enter" && filtered.length > 0) {
-        // Only intercept Enter when the menu is showing items
+        // 仅在菜单展示有条目时拦截 Enter
         e.preventDefault();
         e.stopPropagation();
         onSelect(`/${filtered[selectedIndex].id} `);
       } else if (e.key === "Escape") {
-        // Let the parent handle clearing if needed
+        // 如有需要,交由父组件处理清空
         onSelect("");
       }
     },
@@ -109,12 +109,12 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
 
   useEffect(() => {
     if (!isActive) return;
-    // Use capture phase so we can intercept before the textarea's Enter handler
+    // 使用捕获阶段,以便在 textarea 的 Enter 处理器之前拦截
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [isActive, handleKeyDown]);
 
-  // Scroll selected item into view
+  // 将选中项滚动到可视区域
   useEffect(() => {
     if (!menuRef.current) return;
     const item = menuRef.current.children[selectedIndex] as

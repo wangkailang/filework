@@ -1,9 +1,9 @@
 /**
- * OpenAI Provider Adapter
+ * OpenAI Provider 适配器
  *
- * Handles OpenAI-specific concerns:
- * - Model creation via @ai-sdk/openai (also handles custom endpoints)
- * - Cache metrics extraction (prompt_tokens_details.cached_tokens)
+ * 处理 OpenAI 特有的事项:
+ * - 通过 @ai-sdk/openai 创建模型(同时处理自定义端点)
+ * - 缓存指标提取(prompt_tokens_details.cached_tokens)
  */
 
 import { createOpenAI } from "@ai-sdk/openai";
@@ -27,16 +27,16 @@ export class OpenAIAdapter implements ProviderAdapter {
     const openai = createOpenAI({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
-      // See provider-fetch.ts — per-host proxy-aware fetch set at bootstrap.
+      // 参见 provider-fetch.ts —— 启动时设置的、按 host 感知代理的 fetch。
       fetch: getProviderFetch(),
     });
     return isCustomEndpoint ? openai.chat(config.model) : openai(config.model);
   }
 
   buildProviderOptions() {
-    // Disable parallel tool calls so a `createPlan` call can't be batched in
-    // the same step as other tools — its await-for-approval then truly halts
-    // the loop instead of letting siblings (webSearch etc.) run unapproved.
+    // 禁用并行工具调用,使 `createPlan` 调用无法与其他工具在同一步骤中批处理
+    // —— 这样它的「等待审批」才能真正暂停整个循环,而不会让同级工具
+    //(如 webSearch 等)在未经审批的情况下执行。
     return { openai: { parallelToolCalls: false } };
   }
 

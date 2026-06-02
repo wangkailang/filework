@@ -804,6 +804,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
     const visibleParts = parts.filter((p) => {
       if (p.type !== "tool") return true;
       const tp = p as ToolPart;
+      // askClarification 的问答由上方的 clarification 交互卡(ClarificationCard,
+      // 含问题与已选答案,原样落盘、跨重载保留)完整呈现 —— 隐藏这张重复的通用
+      // 工具卡。
+      if (tp.toolName === "askClarification") return false;
       const delivered =
         tp.state === "output-available" || tp.state === "output-error";
       if (!delivered && pendingBatchToolCallIds.has(tp.toolCallId))

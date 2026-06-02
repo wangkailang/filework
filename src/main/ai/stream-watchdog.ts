@@ -1,15 +1,15 @@
 /**
- * Stream Watchdog — stall detection & timeout for AI streaming.
+ * 流监视器(Stream Watchdog)—— 针对 AI 流式输出的卡死检测与超时控制。
  *
- * Monitors streaming activity and:
- * 1. Detects stalls (no activity for a configurable duration)
- * 2. Can trigger abort on stall timeout
+ * 监控流式活动并:
+ * 1. 检测卡死(在可配置的时长内无任何活动)
+ * 2. 可在卡死超时时触发 abort
  */
 
 import type { WebContents } from "electron";
 
 // ---------------------------------------------------------------------------
-// Types
+// 类型
 // ---------------------------------------------------------------------------
 
 export type WatchdogEventType =
@@ -18,29 +18,29 @@ export type WatchdogEventType =
   | "stall-timeout";
 
 // ---------------------------------------------------------------------------
-// Configuration
+// 配置
 // ---------------------------------------------------------------------------
 
 export interface WatchdogOptions {
-  /** Task ID for event correlation */
+  /** 用于事件关联的任务 ID */
   taskId: string;
-  /** Electron WebContents to send events to */
+  /** 接收事件的 Electron WebContents */
   sender: WebContents;
-  /** Heartbeat interval in ms (default: 3000) */
+  /** 心跳间隔(毫秒,默认 3000) */
   heartbeatIntervalMs?: number;
-  /** Stall threshold in ms — triggers warning (default: 30000) */
+  /** 卡死阈值(毫秒)—— 触发警告(默认 30000) */
   stallWarningMs?: number;
-  /** Hard timeout in ms — triggers abort if set (default: 300000 = 5 min) */
+  /** 硬超时(毫秒)—— 若设置则触发 abort(默认 300000 = 5 分钟) */
   hardTimeoutMs?: number;
-  /** AbortController to trigger on hard timeout */
+  /** 硬超时时触发的 AbortController */
   abortController?: AbortController;
-  /** Plan-specific metadata */
+  /** 计划相关的元数据 */
   planId?: string;
   stepId?: number;
 }
 
 // ---------------------------------------------------------------------------
-// StreamWatchdog class
+// StreamWatchdog 类
 // ---------------------------------------------------------------------------
 
 export class StreamWatchdog {
@@ -63,13 +63,13 @@ export class StreamWatchdog {
     this.sender = options.sender;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 3000;
     this.stallWarningMs = options.stallWarningMs ?? 30_000;
-    this.hardTimeoutMs = options.hardTimeoutMs ?? 300_000; // 5 min
+    this.hardTimeoutMs = options.hardTimeoutMs ?? 300_000; // 5 分钟
     this.abortController = options.abortController;
     this.planId = options.planId;
     this.stepId = options.stepId;
   }
 
-  /** Start the watchdog. Call this before beginning to consume the stream. */
+  /** 启动监视器。在开始消费流之前调用。 */
   start(): void {
     this.lastActivityAt = Date.now();
     this.stopped = false;
@@ -83,7 +83,7 @@ export class StreamWatchdog {
 
       const idleMs = Date.now() - this.lastActivityAt;
 
-      // Hard timeout — abort the stream
+      // 硬超时 —— abort 流
       if (idleMs >= this.hardTimeoutMs) {
         console.warn(
           `[Watchdog] Hard timeout (${this.hardTimeoutMs}ms) for task ${this.taskId}`,
@@ -102,7 +102,7 @@ export class StreamWatchdog {
         return;
       }
 
-      // Stall warning — notify renderer (only on state change)
+      // 卡死警告 —— 通知渲染进程(仅在状态变化时)
       if (idleMs >= this.stallWarningMs && !this.stallWarned) {
         this.stallWarned = true;
         console.warn(
@@ -116,17 +116,17 @@ export class StreamWatchdog {
     }, this.heartbeatIntervalMs);
   }
 
-  /** Record stream activity — call this every time a stream part arrives. */
+  /** 记录流活动 —— 每当一个流分片到达时调用。 */
   activity(): void {
     this.lastActivityAt = Date.now();
     if (this.stallWarned) {
       this.stallWarned = false;
-      // Stall recovered — notify renderer
+      // 卡死恢复 —— 通知渲染进程
       this.sendEvent("stall-recovered", {});
     }
   }
 
-  /** Stop the watchdog. Call this when the stream ends. */
+  /** 停止监视器。在流结束时调用。 */
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
@@ -136,7 +136,7 @@ export class StreamWatchdog {
     }
   }
 
-  /** Get the current idle duration in ms */
+  /** 获取当前空闲时长(毫秒) */
   getIdleMs(): number {
     return Date.now() - this.lastActivityAt;
   }
@@ -157,10 +157,10 @@ export class StreamWatchdog {
 }
 
 // ---------------------------------------------------------------------------
-// Step timeout helper
+// 步骤超时辅助函数
 // ---------------------------------------------------------------------------
 
-/** Typed error for step-level timeouts — use `instanceof` instead of string matching. */
+/** 步骤级超时的类型化错误 —— 使用 `instanceof` 判断,而非字符串匹配。 */
 export class StepTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`Step timeout after ${timeoutMs}ms`);
@@ -169,9 +169,9 @@ export class StepTimeoutError extends Error {
 }
 
 /**
- * Create an AbortController that auto-aborts after `timeoutMs`.
- * If a parent signal is provided, the child also aborts when the parent does.
- * Returns the controller and a cleanup function.
+ * 创建一个在 `timeoutMs` 后自动 abort 的 AbortController。
+ * 若提供了父 signal,则父级 abort 时子级也会随之 abort。
+ * 返回该 controller 与一个清理函数。
  */
 export function createTimeoutController(
   timeoutMs: number,

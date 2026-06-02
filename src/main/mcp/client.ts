@@ -1,12 +1,12 @@
 /**
- * Thin wrapper around one MCP `Client` instance: handles transport
- * construction (stdio | streamable HTTP), connect/disconnect, the
- * post-connect `listTools` pull, and re-exposes `callTool` with
- * `AbortSignal` forwarding.
+ * 对单个 MCP `Client` 实例的轻量封装:负责传输层
+ * 构造(stdio | streamable HTTP)、连接/断开、连接后的
+ * `listTools` 拉取,并重新暴露带 `AbortSignal` 转发的
+ * `callTool`。
  *
- * `callTool` returns the raw `CallToolResult` from the SDK — the
- * tool-bridge layer is responsible for shaping it into the structured-
- * content form the agent loop expects.
+ * `callTool` 直接返回 SDK 的原始 `CallToolResult` ——
+ * 由 tool-bridge 层负责将其整理成 agent 循环所期望的
+ * 结构化内容形式。
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -20,9 +20,9 @@ import type {
 import type { McpServer } from "./types";
 
 export interface McpClientOptions {
-  /** Called with the latest tool list after every successful refresh. */
+  /** 每次成功刷新后,以最新的工具列表回调。 */
   onToolsChanged?: (tools: McpToolDescriptor[]) => void;
-  /** Notified when the transport reports a fatal error or remote close. */
+  /** 当传输层报告致命错误或远端关闭时通知。 */
   onTransportClose?: (err: Error | null) => void;
 }
 
@@ -71,8 +71,8 @@ export class McpClient {
     try {
       await this.client.close();
     } catch {
-      // Closing a half-broken transport can throw — drop the reference
-      // either way so reconnect attempts aren't blocked.
+      // 关闭一个半损坏的传输层可能抛错 —— 无论如何都丢弃
+      // 引用,以免阻塞后续的重连尝试。
     }
     this.client = null;
     this.tools = [];
@@ -116,8 +116,8 @@ export class McpClient {
         args: this.config.args,
         env: expandEnvRecord(this.config.env),
         cwd: this.config.cwd ?? undefined,
-        // Inherit so the user sees server logs in the dev console — same
-        // behavior as Claude Desktop / Cursor.
+        // 继承 stderr,让用户在开发控制台看到服务端日志 ——
+        // 与 Claude Desktop / Cursor 行为一致。
         stderr: "inherit",
       });
     }
@@ -135,10 +135,10 @@ export class McpClient {
 }
 
 /**
- * Replace `${env:VAR}` placeholders with values from `process.env`.
- * Unknown vars expand to the empty string — mirrors Claude Desktop /
- * VS Code behavior so the server-side surfaces its own clearer error
- * (e.g. "missing API key") rather than a generic config-parse failure.
+ * 将 `${env:VAR}` 占位符替换为 `process.env` 中的值。
+ * 未知变量展开为空字符串 —— 与 Claude Desktop /
+ * VS Code 行为一致,从而让服务端给出更清晰的自身错误
+ * (例如 "missing API key"),而非通用的配置解析失败。
  */
 export const expandEnvRecord = (
   record: Record<string, string>,

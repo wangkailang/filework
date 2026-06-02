@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../../core/agent/events";
 
 // ---------------------------------------------------------------------------
-// Mocks — AgentLoop yields scripted events, dependencies are stubbed.
+// Mock —— AgentLoop 产出预设脚本的事件,依赖项被打桩。
 // ---------------------------------------------------------------------------
 
 interface ScriptedRun {
@@ -58,7 +58,7 @@ vi.mock("../../core/workspace/local-workspace", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 辅助函数
 // ---------------------------------------------------------------------------
 
 function fakeSender(): WebContents {
@@ -71,7 +71,7 @@ function fakeSender(): WebContents {
 import { createForkSkillRunner } from "../fork-skill-runner";
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 describe("createForkSkillRunner", () => {

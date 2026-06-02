@@ -1,14 +1,14 @@
 /**
- * IPC: mcp:* — manage user-configured MCP (Model Context Protocol) servers.
+ * IPC: mcp:* — 管理用户配置的 MCP(Model Context Protocol)服务器。
  *
- * All channels delegate to the singleton `mcpManager`, which owns the
- * live connections and broadcasts `mcp:server-status-changed` /
- * `mcp:server-list-changed` events back to the renderer.
+ * 所有通道都委托给单例 `mcpManager`,由它持有活跃连接,
+ * 并将 `mcp:server-status-changed` / `mcp:server-list-changed`
+ * 事件广播回渲染进程。
  *
- * The `importJson` channel accepts the Claude Desktop / Cursor config
- * format `{ "mcpServers": { "<name>": { "command": ..., "args": [...],
- * "env": {...} } } }` so users can paste an existing config without
- * editing it.
+ * `importJson` 通道接受 Claude Desktop / Cursor 的配置格式
+ * `{ "mcpServers": { "<name>": { "command": ..., "args": [...],
+ * "env": {...} } } }`,因此用户可直接粘贴现有配置而无需
+ * 编辑。
  */
 
 import { ipcMain } from "electron";
@@ -57,10 +57,10 @@ const sanitizeInput = (raw: unknown): McpServerInput => {
 };
 
 /**
- * Parse Claude Desktop / Cursor / VS Code `mcpServers` JSON into our
- * `McpServerInput[]` shape. Detects transport heuristically: presence
- * of `url` → http, otherwise stdio. Accepts both the top-level
- * `{ mcpServers: {...} }` envelope and a bare object.
+ * 将 Claude Desktop / Cursor / VS Code 的 `mcpServers` JSON 解析为我们的
+ * `McpServerInput[]` 结构。通过启发式判断 transport:存在
+ * `url` 则为 http,否则为 stdio。同时接受顶层
+ * `{ mcpServers: {...} }` 封装和裸对象两种形式。
  */
 const parseImportJson = (raw: unknown): McpServerInput[] => {
   const rec = asRecord(raw);

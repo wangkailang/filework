@@ -1,14 +1,14 @@
 /**
- * Per-process MCP server registry.
+ * 进程级的 MCP 服务器注册表。
  *
- * One `McpClient` per persisted `mcp_servers` row. The manager owns the
- * connect/reconnect lifecycle, caches the latest tool list, and exposes
- * `getActiveToolDefs()` for `buildAgentToolRegistry` so MCP tools flow
- * into the same `ToolRegistry` as filework's built-ins.
+ * 每一行持久化的 `mcp_servers` 记录对应一个 `McpClient`。manager
+ * 负责连接/重连生命周期,缓存最新的工具列表,并为
+ * `buildAgentToolRegistry` 暴露 `getActiveToolDefs()`,使 MCP 工具
+ * 汇入与 filework 内置工具相同的 `ToolRegistry`。
  *
- * Renderer status UI listens on `mcp:server-status-changed` —
- * `notifyStatus()` broadcasts on connect/disconnect/error/refresh so the
- * settings panel can light up the green/red dots without polling.
+ * 渲染进程状态 UI 监听 `mcp:server-status-changed` ——
+ * `notifyStatus()` 在连接/断开/错误/刷新时广播,使设置面板
+ * 无需轮询即可点亮绿/红状态点。
  */
 
 import type { Tool as McpToolDescriptor } from "@modelcontextprotocol/sdk/types.js";
@@ -37,7 +37,7 @@ interface Entry {
 class McpManager {
   private entries = new Map<string, Entry>();
 
-  /** Pull all rows from SQLite into the in-memory map. */
+  /** 从 SQLite 拉取所有记录到内存映射中。 */
   init(): void {
     this.entries.clear();
     for (const config of listMcpServers()) {
@@ -45,7 +45,7 @@ class McpManager {
     }
   }
 
-  /** Open every enabled server. Failures are isolated per server. */
+  /** 打开每一个已启用的服务器。失败按服务器隔离。 */
   async connectAll(): Promise<void> {
     const tasks: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
@@ -67,7 +67,7 @@ class McpManager {
     const entry = this.buildEntry(row);
     this.entries.set(row.id, entry);
     if (row.enabled) {
-      // Fire-and-forget — UI sees the result via the status broadcast.
+      // 发射后不管 —— UI 通过状态广播看到结果。
       void this.connectEntry(entry);
     }
     this.notifyStatusList();
@@ -82,8 +82,8 @@ class McpManager {
     const fresh = getMcpServer(id);
     if (!fresh) return null;
     const existing = this.entries.get(id);
-    // Replace and reconnect — most fields (command/args/env/url/headers)
-    // affect the transport, so a full rebuild is the safe default.
+    // 替换并重连 —— 大多数字段(command/args/env/url/headers)
+    // 都会影响传输层,因此完整重建是更安全的默认做法。
     if (existing) await existing.client.disconnect();
     const next = this.buildEntry(fresh);
     this.entries.set(id, next);
@@ -130,8 +130,8 @@ class McpManager {
   }
 
   /**
-   * Probe a server config without persisting it — used by the
-   * settings UI's "Test connection" button.
+   * 探测一个服务器配置而不持久化它 —— 供设置 UI 的
+   * "Test connection" 按钮使用。
    */
   async testConnection(input: McpServerInput): Promise<{
     ok: boolean;
@@ -194,7 +194,7 @@ class McpManager {
     }));
   }
 
-  /** Tool definitions for every connected, enabled server. */
+  /** 每一个已连接且已启用的服务器的工具定义。 */
   getActiveToolDefs(): ToolDefinition[] {
     const defs: ToolDefinition[] = [];
     for (const entry of this.entries.values()) {
@@ -204,7 +204,7 @@ class McpManager {
     return defs;
   }
 
-  // ---------- internals ----------
+  // ---------- 内部实现 ----------
 
   private buildEntry(config: McpServer): Entry {
     const status: McpServerStatus = {

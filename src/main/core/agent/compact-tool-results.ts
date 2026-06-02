@@ -1,23 +1,21 @@
 /**
- * In-loop context compaction for the agent's tool results.
+ * 对 agent 工具结果进行循环内上下文压缩。
  *
- * Within ONE user turn, the AI SDK's internal step loop re-sends the whole
- * message list — including every tool result produced so far — to the model
- * on every step. A single big result (a webFetch `raw` body, a command's
- * stdout) therefore costs its size × the number of remaining steps, which is
- * how a "fetch a 4MB word list, then iterate" turn blows past 2M input tokens.
+ * 在同一次用户轮次中,AI SDK 内部的逐步循环会在每一步把整个消息列表
+ * ——包括目前产生的每个工具结果——重新发送给模型。因此单个大结果
+ * (一个 webFetch 的 `raw` 主体、某个命令的 stdout)的代价 = 其大小 × 剩余步数,
+ * 这正是"抓取一个 4MB 词表后再迭代"的轮次会冲破 200 万输入 token 的原因。
  *
- * This shrinks OLD tool results: the most recent tool message is left intact
- * (the model is usually acting on it right now), while earlier oversized
- * results are replaced with a head+tail excerpt. Parallel tool calls are
- * disabled, so "most recent tool message" == "current step's result". Pure
- * and structure-preserving: only the `output` text shrinks; toolCallId /
- * toolName / message pairing are untouched.
+ * 本函数收缩较旧的工具结果:最新的工具消息保持原样
+ * (模型通常正在对它进行操作),而较早的超大结果会被替换为头部+尾部摘录。
+ * 并行工具调用已被禁用,因此"最新的工具消息" == "当前步骤的结果"。
+ * 纯函数且保留结构:只有 `output` 文本被收缩;toolCallId /
+ * toolName / 消息配对均不受影响。
  */
 
 import type { ModelMessage } from "ai";
 
-/** Older tool results are clamped to this many chars (head+tail). */
+/** 较旧的工具结果被裁剪到这么多字符(头部+尾部)。 */
 const DEFAULT_BUDGET_CHARS = 4_000;
 const HEAD_FRAC = 0.75;
 
@@ -38,7 +36,7 @@ function outputToString(output: unknown): string | null {
       return null;
     }
   }
-  return null; // execution-denied / content parts — small, leave alone
+  return null; // execution-denied / 内容片段——体积小,不予处理
 }
 
 function clamp(s: string, budget: number): string {
@@ -50,8 +48,8 @@ function clamp(s: string, budget: number): string {
 }
 
 /**
- * Return a compacted copy of `messages`, or `null` when nothing changed.
- * Leaves the last `tool`-role message full; clamps earlier oversized ones.
+ * 返回 `messages` 的压缩副本,若无任何改动则返回 `null`。
+ * 保留最后一条 `tool` 角色消息的完整内容;裁剪较早的超大消息。
  */
 export function compactToolResults(
   messages: ModelMessage[],
@@ -66,7 +64,7 @@ export function compactToolResults(
       break;
     }
   }
-  if (lastToolIdx <= 0) return null; // 0 or 1 tool message — nothing older to trim
+  if (lastToolIdx <= 0) return null; // 0 或 1 条工具消息——没有更早的可裁剪
 
   let changed = false;
   const out = messages.map((m, i) => {

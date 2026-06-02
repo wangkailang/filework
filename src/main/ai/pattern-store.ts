@@ -1,6 +1,5 @@
-// Fire-and-forget JSONL capture sink. No-op until initPatternStore() is
-// called. Writes serialize via a 1-deep promise chain so JSONL lines
-// don't interleave under concurrent appends.
+// 即发即忘的 JSONL 采集落地点。在调用 initPatternStore() 之前为空操作。
+// 写入通过一层深的 promise 链串行化,使 JSONL 行在并发追加时不会交错。
 
 import { appendFile, readFile } from "node:fs/promises";
 import type { TokenUsage } from "../core/agent/events";
@@ -31,13 +30,13 @@ export type PatternRecord = SubAgentPatternRecord | TaskPatternRecord;
 
 let storePath: string | undefined;
 
-/** Serialization chain — every appendPattern() chains on the previous write. */
+/** 串行化链 —— 每次 appendPattern() 都链接在上一次写入之后。 */
 let writeChain: Promise<void> = Promise.resolve();
 
 /**
- * Configure the JSONL file path. Production: call once at app startup
- * with `join(app.getPath("userData"), "patterns.jsonl")`. Tests: pass a
- * tmpdir path.
+ * 配置 JSONL 文件路径。生产环境:在应用启动时调用一次,传入
+ * `join(app.getPath("userData"), "patterns.jsonl")`。测试:传入
+ * 临时目录路径。
  */
 export function initPatternStore(absolutePath: string): void {
   storePath = absolutePath;
@@ -47,15 +46,15 @@ export function getPatternStorePath(): string | undefined {
   return storePath;
 }
 
-/** Reset for tests. */
+/** 供测试重置。 */
 export function __resetPatternStoreForTests(): void {
   storePath = undefined;
   writeChain = Promise.resolve();
 }
 
 /**
- * Fire-and-forget append. Returns the write promise so tests can await
- * — production callers ignore the return value.
+ * 即发即忘的追加。返回写入 promise 以便测试可以 await ——
+ * 生产环境调用方忽略返回值。
  */
 export function appendPattern(record: PatternRecord): Promise<void> {
   if (!storePath) return Promise.resolve();
@@ -79,7 +78,7 @@ export function appendPattern(record: PatternRecord): Promise<void> {
   return writeChain;
 }
 
-/** Test helper — read & parse all records. */
+/** 测试辅助函数 —— 读取并解析所有记录。 */
 export async function readAllPatterns(): Promise<PatternRecord[]> {
   if (!storePath) return [];
   try {

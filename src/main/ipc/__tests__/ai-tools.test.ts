@@ -186,7 +186,7 @@ describe("safeTools.directoryStats", () => {
   it("respects maxEntries cap", async () => {
     vi.resetModules();
 
-    // Mock fs.promises.readdir to return many entries
+    // mock fs.promises.readdir 以返回大量条目
     const fakeEntries = Array.from({ length: 100_000 }).map((_, i) => ({
       name: `f${i}.txt`,
       isDirectory: () => false,
@@ -246,7 +246,7 @@ describe("safeTools.directoryStats", () => {
   it("aggregates count and total size per extension", async () => {
     vi.resetModules();
 
-    // Two .txt (10 + 30 bytes) and one .md (5 bytes); sizes keyed off name.
+    // 两个 .txt(10 + 30 字节)和一个 .md(5 字节);大小按文件名映射。
     const sizes: Record<string, number> = {
       "a.txt": 10,
       "b.txt": 30,

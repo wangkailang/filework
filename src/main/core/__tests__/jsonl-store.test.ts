@@ -11,8 +11,8 @@ describe("JsonlSessionStore", () => {
   let rootDir: string;
   let store: JsonlSessionStore;
 
-  // listSessions() filters out files with no MessageLine, so most
-  // tests need to seed at least one message before listing.
+  // listSessions() 会过滤掉没有 MessageLine 的文件，因此大多数
+  // 测试在列出之前需要至少播种一条消息。
   const seedMessage = async (
     sessionId: string,
     workspacePath: string,
@@ -60,8 +60,8 @@ describe("JsonlSessionStore", () => {
 
       const list = await store.listSessions(ws);
       expect(list.map((s) => s.id)).toEqual([real.id]);
-      // The empty session file still exists on disk — filter is read-side
-      // only — but it must NOT appear in the sidebar.
+      // 空会话文件仍存在于磁盘上 —— 过滤仅在读取侧进行 ——
+      // 但它绝不能出现在侧边栏中。
       const wsDir = path.join(rootDir, workspaceKey(ws));
       const files = await readdir(wsDir);
       expect(files.some((f) => f.startsWith(empty.id))).toBe(true);
@@ -291,7 +291,7 @@ describe("JsonlSessionStore", () => {
         expect(["m1", "m2", "m3"]).not.toContain(fm.id);
       }
 
-      // Verify lineage is stored on disk (read raw).
+      // 验证血缘关系已存储在磁盘上（读取原始内容）。
       const wsDir = path.join(rootDir, workspaceKey("/ws"));
       const files = await readdir(wsDir);
       const forkedFile = files.find((f) => f.startsWith(forked.id));
@@ -336,7 +336,7 @@ describe("JsonlSessionStore", () => {
       const wsDir = path.join(rootDir, workspaceKey("/ws"));
       const tmpPath = path.join(wsDir, `${s.id}.jsonl.tmp`);
       await writeFile(tmpPath, "stale");
-      // Fresh store instance to trigger ensureIndex anew.
+      // 新建 store 实例以重新触发 ensureIndex。
       const fresh = new JsonlSessionStore(rootDir);
       await fresh.getMessages(s.id);
       const filesAfter = await readdir(wsDir);

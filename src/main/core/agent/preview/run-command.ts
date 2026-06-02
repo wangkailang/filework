@@ -1,7 +1,6 @@
 /**
- * runCommand preview generator. Surfaces the command + cwd verbatim and
- * verifies that the cwd resolves inside the workspace. Never executes
- * the command — the approval card just shows what would run.
+ * runCommand 预览生成器。原样呈现 command 与 cwd,并校验 cwd 解析后
+ * 位于工作区内部。绝不执行该命令 —— 审批卡片只展示即将运行的内容。
  */
 
 import path from "node:path";

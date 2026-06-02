@@ -38,7 +38,7 @@ describe("ensureAskpassScript", () => {
     const scriptPath = await ensureAskpassScript(internalDir);
     if (process.platform !== "win32") {
       const st = await stat(scriptPath);
-      // mode includes file-type bits; mask to permissions
+      // mode 包含文件类型位;通过掩码取出权限位
       expect(st.mode & 0o111).not.toBe(0);
     }
   });
@@ -69,7 +69,7 @@ describe("buildAskpassEnv", () => {
       askpassPath: "/x",
       password: "p",
     });
-    // PATH should be inherited from process.env (always present in tests)
+    // PATH 应当从 process.env 继承(测试中始终存在)
     expect(env.PATH).toBe(process.env.PATH);
   });
 });

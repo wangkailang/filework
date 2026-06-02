@@ -1,6 +1,6 @@
-// Batched destructive-tool approval buffer. Coalesces N concurrent
-// requestApproval() calls for the same (taskId, toolName) into a single
-// IPC event so the renderer can show one card with N entries.
+// 破坏性工具批量审批缓冲区。把同一 (taskId, toolName) 下 N 个并发的
+// requestApproval() 调用合并成单个 IPC 事件，让渲染进程用一张卡片
+// 展示 N 条条目。
 
 import { randomUUID } from "node:crypto";
 import type { WebContents } from "electron";
@@ -11,16 +11,15 @@ import type { Workspace } from "../core/workspace/types";
 import { addPersistentToolWhitelist } from "./tool-whitelist";
 
 /**
- * Time to wait for additional entries after the latest arrival, before
- * flushing. AI-SDK's parallel-tool dispatch ends up staggered because
- * each `beforeToolCall` runs filesystem checks (realpath() in
- * isInWorkspace) before reaching enqueueForBatch — so 6 parallel
- * deleteFile calls can arrive at the batcher 30-150ms apart depending
- * on FS load. 250ms gives reliable coalescing without noticeably
- * delaying the approval dialog.
+ * 在最后一条到达后、flush 之前继续等待新条目的时间窗口。
+ * AI-SDK 的并行工具派发会出现错峰：每个 `beforeToolCall` 在抵达
+ * enqueueForBatch 之前都要先做文件系统检查（isInWorkspace 中的
+ * realpath()），因此 6 个并行的 deleteFile 调用可能因 FS 负载不同
+ * 而以 30-150ms 的间隔陆续到达 batcher。250ms 能可靠合并，又不会
+ * 明显拖慢审批对话框。
  */
 const DEBOUNCE_MS = 250;
-/** Hard cap on how long a buffer may stay open even if entries keep arriving. */
+/** 即使条目持续到达，缓冲区保持打开的硬性上限时长。 */
 const MAX_BUFFER_AGE_MS = 10_000;
 
 export interface BatchEntry {
@@ -31,9 +30,8 @@ export interface BatchEntry {
   abortSignal?: AbortSignal;
   onAbort?: () => void;
   /**
-   * Structured change preview. Populated by PR2's preview generator
-   * during `flushBuffer`; PR1 only wires the field through (always
-   * undefined).
+   * 结构化变更预览。由 PR2 的预览生成器在 `flushBuffer` 期间填充；
+   * PR1 仅把该字段贯通传递（始终为 undefined）。
    */
   preview?: ToolPreview;
 }
@@ -46,11 +44,10 @@ interface PendingBuffer {
   debounceTimer: ReturnType<typeof setTimeout>;
   capTimer: ReturnType<typeof setTimeout>;
   /**
-   * Workspace that owns this task. Captured from the first enqueue with
-   * a workspace; used by `flushBuffer` to enrich entries with structured
-   * previews before the IPC event is sent. Unset → preview generation
-   * is skipped and the event is sent synchronously (legacy path used by
-   * unit tests and any caller that hasn't been threaded through yet).
+   * 拥有该任务的工作区。从第一个带 workspace 的入队请求中捕获；
+   * `flushBuffer` 用它在发送 IPC 事件前为条目补充结构化预览。
+   * 未设置 → 跳过预览生成并同步发送事件（单元测试及尚未接入该
+   * 链路的调用方所走的旧路径）。
    */
   workspace?: Workspace;
 }
@@ -62,9 +59,9 @@ export interface PendingBatch {
   entries: BatchEntry[];
 }
 
-// Buffers awaiting debounce flush. Key = `${taskId}::${toolName}`.
+// 等待防抖 flush 的缓冲区。Key = `${taskId}::${toolName}`。
 const buffers = new Map<string, PendingBuffer>();
-// Flushed batches awaiting user response. Key = batchId.
+// 已 flush、等待用户响应的批次。Key = batchId。
 const pendingBatches = new Map<string, PendingBatch>();
 
 const bufferKey = (taskId: string, toolName: string): string =>
@@ -78,18 +75,17 @@ export interface EnqueueParams {
   args: unknown;
   description: string;
   abortSignal?: AbortSignal;
-  /** Optional pre-computed preview. When omitted and `workspace` is
-   *  present, the batcher generates one in `flushBuffer`. */
+  /** 可选的预计算预览。省略且存在 `workspace` 时，
+   *  batcher 会在 `flushBuffer` 中生成一个。 */
   preview?: ToolPreview;
-  /** Workspace that owns this task. Required for the batcher to
-   *  generate a preview when none is pre-computed. */
+  /** 拥有该任务的工作区。当没有预计算预览时，
+   *  batcher 生成预览所必需。 */
   workspace?: Workspace;
 }
 
 /**
- * Buffer this destructive-tool approval request. The returned Promise
- * resolves when the user makes a decision on the containing batch (or
- * the abort signal fires, in which case it resolves to `false`).
+ * 缓冲该破坏性工具的审批请求。返回的 Promise 会在用户对所属批次
+ * 作出决定时 resolve（或在 abort 信号触发时 resolve 为 `false`）。
  */
 export function enqueueForBatch(params: EnqueueParams): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
@@ -129,8 +125,8 @@ export function enqueueForBatch(params: EnqueueParams): Promise<boolean> {
       buf.workspace = params.workspace;
     }
     buf.entries.push(entry);
-    // Bump debounce window — additional concurrent arrivals reset the
-    // timer so we wait for the wave to finish.
+    // 延长防抖窗口 —— 后续并发到达会重置定时器，
+    // 以便等待这一波全部到齐。
     clearTimeout(buf.debounceTimer);
     buf.debounceTimer = setTimeout(() => flushBuffer(key), DEBOUNCE_MS);
   });
@@ -197,9 +193,9 @@ function flushBuffer(key: string): void {
     entries: buf.entries,
   });
 
-  // With a workspace, enrich entries asynchronously then send. Without
-  // one (eg unit tests, legacy callers), preserve the synchronous IPC
-  // path so existing fake-timer tests don't need microtask flushing.
+  // 有 workspace 时，异步补充条目预览后再发送。没有时
+  // （如单元测试、旧调用方）保留同步 IPC 路径，以便现有的
+  // fake-timer 测试无需 flush 微任务。
   if (buf.workspace) {
     void enrichAndSend(buf, batchId);
   } else {
@@ -231,10 +227,9 @@ async function enrichAndSend(
     if (pendingBatches.has(batchId)) sendBatchApproval(buf, batchId);
     return;
   }
-  // Snapshot the entries array so a concurrent `removeEntry` splice
-  // doesn't mutate what we're iterating over. The entry objects
-  // themselves stay shared — preview assignment is still observed by
-  // sendBatchApproval, but the iteration shape is stable.
+  // 对 entries 数组做快照，避免并发的 `removeEntry` splice 改动
+  // 正在遍历的内容。条目对象本身仍是共享的 —— sendBatchApproval
+  // 仍能看到预览赋值，但遍历的结构是稳定的。
   const snapshot = buf.entries.slice();
   await Promise.all(
     snapshot.map(async (e) => {
@@ -248,19 +243,18 @@ async function enrichAndSend(
         ]);
         e.preview = preview;
       } catch {
-        // dispatchPreview already swallows its own errors; nothing to do.
+        // dispatchPreview 已自行吞掉错误；这里无需处理。
       }
     }),
   );
-  // Drop the IPC if the batch was cancelled / settled / re-flushed
-  // during the await window — otherwise the renderer would receive a
-  // ghost approval card whose buttons no-op against settleBatch.
+  // 若批次在 await 期间被取消 / 已结算 / 重新 flush，则丢弃该 IPC ——
+  // 否则渲染进程会收到一张幽灵审批卡片，其按钮对 settleBatch 无效。
   if (!pendingBatches.has(batchId)) return;
   sendBatchApproval(buf, batchId);
 }
 
 /**
- * Resolve every entry in the batch with the given decision.
+ * 以给定的决定结算批次中的每一条条目。
  *
  * 普通批准(`remember` 为 false)只放行**这一批显示出来的操作**,不写白名单、
  * 不级联——对齐 Claude Code「Yes」只批准当前这一次的语义。只有用户显式选择
@@ -280,9 +274,8 @@ export function settleBatch(
       entry.abortSignal.removeEventListener("abort", entry.onAbort);
     }
     if (approved && entry.preview) {
-      // Hand the freshly-generated preview off to the snapshot store so
-      // the upcoming `tool_execution_start` IPC can ship it to the
-      // renderer without a redundant disk read.
+      // 把刚生成的预览交给快照存储，这样后续的
+      // `tool_execution_start` IPC 无需重复读盘即可把它发给渲染进程。
       rememberPreview(entry.toolCallId, entry.preview);
     }
     entry.resolve(approved);
@@ -297,9 +290,8 @@ export function settleBatch(
 }
 
 /**
- * After a batch is approved, resolve any other pending batches for the
- * same (taskId, toolName) and emit a notification IPC event so the
- * renderer can collapse their cards into the accepted state.
+ * 在某批次被批准后，结算同一 (taskId, toolName) 下其余待处理批次，
+ * 并发出一个通知性 IPC 事件，让渲染进程把它们的卡片收拢为已接受状态。
  */
 function cascadeApproveSiblings(
   taskId: string,
@@ -326,8 +318,8 @@ function cascadeApproveSiblings(
 }
 
 /**
- * Reject every entry (still-buffering or already-flushed) belonging to
- * the given task. Used by `stopTaskExecution`.
+ * 拒绝属于指定任务的每一条条目（无论仍在缓冲还是已 flush）。
+ * 由 `stopTaskExecution` 使用。
  */
 export function cancelBatchesForTask(taskId: string): void {
   for (const [key, buf] of buffers) {
@@ -354,7 +346,7 @@ export function cancelBatchesForTask(taskId: string): void {
   }
 }
 
-/** Test helper. */
+/** 测试辅助函数。 */
 export function __resetBatcherForTests(): void {
   for (const buf of buffers.values()) {
     clearTimeout(buf.debounceTimer);
@@ -364,7 +356,7 @@ export function __resetBatcherForTests(): void {
   pendingBatches.clear();
 }
 
-/** Inspection helper for tests. */
+/** 测试用的状态检查辅助函数。 */
 export function __getBatcherState(): {
   bufferCount: number;
   pendingBatchCount: number;
@@ -376,8 +368,8 @@ export function __getBatcherState(): {
 }
 
 /**
- * Test helper: synchronously flush every still-buffering batch (skipping
- * the debounce wait). Returns the list of batchIds that got flushed.
+ * 测试辅助函数：同步 flush 每个仍在缓冲的批次（跳过防抖等待）。
+ * 返回被 flush 的 batchId 列表。
  */
 export function __flushAllForTests(): string[] {
   const flushedIds: string[] = [];
@@ -394,8 +386,8 @@ export function __flushAllForTests(): string[] {
 }
 
 /**
- * Test helper: locate the batch containing the given toolCallId and
- * settle it. Includes still-buffering entries (flushes them first).
+ * 测试辅助函数：定位包含指定 toolCallId 的批次并结算它。
+ * 涵盖仍在缓冲的条目（会先 flush 它们）。
  */
 export function __settleByToolCallIdForTests(
   toolCallId: string,

@@ -75,7 +75,7 @@ describe("checkEligibility", () => {
   });
 
   it("returns eligible when required env vars are set", () => {
-    // PATH is always set
+    // PATH 总是已设置
     const result = checkEligibility(makeSkill({ env: ["PATH"] }));
     expect(result).toEqual({ eligible: true });
   });
@@ -89,7 +89,7 @@ describe("checkEligibility", () => {
   });
 
   it("returns eligible when required binary exists in PATH", () => {
-    // 'node' should always be available in test environment
+    // 测试环境中 'node' 应当始终可用
     const result = checkEligibility(makeSkill({ bins: ["node"] }));
     expect(result).toEqual({ eligible: true });
   });
@@ -124,7 +124,7 @@ describe("discoverSkills", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  /** Helper: create a SKILL.md in a subdirectory */
+  /** 辅助函数:在子目录中创建一个 SKILL.md */
   async function createSkill(
     base: string,
     dirName: string,
@@ -230,16 +230,16 @@ describe("discoverSkills", () => {
 
   it("skips unparseable SKILL.md files and continues", async () => {
     const sourceDir = join(tmpDir, "source");
-    // Valid skill
+    // 合法的 skill
     await createSkill(sourceDir, "good", "---\nname: good\n---\nGood skill");
-    // Empty file (will throw SkillParseError)
+    // 空文件(会抛出 SkillParseError)
     await createSkill(sourceDir, "bad", "");
 
     const results = await discoverSkills([
       { type: "project", basePath: sourceDir },
     ]);
 
-    // Only the valid skill should be discovered
+    // 应只发现合法的那个 skill
     expect(results).toHaveLength(1);
     expect(results[0].skillId).toBe("good");
   });

@@ -16,16 +16,15 @@ import type { AttachmentPart } from "../../../main/core/session/message-parts";
 import { cn } from "../../lib/utils";
 
 // ============================================================================
-// Composer attachment shape — the form's `attachments` prop. Derived
-// from AttachmentPart so renaming a field in one place stays a one-spot
-// change. Other `ai-elements/*` already import from message-parts
-// (ToolApproval, ApprovalState, PlanView), so the boundary is OK.
+// 编辑器附件形状 —— 表单的 `attachments` prop。派生自 AttachmentPart,
+// 这样在一处重命名字段即可保持单点修改。其他 `ai-elements/*` 已经从
+// message-parts 导入(ToolApproval、ApprovalState、PlanView),因此该边界没问题。
 // ============================================================================
 
 export type ComposerAttachment = Omit<AttachmentPart, "type">;
 
 // ============================================================================
-// Context — carries the textarea value so PromptInput can read it on submit
+// Context —— 携带 textarea 的值,使 PromptInput 在提交时能读取它
 // ============================================================================
 
 interface PromptInputContextValue {
@@ -50,10 +49,9 @@ export type PromptInputProps = Omit<
 > & {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   /**
-   * Controlled attachment list — owned by the parent so drag-drop on
-   * sibling DOM and the file picker both feed the same source of truth.
-   * When provided, PromptInput clears it via `onAttachmentsChange([])`
-   * after a successful submit.
+   * 受控的附件列表 —— 由父组件持有,这样兄弟 DOM 上的拖拽和文件选择器都
+   * 写入同一份事实来源。提供该 prop 时,PromptInput 会在提交成功后通过
+   * `onAttachmentsChange([])` 清空它。
    */
   attachments?: ComposerAttachment[];
   onAttachmentsChange?: (next: ComposerAttachment[]) => void;
@@ -138,7 +136,7 @@ export const PromptInputTextarea = ({
   const ctx = useContext(PromptInputContext);
   const [isComposing, setIsComposing] = useState(false);
 
-  // Sync external value into context so PromptInput.handleSubmit reads the right value
+  // 将外部值同步到 context,使 PromptInput.handleSubmit 读取到正确的值
   useEffect(() => {
     if (externalValue !== undefined && ctx) {
       ctx.setValue(externalValue);

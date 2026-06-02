@@ -1,21 +1,21 @@
 /**
- * Adapter that exposes MCP tools as filework `ToolDefinition`s so they
- * drop into the existing `ToolRegistry` and ride the same execution
- * path as built-in tools (signal forwarding, approval hook, etc.).
+ * 适配器,将 MCP 工具暴露为 filework 的 `ToolDefinition`,使其
+ * 接入既有的 `ToolRegistry`,并走与内置工具相同的执行
+ * 路径(signal 转发、审批钩子等)。
  *
- * Naming convention: `mcp__<serverSlug>__<toolName>` — matches Claude
- * Code / Cursor so users can copy `allowed-tools` lists between tools.
+ * 命名约定:`mcp__<serverSlug>__<toolName>` —— 与 Claude
+ * Code / Cursor 一致,便于用户在不同工具间复制 `allowed-tools` 列表。
  *
- * Safety: `trusted=true` on the server config → tools run as `safe`
- * (no approval prompt). Default `destructive` so the existing
- * `beforeToolCall` gate catches arbitrary MCP shells, db drops, etc.
+ * 安全性:服务器配置上的 `trusted=true` → 工具以 `safe` 运行
+ * (不弹审批)。默认 `destructive`,以便既有的
+ * `beforeToolCall` 门控拦住任意的 MCP shell、删库等操作。
  *
- * Call results: the SDK returns `CallToolResult { content, isError,
- * structuredContent? }`. We surface the whole object back to the model
- * — text blocks render well; image/resource blocks stay in the JSON so
- * a downstream renderer can pick them up. `isError=true` is translated
- * into a thrown error so the agent loop treats it as a failed tool
- * call (the SDK ai-sdk wrapper turns thrown errors into `tool-error`).
+ * 调用结果:SDK 返回 `CallToolResult { content, isError,
+ * structuredContent? }`。我们把整个对象原样回传给模型
+ * —— 文本块渲染良好;图像/资源块保留在 JSON 中,以便
+ * 下游渲染器拾取。`isError=true` 会被转换为抛出的错误,使
+ * agent 循环将其视为一次失败的工具调用(SDK 的 ai-sdk 封装
+ * 会把抛出的错误转成 `tool-error`)。
  */
 
 import type {
@@ -36,9 +36,9 @@ const fallbackDescription = (serverName: string, toolName: string): string =>
   `MCP tool "${toolName}" from server "${serverName}"`;
 
 /**
- * One `ToolDefinition` per tool the server exposes. The MCP descriptor's
- * `inputSchema` is mapped through `jsonSchemaToZodObject` so the ai-sdk
- * gets a Zod schema and can validate/serialize args natively.
+ * 服务器暴露的每个工具对应一个 `ToolDefinition`。MCP 描述符的
+ * `inputSchema` 经由 `jsonSchemaToZodObject` 映射,使 ai-sdk
+ * 拿到 Zod schema 并能原生地校验/序列化参数。
  */
 export const buildMcpToolDefs = (
   config: McpServer,
@@ -69,9 +69,9 @@ const buildOne = (
       if (result.isError) {
         throw new Error(extractErrorText(result));
       }
-      // Pass the SDK's result through verbatim. The ai-sdk serializes
-      // this into the tool-result message; the model sees both `content`
-      // blocks and `structuredContent` when present.
+      // 原样透传 SDK 的结果。ai-sdk 会将其序列化进
+      // tool-result 消息;当存在时,模型同时能看到 `content`
+      // 块与 `structuredContent`。
       return {
         content: result.content,
         structuredContent: result.structuredContent,

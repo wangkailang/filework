@@ -49,7 +49,7 @@ describe("convertToCoreMessages", () => {
     const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(2);
 
-    // Assistant message with tool-call
+    // 带 tool-call 的 assistant 消息
     expect(result[0]).toEqual({
       role: "assistant",
       content: [
@@ -62,7 +62,7 @@ describe("convertToCoreMessages", () => {
       ],
     });
 
-    // Tool role message with tool-result
+    // 带 tool-result 的 tool 角色消息
     expect(result[1]).toEqual({
       role: "tool",
       content: [
@@ -147,7 +147,7 @@ describe("convertToCoreMessages", () => {
     const result = await convertToCoreMessages(history);
     expect(result).toHaveLength(2);
 
-    // Assistant message has both text and tool-call
+    // assistant 消息同时包含 text 和 tool-call
     expect(result[0]).toEqual({
       role: "assistant",
       content: [
@@ -161,7 +161,7 @@ describe("convertToCoreMessages", () => {
       ],
     });
 
-    // Tool result message
+    // tool 结果消息
     expect(result[1].role).toBe("tool");
   });
 
@@ -202,10 +202,10 @@ describe("convertToCoreMessages", () => {
   });
 
   it("preserves ReasoningPart so reasoning_content survives cross-turn", async () => {
-    // Xiaomi MiMo / DeepSeek-Reasoner: the API rejects follow-up turns
-    // that omit the previous assistant's reasoning_content. The DeepSeek
-    // adapter picks up `{ type: "reasoning" }` parts in the assistant
-    // content array and threads them into the outgoing request body.
+    // 小米 MiMo / DeepSeek-Reasoner:若后续轮次省略了上一条 assistant 的
+    // reasoning_content,API 会拒绝。DeepSeek 适配器会从 assistant 的
+    // content 数组中拾取 `{ type: "reasoning" }` 部分,
+    // 并将其编入发出的请求体。
     const history: HistoryMessage[] = [
       {
         role: "assistant",

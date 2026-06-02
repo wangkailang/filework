@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Electron is only needed for the runtime BrowserWindow paths, which we
-// don't exercise here — we test the pure helpers. Stub the module so the
-// import-time `import { BrowserWindow, app, session } from "electron"`
-// in interactive-browser.ts resolves under vitest. Fakes live inside the
-// factory (which is hoisted) so they're defined before the mock runs.
+// Electron 仅在运行时的 BrowserWindow 路径中才需要,而我们这里
+// 并不会走那条路径 —— 我们测试的是纯函数辅助方法。打桩该模块,使得
+// interactive-browser.ts 中导入期的
+// `import { BrowserWindow, app, session } from "electron"`
+// 能在 vitest 下被正确解析。伪实现放在工厂函数内(该函数会被提升),
+// 以便在 mock 运行前就已定义。
 vi.mock("electron", () => {
   class FakeBrowserWindow {}
   return {
@@ -26,7 +27,7 @@ import {
   SNAPSHOT_SCRIPT,
 } from "../interactive-browser";
 
-// ─── Page-script builders ────────────────────────────────────────────
+// ─── 页面脚本构造器 ────────────────────────────────────────────
 
 describe("buildClickScript", () => {
   it("embeds the ref via JSON.stringify so quotes are escaped", () => {
@@ -35,7 +36,7 @@ describe("buildClickScript", () => {
     expect(script).toContain(JSON.stringify(malicious));
     expect(script).not.toContain(`'${malicious}'`);
     expect(script).not.toContain(`"${malicious}"`);
-    // No unbalanced quote: the script should parse as a JS expression.
+    // 不存在不配对的引号:脚本应能作为一个 JS 表达式被解析。
     expect(() => new Function(`return ${script}`)).not.toThrow();
   });
 
@@ -97,7 +98,7 @@ describe("SNAPSHOT_SCRIPT", () => {
   });
 });
 
-// ─── Snapshot post-processing ────────────────────────────────────────
+// ─── 快照后处理 ────────────────────────────────────────
 
 const makeElement = (
   ref: string,

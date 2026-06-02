@@ -9,7 +9,7 @@ import {
 } from "../scorer";
 import type { NormalizedQuestion } from "../types";
 
-// ─── normalizeForScoring ─────────────────────────────────────────────
+// ─── normalizeForScoring 评分前归一化 ─────────────────────────────────────────────
 
 describe("normalizeForScoring", () => {
   it("lowercases and trims", () => {
@@ -44,7 +44,7 @@ describe("normalizeForScoring", () => {
   });
 });
 
-// ─── scoreAnswer ─────────────────────────────────────────────────────
+// ─── scoreAnswer 答案评分 ─────────────────────────────────────────────────────
 
 describe("scoreAnswer — exact match path", () => {
   it("passes identical strings", () => {
@@ -69,8 +69,8 @@ describe("scoreAnswer — numeric path", () => {
   it("passes integers with thousands separators (matches as exact after comma strip)", () => {
     const r = scoreAnswer("1234567", "1,234,567");
     expect(r.passed).toBe(true);
-    // Both sides normalise to "1234567" — exact-match path wins before
-    // we ever take the numeric branch.
+    // 两侧都归一化为 "1234567" —— 在进入数值分支之前,
+    // 精确匹配路径就已胜出。
     expect(r.matchType).toBe("exact");
   });
 
@@ -90,8 +90,8 @@ describe("scoreAnswer — numeric path", () => {
   });
 
   it("does NOT take the numeric path when only one side is numeric", () => {
-    // "42" parses; "Forty-two" doesn't even via leading-number fallback
-    // (no leading digit). Numeric path is skipped, falls through to fail.
+    // "42" 能解析;"Forty-two" 即便走前导数字兜底也无法解析
+    //(没有前导数字)。跳过数值路径,最终落到失败。
     const r = scoreAnswer("42", "Forty-two");
     expect(r.passed).toBe(false);
     expect(r.matchType).toBe("fail");
@@ -127,7 +127,7 @@ describe("scoreAnswer — leading-number tolerance", () => {
   });
 
   it("only matches the leading number, not embedded ones ('42 cats and 5 dogs' vs '5')", () => {
-    // Leading number is 42; truth is 5; numbers don't match → fail.
+    // 前导数字是 42;真值是 5;数字不匹配 → 失败。
     expect(scoreAnswer("42 cats and 5 dogs", "5").passed).toBe(false);
   });
 });
@@ -172,7 +172,7 @@ describe("scoreAnswer — failure cases", () => {
   });
 });
 
-// ─── extractFinalAnswer ──────────────────────────────────────────────
+// ─── extractFinalAnswer 提取最终答案 ──────────────────────────────────────────────
 
 describe("extractFinalAnswer", () => {
   it("pulls out the canonical FINAL ANSWER: line", () => {
@@ -221,9 +221,9 @@ describe("extractFinalAnswer", () => {
   });
 
   it("returns null when fallback would capture a thinking-prefix line", () => {
-    // These are real failure-mode outputs from the 2026-05-18 GAIA run —
-    // the model never emitted FINAL ANSWER and the fallback used to leak
-    // its narration as the predicted answer.
+    // 这些是 2026-05-18 GAIA 运行中真实出现的失败模式输出 ——
+    // 模型从未输出 FINAL ANSWER,而旧的兜底逻辑会把它的
+    // 叙述性文字泄露为预测答案。
     expect(
       extractFinalAnswer(
         "Let me try searching via DuckDuckGo or another search engine.",
@@ -240,8 +240,8 @@ describe("extractFinalAnswer", () => {
   });
 
   it("still falls back for non-thinking last lines", () => {
-    // Guard against over-aggressive filtering — legitimate short answers
-    // without the sentinel must still pass through.
+    // 防止过度激进的过滤 —— 没有哨兵标记的合法短答案
+    // 仍必须能正常通过。
     expect(extractFinalAnswer("After research:\n42")).toBe("42");
     expect(
       extractFinalAnswer("Working through this...\nThe answer is 42"),
@@ -249,7 +249,7 @@ describe("extractFinalAnswer", () => {
   });
 });
 
-// ─── Aggregation helpers ─────────────────────────────────────────────
+// ─── 聚合辅助函数 ─────────────────────────────────────────────
 
 describe("median", () => {
   it("handles odd-length arrays", () => {

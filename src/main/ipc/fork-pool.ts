@@ -1,6 +1,6 @@
-// Bounded-concurrency dispatcher over `createForkSkillRunner`. Each
-// child's parentSignal is cascaded from `deps.parentSignal`; failFast
-// aborts all remaining workers on the first non-ok report.
+// 基于 `createForkSkillRunner` 的有界并发调度器。每个
+// 子任务的 parentSignal 由 `deps.parentSignal` 级联而来;failFast
+// 会在首个非 ok 报告出现时中止所有剩余 worker。
 
 import { randomUUID } from "node:crypto";
 import type {
@@ -19,16 +19,16 @@ export interface ForkPoolItem {
   workspacePath: string;
   allowedTools?: string[];
   modelOverrideId?: string;
-  /** Per-child task id override; if omitted a UUID is minted. */
+  /** 每个子任务的 task id 覆盖项;若省略则生成一个 UUID。 */
   taskId?: string;
 }
 
 export interface RunForkBatchOptions {
-  /** Max in-flight children. Default 3. Clamped to [1, items.length]. */
+  /** 最大并发子任务数。默认 3。钳制到 [1, items.length]。 */
   concurrency?: number;
-  /** If true, the first non-ok report aborts all remaining children. */
+  /** 若为 true,首个非 ok 报告将中止所有剩余子任务。 */
   failFast?: boolean;
-  /** Stable id tagged on the batch result so the renderer can group children. */
+  /** 标记在批次结果上的稳定 id,供渲染层对子任务分组。 */
   forkBatchId?: string;
 }
 
@@ -50,8 +50,8 @@ export async function runForkBatch(
 
   const reports = new Array<SubAgentReport | undefined>(items.length);
 
-  // Per-batch cascade controller — flipped when failFast hits a failure.
-  // Children consume `batchSignal` as their parentSignal.
+  // 每批次的级联控制器 —— 当 failFast 命中失败时翻转。
+  // 子任务把 `batchSignal` 作为各自的 parentSignal 消费。
   const batchController = new AbortController();
   const onParentAbort = () => {
     if (!batchController.signal.aborted) batchController.abort();
@@ -116,7 +116,7 @@ export async function runForkBatch(
     deps.parentSignal.removeEventListener("abort", onParentAbort);
   }
 
-  // Any never-started slots (failFast cascade) get a synthetic cancelled report.
+  // 任何从未启动的槽位(failFast 级联)都会得到一个合成的 cancelled 报告。
   for (let i = 0; i < items.length; i++) {
     if (reports[i] === undefined) {
       reports[i] = {

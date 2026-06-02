@@ -1,10 +1,10 @@
 /**
- * Memory Debug Store
+ * 内存调试存储(Memory Debug Store)
  *
- * In-memory ring buffer that records context-compression and prompt-cache
- * events so they can be surfaced in a debug panel on the renderer side.
+ * 内存环形缓冲区,记录上下文压缩与 prompt 缓存事件,
+ * 以便在渲染进程侧的调试面板中展示。
  *
- * Deliberately NOT persisted — this is a live diagnostics tool.
+ * 刻意不做持久化 —— 这是一个实时诊断工具。
  */
 
 import crypto from "node:crypto";
@@ -18,14 +18,14 @@ import type {
 export type { MemoryEvent, MemoryEventDetail, MemoryEventType };
 
 // ---------------------------------------------------------------------------
-// Constants
+// 常量
 // ---------------------------------------------------------------------------
 
 const MAX_EVENTS = 200;
 const MAX_SUMMARY_LENGTH = 500;
 
 // ---------------------------------------------------------------------------
-// Store
+// 存储
 // ---------------------------------------------------------------------------
 
 const events: MemoryEvent[] = [];
@@ -50,7 +50,7 @@ export function addMemoryEvent(
 
   events.push(event);
 
-  // Ring-buffer: drop oldest when full
+  // 环形缓冲区:满时丢弃最旧的事件
   while (events.length > MAX_EVENTS) {
     events.shift();
   }
@@ -59,8 +59,8 @@ export function addMemoryEvent(
 }
 
 /**
- * Write a memory event to the store AND send it to the renderer via IPC.
- * Consolidates the addMemoryEvent + sender.send pattern.
+ * 将一个内存事件写入存储,并通过 IPC 发送给渲染进程。
+ * 整合了 addMemoryEvent + sender.send 的模式。
  */
 export function emitMemoryEvent(
   sender: WebContents,
@@ -83,7 +83,7 @@ export function emitMemoryEvent(
 
 export function getMemoryEvents(limit = 50): MemoryEvent[] {
   const start = Math.max(0, events.length - limit);
-  return events.slice(start).reverse(); // newest first
+  return events.slice(start).reverse(); // 最新的在前
 }
 
 export function clearMemoryEvents(): void {

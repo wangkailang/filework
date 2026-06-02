@@ -4,8 +4,8 @@ import { cn } from "../../../lib/utils";
 
 interface DiffHunkViewProps {
   hunk: PreviewDiffHunk;
-  /** When true, ≥6-line "context" hunks render only head/tail with a
-   *  "… N lines" marker. Added/removed hunks are never collapsed. */
+  /** 为 true 时,≥6 行的「上下文」hunk 仅渲染首/尾,并以
+   *  「… N lines」标记表示。新增/删除的 hunk 永不折叠。 */
   collapseContext: boolean;
 }
 

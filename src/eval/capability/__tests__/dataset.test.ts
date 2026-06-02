@@ -1,15 +1,14 @@
 /**
- * Smoke tests for the capability synthetic dataset.
+ * capability 合成数据集的冒烟测试。
  *
- * These tests verify the dataset *itself* — that every task entry
- * parses as a valid GAIA record, every declared attachment exists on
- * disk, and the expected answers are still satisfiable by the fixture
- * files. They do NOT execute the agent — that requires an LLM and is
- * driven by `pnpm gaia-eval --dataset src/eval/capability/dataset`.
+ * 这些测试验证的是数据集*本身* —— 每个任务条目都能解析为合法的
+ * GAIA 记录、每个声明的附件都存在于磁盘上,并且期望答案仍能由
+ * fixture 文件满足。它们*不*执行 agent —— 那需要 LLM,
+ * 由 `pnpm gaia-eval --dataset src/eval/capability/dataset` 驱动。
  *
- * The goal is to catch fixture drift: if someone deletes one of the
- * txt/csv/json fixtures or changes a fixture's contents in a way that
- * breaks the declared answer, this test will surface it.
+ * 目标是捕获 fixture 漂移:如果有人删除了某个 txt/csv/json
+ * fixture,或以破坏声明答案的方式修改了 fixture 内容,
+ * 该测试会将其暴露出来。
  */
 
 import { readFile } from "node:fs/promises";
@@ -68,13 +67,12 @@ describe("capability dataset", () => {
   });
 });
 
-// ─── Verify each declared answer is satisfiable by the fixture ───────
+// ─── 验证每个声明的答案都能由 fixture 满足 ───────
 
 /**
- * Per-task verifier — runs the same deterministic computation the
- * agent would, without any LLM, to confirm the declared `Final answer`
- * matches what the fixture content implies. Catches fixture/answer
- * drift on every test run.
+ * 单任务校验器 —— 在不依赖任何 LLM 的情况下,执行与 agent 相同的
+ * 确定性计算,确认声明的 `Final answer` 与 fixture 内容所隐含的
+ * 结果一致。每次测试运行都能捕获 fixture/答案漂移。
  */
 const verifyAnswer = async (
   taskId: string,

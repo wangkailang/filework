@@ -1,24 +1,22 @@
 /**
- * GitLabWorkspace — Workspace backed by an ephemeral local clone of a
- * GitLab project (gitlab.com or self-hosted).
+ * GitLabWorkspace — 基于 GitLab 项目(gitlab.com 或自托管)临时本地克隆的
+ * 工作区。
  *
- * Mirrors `github-workspace.ts` in structure and design. Key differences:
- *   - Authed clone URL uses `oauth2:<token>@<host>/<namespace>/<project>.git`
- *     (GitLab's recommended username for token auth).
- *   - Clone layout includes the host (`<cacheDir>/<host>/<namespace>/<project>/`)
- *     so the same `<namespace>/<project>` on different GitLab instances
- *     doesn't collide.
+ * 在结构与设计上与 `github-workspace.ts` 保持一致。主要区别:
+ *   - 带认证的克隆 URL 使用 `oauth2:<token>@<host>/<namespace>/<project>.git`
+ *     (GitLab 推荐的 token 认证用户名)。
+ *   - 克隆目录布局包含 host(`<cacheDir>/<host>/<namespace>/<project>/`),
+ *     这样不同 GitLab 实例上相同的 `<namespace>/<project>` 不会冲突。
  *
- * After the clone is materialized, fs/exec are delegated to an internal
- * `LocalWorkspace`. The agent drives git through `runCommand` against
- * the authenticated clone (`git`, `glab`); user approval on each
- * runCommand is the safety net.
+ * 克隆完成后,fs/exec 委托给内部的 `LocalWorkspace`。agent 通过
+ * `runCommand` 针对已认证的克隆驱动 git(`git`、`glab`);每次
+ * runCommand 都需用户批准,作为安全兜底。
  *
- * `scm` exposes a host-only branch picker — `currentBranch` +
- * `checkoutBranch` — used by the renderer's switch-branch UI.
+ * `scm` 暴露一个仅供宿主使用的分支选择器 —— `currentBranch` +
+ * `checkoutBranch` —— 供渲染进程的切换分支 UI 使用。
  *
- * Token handling: the PAT flows through the `GIT_ASKPASS` helper, never
- * embedded in the on-disk remote URL.
+ * Token 处理:PAT 通过 `GIT_ASKPASS` 辅助脚本传递,绝不嵌入磁盘上的
+ * 远程 URL。
  */
 
 import { spawn } from "node:child_process";
@@ -53,27 +51,27 @@ export interface GitLabRef {
 }
 
 export interface GitLabWorkspaceDeps {
-  /** Returns a decrypted PAT for the credential id. Throws if missing. */
+  /** 返回 credential id 对应的解密后 PAT。缺失时抛出异常。 */
   resolveToken: (credentialId: string) => Promise<string>;
-  /** Root for ephemeral clones, e.g. `~/.filework/cache/gitlab`. */
+  /** 临时克隆的根目录,例如 `~/.filework/cache/gitlab`。 */
   cacheDir: string;
   /**
-   * Absolute path to the GIT_ASKPASS helper script. Production wires
-   * this from `git-credentials.ts:ensureAskpassScript()`. See
-   * `github-workspace.ts:GitHubWorkspaceDeps.askpassPath` for details.
+   * GIT_ASKPASS 辅助脚本的绝对路径。生产环境由
+   * `git-credentials.ts:ensureAskpassScript()` 接入。详见
+   * `github-workspace.ts:GitHubWorkspaceDeps.askpassPath`。
    */
   askpassPath?: string;
-  /** Default 1 hour. After this, GitLabWorkspace.create() refreshes. */
+  /** 默认 1 小时。超过此时长后,GitLabWorkspace.create() 会刷新。 */
   freshnessTtlMs?: number;
-  /** Override the spawn implementation in tests. */
+  /** 在测试中覆盖 spawn 实现。 */
   spawnFn?: typeof spawn;
   /**
-   * Per-host proxy resolver (Chromium PAC output: "DIRECT" / "PROXY h:p").
-   * Wired by `index.ts` to `session.defaultSession.resolveProxy`. When set,
-   * every network-touching git subprocess gets a freshly-built env where
-   * HTTPS_PROXY matches the PAC verdict for the actual remote URL —
-   * fixes split-routing setups where the global env proxy is wrong for
-   * some hosts. Undefined falls back to inherited `process.env`.
+   * 按 host 的代理解析器(Chromium PAC 输出:"DIRECT" / "PROXY h:p")。
+   * 由 `index.ts` 接入到 `session.defaultSession.resolveProxy`。设置后,
+   * 每个涉及网络的 git 子进程都会获得一份新构建的 env,其中
+   * HTTPS_PROXY 与实际远程 URL 的 PAC 判定结果匹配 ——
+   * 修复分流路由场景下全局 env 代理对某些 host 失效的问题。
+   * 未设置时回退到继承的 `process.env`。
    */
   resolveProxy?: ProxyResolver;
 }
@@ -86,13 +84,12 @@ const authedEnv = (
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 /**
- * Stamp file path *relative to the clone root*. Lives inside `.git/` so
- * it never appears in `git status --porcelain` — otherwise the clean-tree
- * check used by `checkoutBranch` would always reject a just-cloned
- * workspace as "dirty". Mirrors `github-workspace.ts`.
+ * 标记文件路径(*相对于克隆根目录*)。位于 `.git/` 内,因此绝不会出现在
+ * `git status --porcelain` 中 —— 否则 `checkoutBranch` 使用的干净工作树
+ * 检查会始终把刚克隆的工作区判为「脏」。与 `github-workspace.ts` 保持一致。
  */
 const LAST_FETCH_FILE = ".git/filework-last-fetch";
-/** Pre-fix location at the working-tree root; removed on first encounter. */
+/** 修复前位于工作树根目录的位置;首次遇到时移除。 */
 const LEGACY_LAST_FETCH_FILE = ".last-fetch";
 
 const runGit = async (
@@ -128,10 +125,9 @@ const runGit = async (
 };
 
 /**
- * Clone dir layout: `<cacheDir>/<host>/<namespace>/<project>/`. One
- * clone per project — switching branches mutates this same directory.
- * Host is included so the same `<namespace>/<project>` on different
- * GitLab instances doesn't collide.
+ * 克隆目录布局:`<cacheDir>/<host>/<namespace>/<project>/`。每个项目
+ * 一份克隆 —— 切换分支会改动同一个目录。包含 host,
+ * 这样不同 GitLab 实例上相同的 `<namespace>/<project>` 不会冲突。
  */
 const cloneDirFor = (cacheDir: string, ref: GitLabRef): string =>
   path.join(cacheDir, ref.host, ref.namespace, ref.project);
@@ -163,10 +159,9 @@ const cloneExists = async (cloneDir: string): Promise<boolean> => {
 };
 
 /**
- * Materialize the clone for `ref`. One clone per project — `ref.ref`
- * is the initial branch (passed to `git clone -b`), not part of the
- * directory path. Mirrors `github-workspace.ts:ensureClone`; see that
- * file for the design rationale.
+ * 为 `ref` 实体化克隆。每个项目一份克隆 —— `ref.ref`
+ * 是初始分支(传给 `git clone -b`),不是目录路径的一部分。
+ * 与 `github-workspace.ts:ensureClone` 保持一致;设计理由见该文件。
  */
 export const ensureClone = async (
   ref: GitLabRef,
@@ -208,8 +203,8 @@ export const ensureClone = async (
         throw err;
       }
     } else {
-      // Stale refresh: re-sanitize remote URL, fetch all refs. No
-      // `reset --hard` — preserves session branches' uncommitted work.
+      // 陈旧刷新:重新净化远程 URL,拉取所有 ref。不执行
+      // `reset --hard` —— 保留会话分支上未提交的改动。
       await runGit(["remote", "set-url", "origin", remote], {
         cwd: cloneDir,
         spawnFn: deps.spawnFn,
@@ -221,8 +216,8 @@ export const ensureClone = async (
       });
     }
 
-    // Drop any legacy root-level stamp file from before it moved into
-    // `.git/`. See github-workspace.ts:ensureClone for the rationale.
+    // 删除迁移进 `.git/` 之前遗留在根目录的旧标记文件。
+    // 理由见 github-workspace.ts:ensureClone。
     await rm(path.join(cloneDir, LEGACY_LAST_FETCH_FILE), { force: true });
 
     await stamp(cloneDir);
@@ -242,9 +237,8 @@ interface GitLabScmDeps {
 }
 
 /**
- * Host-only SCM helper. Exposes only the branch-picker affordances the
- * renderer needs — the agent drives all other git operations through
- * `runCommand`.
+ * 仅供宿主使用的 SCM 辅助类。只暴露渲染进程需要的分支选择器能力 ——
+ * 其他所有 git 操作都由 agent 通过 `runCommand` 驱动。
  */
 class GitLabWorkspaceSCM implements WorkspaceSCM {
   constructor(private readonly deps: GitLabScmDeps) {}
@@ -328,15 +322,15 @@ export class GitLabWorkspace implements Workspace {
     ref: GitLabRef,
     deps: GitLabWorkspaceDeps,
   ): Promise<GitLabWorkspace> {
-    // Defensive normalize: pre-fix builds persisted host with `https://`
-    // baked in, and the workspace-factory replays those refs verbatim.
+    // 防御性归一化:修复前的版本持久化的 host 中内嵌了 `https://`,
+    // 而 workspace-factory 会原样回放这些 ref。
     const cleanRef: GitLabRef = {
       ...ref,
       host: normalizeGitLabHost(ref.host),
     };
     const cloneDir = await ensureClone(cleanRef, deps);
-    // Idempotent — first call per cloneDir installs the watcher;
-    // subsequent calls are no-ops. Errors are swallowed inside.
+    // 幂等 —— 每个 cloneDir 的首次调用安装 watcher;
+    // 后续调用为空操作。内部会吞掉错误。
     void startHeadWatcher(cloneDir);
     const local = new LocalWorkspace(cloneDir, {
       id: workspaceRefId(cleanRef),

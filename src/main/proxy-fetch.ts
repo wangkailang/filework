@@ -1,23 +1,20 @@
 /**
- * Per-request proxy resolution for main-process `fetch`.
+ * 主进程 `fetch` 的逐请求代理解析。
  *
- * `proxy-bootstrap.ts` probes one URL at startup and applies the result
- * globally via `EnvHttpProxyAgent`. That works when the user's proxy
- * routes every host identically, but breaks under split routing —
- * Mihomo / Clash / corporate PAC where some hosts go via proxy and
- * others go DIRECT. The classic symptom is `gitlab.quguazhan.com`
- * (CN domain → DIRECT in geoip rules) returning `ECONNRESET` because
- * we forced it through a proxy that's not set up to handle it.
+ * `proxy-bootstrap.ts` 在启动时探测一个 URL,并通过 `EnvHttpProxyAgent`
+ * 将结果全局应用。当用户的代理对所有主机采用相同路由时它能工作,
+ * 但在分流路由下会失效 —— 例如 Mihomo / Clash / 企业 PAC,其中部分
+ * 主机走代理、其余走 DIRECT。典型症状是 `gitlab.quguazhan.com`
+ * (CN 域名 → 在 geoip 规则中走 DIRECT)返回 `ECONNRESET`,因为
+ * 我们强制让它经由一个并未配置处理它的代理。
  *
- * This module wraps `fetch` with a per-request lookup: for each URL we
- * call Electron's `session.resolveProxy(url)` (which respects the full
- * OS / PAC rule set), pick `DIRECT` or a specific `ProxyAgent`, and
- * pass it as the request's `dispatcher`. Per-proxy `ProxyAgent`s are
- * memoized so we don't churn TLS state.
+ * 本模块用逐请求查询包装 `fetch`:对每个 URL 调用 Electron 的
+ * `session.resolveProxy(url)`(它遵循完整的操作系统 / PAC 规则集),
+ * 选择 `DIRECT` 或特定的 `ProxyAgent`,并将其作为请求的 `dispatcher`
+ * 传入。按代理维度的 `ProxyAgent` 会被记忆化,以避免反复重建 TLS 状态。
  *
- * The global `EnvHttpProxyAgent` stays installed for callers that
- * don't go through this wrapper — passing an explicit `dispatcher`
- * overrides the global one for that call.
+ * 全局的 `EnvHttpProxyAgent` 仍为不经过本包装器的调用方保留 ——
+ * 传入显式的 `dispatcher` 会针对该次调用覆盖全局的那个。
  */
 
 import {
@@ -31,23 +28,22 @@ import { parseChromeProxyList } from "./proxy-bootstrap";
 
 export interface ProxyAwareFetchDeps {
   /**
-   * Chromium-style proxy resolver — typically
-   * `session.defaultSession.resolveProxy.bind(session.defaultSession)`.
-   * Receives the full request URL (not just the host) so PAC rules
-   * that key on path can apply.
+   * Chromium 风格的代理解析器 —— 通常为
+   * `session.defaultSession.resolveProxy.bind(session.defaultSession)`。
+   * 接收完整的请求 URL(而非仅主机名),以便基于路径匹配的 PAC
+   * 规则得以生效。
    */
   resolveProxy: (url: string) => Promise<string>;
-  /** Defaults to global `fetch`. Injected for tests. */
+  /** 默认为全局 `fetch`。用于测试注入。 */
   baseFetch?: typeof fetch;
-  /** Defaults to {@link parseChromeProxyList}. Injected for tests. */
+  /** 默认为 {@link parseChromeProxyList}。用于测试注入。 */
   parseProxyList?: (raw: string) => string | null;
   /**
-   * Defaults to a shared {@link Agent} for direct requests and to
-   * {@link ProxyAgent} for proxied ones. Injected for tests so we
-   * never open real sockets.
+   * 默认为:直连请求使用共享的 {@link Agent},代理请求使用
+   * {@link ProxyAgent}。用于测试注入,使我们永不打开真实套接字。
    */
   agentFactory?: (proxyUrl: string | null) => Dispatcher;
-  /** Defaults to `console.warn` with `[proxy-fetch]` prefix. */
+  /** 默认为带 `[proxy-fetch]` 前缀的 `console.warn`。 */
   warn?: (msg: string) => void;
 }
 
@@ -60,11 +56,11 @@ const urlOf = (input: RequestInfo | URL): string => {
 export const createProxyAwareFetch = (
   deps: ProxyAwareFetchDeps,
 ): typeof fetch => {
-  // Use undici's userland `fetch` rather than Node's built-in. Node's
-  // bundled undici constructs request handlers that lack newer methods
-  // (e.g. `onRequestStart`) that the userland `ProxyAgent` validates —
-  // mixing them throws `UND_ERR_INVALID_ARG: invalid onRequestStart`.
-  // Same-package dispatch + handler keeps the contract aligned.
+  // 使用 undici 的用户态 `fetch`,而非 Node 内置的。Node 捆绑的
+  // undici 构造的请求处理器缺少用户态 `ProxyAgent` 会校验的较新方法
+  // (例如 `onRequestStart`)—— 混用两者会抛出
+  // `UND_ERR_INVALID_ARG: invalid onRequestStart`。
+  // 同一个包内的 dispatch + handler 能保持契约一致。
   const baseFetch = (deps.baseFetch ?? undiciFetch) as typeof fetch;
   const parse = deps.parseProxyList ?? parseChromeProxyList;
   const warn = deps.warn ?? ((msg) => console.warn(`[proxy-fetch] ${msg}`));
@@ -72,8 +68,8 @@ export const createProxyAwareFetch = (
     deps.agentFactory ??
     ((proxyUrl) => (proxyUrl ? new ProxyAgent(proxyUrl) : new Agent()));
 
-  // Cache dispatchers so we reuse pools across requests. Keyed by the
-  // resolved proxy URL — `"DIRECT"` is its own sentinel key.
+  // 缓存 dispatcher 以便跨请求复用连接池。以解析出的代理 URL 为键 ——
+  // `"DIRECT"` 作为其自身的哨兵键。
   const agents = new Map<string, Dispatcher>();
   const agentFor = (proxyUrl: string | null): Dispatcher => {
     const key = proxyUrl ?? "DIRECT";
@@ -94,8 +90,8 @@ export const createProxyAwareFetch = (
       const proxyUrl = parse(raw);
       dispatcher = agentFor(proxyUrl);
     } catch (err) {
-      // If the resolver throws (e.g. session destroyed during shutdown),
-      // fall back to direct — better than failing the whole request.
+      // 若解析器抛出异常(例如关闭过程中 session 被销毁),
+      // 则回退到直连 —— 总好过让整个请求失败。
       warn(
         `resolveProxy threw, falling back to direct: ${
           err instanceof Error ? err.message : String(err)
@@ -103,7 +99,7 @@ export const createProxyAwareFetch = (
       );
       dispatcher = agentFor(null);
     }
-    // Node's global fetch types omit `dispatcher`, but undici accepts it.
+    // Node 的全局 fetch 类型省略了 `dispatcher`,但 undici 接受它。
     return baseFetch(input, { ...init, dispatcher } as RequestInit);
   };
 

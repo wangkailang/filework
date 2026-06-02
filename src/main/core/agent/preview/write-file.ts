@@ -1,9 +1,8 @@
 /**
- * writeFile preview generator. Reads the existing file content via the
- * workspace FS, computes a line-level diff against the new content, and
- * returns a serializable `WriteFilePreview`. Mirrors the algorithm used
- * by the renderer's `useWriteDiff` so what the approval card shows
- * matches what the tool-output card shows after apply.
+ * writeFile 预览生成器。通过 workspace FS 读取现有文件内容,
+ * 与新内容做行级 diff,返回可序列化的 `WriteFilePreview`。
+ * 算法与渲染端的 `useWriteDiff` 保持一致,使审批卡片所展示的内容
+ * 与应用后工具输出卡片展示的内容相符。
  */
 
 import { createHash } from "node:crypto";
@@ -12,13 +11,13 @@ import { diffLines } from "diff";
 import type { Workspace } from "../../workspace/types";
 import type { PreviewDiffHunk, WriteFilePreview } from "./types";
 
-/** Per-side cap. Either pre-image or post-image > this → no diff body. */
+/** 单侧上限。旧内容或新内容任一超过此值 → 不生成 diff 主体。 */
 const MAX_FILE_BYTES = 1 * 1024 * 1024;
-/** How many bytes to sniff for a NUL byte to detect binary content. */
+/** 嗅探多少字节以检测 NUL 字节,从而判断是否为二进制内容。 */
 const BINARY_SNIFF_BYTES = 8 * 1024;
-/** Trim diff output once it grows past this many hunks. */
+/** diff 输出超过该 hunk 数量后进行截断。 */
 const MAX_HUNKS = 200;
-/** Trim a single hunk's text once it grows past this many bytes. */
+/** 单个 hunk 文本超过该字节数后进行截断。 */
 const MAX_HUNK_BYTES = 64 * 1024;
 
 interface WriteFileArgs {
@@ -79,7 +78,7 @@ export async function computeWriteFilePreview(
     const s = await workspace.fs.stat(rel);
     oldSize = s.size;
   } catch {
-    // Unreadable stat → degrade gracefully instead of blocking approval.
+    // stat 不可读 → 优雅降级,而非阻塞审批。
     return {
       kind: "write",
       path: args.path,

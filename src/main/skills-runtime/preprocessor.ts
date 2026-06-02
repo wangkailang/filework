@@ -1,8 +1,8 @@
 /**
- * Preprocessor module for AI Skills Runtime.
+ * AI 技能运行时的预处理器模块。
  *
- * Handles argument substitution, dynamic context injection (!command),
- * and content truncation before skill body is injected as a system prompt.
+ * 在技能正文作为系统提示词注入之前,处理参数替换、
+ * 动态上下文注入(!command)以及内容截断。
  */
 
 import { exec } from "node:child_process";
@@ -10,17 +10,17 @@ import type { TrustLevel } from "./security";
 import { buildSafeEnv, isCommandAllowed } from "./security";
 import type { PreprocessResult } from "./types";
 
-/** Default timeout for !command execution (ms). */
+/** !command 执行的默认超时(毫秒)。 */
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-/** Default maximum character count before truncation. */
+/** 触发截断前的默认最大字符数。 */
 const DEFAULT_MAX_CHARS = 20_000;
 
 /**
- * Execute a shell command asynchronously with timeout support.
+ * 异步执行 shell 命令,支持超时。
  *
- * Uses `child_process.exec` wrapped in a Promise. The `timeout` option
- * causes the child process to be killed after the specified duration.
+ * 使用包裹在 Promise 中的 `child_process.exec`。`timeout` 选项
+ * 会在指定时长后杀掉子进程。
  */
 function execCommand(
   command: string,
@@ -31,7 +31,7 @@ function execCommand(
   return new Promise((resolve, reject) => {
     exec(command, { cwd, timeout: timeoutMs, env }, (error, stdout, stderr) => {
       if (error) {
-        // Node.js sets error.killed when the process was killed due to timeout
+        // 当进程因超时被杀掉时,Node.js 会设置 error.killed
         if (error.killed) {
           reject(
             new Error(
@@ -50,18 +50,18 @@ function execCommand(
 }
 
 /**
- * Preprocess a skill's body content before injection as a system prompt.
+ * 在技能正文内容作为系统提示词注入之前对其进行预处理。
  *
- * Processing order:
- * 1. `$ARGUMENTS` → replaced with the full argument string
- * 2. `$ARGUMENTS[N]` / `$N` → replaced with the Nth space-split argument (0-indexed)
- * 3. `!command` → each line starting with `!` is executed as a shell command
- * 4. Truncation check → if result exceeds `maxChars`, truncate and append marker
+ * 处理顺序:
+ * 1. `$ARGUMENTS` → 替换为完整的参数字符串
+ * 2. `$ARGUMENTS[N]` / `$N` → 替换为按空格切分的第 N 个参数(从 0 开始)
+ * 3. `!command` → 每个以 `!` 开头的行都作为 shell 命令执行
+ * 4. 截断检查 → 若结果超过 `maxChars`,则截断并追加标记
  *
- * @param body - The raw skill body (Markdown content)
- * @param args - The user-provided argument string
- * @param workspacePath - The workspace root directory for command execution
- * @param options - Optional configuration overrides
+ * @param body - 原始技能正文(Markdown 内容)
+ * @param args - 用户提供的参数字符串
+ * @param workspacePath - 命令执行所用的工作区根目录
+ * @param options - 可选的配置覆盖项
  */
 export async function preprocessSkill(
   body: string,
@@ -80,14 +80,14 @@ export async function preprocessSkill(
   const trustLevel: TrustLevel = options?.trustLevel ?? "high";
   const warnings: string[] = [];
 
-  // Split arguments by whitespace for indexed access
+  // 按空白字符切分参数以便按索引访问
   const argParts = args.trim() ? args.trim().split(/\s+/) : [];
 
-  // ── Step 1: Replace $ARGUMENTS with full argument string ──
+  // ── 步骤 1:将 $ARGUMENTS 替换为完整参数字符串 ──
   let result = body.replace(/\$ARGUMENTS(?!\[)/g, args);
 
-  // ── Step 2: Replace $ARGUMENTS[N] and $N with Nth argument ──
-  // $ARGUMENTS[N] — 0-indexed
+  // ── 步骤 2:将 $ARGUMENTS[N] 和 $N 替换为第 N 个参数 ──
+  // $ARGUMENTS[N] —— 从 0 开始索引
   result = result.replace(/\$ARGUMENTS\[(\d+)\]/g, (_match, index) => {
     const i = parseInt(index, 10);
     if (i >= argParts.length) {
@@ -99,7 +99,7 @@ export async function preprocessSkill(
     return argParts[i];
   });
 
-  // $N — 0-indexed positional shorthand
+  // $N —— 从 0 开始索引的位置参数简写
   result = result.replace(/\$(\d+)/g, (_match, index) => {
     const i = parseInt(index, 10);
     if (i >= argParts.length) {
@@ -111,13 +111,13 @@ export async function preprocessSkill(
     return argParts[i];
   });
 
-  // ── Step 3: Execute !command lines ──
+  // ── 步骤 3:执行 !command 行 ──
   const safeEnv = buildSafeEnv();
   const lines = result.split("\n");
   const processedLines: string[] = [];
 
   for (const line of lines) {
-    // A !command line starts with `!` (optionally preceded by whitespace)
+    // !command 行以 `!` 开头(前面可以有空白)
     const commandMatch = line.match(/^(\s*)!(.+)$/);
     if (!commandMatch) {
       processedLines.push(line);
@@ -126,14 +126,14 @@ export async function preprocessSkill(
 
     const command = commandMatch[2].trim();
 
-    // Check if the command is allowed
+    // 检查该命令是否被允许
     if (!isCommandAllowed(command, trustLevel)) {
       processedLines.push("[Blocked: command not allowed]");
       warnings.push(`Command blocked: ${command}`);
       continue;
     }
 
-    // Execute the command
+    // 执行命令
     try {
       const output = await execCommand(
         command,
@@ -151,7 +151,7 @@ export async function preprocessSkill(
 
   result = processedLines.join("\n");
 
-  // ── Step 4: Truncation check ──
+  // ── 步骤 4:截断检查 ──
   let truncated = false;
   if (result.length > maxChars) {
     truncated = true;

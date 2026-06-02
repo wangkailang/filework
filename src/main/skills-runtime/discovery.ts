@@ -1,9 +1,9 @@
 /**
- * Discovery module for AI Skills Runtime.
+ * AI Skills Runtime 的发现模块。
  *
- * Scans multiple directories for SKILL.md files, parses them,
- * checks eligibility (bins, env, os), and returns discovered skills
- * with priority-based deduplication (project > personal).
+ * 扫描多个目录中的 SKILL.md 文件并解析,
+ * 检查可用性(bins、env、os),返回已发现的技能,
+ * 并按优先级去重(project > personal)。
  */
 
 import { execSync } from "node:child_process";
@@ -18,14 +18,14 @@ import { parseSkillMd } from "./parser";
 import type { DiscoveredSkill, DiscoverySource, ParsedSkill } from "./types";
 
 /**
- * Build the default list of discovery sources.
+ * 构建默认的发现来源列表。
  *
- * Order matters for priority: personal first, then project.
- * When both contain a skill with the same ID, the project-level
- * skill wins (applied during deduplication in {@link discoverSkills}).
+ * 顺序决定优先级:先 personal,再 project。
+ * 当两者包含相同 ID 的技能时,以项目级技能为准
+ *(在 {@link discoverSkills} 的去重过程中生效)。
  *
- * @param workspacePath - Absolute path to the current workspace root
- * @param additionalDirs - Optional extra directories to scan
+ * @param workspacePath - 当前工作区根目录的绝对路径
+ * @param additionalDirs - 可选的额外扫描目录
  */
 export function buildDiscoverySources(
   workspacePath: string,
@@ -46,8 +46,8 @@ export function buildDiscoverySources(
 }
 
 /**
- * Check whether a directory exists and is accessible.
- * Returns `true` when accessible, `false` otherwise (silently).
+ * 检查目录是否存在且可访问。
+ * 可访问时返回 `true`,否则(静默地)返回 `false`。
  */
 async function isAccessible(dirPath: string): Promise<boolean> {
   try {
@@ -59,29 +59,29 @@ async function isAccessible(dirPath: string): Promise<boolean> {
 }
 
 /**
- * Derive a skill ID from a parsed skill.
+ * 从已解析的技能中推导出技能 ID。
  *
- * Uses `frontmatter.name` when present, otherwise falls back
- * to the parent directory name of the SKILL.md file.
+ * 存在 `frontmatter.name` 时使用它,否则回退到
+ * SKILL.md 文件所在父目录的名称。
  */
 function deriveSkillId(parsed: ParsedSkill): string {
   if (parsed.frontmatter.name) {
     return parsed.frontmatter.name;
   }
-  // sourcePath is the absolute path to SKILL.md — take its parent dir name
+  // sourcePath 是 SKILL.md 的绝对路径 —— 取其父目录名
   return basename(join(parsed.sourcePath, ".."));
 }
 
 /**
- * Check whether a skill meets its declared runtime dependencies.
+ * 检查技能是否满足其声明的运行时依赖。
  *
- * Checks (in order):
- * 1. `requires.os`  — current platform must be in the list
- * 2. `requires.bins` — every binary must be found on PATH (via `which`)
- * 3. `requires.env`  — every env var must be set in `process.env`
+ * 检查项(按顺序):
+ * 1. `requires.os`  — 当前平台必须在列表中
+ * 2. `requires.bins` — 每个二进制都必须能在 PATH 中找到(通过 `which`)
+ * 3. `requires.env`  — 每个环境变量都必须在 `process.env` 中设置
  *
- * Returns `{ eligible: true }` when all checks pass, or
- * `{ eligible: false, reason }` on the first failure.
+ * 全部检查通过时返回 `{ eligible: true }`,
+ * 否则在首个失败处返回 `{ eligible: false, reason }`。
  */
 export function checkEligibility(skill: ParsedSkill): {
   eligible: boolean;
@@ -92,7 +92,7 @@ export function checkEligibility(skill: ParsedSkill): {
     return { eligible: true };
   }
 
-  // OS check (synchronous)
+  // OS 检查(同步)
   if (requires.os && requires.os.length > 0) {
     if (!requires.os.includes(process.platform)) {
       return {
@@ -102,7 +102,7 @@ export function checkEligibility(skill: ParsedSkill): {
     }
   }
 
-  // Env check (synchronous)
+  // Env 检查(同步)
   if (requires.env && requires.env.length > 0) {
     for (const envVar of requires.env) {
       if (!(envVar in process.env) || process.env[envVar] === undefined) {
@@ -114,7 +114,7 @@ export function checkEligibility(skill: ParsedSkill): {
     }
   }
 
-  // Bins check — we do a synchronous check using which.sync
+  // Bins 检查 —— 使用 which.sync 做同步检查
   if (requires.bins && requires.bins.length > 0) {
     for (const bin of requires.bins) {
       try {
@@ -128,7 +128,7 @@ export function checkEligibility(skill: ParsedSkill): {
     }
   }
 
-  // Pip check — verify Python modules are importable
+  // Pip 检查 —— 验证 Python 模块是否可导入
   if (requires.pip && requires.pip.length > 0) {
     let pythonBin = "python3";
     try {
@@ -142,7 +142,7 @@ export function checkEligibility(skill: ParsedSkill): {
     }
 
     for (const pkg of requires.pip) {
-      // Extract the module name (strip extras like "markitdown[pptx,pdf]" → "markitdown")
+      // 提取模块名(剥离 extras,如 "markitdown[pptx,pdf]" → "markitdown")
       const moduleName = pkg.replace(/\[.*\]$/, "").trim();
       try {
         execSync(`"${pythonBin}" -c "import ${moduleName}"`, {
@@ -150,7 +150,7 @@ export function checkEligibility(skill: ParsedSkill): {
           stdio: "pipe",
         });
       } catch {
-        // Module not importable — still eligible, but will be auto-installed at execution time
+        // 模块不可导入 —— 仍视为可用,但会在执行时自动安装
         console.debug(
           `[skills-discovery] Skill pip dependency "${moduleName}" not found, will auto-install at execution time`,
         );
@@ -161,7 +161,7 @@ export function checkEligibility(skill: ParsedSkill): {
   return { eligible: true };
 }
 
-/** Priority weight for source types — higher number wins during deduplication */
+/** 各来源类型的优先级权重 —— 去重时数值越大优先级越高 */
 const SOURCE_PRIORITY: Record<DiscoverySource["type"], number> = {
   personal: 1,
   additional: 2,
@@ -169,19 +169,19 @@ const SOURCE_PRIORITY: Record<DiscoverySource["type"], number> = {
 };
 
 /**
- * Scan the given discovery sources for SKILL.md files, parse them,
- * run eligibility checks, and return the deduplicated list.
+ * 扫描给定的发现来源中的 SKILL.md 文件并解析,
+ * 执行可用性检查,返回去重后的列表。
  *
- * When multiple sources contain a skill with the same ID, the one
- * from the higher-priority source wins (project > additional > personal).
+ * 当多个来源包含相同 ID 的技能时,以优先级更高的来源为准
+ *(project > additional > personal)。
  *
- * Non-existent or inaccessible directories are silently skipped.
- * Individual SKILL.md parse failures are logged and skipped.
+ * 不存在或不可访问的目录会被静默跳过。
+ * 单个 SKILL.md 解析失败会被记录并跳过。
  */
 export async function discoverSkills(
   sources: DiscoverySource[],
 ): Promise<DiscoveredSkill[]> {
-  /** Map from skillId → best DiscoveredSkill (highest priority wins) */
+  /** skillId → 最优 DiscoveredSkill 的映射(优先级最高者胜出) */
   const skillMap = new Map<string, DiscoveredSkill>();
 
   for (const source of sources) {
@@ -192,7 +192,7 @@ export async function discoverSkills(
       continue;
     }
 
-    // Scan for all SKILL.md files under this source
+    // 扫描该来源下的所有 SKILL.md 文件
     let skillPaths: string[];
     try {
       skillPaths = await fg("**/SKILL.md", {
@@ -244,7 +244,7 @@ export async function discoverSkills(
         ineligibleReason: eligibility.reason,
       };
 
-      // Deduplication: higher-priority source wins
+      // 去重:优先级更高的来源胜出
       const existing = skillMap.get(skillId);
       if (
         !existing ||

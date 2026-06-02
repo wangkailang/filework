@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { capToolResult } from "../tool-registry";
 
-// `capToolResult` is the only export tested here. The full
-// `buildEvalToolRegistry` builder spins up real tool factories
-// (file ops, web tools, skills) — those are exercised end-to-end by
-// the smoke runs rather than this unit test.
+// 这里仅测试 `capToolResult` 这一个导出。完整的
+// `buildEvalToolRegistry` 构造器会启动真实的工具工厂
+//（文件操作、web 工具、skill）——那些由 smoke 运行做端到端测试,
+// 而非本单元测试。
 
 describe("capToolResult — top-level string", () => {
   it("passes through strings under the cap unchanged", () => {
-    const s = "hello".repeat(100); // 500 chars
+    const s = "hello".repeat(100); // 500 个字符
     expect(capToolResult(s)).toBe(s);
   });
 

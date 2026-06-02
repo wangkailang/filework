@@ -1,12 +1,12 @@
 /**
- * IPC: gitlab:* — talk to the GitLab v4 REST API + manage local clones.
+ * IPC: gitlab:* —与 GitLab v4 REST API 交互 + 管理本地克隆。
  *
- * Mirrors `github-handlers.ts` for the GitLab provider. Uses raw `fetch`
- * (Node 18+); auth header is `Authorization: Bearer <pat>` which works
- * for GitLab Personal Access Tokens and OAuth tokens alike.
+ * 针对 GitLab provider 对 `github-handlers.ts` 的镜像实现。使用原生
+ * `fetch`（Node 18+）;认证头为 `Authorization: Bearer <pat>`,对
+ * GitLab 个人访问令牌和 OAuth 令牌均适用。
  *
- * Cloning is delegated to `GitLabWorkspace.create()` which handles the
- * shallow clone, freshness check, and re-auth on each entry.
+ * 克隆委托给 `GitLabWorkspace.create()`,它负责浅克隆、新鲜度检查,
+ * 以及每次进入时的重新认证。
  */
 
 import { ipcMain } from "electron";
@@ -20,7 +20,7 @@ import {
 } from "../core/workspace/gitlab-workspace";
 
 export interface GitLabProjectSummary {
-  /** "namespace/project". */
+  /** "namespace/project"。 */
   fullPath: string;
   namespace: string;
   project: string;
@@ -75,7 +75,7 @@ const listAllProjects = async (
   token: string,
   fetchImpl: typeof fetch,
 ): Promise<GitLabProjectSummary[]> => {
-  // 200 projects covers the vast majority of users; later PRs paginate fully.
+  // 200 个项目可覆盖绝大多数用户;后续 PR 会实现完整分页。
   const out: GitLabProjectSummary[] = [];
   for (let page = 1; page <= 2; page++) {
     const url =
@@ -112,32 +112,31 @@ const listBranches = async (
 };
 
 export interface GitLabHandlerDeps {
-  /** Decrypts a stored credential id into the underlying token. */
+  /** 将存储的凭证 id 解密为底层 token。 */
   resolveToken: (credentialId: string) => Promise<string>;
-  /** Same root passed to GitLabWorkspace.create(). */
+  /** 与传给 GitLabWorkspace.create() 的根目录相同。 */
   cacheDir: string;
-  /** GIT_ASKPASS helper script (M7). */
+  /** GIT_ASKPASS 辅助脚本（M7）。 */
   askpassPath?: string;
   /**
-   * Optional per-request proxy-aware fetch. Defaults to global `fetch`,
-   * which routes through the EnvHttpProxyAgent installed by
-   * `proxy-bootstrap.ts`. Production wires this to `proxy-fetch.ts` so
-   * each request consults `session.resolveProxy(url)` and bypasses the
-   * proxy for hosts the user's PAC rules route DIRECT.
+   * 可选的逐请求代理感知 fetch。默认使用全局 `fetch`,它会经由
+   * `proxy-bootstrap.ts` 安装的 EnvHttpProxyAgent 路由。生产环境将其
+   * 接入 `proxy-fetch.ts`,使每个请求查询 `session.resolveProxy(url)`,
+   * 并对用户 PAC 规则判定为 DIRECT 的主机绕过代理。
    */
   fetchFn?: typeof fetch;
   /**
-   * Per-host proxy resolver for spawned `git` children (see
-   * `core/workspace/git-proxy-env.ts`). Production wires this to
-   * `session.defaultSession.resolveProxy`; tests can leave it undefined.
+   * 用于派生的 `git` 子进程的逐主机代理解析器（参见
+   * `core/workspace/git-proxy-env.ts`）。生产环境将其接入
+   * `session.defaultSession.resolveProxy`;测试中可留空。
    */
   resolveProxy?: ProxyResolver;
 }
 
 export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
-  // Resolve fetch on each call so test harnesses can `vi.stubGlobal("fetch", …)`
-  // after this handler is registered. Capturing at registration time would
-  // snapshot the original global before the stub lands.
+  // 每次调用时再解析 fetch,以便测试框架可在该 handler 注册之后执行
+  // `vi.stubGlobal("fetch", …)`。若在注册时捕获,会在 stub 生效前就
+  // 快照了原始全局对象。
   const fetchImpl: typeof fetch = (input, init) =>
     (deps.fetchFn ?? fetch)(input, init);
   const wsDeps: GitLabWorkspaceDeps = {
@@ -215,9 +214,9 @@ export const registerGitLabHandlers = (deps: GitLabHandlerDeps) => {
         host: string;
         namespace: string;
         project: string;
-        /** Branch the workspace was opened at — used to build the ref. */
+        /** 工作区打开时所在的分支 —— 用于构建 ref。 */
         ref: string;
-        /** Target branch to switch to. */
+        /** 要切换到的目标分支。 */
         branch: string;
       },
     ) => {

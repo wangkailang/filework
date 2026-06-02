@@ -1,9 +1,9 @@
 /**
- * JSONL session-store types.
+ * JSONL 会话存储类型定义。
  *
- * Two on-disk record kinds (discriminated by `kind`) plus the public
- * IPC-shaped types that map 1:1 to the renderer's `ChatSession` /
- * `ChatMessage` (mirrored in `src/renderer/components/chat/types.ts`).
+ * 包含两种磁盘记录类型(通过 `kind` 区分),以及面向 IPC 的公开类型,
+ * 它们与渲染进程的 `ChatSession` / `ChatMessage` 一一对应
+ * (镜像于 `src/renderer/components/chat/types.ts`)。
  */
 
 import type { MessagePart } from "./message-parts";
@@ -11,10 +11,9 @@ import type { MessagePart } from "./message-parts";
 export type SessionFileRecord = SessionLine | MessageLine;
 
 /**
- * Always the first line of a session JSONL file. Carries session
- * metadata; `forkFrom*` fields are stored on disk for lineage but
- * stripped at the `listSessions()` boundary so the IPC return shape
- * stays identical to the SQLite-era one.
+ * 始终是会话 JSONL 文件的第一行。携带会话元数据;
+ * `forkFrom*` 字段会存储到磁盘以记录派生关系,但在 `listSessions()`
+ * 边界处会被剥离,从而使 IPC 返回结构与 SQLite 时代保持一致。
  */
 export interface SessionLine {
   kind: "session";
@@ -28,7 +27,7 @@ export interface SessionLine {
   forkFromMessageId?: string;
 }
 
-/** Lines 2..N. One per chat message in timestamp order. */
+/** 第 2 到 N 行。按时间戳顺序每条聊天消息一行。 */
 export interface MessageLine {
   kind: "message";
   id: string;
@@ -36,13 +35,13 @@ export interface MessageLine {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
-  /** Native objects on disk — not JSON.stringified. */
+  /** 磁盘上为原生对象 —— 未经 JSON.stringify 序列化。 */
   parts?: MessagePart[];
 }
 
-// ─── Public IPC-shaped types ────────────────────────────────────────
-// Mirror src/renderer/components/chat/types.ts:90-96 exactly. Kept in
-// core so the future SDK and the IPC layer share the same shape.
+// ─── 面向 IPC 的公开类型 ────────────────────────────────────────
+// 与 src/renderer/components/chat/types.ts:90-96 完全一致。保留在
+// core 中,使未来的 SDK 与 IPC 层共享同一结构。
 
 export interface ChatSession {
   id: string;

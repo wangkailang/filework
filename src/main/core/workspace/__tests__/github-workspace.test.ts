@@ -11,9 +11,9 @@ import {
 } from "../github-workspace";
 
 /**
- * Build a fake `spawn` that records every invocation and replays canned
- * exit codes per `git` subcommand. Lets us test ensureClone +
- * GitHubWorkspace without touching the network.
+ * 构造一个模拟的 `spawn`,记录每次调用并按 `git` 子命令回放预设的
+ * 退出码。使我们能够在不接触网络的情况下测试 ensureClone 与
+ * GitHubWorkspace。
  */
 const buildFakeSpawn = () => {
   const calls: Array<{
@@ -34,8 +34,8 @@ const buildFakeSpawn = () => {
       };
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
-      // Materialize the .git dir so cloneExists() returns true after the
-      // call returns (matches what real git would do).
+      // 实际创建 .git 目录,使调用返回后 cloneExists() 返回 true
+      // (与真实 git 的行为一致)。
       if (args[0] === "clone") {
         const cloneDir = args[args.length - 1];
         mkdir(path.join(cloneDir, ".git"), { recursive: true }).then(() =>
@@ -84,18 +84,18 @@ describe("ensureClone", () => {
     expect(result).toBe(expectedDir);
     const cloneCall = calls.find((c) => c.args[0] === "clone");
     expect(cloneCall).toBeDefined();
-    // New layout: partial clone (no --depth/--single-branch). The
-    // branch is still pinned via --branch so the initial checkout
-    // matches ref.ref; subsequent switches go through SCM.checkoutBranch.
+    // 新布局:部分克隆(无 --depth/--single-branch)。仍通过 --branch
+    // 固定分支,使初始检出与 ref.ref 匹配;后续切换走
+    // SCM.checkoutBranch。
     expect(cloneCall?.args).toContain("--filter=blob:none");
     expect(cloneCall?.args).toContain("--branch");
     expect(cloneCall?.args).toContain("main");
     expect(cloneCall?.args).not.toContain("--depth");
     const remoteArg = cloneCall?.args[cloneCall.args.length - 2] ?? "";
-    // M7: token MUST NOT appear in the remote URL.
+    // M7:token 绝不能出现在远程 URL 中。
     expect(remoteArg).not.toContain("ghp_TESTTOKEN");
     expect(remoteArg).toBe("https://x-access-token@github.com/acme/app.git");
-    // Token is supplied via env instead.
+    // token 改为通过环境变量提供。
     expect(cloneCall?.env?.GIT_ASKPASS).toBe("/tmp/askpass.js");
     expect(cloneCall?.env?.FILEWORK_GIT_PASSWORD).toBe("ghp_TESTTOKEN");
     expect(cloneCall?.env?.GIT_TERMINAL_PROMPT).toBe("0");
@@ -133,9 +133,9 @@ describe("ensureClone", () => {
     const stampPath = path.join(cloneDir, ".git/filework-last-fetch");
     await mkdir(path.join(cloneDir, ".git"), { recursive: true });
     await writeFile(stampPath, "2000-01-01T00:00:00.000Z", "utf8");
-    // Force the stamp's mtime into the past — relying on `freshnessTtlMs:0`
-    // alone is racy on fast disks where Date.now() == st.mtimeMs after
-    // writeFile, making `(0 < 0)` evaluate to false and falsely report fresh.
+    // 强制把标记文件的 mtime 设到过去 —— 仅依赖 `freshnessTtlMs:0` 在快速磁盘上
+    // 存在竞态:writeFile 后可能 Date.now() == st.mtimeMs,使 `(0 < 0)` 求值为
+    // false,从而错误地报告为新鲜。
     const past = new Date("2000-01-01T00:00:00.000Z");
     await utimes(stampPath, past, past);
 
@@ -151,7 +151,7 @@ describe("ensureClone", () => {
     const subs = calls.map((c) => c.args[0]);
     expect(subs).toContain("remote");
     expect(subs).toContain("fetch");
-    // No reset --hard on refresh — preserves session-branch commits.
+    // 刷新时不执行 reset --hard —— 保留会话分支上的提交。
     expect(subs).not.toContain("reset");
   });
 });

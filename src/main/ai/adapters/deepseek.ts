@@ -1,5 +1,5 @@
 /**
- * DeepSeek Provider Adapter
+ * DeepSeek Provider 适配器
  */
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -20,7 +20,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
     const deepseek = createDeepSeek({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
-      // See provider-fetch.ts — per-host proxy-aware fetch set at bootstrap.
+      // 参见 provider-fetch.ts —— 在 bootstrap 时设置的按 host 感知代理的 fetch。
       fetch: getProviderFetch(),
     });
     return deepseek(config.model);

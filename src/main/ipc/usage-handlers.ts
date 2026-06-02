@@ -1,17 +1,17 @@
 /**
- * Usage Tracking IPC Handlers
+ * 用量追踪 IPC 处理器
  *
- * Provides token usage statistics and cost estimation queries.
+ * 提供 token 用量统计与成本估算查询。
  */
 
 import { ipcMain } from "electron";
 import { getTasks } from "../db";
 
 /**
- * Register usage-related IPC handlers
+ * 注册用量相关的 IPC 处理器
  */
 export const registerUsageHandlers = () => {
-  // Get usage for a specific task
+  // 获取指定任务的用量
   ipcMain.handle(
     "usage:getTaskUsage",
     async (_event, payload: { taskId: string }) => {
@@ -28,7 +28,7 @@ export const registerUsageHandlers = () => {
     },
   );
 
-  // Get aggregate usage statistics
+  // 获取聚合用量统计
   ipcMain.handle(
     "usage:getAggregateUsage",
     async (
@@ -114,7 +114,7 @@ export const registerUsageHandlers = () => {
     },
   );
 
-  // Get recent tasks with usage data
+  // 获取带用量数据的近期任务
   ipcMain.handle(
     "usage:getRecentUsage",
     async (_event, payload: { limit?: number }) => {

@@ -29,9 +29,8 @@ import { cn } from "../../lib/utils";
 import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
-// Types — re-exported from the shared core types so the JSONL session store
-// and the renderer agree on a single source of truth. (See
-// src/main/ipc/plan-types.ts for the planner's executor view of Plan.)
+// 类型 —— 从共享的 core 类型再导出,使 JSONL 会话存储与渲染进程对齐到同一份
+// 事实来源。(planner 中执行器视角的 Plan 见 src/main/ipc/plan-types.ts。)
 // ---------------------------------------------------------------------------
 
 export type {
@@ -42,7 +41,7 @@ export type {
 } from "../../../main/core/session/message-parts";
 
 // ---------------------------------------------------------------------------
-// Step status icon
+// 步骤状态图标
 // ---------------------------------------------------------------------------
 
 const StepIcon = ({ status }: { status: PlanStepView["status"] }) => {
@@ -61,7 +60,7 @@ const StepIcon = ({ status }: { status: PlanStepView["status"] }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Running step elapsed timer
+// 运行中步骤的耗时计时器
 // ---------------------------------------------------------------------------
 
 const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
@@ -96,7 +95,7 @@ const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Sub-step list
+// 子步骤列表
 // ---------------------------------------------------------------------------
 
 const SubStepList = ({
@@ -158,13 +157,13 @@ const SubStepList = ({
 };
 
 // ---------------------------------------------------------------------------
-// Artifact list — shows tool operations with details
+// 产物列表 —— 展示工具操作及其详情
 // ---------------------------------------------------------------------------
 
-/** Keys to exclude from args summary (may contain large or sensitive data) */
+/** 需从参数摘要中排除的键(可能包含大体量或敏感数据) */
 const hiddenArgKeys = new Set(["content", "data", "body"]);
 
-/** Format tool args into a brief one-line summary */
+/** 将工具参数格式化为简短的单行摘要 */
 const formatArgsSummary = (args: Record<string, unknown>): string => {
   if (args.path) return String(args.path);
   if (args.source && args.destination)
@@ -180,7 +179,7 @@ const formatArgsSummary = (args: Record<string, unknown>): string => {
     .join(", ");
 };
 
-/** Format a tool result for display */
+/** 将工具结果格式化以供展示 */
 const formatResult = (result: unknown): string => {
   if (result == null) return "";
   if (typeof result === "string") return result;
@@ -244,7 +243,7 @@ const ArtifactList = ({ artifacts }: { artifacts: PlanStepArtifactView[] }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Step reasoning (collapsible "thinking" text bound to a specific step)
+// 步骤推理(绑定到特定步骤、可折叠的「思考」文本)
 // ---------------------------------------------------------------------------
 
 const StepReasoning = ({
@@ -281,12 +280,10 @@ const StepReasoning = ({
 };
 
 // ---------------------------------------------------------------------------
-// Single step row — memoized so reasoning deltas on the currently-running
-// step (which produce a new `step` object for that step only) don't cause
-// sibling steps to re-render. The default React.memo shallow comparison is
-// sufficient: when reasoning is appended in `useStreamSubscription`, only
-// the running step's object reference changes; pending/completed steps
-// keep their identity and short-circuit here.
+// 单个步骤行 —— 做了 memo 处理,使当前运行中步骤的推理增量(仅会为该步骤生成
+// 一个新的 `step` 对象)不会导致同级步骤重新渲染。React.memo 默认的浅比较已
+// 足够:当在 `useStreamSubscription` 中追加推理时,只有运行中步骤的对象引用
+// 发生变化;pending/completed 步骤保持各自的标识并在此短路。
 // ---------------------------------------------------------------------------
 
 interface StepRowProps {
@@ -374,8 +371,7 @@ const StepRowImpl = ({
         />
       )}
 
-      {/* Auto-open reasoning while the step is running; once it completes the
-          user can re-collapse, but we don't force-close on transition. */}
+      {/* 步骤运行期间自动展开推理;完成后用户可重新折叠,但状态切换时我们不强制收起。 */}
       {hasReasoning && isExpanded && step.reasoning && (
         <StepReasoning
           text={step.reasoning}
@@ -393,12 +389,12 @@ const StepRowImpl = ({
 const StepRow = memo(StepRowImpl);
 
 // ---------------------------------------------------------------------------
-// Plan Viewer (draft state — shows plan for approval)
+// 计划查看器(草稿状态 —— 展示待审批的计划)
 // ---------------------------------------------------------------------------
 
 interface PlanViewerProps extends HTMLAttributes<HTMLDivElement> {
   plan: PlanView;
-  /** Whether the current running step appears stalled (no activity) */
+  /** 当前运行中步骤是否看起来已停滞(无活动) */
   isStalled?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
@@ -421,7 +417,7 @@ export const PlanViewer = ({
     (s) => s.status === "completed",
   ).length;
 
-  // Track which steps are expanded — running steps auto-expand
+  // 跟踪哪些步骤处于展开状态 —— 运行中的步骤自动展开
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const toggleExpand = useCallback((stepId: number) => {
@@ -441,7 +437,7 @@ export const PlanViewer = ({
       )}
       {...props}
     >
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-start gap-2 px-3 py-2.5 border-b border-border">
         <ListChecks className="size-4 text-primary mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
@@ -459,12 +455,11 @@ export const PlanViewer = ({
         )}
       </div>
 
-      {/* Steps */}
+      {/* 步骤 */}
       <div className="px-3 py-2 space-y-1.5">
         {plan.steps.map((rawStep) => {
-          // A draft plan hasn't been approved yet — never show a step as
-          // running/done even if the model pre-set a status. Force pending so
-          // the card reflects "nothing has started".
+          // 草稿计划尚未获批 —— 即使模型预设了状态,也绝不将步骤显示为
+          // 运行中/已完成。强制置为 pending,使卡片体现「尚未开始」。
           const step = isDraft
             ? { ...rawStep, status: "pending" as const }
             : rawStep;
@@ -487,7 +482,7 @@ export const PlanViewer = ({
         })}
       </div>
 
-      {/* Actions */}
+      {/* 操作 */}
       {isDraft && (onApprove || onReject) && (
         <div className="flex items-center gap-2 px-3 py-2 border-t border-border">
           {onReject && (
@@ -523,7 +518,7 @@ export const PlanViewer = ({
         </div>
       )}
 
-      {/* Completed / Failed / Cancelled status */}
+      {/* 已完成 / 失败 / 已取消 状态 */}
       {(plan.status === "completed" ||
         plan.status === "failed" ||
         plan.status === "cancelled") && (

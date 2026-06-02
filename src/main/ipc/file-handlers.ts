@@ -16,8 +16,8 @@ export interface FileInfo {
   modifiedAt: string;
 }
 
-// Stable error tags the renderer detects via error.message prefix.
-// IPC flattens Error → string, so prefix is the only reliable channel.
+// 稳定的错误标签,渲染层通过 error.message 前缀识别。
+// IPC 会把 Error 扁平化为 string,因此前缀是唯一可靠的通道。
 export const FS_ERROR_TAG = {
   PERMISSION_DENIED: "FS_PERMISSION_DENIED",
   NOT_FOUND: "FS_NOT_FOUND",
@@ -45,7 +45,7 @@ const wrapFsError = (err: unknown, path: string): Error => {
 };
 
 export const registerFileHandlers = () => {
-  // List directory contents
+  // 列出目录内容
   ipcMain.handle(
     "fs:listDirectory",
     async (_event, dirPath: string, _depth = 1): Promise<FileInfo[]> => {
@@ -57,7 +57,7 @@ export const registerFileHandlers = () => {
       const files: FileInfo[] = [];
 
       for (const entry of entries) {
-        // Skip hidden files and common ignore patterns
+        // 跳过隐藏文件和常见的忽略项
         if (entry.name.startsWith(".") || entry.name === "node_modules")
           continue;
 
@@ -73,19 +73,19 @@ export const registerFileHandlers = () => {
             modifiedAt: stats.mtime.toISOString(),
           });
         } catch {
-          // Skip files we can't stat (permission issues, etc.)
+          // 跳过无法 stat 的文件(权限问题等)
         }
       }
 
       return files.sort((a, b) => {
-        // Directories first, then alphabetical
+        // 目录优先,然后按字母序
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
     },
   );
 
-  // Read file content
+  // 读取文件内容
   ipcMain.handle("fs:readFile", async (_event, filePath: string) => {
     const content = await readFile(filePath, "utf-8");
     return content;

@@ -60,10 +60,9 @@ export const MarkdownCodeBlock = ({
   return <HighlightedBlock raw={raw} resolved={resolved} />;
 };
 
-// Beyond this many lines a block collapses by default. Backstop for models
-// that paste a whole rewritten document into chat (the content belongs in the
-// file/diff, not the message) — keeps the conversation scannable instead of a
-// wall of text. Tuned to still show a useful preview before the fade.
+// 超过该行数的代码块默认折叠。用于兜底那些把整篇重写文档粘贴到聊天里的模型
+//(这类内容应归属于文件/差异,而非消息正文)—— 保持对话可快速浏览,而不是
+// 一整面文字墙。调优后仍会在渐隐前展示一段有用的预览。
 const COLLAPSE_LINE_THRESHOLD = 16;
 
 const HighlightedBlock = memo(
@@ -159,7 +158,7 @@ const CopyButton = ({ raw }: { raw: string }) => {
       await navigator.clipboard.writeText(raw);
       setCopied(true);
     } catch {
-      // Clipboard permission denied: skip the ✓ flash; do not pop an error toast (chat code copy is not critical UX).
+      // 剪贴板权限被拒:跳过 ✓ 闪烁;不弹出错误提示(聊天代码复制不属于关键 UX)。
     }
   };
   return (

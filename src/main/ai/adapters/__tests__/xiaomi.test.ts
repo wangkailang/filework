@@ -88,9 +88,9 @@ describe("patchOutgoingBody", () => {
   }
 
   it("stamps reasoning_content on past assistant turns the deepseek converter blanked out", () => {
-    // Simulates the failing case from production logs: 2 assistant
-    // turns reaching Xiaomi, both with empty reasoning_content after
-    // the deepseek converter's `index <= lastUserMessageIndex` drop.
+    // 模拟生产日志中的失败场景:到达 Xiaomi 的 2 个 assistant
+    // 回合,在 deepseek 转换器执行 `index <= lastUserMessageIndex`
+    // 丢弃后,两者的 reasoning_content 都为空。
     const body = JSON.stringify({
       model: "mimo-v2.5-pro",
       messages: [
@@ -137,8 +137,8 @@ describe("patchOutgoingBody", () => {
   });
 
   it("does not overwrite reasoning_content that deepseek already populated", () => {
-    // deepseek's converter does include reasoning_content for the
-    // latest assistant turn — we should leave that alone, not double-stamp.
+    // deepseek 的转换器确实会为最新的 assistant 回合包含
+    // reasoning_content —— 我们应保持原样,不要重复写入。
     const body = JSON.stringify({
       messages: [
         { role: "user", content: "u1" },

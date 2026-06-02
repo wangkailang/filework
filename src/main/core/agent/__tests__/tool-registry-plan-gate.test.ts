@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { type ToolContext, ToolRegistry } from "../tool-registry";
 
-// Minimal context — the dummy tools below ignore it.
+// 最小化的上下文 —— 下面的占位工具会忽略它。
 const ctx = {} as ToolContext;
 const execOpts = { toolCallId: "call-1" } as ToolExecutionOptions;
 

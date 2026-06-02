@@ -30,8 +30,8 @@ function getKey(): Buffer {
 }
 
 /**
- * Encrypt a plaintext string using AES-256-GCM.
- * @returns Encrypted string in "iv:authTag:ciphertext" format (hex-encoded).
+ * 使用 AES-256-GCM 加密明文字符串。
+ * @returns "iv:authTag:ciphertext" 格式的加密字符串(十六进制编码)。
  */
 export function encrypt(plaintext: string): string {
   const key = getKey();
@@ -48,9 +48,9 @@ export function encrypt(plaintext: string): string {
 }
 
 /**
- * Decrypt a string previously encrypted with `encrypt`.
- * @param encrypted String in "iv:authTag:ciphertext" format.
- * @returns Original plaintext.
+ * 解密先前由 `encrypt` 加密的字符串。
+ * @param encrypted "iv:authTag:ciphertext" 格式的字符串。
+ * @returns 原始明文。
  */
 export function decrypt(encrypted: string): string {
   const key = getKey();

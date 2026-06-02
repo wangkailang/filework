@@ -1,7 +1,7 @@
 /**
- * Integration test: spin up a real git repo with mkdtemp, populate a
- * branch, then exercise the same `runGit` + `parsePatch` pipeline the
- * handler uses. The IPC bridge itself is exercised via E2E.
+ * 集成测试:用 mkdtemp 创建一个真实的 git 仓库,填充一个分支,
+ * 然后走一遍 handler 所用的同一条 `runGit` + `parsePatch` 流水线。
+ * IPC 桥接本身则通过 E2E 测试覆盖。
  */
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -85,15 +85,15 @@ describe("git diff against branch base", () => {
   });
 
   it("git diff alone misses untracked files — handler must compose with ls-files", async () => {
-    // Documents *why* the handler needs `collectUntrackedDiffs`: plain
-    // `git diff <base>` is silent about untracked content. The
-    // ls-files + diff --no-index tests below cover the closure.
+    // 说明 handler *为何* 需要 `collectUntrackedDiffs`:单纯的
+    // `git diff <base>` 对未跟踪内容只字不提。下面的
+    // ls-files + diff --no-index 测试补全了这一闭环。
     await writeFile(path.join(root, "README.md"), "# Hello\nline\nedited\n");
     await writeFile(path.join(root, "new.txt"), "fresh\n");
 
     const baseSha = (await git(["merge-base", "main", "HEAD"])).trim();
     const headSha = (await git(["rev-parse", "HEAD"])).trim();
-    expect(baseSha).toBe(headSha); // no commits on branch yet
+    expect(baseSha).toBe(headSha); // 分支上尚无提交
 
     const diff = await git([
       "diff",
@@ -107,13 +107,13 @@ describe("git diff against branch base", () => {
       .map((p) => p.newFileName?.replace(/^b\//, ""))
       .filter(Boolean);
     expect(paths).toContain("README.md");
-    expect(paths).not.toContain("new.txt"); // confirms diff blind spot
+    expect(paths).not.toContain("new.txt"); // 印证 diff 的盲区
   });
 
   it("ls-files --others --exclude-standard surfaces untracked, respects .gitignore", async () => {
-    // The handler's `collectUntrackedDiffs` uses this command — pin
-    // behavior so a future flag change doesn't silently re-include
-    // gitignored noise (node_modules, dist, etc.).
+    // handler 的 `collectUntrackedDiffs` 使用了这条命令 —— 固化其
+    // 行为,以免将来某次标志变更悄悄地重新纳入被 gitignore 的
+    // 噪声(node_modules、dist 等)。
     await writeFile(path.join(root, ".gitignore"), "ignored.txt\n");
     await git(["add", ".gitignore"]);
     await git(["commit", "-q", "-m", "add gitignore"]);
@@ -128,8 +128,8 @@ describe("git diff against branch base", () => {
   });
 
   it("git diff --no-index /dev/null <file> produces an added-file patch parsePatch can read", async () => {
-    // The synthesis step for untracked files. Exit code 1 is the
-    // normal "files differ" outcome — handler must tolerate it.
+    // 针对未跟踪文件的合成步骤。退出码 1 是
+    // 正常的“文件存在差异”结果 —— handler 必须容忍它。
     await writeFile(path.join(root, "fresh.txt"), "alpha\nbeta\ngamma\n");
 
     const res = await runGit(
@@ -144,7 +144,7 @@ describe("git diff against branch base", () => {
       ],
       { cwd: root },
     );
-    expect(res.exitCode).toBe(1); // "they differ" — the expected non-zero
+    expect(res.exitCode).toBe(1); // “存在差异” —— 预期的非零退出码
     expect(res.stdout).toMatch(/--- a?\/?dev\/null/);
     expect(res.stdout).toMatch(/\+\+\+ b\/fresh\.txt/);
 

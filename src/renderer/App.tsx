@@ -30,7 +30,7 @@ import {
   workspaceRefLabel,
 } from "./types/workspace-ref";
 
-// Load all locales synchronously at startup
+// 启动时同步加载所有语言包
 loadAllLocales();
 
 const getInitialLocale = (): Locales => {
@@ -64,12 +64,12 @@ const getInitialDockWidth = (): number => {
 
 interface ResolvedWorkspace {
   ref: WorkspaceRef;
-  /** On-disk path the file tree / sandbox uses (clone dir for github/gitlab). */
+  /** 文件树 / 沙箱使用的磁盘路径(github/gitlab 为克隆目录)。 */
   localPath: string;
   /**
-   * Current branch for local workspaces. null = detached HEAD or not a
-   * git repo; undefined = not yet probed. Remote workspaces leave this
-   * undefined and read the branch from `ref.ref` instead.
+   * 本地工作区的当前分支。null = 游离 HEAD 或非 git 仓库;
+   * undefined = 尚未探测。远程工作区保持其为 undefined,
+   * 转而从 `ref.ref` 读取分支。
    */
   currentBranch?: string | null;
   /**
@@ -90,9 +90,8 @@ export const App = () => {
   const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Bumped whenever a destructive tool finishes; the branch-diff hook
-  // uses this as its invalidator so the dock Diff tab reflects post-write
-  // reality without waiting for the 30 s TTL.
+  // 每当破坏性工具执行完成时自增;branch-diff hook 以此作为失效信号,
+  // 使停靠区的 Diff 标签能反映写入后的实际状态,而无需等待 30 秒 TTL。
   const [diffInvalidator, setDiffInvalidator] = useState(0);
 
   // 左栏
@@ -153,7 +152,7 @@ export const App = () => {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Settings 入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
+  // 设置入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
   useEffect(() => {
     const handler = () => setSettingsOpen(true);
     window.addEventListener("filework:open-settings", handler);
@@ -174,9 +173,9 @@ export const App = () => {
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
       if (ref.kind === "local") {
-        // Defense against corrupted recent_workspaces rows that wrapped a
-        // remote workspace URI inside a fake "local" ref. Treat as an error
-        // rather than handing the URI to fs:listDirectory.
+        // 防御那些把远程工作区 URI 包裹进伪造的 "local" ref 中的损坏
+        // recent_workspaces 记录。将其视为错误,而非把该 URI 交给
+        // fs:listDirectory。
         if (ref.path.startsWith("gitlab:") || ref.path.startsWith("github:")) {
           throw new Error(
             "Recent workspace metadata is corrupted; please reconnect the remote repo.",
@@ -211,14 +210,13 @@ export const App = () => {
     [],
   );
 
-  // HEAD-watcher sync: main process broadcasts `workspace:branch-changed`
-  // whenever `.git/HEAD` changes (chat-driven `git checkout`, external
-  // terminal, BranchSwitcher itself, etc.). We patch `workspace.ref.ref`
-  // so the BranchSwitcher chip and downstream consumers stay in sync
-  // with on-disk reality. Match by `cloneDir` (== `workspace.localPath`)
-  // because `workspaceRefId` embeds the ref and would change on switch.
-  // Read via a ref so the listener is mounted once and addRecentWorkspace
-  // doesn't run inside a setState updater (StrictMode would double-fire it).
+  // HEAD-watcher 同步:每当 `.git/HEAD` 变化时(聊天驱动的 `git checkout`、
+  // 外部终端、BranchSwitcher 自身等),主进程会广播 `workspace:branch-changed`。
+  // 我们据此修补 `workspace.ref.ref`,使 BranchSwitcher 标签及下游消费者
+  // 与磁盘实际状态保持同步。以 `cloneDir`(== `workspace.localPath`)匹配,
+  // 因为 `workspaceRefId` 内嵌了 ref,切换时会变化。
+  // 通过 ref 读取,使监听器只挂载一次,且 addRecentWorkspace 不在 setState
+  // 更新函数内运行(否则 StrictMode 会触发两次)。
   const workspaceRef = useRef<ResolvedWorkspace | null>(workspace);
   useEffect(() => {
     workspaceRef.current = workspace;
@@ -267,7 +265,7 @@ export const App = () => {
     };
   }, []);
 
-  // On launch: restore the most recent workspace
+  // 启动时:恢复最近一次的工作区
   useEffect(() => {
     const restore = async () => {
       try {

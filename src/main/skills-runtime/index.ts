@@ -1,8 +1,7 @@
 /**
- * AI Skills Runtime — entry point
+ * AI 技能运行时 —— 入口
  *
- * Discovers, parses, registers, and executes SKILL.md-based skills
- * alongside the existing built-in skill system.
+ * 在现有内置技能系统之外,发现、解析、注册并执行基于 SKILL.md 的技能。
  */
 
 import { buildDiscoverySources, discoverSkills } from "./discovery";
@@ -39,20 +38,19 @@ export {
 } from "./security";
 
 /**
- * Initialize skill discovery and register external skills.
+ * 初始化技能发现并注册外部技能。
  *
- * Scans personal, project, and optional additional directories for
- * SKILL.md files, runs eligibility checks, and registers eligible
- * skills into the provided {@link SkillRegistry}.
+ * 扫描个人、项目以及可选的附加目录中的 SKILL.md 文件,
+ * 运行资格检查,并将符合条件的技能注册到提供的
+ * {@link SkillRegistry} 中。
  *
- * @param registry - The singleton SkillRegistry instance
- * @param workspacePath - Absolute path to the current workspace root
- * @param additionalDirs - Optional extra directories to scan
- * @param enabledSkillIds - Allow-list of personal / additional skill IDs
- *   to register. Skills not in this list are discovered but not
- *   registered (default: empty list). Project skills are always
- *   registered when eligible.
- * @returns The number of external skills registered into the runtime
+ * @param registry - 单例 SkillRegistry 实例
+ * @param workspacePath - 当前工作区根目录的绝对路径
+ * @param additionalDirs - 可选的额外扫描目录
+ * @param enabledSkillIds - 允许注册的个人 / 附加技能 ID 白名单。
+ *   不在此列表中的技能会被发现但不被注册(默认:空列表)。
+ *   项目技能在符合条件时始终被注册。
+ * @returns 注册到运行时的外部技能数量
  */
 export async function initSkillDiscovery(
   registry: SkillRegistry,

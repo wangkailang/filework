@@ -1,12 +1,11 @@
 /**
- * LocalWorkspace — workspace backed by a local filesystem directory.
+ * LocalWorkspace — 基于本地文件系统目录的工作区。
  *
- * Sandboxing semantics: every relative path is resolved against the
- * workspace root and checked via `node:fs.realpath` so symlink escapes
- * are caught. `toRelative()` rejects absolute paths that resolve outside
- * the root with `WorkspaceEscapeError`. Logic mirrors the pre-M1 check
- * at `src/main/ipc/ai-tool-permissions.ts:27-59`, hoisted into the
- * workspace so all tools inherit it for free.
+ * 沙箱语义:每个相对路径都相对工作区根目录解析,并通过
+ * `node:fs.realpath` 校验,从而捕获符号链接逃逸。`toRelative()` 会以
+ * `WorkspaceEscapeError` 拒绝解析后落在根目录之外的绝对路径。该逻辑
+ * 与 `src/main/ipc/ai-tool-permissions.ts:27-59` 的 M1 之前的检查一致,
+ * 上提到工作区中,使所有工具免费继承。
  */
 
 import { spawn } from "node:child_process";
@@ -42,15 +41,15 @@ import { WorkspaceEscapeError } from "./types";
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5 * 60 * 1000;
 
-// runCommand output cap — applied at the tool boundary BEFORE it reaches the
-// model, mirroring Codex/Claude Code. A runaway `cat bigfile` then adds ~32KB
-// to context, not megabytes (which a multi-step loop would re-send each turn,
-// ballooning input tokens). Keep head AND tail — exit info / final errors live
-// at the end. Peak memory stays at HEAD+TAIL even for a 100MB stream.
+// runCommand 输出上限 —— 在工具边界、抵达模型*之前*施加,与 Codex/Claude
+// Code 一致。这样失控的 `cat bigfile` 只会给上下文增加约 32KB,而非数 MB
+//(多步循环每轮都会重发这些内容,导致输入 token 暴涨)。同时保留头部和
+// 尾部 —— 退出信息 / 最终错误位于结尾。即使面对 100MB 的流,峰值内存也
+// 维持在 HEAD+TAIL。
 const EXEC_OUT_HEAD = 24_000;
 const EXEC_OUT_TAIL = 8_000;
 
-/** Memory-bounded head+tail capture of a streamed output. */
+/** 对流式输出进行内存受限的头部+尾部捕获。 */
 class BoundedCapture {
   private head = "";
   private tail = "";
@@ -70,7 +69,7 @@ class BoundedCapture {
     return this.total > EXEC_OUT_HEAD + EXEC_OUT_TAIL;
   }
 
-  /** Reconstructs the full text when within budget, else head…tail. */
+  /** 在预算内时重建完整文本,否则返回 head…tail。 */
   value(): string {
     if (!this.truncated) return this.head + this.tail;
     const dropped = this.total - this.head.length - this.tail.length;
@@ -79,13 +78,13 @@ class BoundedCapture {
 }
 
 /**
- * Project the absolute path `p` into its canonical (symlink-resolved)
- * form, even when `p` does not exist yet. We walk up to the deepest
- * existing ancestor, realpath that, and rejoin the unresolved tail.
+ * 将绝对路径 `p` 投影为其规范(解析符号链接后)形式,即使 `p` 尚不
+ * 存在。我们向上回溯到最深的已存在祖先,对其做 realpath,再拼回未解析
+ * 的尾部。
  *
- * On macOS this matters because `/tmp/x/y/z` and the realpath
- * `/private/var/folders/.../x/y/z` are different prefixes — comparing
- * the unresolved `joined` against a `realRoot` would always reject.
+ * 在 macOS 上这点很重要,因为 `/tmp/x/y/z` 与其 realpath
+ * `/private/var/folders/.../x/y/z` 是不同的前缀 —— 拿未解析的 `joined`
+ * 去和 `realRoot` 比较会始终被拒绝。
  */
 async function projectRealPath(p: string): Promise<string> {
   let current = p;
@@ -99,7 +98,7 @@ async function projectRealPath(p: string): Promise<string> {
     } catch {
       const parent = path.dirname(current);
       if (parent === current) {
-        // Reached filesystem root without resolving anything.
+        // 一直到达文件系统根仍未解析出任何内容。
         return p;
       }
       tail.push(path.basename(current));
@@ -112,7 +111,7 @@ function isInsideRoot(target: string, realRoot: string): boolean {
   return target === realRoot || target.startsWith(realRoot + path.sep);
 }
 
-/** Resolve a path inside `root` and verify it does not escape after symlink resolution. */
+/** 在 `root` 内解析路径,并校验其在符号链接解析后未发生逃逸。 */
 async function resolveInside(
   root: string,
   rel: string,
@@ -197,7 +196,7 @@ class LocalWorkspaceFS implements WorkspaceFS {
           modifiedAt: s.mtime.toISOString(),
         });
       } catch {
-        // skip inaccessible
+        // 跳过不可访问的项
       }
     }
     return results.sort((a, b) => {
@@ -278,11 +277,10 @@ class LocalWorkspaceExec implements WorkspaceExec {
         shell: launch.shell ?? false,
         detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
-        // BROWSER=none prevents dev servers (Vite / CRA / Next / Astro)
-        // from auto-launching the OS default browser. URLs surface in
-        // stdout and the user clicks them into the in-app BrowserPanel.
-        // Only set when the user hasn't explicitly chosen a BROWSER —
-        // respect personalised setups like `BROWSER=firefox-dev`.
+        // BROWSER=none 防止开发服务器(Vite / CRA / Next / Astro)
+        // 自动拉起操作系统默认浏览器。URL 会出现在 stdout 中,由用户
+        // 点击后在应用内的 BrowserPanel 打开。仅当用户未显式选择
+        // BROWSER 时设置 —— 尊重 `BROWSER=firefox-dev` 之类的个性化配置。
         env: {
           ...process.env,
           BROWSER: process.env.BROWSER ?? "none",
@@ -304,7 +302,7 @@ class LocalWorkspaceExec implements WorkspaceExec {
           try {
             process.kill(child.pid, signal);
           } catch {
-            // already gone
+            // 进程已不存在
           }
         }
       };
@@ -353,7 +351,7 @@ class LocalWorkspaceExec implements WorkspaceExec {
 }
 
 export interface LocalWorkspaceOptions {
-  /** Stable id for this workspace. Defaults to `local:<absolute-root>`. */
+  /** 该工作区的稳定 id。默认为 `local:<absolute-root>`。 */
   id?: string;
 }
 

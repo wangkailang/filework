@@ -24,8 +24,8 @@ export class AnthropicAdapter implements ProviderAdapter {
     const anthropic = createAnthropic({
       apiKey: config.apiKey || "",
       baseURL: config.baseUrl || undefined,
-      // Per-host proxy-aware fetch (set at bootstrap) — avoids the global
-      // env proxy that can buffer streaming responses. See provider-fetch.ts.
+      // 按 host 感知代理的 fetch(在 bootstrap 时设置)—— 避免使用全局
+      // env 代理,后者可能缓冲流式响应。参见 provider-fetch.ts。
       fetch: getProviderFetch(),
     });
     return anthropic(config.model);
@@ -35,8 +35,8 @@ export class AnthropicAdapter implements ProviderAdapter {
     return {
       anthropic: {
         cacheControl: { type: "ephemeral" as const },
-        // See OpenAIAdapter: serialize tool calls so `createPlan`'s
-        // await-for-approval halts the loop instead of running siblings.
+        // 参见 OpenAIAdapter:串行化工具调用,使 `createPlan` 的
+        // 等待审批能中止循环,而不是继续运行其他并行调用。
         disableParallelToolUse: true,
       },
     };

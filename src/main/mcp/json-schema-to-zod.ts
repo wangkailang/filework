@@ -1,20 +1,20 @@
 /**
- * Convert a JSON-Schema fragment (the subset MCP servers emit for tool
- * `inputSchema`) into a Zod schema usable by `ai`'s tool definition.
+ * 将 JSON-Schema 片段(MCP 服务端为工具 `inputSchema`
+ * 输出的那个子集)转换为可供 `ai` 工具定义使用的 Zod schema。
  *
- * Coverage:
- *  - object (with `properties` + `required`, additionalProperties=false fallback)
+ * 覆盖范围:
+ *  - object(含 `properties` + `required`,additionalProperties=false 兜底)
  *  - string / number / integer / boolean / null
- *  - array (items, optional minItems/maxItems)
- *  - enum (string-only or mixed-literal)
- *  - oneOf / anyOf (z.union)
- *  - $ref to local definitions/$defs (depth-limited)
- *  - Anything unrecognized degrades to `z.unknown()` so the call still
- *    fires — MCP servers do their own validation server-side.
+ *  - array(items,可选的 minItems/maxItems)
+ *  - enum(纯字符串或混合字面量)
+ *  - oneOf / anyOf(z.union)
+ *  - 指向本地 definitions/$defs 的 $ref(限制深度)
+ *  - 任何无法识别的内容降级为 `z.unknown()`,以保证调用仍能
+ *    发出 —— MCP 服务端会在自己一侧做校验。
  *
- * Kept tiny (~one file, no deps) on purpose: pulling in
- * `json-schema-to-zod` etc. drags a whole JSON-Schema interpreter for
- * features MCP servers don't use.
+ * 刻意保持精简(约一个文件、无依赖):引入
+ * `json-schema-to-zod` 等会为 MCP 服务端用不到的特性
+ * 拖入一整套 JSON-Schema 解释器。
  */
 
 import { z } from "zod/v4";
@@ -28,7 +28,7 @@ const resolveRef = (
   ref: string,
   root: JsonSchema,
 ): JsonSchema | undefined => {
-  // Only support local pointers — #/definitions/X or #/$defs/X.
+  // 仅支持本地指针 —— #/definitions/X 或 #/$defs/X。
   if (!ref.startsWith("#/")) return undefined;
   const parts = ref.slice(2).split("/");
   let cur: unknown = root;
@@ -115,9 +115,9 @@ const buildZod = (
     case "object":
     case undefined: {
       const props = schema.properties as Record<string, JsonSchema> | undefined;
-      // Schemas with `properties` but no explicit `type` are treated as
-      // objects — common MCP shorthand. Bare schemas with neither type
-      // nor properties fall through to z.unknown().
+      // 有 `properties` 但没有显式 `type` 的 schema 视为
+      // object —— 这是常见的 MCP 简写。既无 type 也无
+      // properties 的裸 schema 则落到 z.unknown()。
       if (!props && type !== "object") return z.unknown();
       const required = new Set(
         (Array.isArray(schema.required) ? schema.required : []) as string[],
@@ -131,8 +131,8 @@ const buildZod = (
         shape[key] = required.has(key) ? inner : inner.optional();
       }
       let obj: z.ZodTypeAny = z.object(shape);
-      // additionalProperties=true keeps unknown fields; the zod default
-      // (strip) is the safer baseline for tool-call args.
+      // additionalProperties=true 保留未知字段;zod 默认行为
+      // (strip 剥除)对工具调用参数而言是更安全的基线。
       if (schema.additionalProperties === true) {
         obj = (obj as z.ZodObject<z.ZodRawShape>).catchall(z.unknown());
       }
@@ -144,11 +144,11 @@ const buildZod = (
 };
 
 /**
- * Top-level entry: accepts an MCP tool's `inputSchema` (always a JSON-
- * schema object describing the args object). Returns a ZodType so the
- * ai-sdk tool wrapper can treat it as a typed parameters schema. If the
- * top-level schema isn't object-typed, wrap it under `input` so ai-sdk
- * still has an object shape to validate against.
+ * 顶层入口:接收 MCP 工具的 `inputSchema`(始终是一个描述
+ * 参数对象的 JSON-schema 对象)。返回一个 ZodType,以便
+ * ai-sdk 的工具封装将其当作带类型的参数 schema。若顶层
+ * schema 不是 object 类型,则将其包裹在 `input` 之下,从而让
+ * ai-sdk 仍有一个 object 结构可供校验。
  */
 export const jsonSchemaToZodObject = (
   schema: Record<string, unknown> | undefined | null,

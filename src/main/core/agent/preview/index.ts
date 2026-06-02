@@ -1,12 +1,10 @@
 /**
- * Preview dispatcher — picks the right generator for the tool name and
- * never throws. Approval-batcher fires this during `flushBuffer` to
- * decorate each pending approval entry with a structured change preview
- * before the IPC event reaches the renderer.
+ * 预览分发器 —— 根据工具名挑选对应的生成器,且永不抛出异常。
+ * approval-batcher 在 `flushBuffer` 期间调用本函数,在 IPC 事件到达
+ * 渲染进程之前,为每条待审批条目附加结构化的变更预览。
  *
- * PR2 wires only `writeFile`; PR4 will add move/delete/mkdir/run.
- * Unknown or failing tools return `undefined`, and the renderer falls
- * back to its description-only row.
+ * PR2 仅接入 `writeFile`;PR4 将新增 move/delete/mkdir/run。
+ * 未知或失败的工具返回 `undefined`,渲染进程回退到仅展示描述的行。
  */
 
 import type { Workspace } from "../../workspace/types";
@@ -24,8 +22,7 @@ export { computeRunCommandPreview } from "./run-command";
 export type { ToolPreview } from "./types";
 export { computeWriteFilePreview } from "./write-file";
 
-/** Hard cap on a single generator's runtime. Callers should still
- *  race this against their own outer timeout. */
+/** 单个生成器运行时长的硬上限。调用方仍应将其与自身的外层超时进行竞速。 */
 export const PREVIEW_TIMEOUT_MS = 2_000;
 
 export async function dispatchPreview(

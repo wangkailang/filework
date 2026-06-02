@@ -1,27 +1,26 @@
 /**
- * PPTX (PowerPoint) processor — closes the GAIA "Open the attached
- * deck. On slide N, what does it say?" gap that the other skills can't
- * handle. PPTX files are ZIP archives containing XML per slide; we
- * reuse the JSZip implementation bundled inside mammoth (same trick
- * `docx-processor` uses for metadata) so this skill adds no new
- * dependency.
+ * PPTX(PowerPoint)处理器 —— 填补 GAIA 中
+ * "Open the attached deck. On slide N, what does it say?" 这类其他
+ * skill 无法处理的场景。PPTX 文件是包含每张幻灯片 XML 的 ZIP 归档;
+ * 我们复用 mammoth 内置的 JSZip 实现(与 `docx-processor` 读取元数据
+ * 时用的是同一招),因此该 skill 不引入任何新依赖。
  *
- * Three tools:
- *   - readPptxText      — plain text of every slide, concatenated.
- *   - readPptxSlides    — slide-by-slide: text body + speaker notes.
- *   - getPptxMetadata   — title/author/dates/slideCount from
- *                         docProps/core.xml and docProps/app.xml.
+ * 三个工具:
+ *   - readPptxText      —— 拼接所有幻灯片的纯文本。
+ *   - readPptxSlides    —— 逐张幻灯片:正文文本 + 演讲者备注。
+ *   - getPptxMetadata   —— 从 docProps/core.xml 和 docProps/app.xml
+ *                         读取 title/author/dates/slideCount。
  *
- * What we extract:
- *   - All `<a:t>` text runs from each slide's XML (this covers titles,
- *     body placeholders, table cells, text frames in shapes).
- *   - Speaker notes from `ppt/notesSlides/notesSlide<N>.xml`.
+ * 我们提取的内容:
+ *   - 每张幻灯片 XML 中所有 `<a:t>` 文本 run(涵盖标题、正文占位符、
+ *     表格单元格、形状内的文本框)。
+ *   - 来自 `ppt/notesSlides/notesSlide<N>.xml` 的演讲者备注。
  *
- * What we DON'T extract (out of scope for plain-text MVP):
- *   - Chart data (bound to embedded XLSX)
- *   - Image OCR (no image processing here)
- *   - SmartArt structure
- *   - Animations / transitions metadata
+ * 我们不提取的内容(纯文本 MVP 的范围之外):
+ *   - 图表数据(绑定在内嵌的 XLSX 中)
+ *   - 图像 OCR(此处不做图像处理)
+ *   - SmartArt 结构
+ *   - 动画 / 转场元数据
  */
 import { readFile } from "node:fs/promises";
 
@@ -34,7 +33,7 @@ import type { Skill } from "./types";
 const PPTX_EXTENSIONS = [".pptx"];
 const MAX_SLIDES = 500;
 
-// ─── JSZip resolver (bundled inside mammoth) ─────────────────────────
+// ─── JSZip 解析器(内置于 mammoth 中) ─────────────────────────
 
 type JSZipFile = { async: (kind: "string") => Promise<string> };
 type JSZipArchive = {
@@ -51,12 +50,11 @@ const loadJSZip = (): JSZipModule => {
   return mammothRequire("jszip") as JSZipModule;
 };
 
-// ─── Pure helpers (exported for unit tests) ──────────────────────────
+// ─── 纯函数辅助(导出供单元测试使用) ──────────────────────────
 
 /**
- * Decode the five XML entities that show up in PowerPoint text runs.
- * PPTX never uses numeric entities for printable ASCII so this is
- * sufficient.
+ * 解码 PowerPoint 文本 run 中出现的五个 XML 实体。
+ * PPTX 从不对可打印 ASCII 使用数字实体,因此这样处理已足够。
  */
 export const decodeXmlEntities = (s: string): string =>
   s
@@ -67,12 +65,11 @@ export const decodeXmlEntities = (s: string): string =>
     .replace(/&amp;/g, "&");
 
 /**
- * Extract every `<a:t>...</a:t>` text run from a slide XML body and
- * concatenate them with newlines between paragraphs (each `<a:p>` is
- * a paragraph; runs inside a paragraph are joined directly).
+ * 从幻灯片 XML 正文中提取每一个 `<a:t>...</a:t>` 文本 run,并在段落
+ * 之间用换行拼接(每个 `<a:p>` 是一个段落;段落内的 run 直接拼接)。
  *
- * Regex-based rather than a full XML parse: we only care about text
- * leaves, and PPTX text runs never contain nested elements.
+ * 基于正则而非完整 XML 解析:我们只关心文本叶子节点,且 PPTX 文本
+ * run 从不包含嵌套元素。
  */
 export const extractSlideText = (xml: string): string => {
   const paragraphs: string[] = [];
@@ -96,10 +93,9 @@ export const extractSlideText = (xml: string): string => {
 };
 
 /**
- * Pick the slide and notes file paths from a JSZip archive's file
- * listing, in 1-indexed slide order. Returns `null`-valued notes for
- * slides that have no corresponding notes file (most decks have notes
- * only on a subset of slides).
+ * 从 JSZip 归档的文件清单中挑选幻灯片与备注文件路径,按从 1 开始的
+ * 幻灯片顺序排列。对没有对应备注文件的幻灯片,其 notes 返回 `null`
+ * (大多数演示文稿只有部分幻灯片带备注)。
  */
 export const listSlideAndNotesPaths = (
   fileNames: string[],
@@ -135,9 +131,9 @@ interface PptxMeta {
 }
 
 /**
- * Pull metadata from `docProps/core.xml` (title/author/dates) and
- * `docProps/app.xml` (slide count, company). Both files are optional
- * in the spec; any missing field surfaces as `null`.
+ * 从 `docProps/core.xml`(title/author/dates)和 `docProps/app.xml`
+ * (幻灯片数、公司)中提取元数据。两个文件在规范中均为可选;任何
+ * 缺失的字段都以 `null` 呈现。
  */
 export const parsePptxMetaXml = (
   coreXml: string | null,
@@ -161,7 +157,7 @@ export const parsePptxMetaXml = (
   };
 };
 
-// ─── Internals ───────────────────────────────────────────────────────
+// ─── 内部实现 ───────────────────────────────────────────────────────
 
 interface ExtractedSlide {
   index: number;
@@ -202,7 +198,7 @@ const extractAllSlides = async (
   return out;
 };
 
-// ─── Tools ───────────────────────────────────────────────────────────
+// ─── 工具 ───────────────────────────────────────────────────────────
 
 const readPptxTextTool: Tool = {
   description:
@@ -280,7 +276,7 @@ const getPptxMetadataTool: Tool = {
   },
 };
 
-// ─── Skill spec ──────────────────────────────────────────────────────
+// ─── Skill 定义 ──────────────────────────────────────────────────────
 
 export const pptxProcessor: Skill = {
   id: "pptx-processor",

@@ -6,10 +6,9 @@ import { initSkillDiscovery } from "../index";
 import { SkillRegistry } from "../registry";
 
 /**
- * Per-skill gating semantics: personal & additional skills are
- * discovered but only registered into the runtime registry when their
- * id appears in the allow-list. Project skills stay always-on and
- * cannot be toggled.
+ * 单个技能的门控语义:个人级和附加技能会被发现,
+ * 但只有当其 id 出现在白名单中时才会被注册进运行时注册表。
+ * 项目级技能始终保持启用,无法切换开关。
  */
 
 async function writeSkill(dir: string, id: string) {
@@ -45,7 +44,7 @@ describe("SkillRegistry per-skill gating", () => {
     expect(registry.getById("proj-skill")).toBeDefined();
     expect(registry.getById("ext-skill")).toBeUndefined();
 
-    // Both should be visible in the inventory.
+    // 两者都应在清单中可见。
     const inventoryIds = registry
       .listAllDiscovered()
       .map((d) => d.skillId)
@@ -93,7 +92,7 @@ describe("SkillRegistry per-skill gating", () => {
     expect(registry.getById("alpha")).toBeUndefined();
     expect(registry.getEnabledSkillIds()).toEqual([]);
 
-    // The skills stay in the discovered inventory throughout.
+    // 这些技能始终保留在已发现的清单中。
     const ids = registry.listAllDiscovered().map((d) => d.skillId);
     expect(ids).toContain("alpha");
     expect(ids).toContain("beta");
@@ -108,7 +107,7 @@ describe("SkillRegistry per-skill gating", () => {
     expect(registry.getEnabledSkillIds()).toEqual([]);
 
     registry.setSkillEnabled("proj-skill", false);
-    // Project skills are not in the allow-list pathway; still registered.
+    // 项目级技能不走白名单路径;仍保持已注册。
     expect(registry.getById("proj-skill")).toBeDefined();
     expect(registry.getEnabledSkillIds()).toEqual([]);
   });

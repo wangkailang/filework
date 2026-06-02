@@ -1,5 +1,5 @@
-// Post-turn verdict hook: deterministic rules first, optional cheap-LLM
-// fallback when rules abstain. Opt-in via skill frontmatter `reflect: true`.
+// 回合结束后的裁决钩子:先走确定性规则,规则弃权时可选地回退到廉价 LLM。
+// 通过 skill frontmatter `reflect: true` 显式开启。
 
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
@@ -26,11 +26,10 @@ export type ReflectionVerdict =
       kind: "retry";
       feedback: string;
       /**
-       * When true, AgentLoop must call the next `streamText` pass with an
-       * empty tool set so the model physically cannot invoke any tools.
-       * Used by `missingFinalAnswer` to recover from step-budget exhaustion
-       * — letting the model keep its tools on retry tends to re-exhaust
-       * the budget instead of producing the final answer.
+       * 为 true 时,AgentLoop 下一次调用 `streamText` 必须传入空工具集,
+       * 使模型物理上无法调用任何工具。供 `missingFinalAnswer` 用于从
+       * 步数预算耗尽中恢复 —— 重试时若让模型保留工具,往往会再次耗尽
+       * 预算而非产出最终答案。
        */
       forceNoTools?: boolean;
     }
@@ -46,28 +45,26 @@ export type ReflectionRule = (turn: TurnSummary) => ReflectionVerdict | null;
 export interface ReflectionGateConfig {
   model?: LanguageModel;
   rules?: ReflectionRule[];
-  /** Default true. Set false to skip LLM when all rules abstain. */
+  /** 默认 true。设为 false 时,所有规则弃权后跳过 LLM。 */
   llmFallback?: boolean;
   /**
-   * Override the default LLM-fallback prompt. Receives the turn summary
-   * and returns the full prompt string sent to `generateText`. Used by
-   * harnesses (e.g. GAIA) that need question-aware answer verification
-   * — they can close over additional context (question text, expected
-   * format) the generic prompt doesn't have access to.
+   * 覆盖默认的 LLM 回退 prompt。接收本回合摘要,返回发送给
+   * `generateText` 的完整 prompt 字符串。供需要"问题感知"答案校验的
+   * harness(如 GAIA)使用 —— 它们可以闭包捕获通用 prompt 无法访问的
+   * 额外上下文(问题文本、期望格式)。
    */
   llmPromptBuilder?: (turn: TurnSummary) => string;
   /**
-   * When the LLM fallback returns a `retry` verdict, also stamp it with
-   * `forceNoTools: true` so AgentLoop strips tools on the retry pass.
-   * Sensible for verifier-style fallbacks where the model already
-   * gathered all info it needs and the retry is purely a re-format.
-   * Default false (preserves chat-path behavior).
+   * 当 LLM 回退返回 `retry` 裁决时,同时打上 `forceNoTools: true`,
+   * 使 AgentLoop 在重试这一遍剥离工具。适用于校验器式回退 —— 此时模型
+   * 已收集到所需的全部信息,重试纯粹是重新格式化。
+   * 默认 false(保持聊天路径的行为)。
    */
   llmForceNoTools?: boolean;
   /**
-   * Sampling temperature for the LLM-fallback `generateText` call.
-   * Default unset (uses provider default). Eval harnesses should set
-   * this to `0` for reproducible verifier verdicts.
+   * LLM 回退 `generateText` 调用的采样温度。
+   * 默认不设置(使用 provider 默认值)。评测 harness 应将其设为 `0`
+   * 以获得可复现的校验器裁决。
    */
   llmTemperature?: number;
 }
@@ -77,10 +74,9 @@ export const pdfParseFailure: ReflectionRule = (turn) => {
     if (call.success) continue;
     const r = call.result as { error?: unknown } | null | undefined;
     const errorStr = r && typeof r.error === "string" ? r.error : "";
-    // Trigger only when the failure is clearly PDF-related — either the
-    // tool name advertises PDF context, or the error message explicitly
-    // mentions PDF. Plain "parse" matches (JSON / CSV / etc.) abstain
-    // here so the generic feedback message doesn't get misapplied.
+    // 仅在失败明确与 PDF 相关时触发 —— 要么工具名表明 PDF 语境,
+    // 要么错误信息显式提到 PDF。普通的 "parse" 匹配(JSON / CSV 等)
+    // 在此弃权,以免误用这条通用反馈信息。
     const looksPdfTool = /pdf/i.test(call.name);
     const mentionsPdf = /pdf/i.test(errorStr);
     if (looksPdfTool || mentionsPdf) {
@@ -91,13 +87,10 @@ export const pdfParseFailure: ReflectionRule = (turn) => {
       };
     }
   }
-  const hallmarks = ["could not be parsed", "无法解析", "解析失败"];
-  const finalLower = turn.finalText.toLowerCase();
-  for (const h of hallmarks) {
-    if (finalLower.includes(h)) {
-      return { kind: "continue" };
-    }
-  }
+  // 仅在本轮有真实 PDF 工具失败时于上面的 retry 分支处理。模型只在文本里
+  // 宣称"解析失败"却没有任何失败的工具调用 —— 不在此放行:`webFetch` 原生
+  // 抽取 PDF 文本,裸称"无法解析/请重新上传"通常是过早缴械,交给
+  // `prematureConcession` 统一判断是否还有升级途径没试。
   return null;
 };
 
@@ -131,30 +124,25 @@ export const emptyAssistantWithTools: ReflectionRule = (turn) => {
   return null;
 };
 
-// KEEP IN SYNC with `FINAL_ANSWER_RE` in src/eval/gaia/scorer.ts:126.
-// A "valid" FINAL ANSWER line is one where the scorer would extract a
-// non-empty payload — so the rule's accept/reject is symmetric with what
-// the scorer would actually grade. If you change one, change both.
+// 必须与 src/eval/gaia/scorer.ts:126 中的 `FINAL_ANSWER_RE` 保持同步。
+// "有效"的 FINAL ANSWER 行是指 scorer 能从中提取出非空载荷的行 —— 因此
+// 本规则的接受/拒绝逻辑与 scorer 实际评分时的判定对称。改一处必改两处。
 const FINAL_ANSWER_LINE_RE = /\bFINAL\s*ANSWER\s*[:-]?\s*([\s\S]+?)\s*$/i;
 
 /**
- * Opt-in rule for evaluation harnesses that mandate a `FINAL ANSWER: <x>`
- * sentinel (e.g. GAIA). Triggers `retry` with feedback when the assistant
- * finished a streamText pass without emitting a line the scorer would
- * accept.
+ * 供强制要求 `FINAL ANSWER: <x>` 哨兵行的评测 harness(如 GAIA)显式启用的规则。
+ * 当助手完成一遍 streamText 却未输出 scorer 能接受的行时,触发带反馈的 `retry`。
  *
- * Important: the gate is invoked once per completed `streamText` pass
- * (not per internal step). At that point `endReason === "tool_calls"`
- * means the model exhausted `stopWhen`/`maxStepsPerTurn` while still
- * planning tool calls — exactly when we want the retry feedback to say
- * "stop calling tools and emit your best answer."
+ * 重要:此 gate 在每完成一遍 `streamText` 时被调用一次(而非每个内部 step)。
+ * 此时 `endReason === "tool_calls"` 表示模型在仍规划工具调用的过程中耗尽了
+ * `stopWhen`/`maxStepsPerTurn` —— 正是我们希望让重试反馈说出
+ * "停止调用工具,给出你的最佳答案"的时刻。
  *
- * Skips when `finalText` is empty — that case belongs to
- * `emptyAssistantWithTools` or the harness's own failure tagging.
+ * `finalText` 为空时跳过 —— 该情形归 `emptyAssistantWithTools` 或 harness
+ * 自身的失败标记处理。
  *
- * NOT included in `builtinRules()` / `defaultRules()` because the protocol
- * is harness-specific; passing this into `createReflectionGate({ rules })`
- * is the supported integration point.
+ * 不包含在 `builtinRules()` / `defaultRules()` 中,因为该协议是 harness 专属的;
+ * 通过 `createReflectionGate({ rules })` 传入才是受支持的接入点。
  */
 export const missingFinalAnswer: ReflectionRule = (turn) => {
   if (turn.finalText.trim().length === 0) return null;
@@ -177,6 +165,49 @@ export const missingFinalAnswer: ReflectionRule = (turn) => {
   };
 };
 
+// 升级层工具:遇阻后本应爬到的更强取数手段。本轮只要调用过其中之一,
+// 说明模型在升级而非干等,放弃就不算"过早"。
+const ESCALATION_TOOLS = new Set([
+  "webFetchRendered",
+  "webScrape",
+  "browserOpen",
+  "browserClick",
+  "browserType",
+]);
+
+// 任务级"放弃"措辞 —— 只匹配明确宣布不可行的表达,不含"无法确定 / 看不到
+// 图片"这类正常的局部不确定,避免误伤。含 PDF 解析失败的裸声明(由收窄后的
+// `pdfParseFailure` 下沉到此)。
+const CONCESSION_RE =
+  /无法完成(这个|此|该|本)?(任务|查询|请求|工作)|超出了?(当前工具|我的能力|工具)|技术限制|无法克服|无法解析|解析失败|请重新上传|cannot complete (this|the)|unable to complete (this|the)|technical limitation|insurmountable|could not be parsed/i;
+
+// 文本若已点名升级途径(Wayback / 渲染 / Firecrawl 等),说明模型已考虑过
+// 升级,信任其结论,不再 retry。
+const ESCALATION_MENTION_RE =
+  /wayback|web\.archive|archive\.org|webFetchRendered|webScrape|firecrawl|渲染|存档|快照/i;
+
+/**
+ * 过早放弃护栏:模型宣布任务不可行 / 撞上"技术限制",但本轮既没爬过升级层
+ * 工具、文本里也没提到任何升级途径 —— 极可能是一次失败就缴械。retry 一次,
+ * 提示还有哪些手段没试。被 `maxReflections`(默认 2)兜底,不会死循环;模型
+ * 若已升级过(调用或文本提及)则放行。
+ *
+ * 收窄后的 `pdfParseFailure` 会把裸"PDF 无法解析"声明下沉到此 —— `webFetch`
+ * 原生抽取 PDF,这类声明几乎都是幻觉出来的限制。
+ */
+export const prematureConcession: ReflectionRule = (turn) => {
+  if (!CONCESSION_RE.test(turn.finalText)) return null;
+  if (ESCALATION_MENTION_RE.test(turn.finalText)) return null;
+  for (const call of turn.toolCalls) {
+    if (ESCALATION_TOOLS.has(call.name)) return null;
+  }
+  return {
+    kind: "retry",
+    feedback:
+      "你宣布任务不可行,但还没穷尽取数手段。放弃前请先升级:页面 404 / 空白时用 `webFetchRendered`(真渲染)→ `webScrape`(Firecrawl,绕反爬)→ 死链改走 Wayback(`https://web.archive.org/web/2023/<url>`);PDF 直接用 `webFetch` 指向 .pdf 链接(可带 query 逐页检索),不要当成无法解析。若这些手段确已全部尝试过,或任务本就不涉及取数,请改为具体说明每种途径分别如何失败,而不是笼统地说'技术限制'。",
+  };
+};
+
 /**
  * Default rules attached on the main agent path. Excludes
  * `emptyAssistantWithTools` because it false-positives on legitimate
@@ -184,12 +215,17 @@ export const missingFinalAnswer: ReflectionRule = (turn) => {
  * always-on use.
  */
 export function defaultRules(): ReflectionRule[] {
-  return [pdfParseFailure, toolDeniedSequence];
+  return [pdfParseFailure, toolDeniedSequence, prematureConcession];
 }
 
 /** Full rule set — opt-in via skill frontmatter `reflect: true`. */
 export function builtinRules(): ReflectionRule[] {
-  return [pdfParseFailure, toolDeniedSequence, emptyAssistantWithTools];
+  return [
+    pdfParseFailure,
+    toolDeniedSequence,
+    emptyAssistantWithTools,
+    prematureConcession,
+  ];
 }
 
 const LLM_REFLECT_PROMPT = `你是一个质量评审助手。下面是一个 AI 助手刚完成的一轮对话片段，请判断它是否合格交付。

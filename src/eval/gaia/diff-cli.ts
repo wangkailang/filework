@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * `pnpm gaia-eval-diff` entry point.
+ * `pnpm gaia-eval-diff` 入口点。
  *
  *   pnpm gaia-eval-diff <baseline-dir> <current-dir> [--output <path>]
  *
- * Default output: writes `diff-vs-baseline.md` into the current run's
- * directory (so it sits next to that run's summary.json and follows
- * the run wherever it goes).
+ * 默认输出:将 `diff-vs-baseline.md` 写入当前运行的
+ * 目录(使其与该运行的 summary.json 相邻,并随
+ * 该运行一起移动)。
  *
- * Exit codes:
- *   0 — diff rendered successfully
- *   1 — config error / dir missing
- *   2 — runtime error
+ * 退出码:
+ *   0 — diff 渲染成功
+ *   1 — 配置错误 / 目录缺失
+ *   2 — 运行时错误
  */
 
 import { writeFile } from "node:fs/promises";

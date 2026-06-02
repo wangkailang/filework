@@ -19,8 +19,8 @@ export interface PresenterCtx {
   LL: TranslationFunctions;
   workspacePath?: string;
   toolCallId: string;
-  /** Snapshot captured by the approval batcher before the tool ran.
-   *  Present writers prefer this over a fresh disk read. */
+  /** 审批批处理器在工具运行前捕获的快照。
+   *  写入展示器优先使用它,而非重新从磁盘读取。 */
   previewSnapshot?: ToolPreview;
 }
 
@@ -32,10 +32,9 @@ export interface ToolPresenter {
     ctx: PresenterCtx,
   ) => ReactNode | null;
   /**
-   * One-line summary for a COLLAPSED group of consecutive same-name calls
-   * (e.g. 5 webSearch in a row). Receives each call's args so it can list
-   * what varied (the queries) instead of a bare "5 个 webSearch". Falls back
-   * to the generic count label when absent.
+   * 为一组连续同名调用(例如连续 5 次 webSearch)折叠后的单行摘要。
+   * 接收每次调用的 args,从而可以列出变化的内容(查询词),而不是单纯的
+   * "5 个 webSearch"。缺省时回退到通用的计数标签。
    */
   groupSummary?: (argsList: unknown[], ctx: PresenterCtx) => ReactNode | null;
   input?: (args: unknown, ctx: PresenterCtx) => ReactNode | null;
@@ -48,7 +47,7 @@ export interface ToolPresenter {
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// 共享辅助函数
 // ---------------------------------------------------------------------------
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -316,17 +315,15 @@ function CommandStream({
   );
 }
 
-// Punctuation that almost always belongs to the surrounding prose
-// (sentence enders, brackets, quotes), not the URL itself. `)` `]`
-// `}` get bracket-balanced treatment below — they're only stripped
-// when unmatched, so Wikipedia-style `Foo_(bar)` survives.
+// 几乎总是属于周围文本(句末标点、括号、引号)而非 URL 本身的标点。
+// `)` `]` `}` 在下方采用括号配平处理 —— 只有在不匹配时才被剥除,
+// 因此 Wikipedia 风格的 `Foo_(bar)` 得以保留。
 const URL_TRAILING_TEXT_PUNCT = /[.,;:!?'"]+$/;
 const URL_REGEX = /(https?:\/\/[^\s<>"'`]+)/g;
 
-/** If the URL ends with a closing bracket and the URL contains
- *  fewer opening than closing brackets, strip the trailing one
- *  (it was prose, not part of the URL). Repeats so e.g. `...))`
- *  unbalanced by 2 strips both. */
+/** 如果 URL 以闭合括号结尾,且其中开括号数量少于闭括号数量,
+ *  则剥除末尾这个括号(它属于文本,而非 URL 的一部分)。会重复执行,
+ *  例如失衡 2 个的 `...))` 会被全部剥除。 */
 function stripUnbalancedBrackets(s: string): string {
   const PAIRS: Array<[string, string]> = [
     ["(", ")"],
@@ -355,7 +352,7 @@ function stripUnbalancedBrackets(s: string): string {
   return out;
 }
 
-/** Split free-form text into a sequence of text + clickable link spans. */
+/** 将自由格式文本拆分为一系列文本片段与可点击链接片段。 */
 function renderWithLinks(
   text: string,
   link: {
@@ -545,17 +542,15 @@ const listDirectoryPresenter: ToolPresenter = {
 };
 
 // ---------------------------------------------------------------------------
-// writeFile (with unified diff)
+// writeFile(含统一 diff)
 //
-// Diff requires the file's **pre-image** content. We must read it BEFORE the
-// write executes — once state hits "output-available" the file on disk is
-// already the new content, and a fresh read would show +0/-0.
+// diff 需要文件的**前镜像**内容。我们必须在写入执行之前读取它 —— 一旦状态
+// 变为 "output-available",磁盘上的文件已是新内容,重新读取只会显示 +0/-0。
 //
-// Strategy: every render of the writeFile summary (mounted from input-
-// streaming onwards) triggers a one-shot read; we then **compute the diff
-// once** and cache only the resulting Change[] + stats, keyed by toolCallId.
-// If we ever observe the tool starting at "output-available" (e.g. session
-// reload), we mark it as cold-start and skip diff entirely.
+// 策略:writeFile 摘要的每次渲染(自 input-streaming 起挂载)都会触发一次性
+// 读取;随后我们**只计算一次 diff**,并仅缓存得到的 Change[] 与统计数据,
+// 以 toolCallId 为键。若观察到工具一开始就处于 "output-available"(例如会话
+// 重载),则将其标记为冷启动并完全跳过 diff。
 // ---------------------------------------------------------------------------
 
 interface WriteDiffPayload {
@@ -688,8 +683,8 @@ function useWriteDiff(
 
   useEffect(() => {
     if (writeSnapshot) {
-      // Hydrate the cache so summary/diff consumers see a `ready` snap
-      // even though we never read from disk.
+      // 填充缓存,使 summary/diff 的消费方即便从未从磁盘读取也能看到
+      // 一个 `ready` 的快照。
       if (!writeDiffCache.has(toolCallId)) {
         setWriteCache(toolCallId, snapshotToPayload(writeSnapshot));
       }
@@ -900,7 +895,7 @@ function changeToPreviewHunk(c: Change): PreviewDiffHunk {
 }
 
 // ---------------------------------------------------------------------------
-// Registry
+// 注册表
 // ---------------------------------------------------------------------------
 
 function searchQuery(args: unknown): string {
@@ -909,19 +904,19 @@ function searchQuery(args: unknown): string {
 }
 
 const webSearchPresenter: ToolPresenter = {
-  // Single call: show the query (so a row isn't just "完成 webSearch").
+  // 单次调用:显示查询词(使该行不只是"完成 webSearch")。
   summary: (args) => {
     const q = searchQuery(args);
     if (!q) return null;
     return <span className="text-foreground/80">{q}</span>;
   },
-  // Collapsed group: list each call's query instead of "5 个 webSearch".
+  // 折叠分组:列出每次调用的查询词,而不是"5 个 webSearch"。
   groupSummary: (argsList) => {
     const queries = argsList.map(searchQuery).filter(Boolean);
     if (!queries.length) return null;
     return <span className="text-foreground/80">{queries.join("、")}</span>;
   },
-  // Expanded output: the ranked results (title + url).
+  // 展开输出:排序后的结果(标题 + url)。
   output: (result) => {
     const r = asRecord(result);
     const results = Array.isArray(r?.results) ? r.results : [];
@@ -946,8 +941,8 @@ const webSearchPresenter: ToolPresenter = {
   },
 };
 
-// --- File ops that have no rich output: just surface the target path(s) so
-//     a collapsed row reads "移动文件 a → b" instead of a bare "完成 moveFile".
+// --- 没有丰富输出的文件操作:仅呈现目标路径,使折叠行显示为
+//     "移动文件 a → b",而不是单纯的"完成 moveFile"。
 
 const moveFilePresenter: ToolPresenter = {
   summary: (args) => {
@@ -993,7 +988,7 @@ const directoryStatsPresenter: ToolPresenter = {
   },
 };
 
-// --- Web tools keyed on a `url` arg: show the host/path, group lists each. ---
+// --- 以 `url` 参数为键的 Web 工具:显示主机/路径,分组时逐一列出。 ---
 
 function urlArg(args: unknown): string {
   const a = asRecord(args);

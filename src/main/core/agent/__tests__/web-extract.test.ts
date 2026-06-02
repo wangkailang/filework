@@ -37,7 +37,7 @@ const noBodyHtml = `
 describe("extractReadable", () => {
   it("returns title + excerpt + markdown for an article", () => {
     const out = extractReadable(articleHtml, "https://example.com/post");
-    // Readability prefers og:title when present; both are valid.
+    // Readability 在存在 og:title 时优先采用它;两者均有效。
     expect(out.title).toMatch(/^Sample Article/);
     expect(out.excerpt).toBeTruthy();
     expect(out.markdown).toContain("This is the first paragraph");
@@ -101,7 +101,7 @@ describe("extractReadable", () => {
     expect(out.videos[0].url).toContain("/embed/abc123");
     expect(out.videos[0].title).toBe("A talk");
     expect(out.videos[1].url).toContain("/embed/xyz789");
-    // Unrelated iframe must be filtered (host not in video whitelist).
+    // 无关的 iframe 必须被过滤(host 不在视频白名单内)。
     expect(out.videos.some((v) => v.url.includes("example-ads.com"))).toBe(
       false,
     );
@@ -152,7 +152,7 @@ describe("extractReadable", () => {
       "flour",
       "sugar",
     ]);
-    // Non-whitelisted fields are dropped.
+    // 不在白名单内的字段会被丢弃。
     expect(out.structuredData[0].data.secretInternalField).toBeUndefined();
   });
 

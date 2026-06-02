@@ -129,8 +129,8 @@ describe("LocalWorkspace", () => {
     });
 
     it("clamps large output to head+tail and flags outputTruncated", async () => {
-      // 40k chars + a tail marker → over the 32k budget, so the middle is
-      // dropped but the head ('A') and tail ('TAILMARKER') both survive.
+      // 40k 字符 + 一个尾部标记 → 超过 32k 预算，因此中间部分被
+      // 丢弃，但头部（'A'）和尾部（'TAILMARKER'）都得以保留。
       const result = await ws.exec.run(
         `node -e "process.stdout.write('A'.repeat(40000) + 'TAILMARKER')"`,
       );

@@ -41,7 +41,7 @@ You are a test skill.`,
   });
 
   it("returns count of eligible skills (may include personal)", async () => {
-    // With an empty workspace, only personal skills (if any) are found
+    // 工作区为空时,只会发现个人级技能(如果有的话)
     const count = await initSkillDiscovery(registry, tempDir);
     expect(count).toBeGreaterThanOrEqual(0);
   });
@@ -64,7 +64,7 @@ Gated content.`,
 
     await initSkillDiscovery(registry, tempDir);
 
-    // The gated skill should NOT be registered
+    // 被门控的技能不应被注册
     expect(registry.getById("gated-skill")).toBeUndefined();
   });
 

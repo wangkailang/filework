@@ -1,13 +1,12 @@
 /**
- * In-memory store mapping `toolCallId → ToolPreview`. The approval
- * batcher remembers each entry's freshly-generated preview when the
- * user approves; the tool-execution-start IPC bridge consumes the
- * snapshot and ships it to the renderer alongside the tool args. This
- * lets the post-apply tool card render the exact diff the user saw on
- * the approval card without re-reading the (now overwritten) pre-image.
+ * 维护 `toolCallId → ToolPreview` 映射的内存存储。当用户审批通过时,
+ * approval batcher 会记住每条条目刚生成的预览;tool-execution-start
+ * 的 IPC 桥接随后消费该快照,并连同工具参数一起发送给渲染进程。
+ * 这样,执行后的工具卡片无需重新读取(此时已被覆盖的)前镜像,
+ * 即可渲染出用户在审批卡片上看到的那份完全一致的 diff。
  *
- * Process-local; no persistence. Bounded LRU so a never-claimed
- * approval doesn't leak indefinitely.
+ * 进程本地存储,不持久化。采用有界 LRU,避免始终未被认领的审批
+ * 无限期泄漏。
  */
 
 import type { ToolPreview } from "./types";
@@ -15,7 +14,7 @@ import type { ToolPreview } from "./types";
 const LRU_MAX = 64;
 const store = new Map<string, ToolPreview>();
 
-/** Save a snapshot keyed by toolCallId. Replaces any prior entry. */
+/** 以 toolCallId 为键保存快照。会替换任何先前的条目。 */
 export function rememberPreview(
   toolCallId: string,
   preview: ToolPreview,
@@ -27,14 +26,14 @@ export function rememberPreview(
   store.set(toolCallId, preview);
 }
 
-/** Retrieve and remove the snapshot for the given toolCallId. */
+/** 取出并移除指定 toolCallId 对应的快照。 */
 export function consumePreview(toolCallId: string): ToolPreview | undefined {
   const v = store.get(toolCallId);
   if (v !== undefined) store.delete(toolCallId);
   return v;
 }
 
-/** Test helper. */
+/** 测试辅助函数。 */
 export function __resetSnapshotStore(): void {
   store.clear();
 }

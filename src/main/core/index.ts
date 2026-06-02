@@ -1,9 +1,9 @@
 /**
- * Public surface of `@/main/core` — the domain-neutral Agent runtime.
+ * `@/main/core` 的公共出口 —— 与领域无关的 Agent 运行时。
  *
- * This module is intentionally Electron-free, SQLite-free, and React-free.
- * It can be imported by `src/main/ipc/*` (PR 2) and, in the M4 SDK split,
- * by an external Node consumer with no Electron context.
+ * 本模块刻意不依赖 Electron、SQLite 和 React。
+ * 它可被 `src/main/ipc/*`(PR 2)导入,并且在 M4 SDK 拆分中,
+ * 也可被一个无 Electron 上下文的外部 Node 消费方导入。
  */
 
 // AgentLoop
@@ -14,7 +14,7 @@ export {
   type TransformContextHook,
   type TransformContextResult,
 } from "./agent/agent-loop";
-// Agent events
+// Agent 事件
 export type {
   AgentEndStatus,
   AgentEvent,
@@ -24,14 +24,14 @@ export type {
   TokenUsage,
   TurnEndReason,
 } from "./agent/events";
-// Retry
+// 重试
 export {
   type ClassifiedRetryError,
   type ErrorClassifier,
   type WithRetryOptions,
   withRetry,
 } from "./agent/retry";
-// Tool registry
+// 工具注册表
 export type {
   BeforeToolCallDecision,
   BeforeToolCallHook,
@@ -40,7 +40,7 @@ export type {
   ToolDeniedResult,
 } from "./agent/tool-registry";
 export { ToolRegistry } from "./agent/tool-registry";
-// Built-in tools
+// 内置工具
 export {
   buildFileTools,
   createDirectoryTool,
@@ -64,7 +64,7 @@ export {
   LocalWorkspace,
   type LocalWorkspaceOptions,
 } from "./workspace/local-workspace";
-// Workspace
+// 工作区
 export type {
   ExecOptions,
   ExecResult,

@@ -1,14 +1,13 @@
 /**
- * Plan generator — turns a user prompt into a structured Plan.
+ * 计划生成器——把用户提示词转换为结构化的 Plan。
  *
- * Lives in the IPC layer (not core/) because:
- * - It uses a separate `generateText` call with a read-only tool subset,
- *   not the AgentLoop turn-stream
- * - Its 4-strategy JSON-extraction fallback is tuned for filework's model
- *   population (DeepSeek + custom OpenAI-compatible endpoints) and is not
- *   a domain-neutral concern
+ * 之所以放在 IPC 层(而非 core/),原因是:
+ * - 它使用一个独立的 `generateText` 调用配合只读工具子集,
+ *   而非 AgentLoop 的轮次流(turn-stream)
+ * - 它的 4 种策略 JSON 提取兜底逻辑是针对 filework 的模型群体
+ *   (DeepSeek + 自定义 OpenAI 兼容端点)调优的,并非领域中立的关注点
  *
- * Replaces `src/main/planner/index.ts` (logic preserved verbatim).
+ * 取代 `src/main/planner/index.ts`(逻辑逐字保留)。
  */
 
 import crypto from "node:crypto";
@@ -23,29 +22,25 @@ import type {
 } from "./plan-types";
 import { formatCurrentDate, formatLocaleContext } from "./system-prompt";
 
-// Re-export types for convenience for callers that previously imported via
-// the old `../planner` barrel.
+// 重新导出类型,方便此前通过旧的 `../planner` barrel 导入的调用方。
 export type { Plan, PlanStep } from "./plan-types";
 
-/** Format one skill as a catalog bullet */
+/** 将单个 skill 格式化为目录中的一个条目 */
 const formatSkillEntry = (s: (typeof skills)[number]): string =>
   `- **${s.id}**: ${s.name} — ${s.description}`;
 
 /**
- * Build a skill catalog filtered by relevance to the user's prompt.
+ * 构建一份按与用户提示词相关性过滤后的 skill 目录。
  *
- * Why filter: the catalog is injected into the planner system prompt
- * every call. As the skill set grows, an all-skills catalog dilutes
- * the prompt with mostly-irrelevant entries.
+ * 为何过滤:该目录每次调用都会注入到规划器的系统提示中。随着 skill 集合增长,
+ * 全量 skill 目录会用大量无关条目稀释提示。
  *
- * Matching rule: case-insensitive keyword hit on the prompt. We
- * always include all "task"-category skills (they produce side
- * effects, so the planner must be able to assign them as step
- * skillIds regardless of prompt wording).
+ * 匹配规则:对提示词做大小写不敏感的关键词命中。我们始终包含所有
+ * "task" 类别的 skill(它们会产生副作用,因此无论提示词措辞如何,
+ * 规划器都必须能把它们指派为某步骤的 skillId)。
  *
- * Safety net: if fewer than `MIN_CATALOG_SIZE` skills match, fall
- * back to the full catalog. Avoids starving the planner when the
- * prompt is short or uses synonyms we don't index.
+ * 兜底机制:若匹配到的 skill 少于 `MIN_CATALOG_SIZE`,则回退到完整目录。
+ * 避免在提示词很短或使用了我们未索引的同义词时让规划器无可用 skill。
  */
 const MIN_CATALOG_SIZE = 3;
 
@@ -70,10 +65,10 @@ export const buildRelevantSkillCatalog = (prompt: string): string => {
 };
 
 /**
- * Generate a plan from a user prompt.
+ * 根据用户提示词生成一份计划。
  *
- * Uses a single LLM call with read-only tools to inspect the workspace,
- * then outputs a structured plan as JSON.
+ * 使用单次 LLM 调用配合只读工具来检查工作区,
+ * 然后以 JSON 形式输出结构化计划。
  */
 export const planTask = async (
   prompt: string,
@@ -129,7 +124,7 @@ Wrap a JSON object in a \`\`\`json fence as the last part of your response:
   return buildPlan(planId, prompt, workspacePath, parsed, now);
 };
 
-/** Validate that a parsed object has the expected PlannerLLMOutput shape */
+/** 校验解析得到的对象是否符合预期的 PlannerLLMOutput 结构 */
 const isValidPlanOutput = (obj: unknown): obj is PlannerLLMOutput => {
   if (typeof obj !== "object" || obj === null) return false;
   const o = obj as Record<string, unknown>;
@@ -147,7 +142,7 @@ const isValidPlanOutput = (obj: unknown): obj is PlannerLLMOutput => {
   });
 };
 
-/** Try to parse JSON and validate its shape. Returns null on failure. */
+/** 尝试解析 JSON 并校验其结构。失败时返回 null。 */
 const tryParsePlan = (json: string): PlannerLLMOutput | null => {
   try {
     const parsed = JSON.parse(json);
@@ -163,11 +158,11 @@ const tryParsePlan = (json: string): PlannerLLMOutput | null => {
 };
 
 /**
- * Try multiple strategies to extract plan JSON from LLM output.
- * Falls back to a structured multi-step plan (never a raw prompt dump).
+ * 尝试多种策略从 LLM 输出中提取计划 JSON。
+ * 失败时回退到结构化的多步骤计划(绝不直接堆砌原始提示词)。
  */
 const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
-  // Strategy 1: ```json ... ``` fence
+  // 策略 1:```json ... ``` 代码围栏
   const fenceMatch = text.match(/```json\s*([\s\S]*?)```/);
   if (fenceMatch) {
     const result = tryParsePlan(fenceMatch[1]);
@@ -175,7 +170,7 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
     console.warn("[Planner] JSON fence found but parse/validation failed");
   }
 
-  // Strategy 2: ``` ... ``` fence (no language tag)
+  // 策略 2:``` ... ``` 代码围栏(无语言标记)
   const bareMatch = text.match(/```\s*([\s\S]*?)```/);
   if (bareMatch) {
     const result = tryParsePlan(bareMatch[1]);
@@ -183,7 +178,7 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
     console.warn("[Planner] Bare fence found but parse/validation failed");
   }
 
-  // Strategy 3: find JSON object containing "steps" array
+  // 策略 3:查找包含 "steps" 数组的 JSON 对象
   const stepsIdx = text.indexOf('"steps"');
   if (stepsIdx !== -1) {
     const braceStart = text.lastIndexOf("{", stepsIdx);
@@ -197,7 +192,7 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
     }
   }
 
-  // Strategy 4: entire text as JSON
+  // 策略 4:将整段文本作为 JSON 解析
   if (text.trim()) {
     const result = tryParsePlan(text);
     if (result) return result;
@@ -217,8 +212,8 @@ const extractPlanJson = (text: string, prompt: string): PlannerLLMOutput => {
 };
 
 /**
- * When LLM fails to produce JSON, generate a reasonable plan structure
- * by analyzing the prompt for common patterns.
+ * 当 LLM 未能产出 JSON 时,通过分析提示词中的常见模式
+ * 生成一份合理的计划结构。
  */
 const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
   const goal = prompt.length > 100 ? `${prompt.slice(0, 100)}...` : prompt;
@@ -283,7 +278,7 @@ const buildFallbackPlan = (prompt: string): PlannerLLMOutput => {
   return { goal, steps };
 };
 
-/** Build a Plan object from LLM output and write the plan file */
+/** 根据 LLM 输出构建 Plan 对象并写入计划文件 */
 const buildPlan = async (
   planId: string,
   prompt: string,

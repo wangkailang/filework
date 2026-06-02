@@ -1,17 +1,17 @@
 /**
- * Provider Adapter Base
+ * Provider 适配器基类
  *
- * Defines the interface all provider adapters must implement.
- * Each adapter encapsulates provider-specific concerns:
- * - Model instantiation
- * - Provider options (e.g. prompt caching)
- * - Provider metadata extraction (e.g. cache hit/write tokens)
+ * 定义所有 provider 适配器必须实现的接口。
+ * 每个适配器封装 provider 特有的事项:
+ * - 模型实例化
+ * - Provider 选项(例如 prompt 缓存)
+ * - Provider 元数据提取(例如缓存命中 / 写入 token)
  */
 
 import type { LanguageModel } from "ai";
 
 // ---------------------------------------------------------------------------
-// Types
+// 类型
 // ---------------------------------------------------------------------------
 
 export interface ProviderConfig {
@@ -30,27 +30,27 @@ type JSONValue = null | string | number | boolean | JSONObject | JSONValue[];
 type JSONObject = { [key: string]: JSONValue };
 
 // ---------------------------------------------------------------------------
-// Interface
+// 接口
 // ---------------------------------------------------------------------------
 
 export interface ProviderAdapter {
-  /** Unique provider identifier */
+  /** 唯一的 provider 标识符 */
   readonly name: string;
 
-  /** Create a LanguageModel instance from config */
+  /** 根据 config 创建 LanguageModel 实例 */
   createModel(config: ProviderConfig): LanguageModel;
 
-  /** Build provider-specific options (e.g. prompt caching headers) */
+  /** 构建 provider 特有的选项(例如 prompt 缓存 headers) */
   buildProviderOptions(): Record<string, JSONObject>;
 
-  /** Extract cache metrics from provider metadata after a stream completes */
+  /** 在流式响应完成后,从 provider 元数据中提取缓存指标 */
   extractCacheMetrics(
     providerMetadata: Record<string, unknown> | undefined,
   ): CacheMetrics;
 }
 
 // ---------------------------------------------------------------------------
-// Default (no-op) implementations for optional methods
+// 可选方法的默认(空操作)实现
 // ---------------------------------------------------------------------------
 
 export const NO_CACHE_METRICS: CacheMetrics = {

@@ -56,9 +56,8 @@ describe("validateLlmConfigPayload — xiaomi provider", () => {
   });
 
   it("does not validate the model id against the token-budget table", () => {
-    // Unknown model ids should still pass validation — they just fall back
-    // to DEFAULT_TOKEN_BUDGET at runtime. Guards against a future tightening
-    // that would break new MiMo SKUs the moment they ship.
+    // 未知的 model id 仍应通过校验 —— 运行时会回落到
+    // DEFAULT_TOKEN_BUDGET。防止未来收紧校验后,新 MiMo SKU 一上线就被拦掉。
     const err = validateLlmConfigPayload({
       name: "MiMo Future",
       provider: "xiaomi",

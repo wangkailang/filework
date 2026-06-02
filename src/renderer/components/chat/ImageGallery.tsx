@@ -17,7 +17,7 @@ const headerLabel = (part: ImageGalleryPart): string => {
   return "图集";
 };
 
-// 1 → 1 col, 2-4 → 2 cols, 5+ → 2 / 3 responsive cols.
+// 1 → 1 列,2-4 → 2 列,5+ → 2 / 3 列自适应。
 const gridColsFor = (n: number): string => {
   if (n <= 1) return "grid-cols-1";
   if (n <= 4) return "grid-cols-2";
@@ -115,10 +115,10 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
       </div>
 
       {activeImage && (
-        // Lightbox layout: an absolute backdrop <button> handles
-        // click-to-close so the inner content stays a non-interactive
-        // div (no fake-button accessibility warnings, no stopPropagation
-        // gymnastics). Content sits above the backdrop via z-index.
+        // 灯箱布局:用一个绝对定位的背景 <button> 处理
+        // 点击关闭,从而让内层内容保持为非交互的
+        // div(没有伪按钮的无障碍告警,也无需折腾 stopPropagation)。
+        // 内容通过 z-index 叠在背景之上。
         <div className="fixed inset-0 z-50">
           <button
             type="button"

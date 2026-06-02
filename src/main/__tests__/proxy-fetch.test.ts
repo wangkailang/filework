@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createProxyAwareFetch } from "../proxy-fetch";
 
 /**
- * `createProxyAwareFetch` returns a `fetch`-shaped function that picks
- * a dispatcher per URL via the injected `resolveProxy`. We don't open
- * real sockets — `agentFactory` is stubbed to return marker objects so
- * we can assert which one each request received.
+ * `createProxyAwareFetch` 返回一个 `fetch` 形态的函数,
+ * 它通过注入的 `resolveProxy` 为每个 URL 选择 dispatcher。
+ * 我们不开启真实 socket —— `agentFactory` 被打桩为返回标记对象,
+ * 这样可以断言每个请求收到的是哪一个。
  */
 
 interface StubDispatcher {
-  /** Stable id so tests can assert reuse + selection. */
+  /** 稳定的 id,便于测试断言复用与选择。 */
   readonly tag: string;
 }
 

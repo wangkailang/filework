@@ -48,7 +48,7 @@ const mkSummary = (overrides: Partial<RunSummary> = {}): RunSummary => ({
   ...overrides,
 });
 
-// ─── buildFailureReport ──────────────────────────────────────────────
+// ─── buildFailureReport 构建失败报告 ──────────────────────────────────────────────
 
 describe("buildFailureReport", () => {
   it("renders headline accuracy, cost, and model on the second line", () => {
@@ -84,7 +84,7 @@ describe("buildFailureReport", () => {
       mkResult({ taskId: "d", failureTags: ["tool_error"] as FailureTag[] }),
     ];
     const md = buildFailureReport(failures, mkSummary());
-    // no_tool_calls (3) should appear before tool_error (1)
+    // no_tool_calls(3 个)应排在 tool_error(1 个)之前
     const noToolIdx = md.indexOf("## no_tool_calls");
     const toolErrIdx = md.indexOf("## tool_error");
     expect(noToolIdx).toBeGreaterThan(0);
@@ -96,7 +96,7 @@ describe("buildFailureReport", () => {
       mkResult({ taskId: id, failureTags: ["no_tool_calls"] as FailureTag[] }),
     );
     const md = buildFailureReport(five, mkSummary());
-    // First three should be referenced; fourth/fifth should not.
+    // 前三个应被引用;第四、第五个不应出现。
     expect(md).toContain("`a`");
     expect(md).toContain("`b`");
     expect(md).toContain("`c`");
@@ -126,7 +126,7 @@ describe("buildFailureReport", () => {
   });
 });
 
-// ─── buildToolStats ──────────────────────────────────────────────────
+// ─── buildToolStats 构建工具统计 ──────────────────────────────────────────────
 
 describe("buildToolStats", () => {
   it("aggregates calls, errors, and durations across results", () => {
@@ -175,7 +175,7 @@ describe("buildToolStats", () => {
   });
 });
 
-// ─── buildToolUsageReport ────────────────────────────────────────────
+// ─── buildToolUsageReport 构建工具使用报告 ────────────────────────────────────────────
 
 describe("buildToolUsageReport", () => {
   it("renders a 'no tool calls' message when stats are empty", () => {
@@ -203,6 +203,6 @@ describe("buildToolUsageReport", () => {
     );
     expect(md).toContain("| Tool | Calls |");
     expect(md).toContain("`webFetch`");
-    expect(md).toContain("50.0%"); // 1 error / 2 calls
+    expect(md).toContain("50.0%"); // 1 个错误 / 2 次调用
   });
 });

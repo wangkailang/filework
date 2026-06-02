@@ -1,14 +1,13 @@
 /**
- * webSearch — Discovery tool backed by the Tavily Search API.
+ * webSearch — 基于 Tavily Search API 的检索工具。
  *
- * The agent uses this when the user asks a question without supplying
- * a URL. Tavily returns ranked results (title / url / content / score)
- * plus an optional one-shot synthesized answer — often enough to reply
- * without deep-fetching anything. The agent escalates to `webFetch`
- * (Layer 1) only when it needs the full article.
+ * 当用户提问但未提供 URL 时,agent 使用本工具。Tavily 返回排序后的
+ * 结果(title / url / content / score),外加一个可选的一次性综合
+ * 答案——通常足以直接回复,无需深度抓取任何内容。仅当需要完整文章
+ * 时,agent 才会升级到 `webFetch`(第 1 层)。
  *
- * Requires a Tavily API key stored as a `tavily_pat` credential.
- * Free tier: 1000 searches/month — generous for personal use.
+ * 需要一个以 `tavily_pat` 凭据形式存储的 Tavily API key。
+ * 免费额度:每月 1000 次搜索——对个人使用相当充裕。
  */
 import { z } from "zod/v4";
 
@@ -16,7 +15,7 @@ import type { ToolDefinition } from "../tool-registry";
 
 export interface WebSearchDeps {
   fetchImpl: typeof fetch;
-  /** Returns the most recent Tavily API key, or null when none configured. */
+  /** 返回最新的 Tavily API key;未配置时返回 null。 */
   resolveTavilyToken: () => Promise<string | null>;
 }
 

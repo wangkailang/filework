@@ -1,17 +1,16 @@
 /**
- * System prompt builders for the AgentLoop.
+ * AgentLoop 的系统提示词构建器。
  *
- * Two prompts live here:
- *  - `buildAgentSystemPrompt` — generic Agent prompt for ad-hoc tasks
- *    (called from `ai-handlers.ts:handleTaskExecution`)
- *  - `buildPlanStepSystemPrompt` — per-step prompt for plan execution
- *    (called from `plan-runner.ts`)
+ * 这里有两个提示词:
+ *  - `buildAgentSystemPrompt` —— 用于即时任务的通用 Agent 提示词
+ *    (由 `ai-handlers.ts:handleTaskExecution` 调用)
+ *  - `buildPlanStepSystemPrompt` —— 用于计划执行的单步提示词
+ *    (由 `plan-runner.ts` 调用)
  *
- * Domain-neutral by default: the prompt does not assume a file-management
- * identity, so conceptual / analytical questions ("compare X and Y") no
- * longer get biased toward filesystem operations. When a Skill is matched
- * (explicit `/skill foo` or keyword), the skill body carries the domain
- * context (the skill itself decides what to do with files / web / shell).
+ * 默认领域中立:提示词不假定文件管理身份,因此概念性 / 分析性问题
+ * ("compare X and Y")不再被偏向于文件系统操作。当匹配到某个技能
+ * (显式 `/skill foo` 或关键词)时,由技能正文承载领域上下文
+ * (技能自身决定如何处理文件 / 网络 / shell)。
  */
 
 import type { UnifiedSkill } from "../skills-runtime/types";
@@ -20,16 +19,15 @@ import type { Plan, PlanStep } from "./plan-types";
 const AGENT_IDENTITY = `You are a general-purpose AI Agent operating with full access to the user's workspace and a set of tools (read/write/list files, run shell commands, ask the user for clarification, plus any skill-specific tools).`;
 
 /**
- * Format the current date for system-prompt injection: `YYYY-MM-DD (Weekday, UTC±N)`.
+ * 格式化用于系统提示词注入的当前日期:`YYYY-MM-DD (Weekday, UTC±N)`。
  *
- * Day-granular (no time-of-day) so the rendered string is stable for the
- * whole local day — this keeps the system prompt byte-identical across
- * requests in the same day, which matters for upstream prompt cache hits.
+ * 以天为粒度(不含具体时刻),使渲染出的字符串在整个本地自然日内保持稳定
+ * —— 这让系统提示词在同一天内的各次请求中字节一致,对命中上游的提示词
+ * 缓存很重要。
  *
- * The model has no way to know the current real-world date (its training
- * cutoff is always older than "today"), so we inject it as a plain fact
- * — not a behavioral rule. Used by both system-prompt builders here and
- * by the planner's own LLM call in `plan-generator.ts`.
+ * 模型无从知晓当前真实世界日期(其训练截止时间总是早于「今天」),因此
+ * 我们将其作为纯粹的事实注入 —— 而非行为规则。本文件的两个系统提示词
+ * 构建器以及 `plan-generator.ts` 中规划器自身的 LLM 调用都会使用它。
  */
 export const formatCurrentDate = (now: Date = new Date()): string => {
   const y = now.getFullYear();
@@ -49,35 +47,33 @@ export const formatCurrentDate = (now: Date = new Date()): string => {
 };
 
 /**
- * Format the user's locale + timezone for system-prompt injection:
- * `zh-TW (Asia/Taipei)`.
+ * 格式化用于系统提示词注入的用户区域设置 + 时区:
+ * `zh-TW (Asia/Taipei)`。
  *
- * Same rationale as `formatCurrentDate`: this is a plain fact about the
- * user's environment the model otherwise cannot know. Gives the model
- * an implicit geographic anchor for queries that elide location
- * ("今天的天气", "现在是几点", "附近") and a language hint that
- * complements the existing "respond in same language" rule.
+ * 与 `formatCurrentDate` 同理:这是关于用户环境的纯粹事实,模型本无从知晓。
+ * 它为省略了位置的查询("今天的天气"、"现在是几点"、"附近")提供隐式的
+ * 地理锚点,并给出语言提示,与既有的「用相同语言回复」规则相辅相成。
  */
 export const formatLocaleContext = (
   resolved: Intl.ResolvedDateTimeFormatOptions = new Intl.DateTimeFormat().resolvedOptions(),
 ): string => `${resolved.locale} (${resolved.timeZone})`;
 
 /**
- * Operating principles + project constraints for the agent.
+ * Agent 的操作原则 + 项目约束。
  *
- * Structured per the Karpathy 4-principle CLAUDE.md convention
- * (Think / Simplicity / Surgical / Goal-Driven) so the model has a
- * clear mental frame at every decision point, plus a separate block
- * for filework-specific engineering constraints (paths, language).
+ * 按 Karpathy 的 4 原则 CLAUDE.md 范式组织
+ * (Think / Simplicity / Surgical / Goal-Driven),使模型在每个决策点都有
+ * 清晰的心智框架;另加一个独立区块,承载 filework 特有的工程约束
+ * (路径、语言)。
  *
- * Same block applies whether or not a skill is active — keeping
- * model behavior consistent across execution paths.
+ * 无论是否激活技能都适用同一区块 —— 保持模型行为在各执行路径上一致。
  */
 const OPERATING_PRINCIPLES = `## Operating Principles
 
 ### Think Before Acting
 - State your assumptions explicitly. If the user's intent is ambiguous, call \`askClarification\` instead of guessing.
 - Never fabricate. If you cannot find or verify a required value, say so plainly — do not invent a plausible-looking answer, and never pad a list by repeating a value just to satisfy a requested format. A wrong-but-formatted answer is worse than admitting the gap.
+- Don't declare a task infeasible or cite a "technical limitation" after one failed attempt. Escalate first (a different tool, rendered fetch, archive mirror, alternate source); concede only after ≥3 distinct avenues fail, and then state which ones failed. Conceding early is a failure on par with fabricating.
 - If multiple interpretations exist, present them briefly — don't pick silently.
 - When the user authorizes a destructive action, execute the EXACT operation they requested. If a safer alternative seems better, propose it via \`askClarification\` — do not silently substitute.
 - **Plan First.** For ANY task with 3+ discrete steps or multiple deliverables — coding, research, comparison, selection, planning, writing a multi-section document — \`createPlan\` MUST be your first tool call, BEFORE any \`webSearch\`, \`runCommand\`, \`readFile\`, etc. Do not "scout" with searches and then plan retroactively. The initial plan can be coarse (e.g. "research X / research Y / compare / recommend"); subsequent \`createPlan\` calls can add, split, or refine steps as you learn more. The FIRST call pauses for user approval (await the tool result); on rejection, stop. Subsequent status-update calls do NOT pause — keep working between them. Skip \`createPlan\` only for 1–2 step asks where narration is enough.
@@ -110,25 +106,21 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - Respond in the same language as the user's prompt.`;
 
 /**
- * Two-layer git guidance, modeled on how Claude Code splits attention
- * between system prompt and tool descriptions:
+ * 两层 git 指引,借鉴 Claude Code 在系统提示词与工具描述之间分配注意力的方式:
  *
- *  - L1 (\`buildGitPrinciples\`) — hard red lines, ~5 lines. Injected into
- *    the system prompt only when the workspace is git-backed, so safety
- *    rules are always in working memory but quiet on non-git workspaces.
+ *  - L1 (\`buildGitPrinciples\`) —— 硬性红线,约 5 行。仅当工作目录由 git
+ *    托管时才注入系统提示词,使安全规则始终在工作记忆中,但在非 git
+ *    工作目录下保持安静。
  *
- *  - L2 (\`buildGitRunCommandProtocol\`) — full operational manual
- *    (HEREDOC commit, \`gh\` / \`glab\` PR templates, safety expansion).
- *    Embedded in \`runCommandTool.description\` (see \`tools/index.ts\`).
- *    Models attend to tool descriptions with high weight only when
- *    considering that tool, so the protocol stays "on-demand": dormant
- *    while the user is editing a React component, alive when they ask
- *    for a commit.
+ *  - L2 (\`buildGitRunCommandProtocol\`) —— 完整操作手册
+ *    (HEREDOC 提交、\`gh\` / \`glab\` PR 模板、安全扩展)。
+ *    嵌入在 \`runCommandTool.description\` 中(见 \`tools/index.ts\`)。
+ *    模型仅在考虑某个工具时才以高权重关注其描述,因此该协议保持「按需」:
+ *    用户编辑 React 组件时它处于休眠,用户请求提交时它才被激活。
  *
- * \`modelName\` flows in from \`ai-handlers.ts\` / \`plan-runner.ts\` via
- * the active llmConfig. The \`Co-Authored-By\` trailer identifies which
- * model produced the commit while the user's own git config owns the
- * primary author. Falls back to "filework-agent" when unknown.
+ * \`modelName\` 通过当前 llmConfig 从 \`ai-handlers.ts\` / \`plan-runner.ts\`
+ * 传入。\`Co-Authored-By\` 尾注标识由哪个模型产出该提交,而主作者仍归
+ * 用户自己的 git config 所有。未知时回退为 "filework-agent"。
  */
 export const buildGitPrinciples = (modelName: string): string => `## Git Safety
 - Only commit when the user explicitly asks. Never \`--amend\`, never \`--no-verify\`, never force-push to \`main\` / \`master\` / \`develop\`.
@@ -177,7 +169,7 @@ EOF
 
 const DEFAULT_MODEL_NAME = "filework-agent";
 
-/** Resolve the model name with the default fallback. Single helper so the L1/L2 builders stay consistent with the call sites. */
+/** 解析模型名称并带默认回退。单一辅助函数,使 L1/L2 构建器与调用处保持一致。 */
 export const resolveModelName = (modelName?: string): string =>
   modelName ?? DEFAULT_MODEL_NAME;
 
@@ -205,41 +197,37 @@ export const buildWorkspaceMemoryGuidance = (
 interface BuildAgentSystemPromptOptions {
   workspacePath: string;
   skill?: UnifiedSkill;
-  /** Args extracted from `/skill <args>`. Empty when not an explicit skill command. */
+  /** 从 `/skill <args>` 中提取的参数。非显式技能命令时为空。 */
   skillArgs?: string;
-  /** True when the user typed `/skill ...` explicitly. */
+  /** 用户显式输入 `/skill ...` 时为 true。 */
   isExplicitSkillCommand?: boolean;
   /**
-   * Resolved LLM identifier (e.g. "claude-opus-4-7"). Threaded into the
-   * Git principles block as the Co-Authored-By trailer name so commits
-   * carry which model produced them. Falls back to "filework-agent".
+   * 解析后的 LLM 标识符(如 "claude-opus-4-7")。作为 Co-Authored-By 尾注
+   * 名称穿入 Git 原则区块,使提交携带由哪个模型产出的信息。
+   * 回退为 "filework-agent"。
    */
   modelName?: string;
   /**
-   * True when the active workspace is git-backed (GitHub / GitLab / a
-   * LocalWorkspace pointing at a repo). Gates injection of the L1 git
-   * principles block — keeps non-git workspaces' prompts free of git
-   * noise. The L2 protocol lives in the runCommand tool description
-   * regardless and is only attended to when the model considers running
-   * a shell command.
+   * 当前工作目录由 git 托管(GitHub / GitLab / 指向某仓库的
+   * LocalWorkspace)时为 true。控制是否注入 L1 git 原则区块 —— 使非 git
+   * 工作目录的提示词不带 git 噪声。L2 协议无论如何都驻留在 runCommand
+   * 工具描述中,仅在模型考虑运行 shell 命令时才被关注。
    */
   isGitWorkspace?: boolean;
   /**
-   * Per-workspace memory (AGENTS.md / CLAUDE.md content) read by
-   * `readWorkspaceMemory`. Injected so the agent reuses known facts instead
-   * of re-exploring the directory each task. Undefined/null when no memory
-   * file exists. See `core/workspace/workspace-memory.ts`.
+   * 由 `readWorkspaceMemory` 读取的每工作目录记忆(AGENTS.md / CLAUDE.md
+   * 内容)。注入后使 agent 复用已知事实,而非每次任务都重新探索目录。
+   * 无记忆文件时为 undefined/null。见 `core/workspace/workspace-memory.ts`。
    */
   workspaceMemory?: string | null;
 }
 
 /**
- * Build the system prompt for ad-hoc (non-plan) task execution.
+ * 构建用于即时(非计划)任务执行的系统提示词。
  *
- * When no skill matches, returns the generic agent identity + rules.
- * When a skill matches, augments with skill-specific guidance; the skill
- * body itself is prepended separately by the caller (see `ai-handlers.ts`
- * `wrapWithSecurityBoundary`).
+ * 无技能匹配时,返回通用 agent 身份 + 规则。
+ * 有技能匹配时,补充技能专属指引;技能正文本身由调用方单独前置
+ * (见 `ai-handlers.ts` 的 `wrapWithSecurityBoundary`)。
  */
 export const buildAgentSystemPrompt = ({
   workspacePath,
@@ -294,28 +282,27 @@ interface SkillShape {
 interface BuildPlanStepSystemPromptOptions {
   plan: Plan;
   step: PlanStep;
-  /** Plan markdown re-read from disk before this step (Read Before Decide). */
+  /** 本步骤前从磁盘重新读取的计划 markdown(Read Before Decide)。 */
   planContext: string;
-  /** Concatenated summaries of completed prior steps. */
+  /** 已完成的先前步骤摘要的拼接。 */
   previousResults: string;
   skill?: SkillShape;
-  /** Resolved LLM identifier; threaded into the Git principles trailer. */
+  /** 解析后的 LLM 标识符;穿入 Git 原则尾注。 */
   modelName?: string;
   /**
-   * True when the active workspace is git-backed. Gates the L1 git
-   * principles block — see BuildAgentSystemPromptOptions for the
-   * two-layer rationale.
+   * 当前工作目录由 git 托管时为 true。控制 L1 git 原则区块 ——
+   * 两层机制的原理见 BuildAgentSystemPromptOptions。
    */
   isGitWorkspace?: boolean;
   /**
-   * Per-workspace memory (AGENTS.md / CLAUDE.md). See
-   * BuildAgentSystemPromptOptions; injected so planned steps also reuse
-   * known facts instead of re-exploring.
+   * 每工作目录记忆(AGENTS.md / CLAUDE.md)。见
+   * BuildAgentSystemPromptOptions;注入后使计划步骤也复用已知事实,
+   * 而非重新探索。
    */
   workspaceMemory?: string | null;
 }
 
-/** Build the per-step system prompt for plan execution. */
+/** 构建用于计划执行的单步系统提示词。 */
 export const buildPlanStepSystemPrompt = ({
   plan,
   step,

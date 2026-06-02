@@ -1,20 +1,17 @@
 /**
- * Background shell registry for long-running commands.
+ * 长时运行命令的后台 shell 注册表。
  *
- * Mirrors Claude Code's `Bash(run_in_background=true)` / `BashOutput` /
- * `KillShell` triad: an agent that runs `pnpm dev` (or any server /
- * watcher) gets back a `shellId` immediately, then polls for
- * incremental output via `readShell` and tears the process down via
- * `killShell` when done.
+ * 对应 Claude Code 的 `Bash(run_in_background=true)` / `BashOutput` /
+ * `KillShell` 三件套:运行 `pnpm dev`(或任意 server / watcher)的 agent
+ * 会立即拿到一个 `shellId`,随后通过 `readShell` 轮询增量输出,完成后
+ * 通过 `killShell` 拆除进程。
  *
- * Buffers are capped per stream (1 MB stdout + 1 MB stderr). When the
- * cap is exceeded the oldest 256 KB is dropped — a long-running
- * server's stdout doesn't grow unbounded, but recent context is
- * always available.
+ * 缓冲区按流分别设上限(stdout 1 MB + stderr 1 MB)。超过上限时丢弃最旧的
+ * 256 KB —— 长时运行的 server 其 stdout 不会无限增长,但近期上下文始终可见。
  *
- * Lifecycle: shells outlive the agent task that spawned them
- * (intentional — `pnpm dev` stays up across many turns). They're
- * cleaned up on app `before-quit` via {@link killAllShells}.
+ * 生命周期:shell 的存活时间长于派生它的 agent 任务(刻意如此 ——
+ * `pnpm dev` 会跨多个回合持续运行)。它们在应用 `before-quit` 时
+ * 通过 {@link killAllShells} 清理。
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -40,8 +37,8 @@ interface InternalShell extends ShellEntry {
   child: ChildProcess;
   stdoutBuf: string;
   stderrBuf: string;
-  /** Per-stream read offset. Increases monotonically; callers see
-   *  only output produced since the previous `readShell` call. */
+  /** 按流记录的读取偏移。单调递增;调用方只会看到自上次 `readShell`
+   *  调用以来产生的输出。 */
   readOffsetStdout: number;
   readOffsetStderr: number;
 }
@@ -56,10 +53,10 @@ function appendCapped(buf: string, chunk: string): string {
 }
 
 export interface SpawnBackgroundOptions {
-  /** ms to capture initial output before returning. Default 2000.
-   *  Returns sooner if the child exits. */
+  /** 返回前捕获初始输出的时长(毫秒)。默认 2000。
+   *  若子进程提前退出则更早返回。 */
   initialWindowMs?: number;
-  /** Env overrides layered on top of process.env. */
+  /** 叠加在 process.env 之上的环境变量覆盖。 */
   env?: NodeJS.ProcessEnv;
   /**
    * OS 沙箱策略。提供则把命令包进 sandbox-exec(darwin)等;
@@ -73,8 +70,8 @@ export interface SpawnBackgroundResult {
   pid: number | null;
   status: "running" | "exited";
   exitCode: number | null;
-  /** stdout captured during the initial window (not consumed —
-   *  next readShell still returns it plus anything appended). */
+  /** 初始窗口期间捕获的 stdout(不消费 —— 下一次 readShell 仍会返回
+   *  这部分内容,外加之后追加的所有内容)。 */
   stdout: string;
   stderr: string;
 }
@@ -139,9 +136,8 @@ export function spawnBackgroundShell(
     const settle = () => {
       if (settled) return;
       settled = true;
-      // Don't advance read offsets here — the snapshot is a preview;
-      // the agent's first readShellOutput call still returns this
-      // content (plus anything new appended since).
+      // 此处不要推进读取偏移 —— 该快照是一份预览;agent 的首次
+      // readShellOutput 调用仍会返回这部分内容(外加之后新追加的内容)。
       resolve({
         shellId: id,
         pid: entry.pid,
@@ -165,7 +161,7 @@ export interface ReadShellResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
-  /** True if some intermediate output was dropped due to the buffer cap. */
+  /** 若因缓冲区上限丢弃了部分中间输出,则为 true。 */
   truncated?: boolean;
 }
 
@@ -194,7 +190,7 @@ export interface KillShellResult {
   shellId: string;
   killed: boolean;
   exitCode: number | null;
-  /** False if no shell with that id exists (already cleaned up). */
+  /** 若不存在该 id 的 shell(已被清理),则为 false。 */
   found: boolean;
 }
 
@@ -230,7 +226,7 @@ export function killShell(shellId: string): Promise<KillShellResult> {
     setTimeout(() => {
       if (e.status === "running") terminate(e.child, "SIGKILL");
     }, 2000);
-    // Hard timeout so the caller never hangs if the OS won't kill it.
+    // 硬超时,确保即使操作系统拒绝杀进程,调用方也不会永久挂起。
     setTimeout(() => finish(false), 5000);
   });
 }
@@ -250,7 +246,7 @@ function terminate(child: ChildProcess, signal: NodeJS.Signals): void {
     try {
       process.kill(child.pid, signal);
     } catch {
-      // already gone
+      // 进程已不存在
     }
   }
 }

@@ -14,8 +14,8 @@ const WORKSPACE = "/Users/me/workspace";
 
 describe("formatCurrentDate", () => {
   it("renders YYYY-MM-DD (Weekday, UTC±N) for a fixed date", () => {
-    // 2026-05-19 was a Tuesday.
-    const fixed = new Date(2026, 4, 19, 10, 0, 0); // local time
+    // 2026-05-19 是星期二。
+    const fixed = new Date(2026, 4, 19, 10, 0, 0); // 本地时间
     const out = formatCurrentDate(fixed);
     expect(out).toMatch(/^2026-05-19 \(Tuesday, UTC[+-]\d{1,2}(?::\d{2})?\)$/);
   });
@@ -32,7 +32,7 @@ describe("formatLocaleContext", () => {
     const resolved = {
       locale: "zh-TW",
       timeZone: "Asia/Taipei",
-      // remaining fields not consumed by formatLocaleContext but required by the type
+      // 其余字段 formatLocaleContext 不使用,但类型要求必须提供
       calendar: "gregory",
       numberingSystem: "latn",
     } as unknown as Intl.ResolvedDateTimeFormatOptions;
@@ -93,15 +93,14 @@ describe("buildAgentSystemPrompt", () => {
 
   it("default prompt requires Plan First for multi-step / multi-deliverable tasks", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    // The Plan First rule must mention createPlan and require it BEFORE other
-    // tool calls — a regression here means the model is free to scout with
-    // webSearch/runCommand before surfacing the plan, defeating the draft
-    // approval gate in agent-tools.ts createPlanTool.
+    // Plan First 规则必须提到 createPlan,并要求它先于其它工具调用 ——
+    // 这里若回归,意味着模型可以在亮出计划前自由地用 webSearch/runCommand
+    // 探路,从而绕过 agent-tools.ts createPlanTool 中的草稿审批门控。
     expect(prompt).toMatch(/plan first/i);
     expect(prompt).toContain("createPlan");
-    // Must require createPlan precede other tool calls (concrete listing of
-    // webSearch/runCommand etc.). Anchor on "BEFORE any" + a tool name so a
-    // weaker rewrite that drops the precedence requirement breaks the test.
+    // 必须要求 createPlan 先于其它工具调用(并具体列出
+    // webSearch/runCommand 等)。锚定 "BEFORE any" + 工具名,这样若被
+    // 改写得更弱、丢掉了「先于」要求,测试就会失败。
     expect(prompt).toMatch(/BEFORE any[^.]*webSearch/);
     expect(prompt).toMatch(/retroactively/i);
   });
@@ -118,17 +117,15 @@ describe("buildAgentSystemPrompt", () => {
 
   it("deterministic-computation rule names a code-execution path and forbids in-prose math", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    // Must point the model to runCommand (anchor on the tool name so a
-    // generic rewrite that drops the actionable instruction breaks the test)
+    // 必须把模型引向 runCommand(锚定工具名,这样若被泛化改写、丢掉了
+    // 可执行的指令,测试就会失败)
     expect(prompt).toContain("runCommand");
-    // Must mention at least one concrete interpreter so the model has a
-    // ready-to-use invocation pattern
+    // 必须至少提到一个具体的解释器,让模型有现成可用的调用范式
     expect(prompt).toMatch(/python3 -c|node -e/);
-    // Must mention BigInt — without it, integers > 2^53 silently lose
-    // precision in node, which is exactly the failure mode this rule exists
-    // to prevent
+    // 必须提到 BigInt —— 否则大于 2^53 的整数在 node 中会悄无声息地丢失
+    // 精度,而这正是本规则要防止的失败模式
     expect(prompt).toContain("BigInt");
-    // Must rule out "I'll just reason about it" escape hatch
+    // 必须堵死「我直接推理就行」这个逃生口
     expect(prompt).toMatch(/reasoning/i);
   });
 
@@ -190,8 +187,8 @@ describe("buildAgentSystemPrompt", () => {
 
   it("omits the Workspace Memory section entirely when there is no memory (minimal prompt)", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    // No always-on memory section / capture nag — capture guidance lives in the
-    // updateMemory tool description instead (L2), keeping the base prompt minimal.
+    // 不再有常驻的 memory 区块 / 抓取提醒 —— 抓取指引改放在 updateMemory
+    // 工具的描述里(L2),从而保持基础提示词精简。
     expect(prompt).not.toContain("## Workspace Memory");
     expect(prompt).not.toContain("updateMemory");
   });
@@ -232,10 +229,9 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(
       "Co-Authored-By: claude-opus-4-7 <noreply@filework.local>",
     );
-    // L2 manual lives in the runCommand tool description, NOT here —
-    // we should not see the actual HEREDOC template or `gh pr create`
-    // in the system prompt itself. (L1 may reference HEREDOC in prose
-    // to point to where the template lives — that's intentional.)
+    // L2 手册位于 runCommand 工具描述中,而非这里 —— 系统提示词本身
+    // 不应出现真正的 HEREDOC 模板或 `gh pr create`。(L1 可以在文字里
+    // 引用 HEREDOC 以指向模板所在位置 —— 这是有意为之的。)
     expect(prompt).not.toMatch(/git commit -m "\$\(cat <<'EOF'/);
     expect(prompt).not.toMatch(/gh pr create/);
   });
@@ -354,8 +350,8 @@ describe("buildPlanStepSystemPrompt", () => {
     });
     expect(prompt).toContain("## Verification");
     expect(prompt).toContain("directory has 10 files");
-    // Goal-Driven Execution: each step's verify loop should close with
-    // an explicit pass/fail statement instead of being left implicit.
+    // Goal-Driven Execution:每个步骤的验证回路应以明确的通过/失败
+    // 陈述收尾,而不是留给隐含判断。
     expect(prompt).toContain(
       "Then briefly state whether the verification criterion was met.",
     );

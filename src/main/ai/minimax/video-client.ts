@@ -1,14 +1,13 @@
 /**
- * MiniMax Video Generation client.
+ * MiniMax 视频生成客户端。
  *
- * Video generation is asynchronous:
- *   1. POST /v1/video_generation        → task_id (returned immediately)
- *   2. GET  /v1/query/video_generation  → status; eventually file_id
- *   3. GET  /v1/files/retrieve          → short-lived signed download URL
+ * 视频生成是异步的:
+ *   1. POST /v1/video_generation        → task_id(立即返回)
+ *   2. GET  /v1/query/video_generation  → status;最终得到 file_id
+ *   3. GET  /v1/files/retrieve          → 短时效的签名下载 URL
  *
- * Each call here is a one-shot HTTP roundtrip. The polling loop lives in
- * `src/main/ipc/media-job-watcher.ts` to keep this module pure and easy
- * to test.
+ * 这里每次调用都是一次性的 HTTP 往返。轮询循环放在
+ * `src/main/ipc/media-job-watcher.ts`,以保持本模块纯净且易于测试。
  */
 
 import { resolveMinimaxBaseUrl } from "./chat-base-url";
@@ -31,7 +30,7 @@ interface CommonInput {
 export interface SubmitVideoInput extends CommonInput {
   model: string;
   prompt: string;
-  /** Optional first-frame reference image as a URL or base64 data URL. */
+  /** 可选的首帧参考图,可以是 URL 或 base64 data URL。 */
   firstFrameImage?: string;
 }
 

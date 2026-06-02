@@ -12,10 +12,10 @@ import {
 } from "../clone-cache";
 
 /**
- * Fake `spawn` matching the signature `clone-cache.ts:runGit` expects.
- * Each call's args are recorded; per-call exit codes and stdout/stderr
- * can be programmed via `responses` keyed by the first arg (the git
- * subcommand). Default is exit 0 with empty output.
+ * 模拟 `spawn`,签名与 `clone-cache.ts:runGit` 所期望的一致。
+ * 每次调用的参数都会被记录;可通过以第一个参数(git 子命令)为键的
+ * `responses` 来为每次调用编排退出码和 stdout/stderr。
+ * 默认为退出码 0 且输出为空。
  */
 const buildFakeSpawn = (
   responses: Record<
@@ -62,7 +62,7 @@ const buildFakeSpawn = (
 };
 
 // ---------------------------------------------------------------------------
-// withCloneLock
+// withCloneLock(克隆锁)
 // ---------------------------------------------------------------------------
 
 describe("withCloneLock", () => {
@@ -102,7 +102,7 @@ describe("withCloneLock", () => {
     });
 
     await Promise.all([p1, p2]);
-    // B has shorter wait — finishes before A despite the same start tick.
+    // B 的等待时间更短 —— 尽管起始时刻相同,仍会先于 A 完成。
     expect(events).toEqual(["A-start", "B-start", "B-end", "A-end"]);
   });
 
@@ -114,7 +114,7 @@ describe("withCloneLock", () => {
       }),
     ).rejects.toThrow("boom");
 
-    // The next caller must still acquire — otherwise the queue deadlocks.
+    // 下一个调用方仍须能获取到锁 —— 否则队列会死锁。
     const result = await withCloneLock(dir, async () => "ok");
     expect(result).toBe("ok");
   });
@@ -171,7 +171,7 @@ describe("checkoutBranchTo", () => {
     const { fake, calls } = buildFakeSpawn({
       "rev-parse": [
         { stdout: "main\n" }, // HEAD
-        { exitCode: 0 }, // refs/heads/feature/x exists
+        { exitCode: 0 }, // refs/heads/feature/x 存在
       ],
       status: { stdout: "" },
       checkout: { exitCode: 0 },
@@ -185,7 +185,7 @@ describe("checkoutBranchTo", () => {
     const { fake, calls } = buildFakeSpawn({
       "rev-parse": [
         { stdout: "main\n" }, // HEAD
-        { exitCode: 1 }, // refs/heads/feature/x missing
+        { exitCode: 1 }, // refs/heads/feature/x 不存在
       ],
       status: { stdout: "" },
       checkout: { exitCode: 0 },
@@ -249,23 +249,23 @@ describe("cleanupLegacyAtRefCache", () => {
     const { removed } = await cleanupLegacyAtRefCache([root]);
     expect(removed).toBe(0);
 
-    // Still present — adding a file would throw if the directory were gone.
+    // 仍然存在 —— 如果目录已被删除,新增文件会抛出错误。
     await writeFile(path.join(userDir, "still-here"), "x");
   });
 
   it("removes legacy clones whose ref contained slashes (nested @dir/.git)", async () => {
-    // Real-world layout from the user's cache:
+    // 来自用户缓存的真实布局:
     //   gitlab.quguazhan.com/web/admin@feature/v1.3/.git
-    // The `app@feature` directory has no direct .git — the .git lives
-    // one level deeper inside `v1.3/`. Sweep must still recognize the
-    // whole `app@feature` subtree as a legacy clone and remove it.
+    // `app@feature` 目录下没有直接的 .git —— .git 位于更深一层的
+    // `v1.3/` 内部。清理时仍须将整个 `app@feature` 子树识别为
+    // 遗留克隆并删除。
     const slashRef = path.join(root, "web", "admin@feature", "v1.3");
     await mkdir(path.join(slashRef, ".git"), { recursive: true });
 
     const { removed } = await cleanupLegacyAtRefCache([root]);
     expect(removed).toBe(1);
 
-    // The whole `admin@feature` tree (including `v1.3/.git`) is gone.
+    // 整个 `admin@feature` 树(包括 `v1.3/.git`)都已被删除。
     await expect(rm(slashRef)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
       rm(path.join(root, "web", "admin@feature")),
@@ -273,7 +273,7 @@ describe("cleanupLegacyAtRefCache", () => {
   });
 
   it("recurses through non-@ parent directories", async () => {
-    // Mimics the GitLab layout: <root>/<host>/<namespace>/<project>@<ref>.
+    // 模拟 GitLab 布局:<root>/<host>/<namespace>/<project>@<ref>。
     const deep = path.join(
       root,
       "gitlab.example.com",

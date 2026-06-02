@@ -1,14 +1,14 @@
 /**
- * Tool registry — owns tool definitions and converts them to ai-sdk Tool
- * shape with optional `beforeToolCall` gating.
+ * 工具注册表 —— 持有工具定义,并将其转换为 ai-sdk 的 Tool
+ * 形态,附带可选的 `beforeToolCall` 门控。
  *
- * Tools are domain-neutral: they receive a `ToolContext` carrying the
- * active `Workspace` (for filesystem / exec / scm), the abort signal,
- * and the toolCallId. Each tool's `execute()` calls into `ctx.workspace.*`
- * rather than raw `node:fs` so the same tool body works for `LocalWorkspace`
- * today and a future `GitHubWorkspace` tomorrow.
+ * 工具与领域无关:它们接收一个 `ToolContext`,其中携带
+ * 当前的 `Workspace`(用于文件系统 / exec / scm)、中止信号
+ * 以及 toolCallId。每个工具的 `execute()` 调用 `ctx.workspace.*`
+ * 而非裸的 `node:fs`,因此同一份工具实现既适用于今天的 `LocalWorkspace`,
+ * 也适用于未来的 `GitHubWorkspace`。
  *
- * Args validation is owned by each tool's `inputSchema` (a `z.ZodType`).
+ * 参数校验由每个工具自己的 `inputSchema`(一个 `z.ZodType`)负责。
  */
 
 import type { Tool, ToolExecutionOptions } from "ai";
@@ -20,14 +20,14 @@ import { capToolResult } from "./cap-tool-result";
 
 export interface ToolContext {
   workspace: Workspace;
-  /** Combined signal: AI-SDK abort + task-level abort. */
+  /** 合并后的信号:AI-SDK 中止 + 任务级中止。 */
   signal: AbortSignal;
   toolCallId: string;
 }
 
 export interface BeforeToolCallDecision {
   allow: boolean;
-  /** Optional reason surfaced to the model when allow=false. */
+  /** 当 allow=false 时呈现给模型的可选原因。 */
   reason?: string;
 }
 
@@ -41,12 +41,11 @@ export type BeforeToolCallHook = (
 ) => Promise<BeforeToolCallDecision>;
 
 /**
- * Gate run before EVERY non-`createPlan` tool. Resolves `true` to proceed
- * (no plan pending, or the plan was approved) and `false` to deny (the user
- * rejected a still-pending plan). Lets a draft plan awaiting approval block
- * all other tools — a defense layered on top of disabling parallel tool
- * calls, which is what actually prevents a sibling tool from racing the
- * plan within one step.
+ * 在每个非 `createPlan` 工具执行前运行的门控。返回 `true` 表示放行
+ * (没有待审批的计划,或计划已被批准),返回 `false` 表示拒绝(用户
+ * 拒绝了一个仍在待审批的计划)。它让一个等待审批的草稿计划阻塞
+ * 所有其他工具 —— 这是叠加在「禁用并行工具调用」之上的一层防御,
+ * 而后者才是真正防止同一步骤内某个同级工具与计划产生竞态的机制。
  */
 export type PlanGateHook = (toolName: string) => Promise<boolean>;
 
@@ -55,8 +54,8 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   description: string;
   inputSchema: z.ZodType<TInput>;
   /**
-   * `safe` tools run unconditionally. `destructive` tools are routed
-   * through `beforeToolCall` (when configured) before execution.
+   * `safe` 工具无条件执行。`destructive` 工具在执行前
+   * 会(在配置了的情况下)经由 `beforeToolCall` 路由。
    */
   safety: "safe" | "destructive";
   execute: (args: TInput, ctx: ToolContext) => Promise<TOutput>;
@@ -95,12 +94,12 @@ export class ToolRegistry {
   }
 
   /**
-   * Convert all registered tools to ai-sdk-compatible `Tool` map.
+   * 将所有已注册工具转换为 ai-sdk 兼容的 `Tool` 映射。
    *
-   * `ctxFactory` produces a fresh `ToolContext` per call so each
-   * invocation gets its own toolCallId. When `beforeToolCall` is
-   * supplied, destructive tools route through it; if denied, the tool
-   * resolves with a `ToolDeniedResult` instead of executing.
+   * `ctxFactory` 为每次调用生成一个全新的 `ToolContext`,因此每次
+   * 调用都获得各自的 toolCallId。当提供了 `beforeToolCall` 时,
+   * destructive 工具会经由它路由;若被拒绝,工具将以
+   * `ToolDeniedResult` 返回而不执行。
    */
   toAiSdkTools(opts: {
     ctxFactory: (call: { toolName: string; toolCallId: string }) => ToolContext;
@@ -134,8 +133,8 @@ export class ToolRegistry {
           toolCallId: execOpts.toolCallId,
         });
 
-        // A draft plan awaiting approval blocks every other tool until the
-        // user approves (or rejects → deny). createPlan itself is exempt.
+        // 等待审批的草稿计划会阻塞其他所有工具,直到
+        // 用户批准(或拒绝 → 否决)。createPlan 自身豁免。
         if (def.name !== "createPlan" && opts.planGate) {
           const proceed = await opts.planGate(def.name);
           if (!proceed) {
@@ -167,9 +166,9 @@ export class ToolRegistry {
           }
         }
 
-        // Universal source cap: bound any tool's result before it enters the
-        // model context, so no tool (built-in / web / MCP) can blow up the
-        // step that consumes it. See cap-tool-result.ts.
+        // 通用来源上限:在任何工具的结果进入模型上下文之前对其设界,
+        // 使得任何工具(内置 / web / MCP)都无法撑爆消费它的
+        // 那个步骤。参见 cap-tool-result.ts。
         return capToolResult(await def.execute(args as never, ctx));
       },
     });

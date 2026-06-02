@@ -1,21 +1,21 @@
 /**
- * Shared HTML → readable markdown helper. Used by `webFetch` (raw HTML
- * from undici) and `webFetchRendered` (rendered HTML from a hidden
- * Electron BrowserWindow) so both tools return the same shape.
+ * 共享的 HTML → 可读 markdown 辅助工具。被 `webFetch`（来自 undici 的
+ * 原始 HTML）和 `webFetchRendered`（来自隐藏的 Electron BrowserWindow
+ * 渲染后的 HTML）共用，使两个工具返回相同的结构。
  *
- * Stack: linkedom (DOM polyfill, lighter than jsdom) → readability
- * (Mozilla's reader-mode article extractor) → turndown (HTML → md).
- * Falls back to <title> + og:description / meta description when
- * readability can't isolate a main article.
+ * 技术栈：linkedom（DOM 垫片，比 jsdom 更轻量）→ readability
+ *（Mozilla 的阅读模式正文提取器）→ turndown（HTML → md）。
+ * 当 readability 无法分离出主正文时，回退到 <title> + og:description /
+ * meta description。
  *
- * Alongside the article body we surface higher-signal side outputs:
- *   - images:          inline img/srcset/og:image (gallery UI)
- *   - videos:          iframe embeds + <video> + og:video
+ * 在正文之外，我们还额外输出信噪比更高的旁路结果：
+ *   - images:          内联 img/srcset/og:image（图库 UI）
+ *   - videos:          iframe 嵌入 + <video> + og:video
  *   - meta:            byline/siteName/publishedTime/lang/favicon/canonical/og
- *   - structuredData:  JSON-LD subsets (Recipe / Product / NewsArticle / …)
+ *   - structuredData:  JSON-LD 子集（Recipe / Product / NewsArticle / …）
  *
- * Everything is size-capped so we can't blow the LLM's context budget on
- * a rogue page that ships a 50KB schema.org blob.
+ * 所有内容都做了大小限制，以免某个塞了 50KB schema.org 数据块的
+ * 异常页面撑爆 LLM 的上下文预算。
  */
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
@@ -28,19 +28,19 @@ const turndown = new TurndownService({
   bulletListMarker: "-",
 });
 
-// ─── Types ──────────────────────────────────────────────────────────
+// ─── 类型定义 ──────────────────────────────────────────────────────────
 
 export interface ArticleMeta {
   byline?: string;
   siteName?: string;
-  /** ISO-ish; Readability normalizes when it can, else page-provided. */
+  /** 类 ISO 格式；Readability 能规范化时就规范化，否则用页面提供的原值。 */
   publishedTime?: string;
   modifiedTime?: string;
   lang?: string;
   dir?: string;
   canonical?: string;
   favicon?: string;
-  /** Full OG/Twitter card surface — link-preview cards will reuse this. */
+  /** 完整的 OG/Twitter 卡片信息 —— 链接预览卡片会复用它。 */
   og?: {
     title?: string;
     description?: string;
@@ -61,9 +61,9 @@ export interface ExtractedVideo {
 }
 
 export interface StructuredDataItem {
-  /** schema.org @type, e.g. "NewsArticle", "Recipe". */
+  /** schema.org 的 @type，例如 "NewsArticle"、"Recipe"。 */
   type: string;
-  /** Whitelisted, size-trimmed subset of the original JSON-LD. */
+  /** 经白名单筛选、按大小裁剪后的原始 JSON-LD 子集。 */
   data: Record<string, unknown>;
 }
 
@@ -77,7 +77,7 @@ export interface ReadableOut {
   structuredData: StructuredDataItem[];
 }
 
-// ─── Generic helpers ────────────────────────────────────────────────
+// ─── 通用辅助函数 ────────────────────────────────────────────────
 
 const attr = (
   doc: {
@@ -109,7 +109,7 @@ const resolveUrl = (raw: string, base: string): string | null => {
   }
 };
 
-// ─── Image collection (unchanged) ───────────────────────────────────
+// ─── 图片收集（未改动）───────────────────────────────────
 
 const LAZY_SRC_ATTRS = [
   "data-src",
@@ -162,7 +162,7 @@ const collectImagesFromHtml = (html: string, base: string): string[] => {
   return out;
 };
 
-// ─── Meta collection ────────────────────────────────────────────────
+// ─── 元信息收集 ────────────────────────────────────────────────
 
 const FAVICON_RELS = [
   'link[rel="icon"]',
@@ -181,7 +181,7 @@ const collectFavicon = (
     const resolved = resolveUrl(href, url);
     if (resolved) return resolved;
   }
-  // Default well-known location — we don't fetch it, just suggest a URL.
+  // 默认的约定位置 —— 我们并不去抓取它，只是给出一个建议 URL。
   try {
     const origin = new URL(url || "http://localhost/").origin;
     return `${origin}/favicon.ico`;
@@ -220,7 +220,7 @@ const collectOg = (
     const resolved = resolveUrl(og.url, url);
     if (resolved) og.url = resolved;
   }
-  // Drop the object entirely if every field is empty — keeps output tidy.
+  // 如果每个字段都为空，则整体丢弃该对象 —— 保持输出整洁。
   const hasAny = Object.values(og).some((v) => typeof v === "string" && v);
   return hasAny ? og : undefined;
 };
@@ -276,7 +276,7 @@ const collectMeta = (
   };
 };
 
-// ─── Video collection ───────────────────────────────────────────────
+// ─── 视频收集 ───────────────────────────────────────────────
 
 const VIDEO_IFRAME_HOSTS: Array<{
   match: RegExp;
@@ -311,9 +311,9 @@ const normalizeYoutubeShortLink = (u: URL): URL => {
 };
 
 const MAX_VIDEOS = 8;
-// Defensive cap on per-tag-type DOM scan length. A forum page with
-// hundreds of embedded tweets / inline ads would otherwise pay full
-// iteration cost only to discard everything via the provider whitelist.
+// 对每种标签类型的 DOM 扫描长度做防御性上限。否则一个嵌入了数百条
+// 推文 / 内联广告的论坛页面会付出完整的遍历开销，最终却因为提供商
+// 白名单把所有内容都丢弃掉。
 const MAX_SCAN_PER_TAG = 200;
 
 const collectVideos = (
@@ -349,7 +349,7 @@ const collectVideos = (
       continue;
     }
     const provider = providerFromHost(parsed.hostname);
-    if (!provider) continue; // skip random iframes (ads, comments, etc.)
+    if (!provider) continue; // 跳过无关的 iframe（广告、评论等）
     const normalized = normalizeYoutubeShortLink(parsed).toString();
     push({
       url: normalized,
@@ -392,7 +392,7 @@ const collectVideos = (
       try {
         provider = providerFromHost(new URL(resolved).hostname) ?? "other";
       } catch {
-        // ignore
+        // 忽略
       }
       push({ url: resolved, kind: "og", provider });
     }
@@ -401,11 +401,11 @@ const collectVideos = (
   return out;
 };
 
-// ─── JSON-LD structured data ────────────────────────────────────────
+// ─── JSON-LD 结构化数据 ────────────────────────────────────────
 
-// Per-type field whitelist. New types: add a row. Everything else gets
-// dropped. The intent is to surface the *useful* core to the LLM, not
-// every property a SEO tool dumped into the page.
+// 按类型划分的字段白名单。新增类型：加一行即可。其余一律丢弃。
+// 目的是把*有用的*核心信息呈现给 LLM，而不是 SEO 工具往页面里
+// 塞的每一个属性。
 const SCHEMA_FIELDS: Record<string, readonly string[]> = {
   NewsArticle: [
     "headline",
@@ -534,11 +534,10 @@ const pickFields = (
   return out;
 };
 
-// Skip JSON-LD scripts larger than this — a 200KB schema blob still
-// gets parsed in full before our output truncation kicks in, and the
-// pages that ship truly useful Recipe/Product schemas come in well
-// under this. SEO tools that dump enormous BreadcrumbList graphs are
-// the typical offender.
+// 跳过大于此值的 JSON-LD 脚本 —— 一个 200KB 的 schema 数据块在我们的
+// 输出截断生效之前仍会被完整解析，而真正包含有用 Recipe/Product
+// schema 的页面体积远低于此。那些塞入巨型 BreadcrumbList 图的 SEO
+// 工具是典型的罪魁祸首。
 const MAX_LD_SCRIPT_BYTES = 64 * 1024;
 
 const collectStructuredData = (
@@ -546,9 +545,9 @@ const collectStructuredData = (
 ): StructuredDataItem[] => {
   const out: StructuredDataItem[] = [];
   let serializedLen = 0;
-  // We filter by `type` ourselves rather than using a CSS attribute
-  // selector. linkedom's selector parser stumbles on the `/` and `+`
-  // characters inside `"application/ld+json"`, returning zero matches.
+  // 我们自己按 `type` 过滤，而不使用 CSS 属性选择器。linkedom 的
+  // 选择器解析器会被 `"application/ld+json"` 中的 `/` 和 `+` 字符卡住，
+  // 导致返回零匹配。
   const scripts = Array.from(document.querySelectorAll("script"))
     .filter(
       (el) =>
@@ -563,7 +562,7 @@ const collectStructuredData = (
     try {
       parsed = JSON.parse(txt);
     } catch {
-      continue; // malformed JSON-LD is sadly common — skip
+      continue; // 格式错误的 JSON-LD 很常见 —— 跳过
     }
     for (const item of flattenLdItems(parsed)) {
       if (out.length >= MAX_STRUCTURED_ITEMS) break;
@@ -576,8 +575,8 @@ const collectStructuredData = (
       const candidate: StructuredDataItem = { type: t, data: trimmed };
       const next = serializedLen + JSON.stringify(candidate).length;
       if (next > MAX_STRUCTURED_SERIALIZED) {
-        // Stop accepting more items once we'd blow the budget; partial
-        // truncation of a single item would yield invalid schema slices.
+        // 一旦会超出预算就停止接收更多条目；对单个条目做部分截断会
+        // 产生无效的 schema 片段。
         return out;
       }
       serializedLen = next;
@@ -588,13 +587,13 @@ const collectStructuredData = (
   return out;
 };
 
-// ─── Main entry ─────────────────────────────────────────────────────
+// ─── 主入口 ─────────────────────────────────────────────────────
 
 export const extractReadable = (html: string, url: string): ReadableOut => {
   const { document } = parseHTML(html);
-  // linkedom doesn't populate document.baseURI from a string. Readability
-  // uses baseURI to resolve relative links in the cleaned article body;
-  // injecting a <base> tag makes the markdown output's links absolute.
+  // linkedom 不会从字符串填充 document.baseURI。Readability 用 baseURI
+  // 来解析清洗后正文中的相对链接；注入一个 <base> 标签可让 markdown
+  // 输出中的链接变成绝对地址。
   if (url && !document.querySelector("base")) {
     const base = document.createElement("base");
     base.setAttribute("href", url);
@@ -611,25 +610,24 @@ export const extractReadable = (html: string, url: string): ReadableOut => {
     attr(document, 'meta[property="og:image"]', "content") ??
     attr(document, 'meta[name="twitter:image"]', "content");
 
-  // Scan the original DOM for things Readability will strip before
-  // we run it: <script> blocks (JSON-LD), <iframe> embeds (videos), and
-  // the head <link>/<meta> nodes Readability sometimes prunes when it
-  // rewrites the document.
+  // 在运行 Readability 之前，先扫描原始 DOM 中那些会被它剥离的内容：
+  // <script> 块（JSON-LD）、<iframe> 嵌入（视频），以及 Readability
+  // 重写文档时有时会裁掉的 head 内 <link>/<meta> 节点。
   const videos = collectVideos(document, url);
   const structuredData = collectStructuredData(document);
-  // Note: collectMeta also reads head, but Readability tends to leave
-  // <link rel="canonical"> alone. Cheap to do up-front for safety.
+  // 注意：collectMeta 也会读取 head，但 Readability 通常不会动
+  // <link rel="canonical">。为保险起见提前处理，开销也很小。
 
   let parsed: ReadabilityParsed | null = null;
   try {
-    // linkedom's Document is structurally compatible with Readability's
-    // expected DOM Document, but their declared TS types differ — cast
-    // through `unknown` to bypass the structural-type mismatch.
+    // linkedom 的 Document 在结构上与 Readability 期望的 DOM Document
+    // 兼容，但二者声明的 TS 类型不同 —— 通过 `unknown` 强转以绕过
+    // 结构类型不匹配。
     parsed = new Readability(
       document as unknown as Document,
     ).parse() as ReadabilityParsed | null;
   } catch {
-    // Readability can throw on unusual DOMs; fall through to header-only output.
+    // Readability 在异常 DOM 上可能抛错；此时回退到仅输出头部信息。
   }
 
   const articleImages = parsed?.content

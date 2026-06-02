@@ -25,7 +25,7 @@ export const initDatabase = async () => {
 
   db = drizzle(sqlite, { schema });
 
-  // Create tables if they don't exist
+  // 表不存在时创建
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS workspaces (
       id TEXT PRIMARY KEY,
@@ -138,9 +138,9 @@ export const initDatabase = async () => {
     );
   `);
 
-  // Migrate: pre-Tavily DBs have a CHECK constraint limited to
-  // github_pat/gitlab_pat. SQLite can't ALTER a CHECK constraint —
-  // rebuild the table in place if the old constraint is still there.
+  // 迁移:Tavily 之前的数据库 CHECK 约束仅限
+  // github_pat/gitlab_pat。SQLite 无法 ALTER 一个 CHECK 约束 ——
+  // 若旧约束仍在,则就地重建该表。
   const credentialsSql = (
     sqlite
       .prepare(
@@ -153,10 +153,9 @@ export const initDatabase = async () => {
     !credentialsSql.includes("tavily_pat") &&
     credentialsSql.includes("github_pat")
   ) {
-    // better-sqlite3's transaction() wraps the body in BEGIN/COMMIT and
-    // auto-rolls back on any thrown error — safer than raw `BEGIN ... COMMIT`
-    // in an exec() call, which would leak a half-applied state if INSERT
-    // failed a constraint check and the COMMIT never ran.
+    // better-sqlite3 的 transaction() 会把函数体包进 BEGIN/COMMIT,并在
+    // 任何抛错时自动回滚 —— 比在 exec() 中裸写 `BEGIN ... COMMIT` 更安全:
+    // 后者一旦 INSERT 未通过约束检查、COMMIT 又没执行,就会遗留半提交状态。
     try {
       sqlite.transaction(() => {
         sqlite.exec(`
@@ -181,9 +180,9 @@ export const initDatabase = async () => {
         "[db] widened credentials.kind CHECK to include tavily_pat / firecrawl_pat",
       );
     } catch (err) {
-      // Don't kill app startup — keep the old constraint in place. New
-      // tavily/firecrawl credential rows will fail at insert time with
-      // a clear CHECK violation, which is at least observable.
+      // 不让应用启动崩溃 —— 保留旧约束。新的
+      // tavily/firecrawl 凭据行会在插入时以明确的 CHECK 违例失败,
+      // 至少是可观测的。
       console.error(
         "[db] failed to widen credentials.kind CHECK; existing creds remain usable, new tavily/firecrawl kinds will fail:",
         err instanceof Error ? err.message : err,
@@ -191,7 +190,7 @@ export const initDatabase = async () => {
     }
   }
 
-  // Migrate: add usage tracking columns to tasks if missing
+  // 迁移:tasks 缺少用量追踪列时补充
   const taskColumns = sqlite.pragma("table_info(tasks)") as {
     name: string;
   }[];
@@ -203,7 +202,7 @@ export const initDatabase = async () => {
     sqlite.exec("ALTER TABLE tasks ADD COLUMN provider TEXT");
   }
 
-  // Migrate: create task_trace_events table if missing (older DBs)
+  // 迁移:task_trace_events 表缺失时创建(旧版数据库)
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS task_trace_events (
       id TEXT PRIMARY KEY,
@@ -225,20 +224,18 @@ export const initDatabase = async () => {
     );
   `);
 
-  // M3 PR 2: drop legacy chat tables. Existing users on M3 PR 1+ have
-  // already been migrated to the JSONL store at ~/.filework/sessions/.
-  // Idempotent: no-op if the tables don't exist (fresh installs).
+  // M3 PR 2:删除旧版聊天表。M3 PR 1+ 上的现有用户已经
+  // 迁移到 ~/.filework/sessions/ 的 JSONL 存储。
+  // 幂等:表不存在时为空操作(全新安装)。
   sqlite.exec(`
     DROP TABLE IF EXISTS chat_messages;
     DROP TABLE IF EXISTS chat_sessions;
   `);
 
-  // Migrate llm_configs: (1) add `modality` column for Phase 1 of the
-  // image/video work — defaults to 'chat' so legacy rows stay routed to
-  // the agent loop. (2) Widen the provider CHECK constraint to include
-  // 'minimax'. SQLite can't ALTER a CHECK in place, so rebuild the table
-  // when the existing one still has the old constraint (mirrors the
-  // credentials.kind dance above).
+  // 迁移 llm_configs:(1)为图像/视频工作的第一阶段新增 `modality` 列 ——
+  // 默认 'chat',使旧行仍被路由到 agent loop。(2)放宽 provider CHECK 约束
+  // 以纳入 'minimax'。SQLite 无法就地 ALTER 一个 CHECK,因此当现有表仍是
+  // 旧约束时重建该表(与上面 credentials.kind 的做法一致)。
   const llmCols = sqlite.pragma("table_info(llm_configs)") as {
     name: string;
   }[];
@@ -287,9 +284,9 @@ export const initDatabase = async () => {
       );
     }
   }
-  // Second widening pass: add 'xiaomi' to the provider CHECK. Same dance as
-  // the minimax migration above — SQLite can't ALTER a CHECK in place. This
-  // is a no-op once the table already lists 'xiaomi'.
+  // 第二轮放宽:向 provider CHECK 加入 'xiaomi'。与上面 minimax 迁移
+  // 同样的做法 —— SQLite 无法就地 ALTER 一个 CHECK。一旦表已列出
+  // 'xiaomi',这便是空操作。
   const llmConfigsSqlV2 = (
     sqlite
       .prepare(
@@ -331,7 +328,7 @@ export const initDatabase = async () => {
     }
   }
 
-  // Migrate: add kind/metadata columns to recent_workspaces if missing
+  // 迁移:recent_workspaces 缺少 kind/metadata 列时补充
   const recentCols = sqlite.pragma("table_info(recent_workspaces)") as {
     name: string;
   }[];
@@ -344,12 +341,12 @@ export const initDatabase = async () => {
     sqlite.exec("ALTER TABLE recent_workspaces ADD COLUMN metadata TEXT");
   }
 
-  // Migrate .env LLM config to database on first run
+  // 首次运行时把 .env 的 LLM 配置迁移进数据库
   migrateLlmConfigFromEnv();
 };
 
 // ============================================================================
-// Types (preserved for IPC handler compatibility)
+// 类型(为兼容 IPC 处理器而保留)
 // ============================================================================
 
 interface Workspace {
@@ -369,7 +366,7 @@ interface Task {
   filesAffected: string | null;
   createdAt: string;
   completedAt: string | null;
-  // Usage tracking
+  // 用量追踪
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
@@ -411,7 +408,7 @@ interface RecentWorkspace {
   name: string;
   lastOpenedAt: string;
   kind: "local" | "github" | "gitlab";
-  /** JSON-encoded WorkspaceRef; NULL for legacy local rows. */
+  /** JSON 编码的 WorkspaceRef;旧版 local 行为 NULL。 */
   metadata: string | null;
 }
 
@@ -423,7 +420,7 @@ export interface Credential {
   label: string;
   scopes: string[] | null;
   createdAt: string;
-  /** M7 — health monitor fields. NULL on credentials predating M7. */
+  /** M7 —— 健康监控字段。早于 M7 的凭据为 NULL。 */
   lastTestedAt: string | null;
   testStatus: CredentialTestStatus | null;
   lastTestError: string | null;
@@ -431,7 +428,7 @@ export interface Credential {
 }
 
 // ============================================================================
-// Workspaces
+// 工作区
 // ============================================================================
 
 export const addWorkspace = (ws: Workspace) => {
@@ -462,7 +459,7 @@ export const updateWorkspace = (id: string, updates: Partial<Workspace>) => {
 };
 
 // ============================================================================
-// Tasks
+// 任务
 // ============================================================================
 
 export const addTask = (task: Task) => {
@@ -511,7 +508,7 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
 };
 
 // ============================================================================
-// Task Trace Events (durable task lifecycle/tool trace)
+// 任务跟踪事件(持久化的任务生命周期/工具跟踪)
 // ============================================================================
 
 const MAX_TRACE_DETAIL_CHARS = 20_000;
@@ -565,7 +562,7 @@ export const getTaskTraceEvents = (taskId: string, limit = 200) => {
 };
 
 // ============================================================================
-// Task Summaries (durable conversation compression summaries)
+// 任务摘要(持久化的对话压缩摘要)
 // ============================================================================
 
 export const upsertTaskSummary = (s: TaskSummary) => {
@@ -611,7 +608,7 @@ export const getTaskSummary = (taskId: string): TaskSummary | null => {
 };
 
 // ============================================================================
-// Settings
+// 设置
 // ============================================================================
 
 export const getSetting = (key: string): string | null => {
@@ -636,7 +633,7 @@ export const getAllSettings = (): Record<string, string> => {
 };
 
 // ============================================================================
-// Recent Workspaces (max 20)
+// 最近工作区(最多 20 个)
 // ============================================================================
 
 export const getRecentWorkspaces = (): RecentWorkspace[] =>
@@ -665,7 +662,7 @@ export const addRecentWorkspace = (
     })
     .run();
 
-  // Trim to MAX_RECENT
+  // 裁剪到 MAX_RECENT
   const all = db
     .select({ path: schema.recentWorkspaces.path })
     .from(schema.recentWorkspaces)
@@ -689,7 +686,7 @@ export const removeRecentWorkspace = (path: string) => {
 };
 
 // ============================================================================
-// Credentials (GitHub PATs etc.)
+// 凭据(GitHub PAT 等)
 // ============================================================================
 
 export const createCredential = (input: {
@@ -749,7 +746,7 @@ export const getCredential = (id: string): Credential | null => {
   return row ? mapCredentialRow(row) : null;
 };
 
-/** Returns the decrypted token. Throws if the credential id is unknown. */
+/** 返回解密后的 token。凭据 id 未知时抛错。 */
 export const getCredentialToken = (id: string): string => {
   const row = db
     .select()
@@ -761,9 +758,8 @@ export const getCredentialToken = (id: string): string => {
 };
 
 /**
- * Returns the decrypted token of the most-recently-created credential
- * for `kind`, or null when none exist. Used by agent tools that want
- * "the user's <provider> key" without exposing credential ids.
+ * 返回 `kind` 下最近创建的凭据的解密 token,不存在时返回 null。
+ * 供需要「用户的 <provider> 密钥」却不想暴露凭据 id 的 agent 工具使用。
  */
 export const getLatestCredentialToken = (
   kind: CredentialKind,
@@ -782,9 +778,9 @@ export const deleteCredential = (id: string): void => {
 };
 
 /**
- * Persist the result of a credential token test (M7 health monitor).
- * `host` is recorded only on success — it tells future batch tests
- * which host to ping for self-hosted gitlab credentials.
+ * 持久化一次凭据 token 测试的结果(M7 健康监控)。
+ * `host` 仅在成功时记录 —— 它告诉后续的批量测试,对自托管 gitlab
+ * 凭据该 ping 哪个主机。
  */
 export const recordCredentialTest = (input: {
   id: string;
@@ -807,17 +803,16 @@ export const recordCredentialTest = (input: {
 };
 
 // ============================================================================
-// Chat Sessions / Messages — REMOVED in M3 PR 2.
+// 聊天会话 / 消息 —— 在 M3 PR 2 中移除。
 //
-// All chat reads/writes now go through `core/session/jsonl-store.ts`.
-// The legacy SQLite tables (`chat_sessions`, `chat_messages`) and helpers
-// were dropped after JSONL stability was proven across the M5/M6 series.
-// See git history for the prior implementation; the one-shot migration
-// helper at `db/jsonl-migration.ts` was deleted alongside.
+// 所有聊天读写现在都走 `core/session/jsonl-store.ts`。
+// 旧版 SQLite 表(`chat_sessions`、`chat_messages`)及相关辅助函数
+// 在 M5/M6 系列验证了 JSONL 的稳定性后被删除。
+// 旧实现见 git 历史;一次性迁移辅助 `db/jsonl-migration.ts` 也已一并删除。
 // ============================================================================
 
 // ============================================================================
-// LLM Config Types
+// LLM 配置类型
 // ============================================================================
 
 export type LlmProvider =
@@ -838,7 +833,7 @@ export interface LlmConfig {
   apiKey: string | null;
   baseUrl: string | null;
   model: string;
-  /** What this config produces. Defaults to "chat" for back-compat. */
+  /** 该配置的产出类型。为向后兼容默认 "chat"。 */
   modality: LlmModality;
   isDefault: boolean;
   createdAt: string;
@@ -846,7 +841,7 @@ export interface LlmConfig {
 }
 
 // ============================================================================
-// LLM Configs
+// LLM 配置
 // ============================================================================
 
 function mapRowToLlmConfig(
@@ -975,14 +970,14 @@ export const setDefaultLlmConfig = (id: string): void => {
 };
 
 export const migrateLlmConfigFromEnv = (): void => {
-  // Skip if there are already llm_configs records in the database
+  // 若数据库中已有 llm_configs 记录则跳过
   const existing = db.select().from(schema.llmConfigs).all();
   if (existing.length > 0) return;
 
   const provider = (process.env.AI_PROVIDER || "").toLowerCase();
   const model = process.env.AI_MODEL || "";
 
-  // Determine provider, apiKey, and baseUrl from environment variables
+  // 从环境变量确定 provider、apiKey 和 baseUrl
   let resolvedProvider: LlmConfig["provider"] = "openai";
   let apiKey: string | null = null;
   let baseUrl: string | null = null;
@@ -1003,7 +998,7 @@ export const migrateLlmConfigFromEnv = (): void => {
     baseUrl =
       process.env.CUSTOM_BASE_URL || process.env.OPENAI_BASE_URL || null;
   } else {
-    // Default to openai (includes provider === "openai" or empty/unknown)
+    // 默认 openai(涵盖 provider === "openai" 或为空/未知的情况)
     resolvedProvider = "openai";
     apiKey = process.env.OPENAI_API_KEY || null;
     baseUrl =
@@ -1012,7 +1007,7 @@ export const migrateLlmConfigFromEnv = (): void => {
 
   const resolvedModel = model || "gpt-4o-mini";
 
-  // If provider env var was empty/missing and no apiKey found, use pure defaults
+  // 若 provider 环境变量为空/缺失且未找到 apiKey,则使用纯默认值
   const hasEnvConfig = provider || apiKey || model;
 
   createLlmConfig({
@@ -1026,7 +1021,7 @@ export const migrateLlmConfigFromEnv = (): void => {
 };
 
 // ============================================================================
-// Media Jobs (Phase 3 — video generation + future async media)
+// 媒体任务(第三阶段 —— 视频生成 + 未来的异步媒体)
 // ============================================================================
 
 export type MediaJobKind = "image" | "video";
@@ -1159,7 +1154,7 @@ export const updateMediaJob = (
     .run();
 };
 
-/** Jobs that may still be running. Used on app startup to surface stragglers. */
+/** 可能仍在运行的任务。在应用启动时用于暴露遗留任务。 */
 export const listActiveMediaJobs = (): MediaJob[] => {
   return db
     .select()
@@ -1179,7 +1174,7 @@ export const listMediaJobsBySession = (sessionId: string): MediaJob[] => {
 };
 
 // ============================================================================
-// MCP Servers
+// MCP 服务器
 // ============================================================================
 
 export type McpTransport = "stdio" | "http";

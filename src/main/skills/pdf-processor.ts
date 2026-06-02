@@ -66,7 +66,7 @@ const readPdfPagesTool: Tool = {
       const buffer = await readFile(path);
       const pdf = new PDFParse({ data: buffer });
       try {
-        // First get total page count
+        // 先获取总页数
         const info = await pdf.getInfo();
         const total = info.total;
 
@@ -79,7 +79,7 @@ const readPdfPagesTool: Tool = {
           };
         }
 
-        // Build partial page array for the requested range
+        // 为请求的页码范围构建局部页码数组
         const pageNumbers = Array.from(
           { length: end - start + 1 },
           (_, i) => start + i,

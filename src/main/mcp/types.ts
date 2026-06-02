@@ -1,10 +1,10 @@
 /**
- * Cross-layer MCP types shared between the manager, tool-bridge, IPC
- * handlers, and (via preload) the renderer panel.
+ * 跨层共享的 MCP 类型,供 manager、tool-bridge、IPC
+ * 处理器以及(经由 preload)渲染进程面板共用。
  *
- * `McpServer` itself lives in `src/main/db/index.ts` since it mirrors a
- * SQLite row — re-exported here for convenience so consumers in the MCP
- * subsystem only need one import path.
+ * `McpServer` 本身定义在 `src/main/db/index.ts`,因为它对应
+ * 一行 SQLite 记录 —— 在此重新导出以方便 MCP 子系统的
+ * 使用方只需一条导入路径。
  */
 
 export type {
@@ -13,7 +13,7 @@ export type {
   McpTransport,
 } from "../db";
 
-/** Snapshot of one server's runtime state for the renderer status UI. */
+/** 供渲染进程状态 UI 使用的单个服务器运行时状态快照。 */
 export interface McpServerStatus {
   id: string;
   connected: boolean;
@@ -23,10 +23,10 @@ export interface McpServerStatus {
   lastConnectedAt: string | null;
 }
 
-/** A single MCP-side tool descriptor surfaced to the renderer. */
+/** 暴露给渲染进程的单个 MCP 侧工具描述符。 */
 export interface McpToolSummary {
   name: string;
   description: string;
-  /** `mcp__<serverSlug>__<tool>` — what the model will see. */
+  /** `mcp__<serverSlug>__<tool>` —— 模型实际看到的名称。 */
   fullName: string;
 }

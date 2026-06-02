@@ -19,7 +19,7 @@ export const tasks = sqliteTable("tasks", {
   filesAffected: text("files_affected"),
   createdAt: text("created_at").notNull(),
   completedAt: text("completed_at"),
-  // Usage tracking fields
+  // 用量统计字段
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
   totalTokens: integer("total_tokens"),
@@ -34,7 +34,7 @@ export const taskTraceEvents = sqliteTable("task_trace_events", {
   timestamp: text("timestamp").notNull(),
   toolCallId: text("tool_call_id"),
   toolName: text("tool_name"),
-  detail: text("detail").notNull(), // JSON
+  detail: text("detail").notNull(), // JSON 格式
 });
 
 export const taskSummaries = sqliteTable("task_summaries", {
@@ -65,11 +65,11 @@ export const recentWorkspaces = sqliteTable("recent_workspaces", {
   path: text("path").primaryKey(),
   name: text("name").notNull(),
   lastOpenedAt: text("last_opened_at").notNull(),
-  /** Workspace kind. Defaults to "local" for legacy rows. */
+  /** 工作区类型。旧数据行默认为 "local"。 */
   kind: text("kind", { enum: ["local", "github", "gitlab"] })
     .notNull()
     .default("local"),
-  /** JSON-encoded WorkspaceRef. NULL for legacy rows (treat as local). */
+  /** JSON 编码的 WorkspaceRef。旧数据行为 NULL(按 local 处理)。 */
   metadata: text("metadata"),
 });
 
@@ -79,53 +79,52 @@ export const credentials = sqliteTable("credentials", {
     enum: ["github_pat", "gitlab_pat", "tavily_pat", "firecrawl_pat"],
   }).notNull(),
   label: text("label").notNull(),
-  /** AES-256-GCM encrypted token (see db/crypto.ts). */
+  /** AES-256-GCM 加密后的 token(见 db/crypto.ts)。 */
   encryptedToken: text("encrypted_token").notNull(),
-  /** Optional JSON array of granted scopes. */
+  /** 可选,已授予 scope 的 JSON 数组。 */
   scopes: text("scopes"),
   createdAt: text("created_at").notNull(),
-  // M7: health monitor.
-  /** ISO 8601 timestamp of the most recent test. NULL = never tested. */
+  // M7: 健康监控。
+  /** 最近一次测试的 ISO 8601 时间戳。NULL = 从未测试过。 */
   lastTestedAt: text("last_tested_at"),
   testStatus: text("test_status", { enum: ["unknown", "ok", "error"] }),
-  /** Friendly error string when testStatus === "error". */
+  /** testStatus === "error" 时的友好错误描述。 */
   lastTestError: text("last_test_error"),
   /**
-   * Host last successfully tested against — drives auto re-test for
-   * gitlab_pat self-hosted. NULL until the user runs at least one
-   * manual test (which seeds the host from the GitLab connect flow).
+   * 最近一次成功测试所针对的 host —— 驱动 gitlab_pat 自建实例的自动重测。
+   * 在用户至少执行一次手动测试前为 NULL(手动测试会从 GitLab 连接流程中
+   * 写入该 host)。
    */
   lastTestedHost: text("last_tested_host"),
 });
 
-// chat_sessions / chat_messages — REMOVED in M3 PR 2.
-// See `core/session/jsonl-store.ts` for the active backend.
+// chat_sessions / chat_messages —— 已在 M3 PR 2 中移除。
+// 当前后端见 `core/session/jsonl-store.ts`。
 
 /**
- * Persisted record for an in-flight or completed media-generation job.
+ * 进行中或已完成的媒体生成任务的持久化记录。
  *
- * Phase 3 introduces this table for video generation: MiniMax video
- * requests run 1–5 minutes asynchronously (submit -> task_id -> poll
- * /v1/query/video_generation -> file_id -> download). Storing the job
- * survives renderer reloads and surfaces "unfinished from last run"
- * after an app restart. Image generation is synchronous in Phase 2 and
- * does NOT write here — kind="image" is reserved for future async
- * image flows (or batch generation) without another schema bump.
+ * Phase 3 为视频生成引入此表:MiniMax 视频请求异步运行 1–5 分钟
+ * (submit -> task_id -> 轮询 /v1/query/video_generation -> file_id ->
+ * 下载)。持久化该任务可在 renderer 重载后保留状态,并在应用重启后
+ * 呈现「上次未完成」的任务。图片生成在 Phase 2 中是同步的,不会写入
+ * 此表 —— kind="image" 预留给未来的异步图片流程(或批量生成),
+ * 以避免再次变更表结构。
  */
 export const mediaJobs = sqliteTable("media_jobs", {
   id: text("id").primaryKey(),
   sessionId: text("session_id").notNull(),
   configId: text("config_id").notNull(),
   kind: text("kind", { enum: ["image", "video"] }).notNull(),
-  /** Upstream task id (MiniMax /v1/video_generation response). */
+  /** 上游任务 id(MiniMax /v1/video_generation 响应)。 */
   providerJobId: text("provider_job_id"),
   prompt: text("prompt").notNull(),
   status: text("status", {
     enum: ["queued", "running", "succeeded", "failed", "canceled"],
   }).notNull(),
-  /** 0–100 if provider returns one. Often null until completion. */
+  /** 若 provider 返回则为 0–100。完成前通常为 null。 */
   progressPct: integer("progress_pct"),
-  /** Absolute filesystem path once the artifact is downloaded. */
+  /** 产物下载完成后的文件系统绝对路径。 */
   resultPath: text("result_path"),
   errorMessage: text("error_message"),
   createdAt: text("created_at").notNull(),
@@ -134,32 +133,31 @@ export const mediaJobs = sqliteTable("media_jobs", {
 });
 
 /**
- * MCP (Model Context Protocol) servers configured by the user. Each row
- * describes a server the main process spawns or connects to so its tools
- * become available to the agent loop. Sensitive values in `env`/`headers`
- * should use `${env:VAR}` placeholders — see `src/main/mcp/manager.ts`
- * for runtime expansion (Claude Desktop / VS Code compatible).
+ * 用户配置的 MCP(Model Context Protocol)服务器。每一行描述一个由主进程
+ * 启动或连接的服务器,使其工具可供 agent loop 使用。`env`/`headers` 中的
+ * 敏感值应使用 `${env:VAR}` 占位符 —— 运行时展开见 `src/main/mcp/manager.ts`
+ * (兼容 Claude Desktop / VS Code)。
  */
 export const mcpServers = sqliteTable("mcp_servers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
-  // stdio fields (NULL when transport === "http")
+  // stdio 字段(transport === "http" 时为 NULL)
   command: text("command"),
-  /** JSON.stringify(string[]) — CLI args passed to `command`. */
+  /** JSON.stringify(string[]) —— 传给 `command` 的 CLI 参数。 */
   args: text("args"),
-  /** JSON.stringify(Record<string,string>) — supports `${env:VAR}`. */
+  /** JSON.stringify(Record<string,string>) —— 支持 `${env:VAR}`。 */
   env: text("env"),
   cwd: text("cwd"),
-  // http fields (NULL when transport === "stdio")
+  // http 字段(transport === "stdio" 时为 NULL)
   url: text("url"),
-  /** JSON.stringify(Record<string,string>) — supports `${env:VAR}`. */
+  /** JSON.stringify(Record<string,string>) —— 支持 `${env:VAR}`。 */
   headers: text("headers"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   /**
-   * trusted=true treats every tool from this server as `safe` — bypasses
-   * the `beforeToolCall` approval gate. trusted=false routes calls
-   * through approval like any other `destructive` tool.
+   * trusted=true 时,将该服务器的每个工具都视为 `safe` —— 绕过
+   * `beforeToolCall` 审批门控。trusted=false 时,调用会像任何其他
+   * `destructive` 工具一样走审批流程。
    */
   trusted: integer("trusted", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
@@ -184,9 +182,8 @@ export const llmConfigs = sqliteTable("llm_configs", {
   baseUrl: text("base_url"),
   model: text("model").notNull(),
   /**
-   * What this config produces. Default "chat" for legacy rows. Image/video
-   * modalities bypass the agent loop and route through dedicated clients
-   * (see src/main/ai/minimax/*).
+   * 该配置产出的内容类型。旧数据行默认为 "chat"。image/video 模态会绕过
+   * agent loop,改由专用客户端处理(见 src/main/ai/minimax/*)。
    */
   modality: text("modality", { enum: ["chat", "image", "video"] })
     .notNull()

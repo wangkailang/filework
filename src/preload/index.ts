@@ -11,11 +11,11 @@ type WorkspaceMemoryEntry = {
 };
 
 /**
- * Expose safe IPC methods to the renderer process via contextBridge.
- * This is the ONLY bridge between main and renderer.
+ * 通过 contextBridge 向渲染进程暴露安全的 IPC 方法。
+ * 这是主进程与渲染进程之间的唯一桥梁。
  */
 const api = {
-  // Dialog
+  // 对话框
   openDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("dialog:openDirectory", defaultPath),
   openFiles: (): Promise<string[]> => ipcRenderer.invoke("dialog:openFiles"),
@@ -26,7 +26,7 @@ const api = {
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke("shell:openExternal", url),
 
-  // File system
+  // 文件系统
   listDirectory: (path: string, depth?: number) =>
     ipcRenderer.invoke("fs:listDirectory", path, depth),
   readFile: (path: string) => ipcRenderer.invoke("fs:readFile", path),
@@ -39,15 +39,14 @@ const api = {
     ipcRenderer.invoke("fs:directoryStats", path),
 
   /**
-   * Drag-drop helper: resolve the absolute filesystem path of a `File`
-   * object pulled out of `DataTransfer.files`. Electron 32+ removed the
-   * `path` property from `File`; `webUtils.getPathForFile` is the
-   * blessed replacement and must run in the preload (it cannot be
-   * exposed as a plain IPC channel since `File` doesn't serialize).
+   * 拖拽辅助:解析从 `DataTransfer.files` 取出的 `File` 对象的绝对文件系统路径。
+   * Electron 32+ 移除了 `File` 上的 `path` 属性;`webUtils.getPathForFile`
+   * 是官方推荐的替代方案,且必须运行在 preload 中(由于 `File` 无法序列化,
+   * 不能将其暴露为普通的 IPC 通道)。
    */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
 
-  // Chat attachments
+  // 聊天附件
   chatAttachFile: (payload: {
     sessionId: string;
     sourcePath: string;
@@ -78,11 +77,11 @@ const api = {
     ipcRenderer.invoke("ai:approveSkill", payload),
   executeTask: (payload: {
     prompt: string;
-    /** Encoded WorkspaceRef (preferred). Falls back to workspacePath. */
+    /** 编码后的 WorkspaceRef(首选)。缺省时回落到 workspacePath。 */
     workspaceRefJson?: string;
-    /** Legacy: absolute path. Treated as `{kind:"local", path}`. */
+    /** 旧版:绝对路径。等价于 `{kind:"local", path}`。 */
     workspacePath?: string;
-    /** Chat session id — drives github auto-branching scope. */
+    /** 聊天会话 id —— 决定 github 自动分支的作用域。 */
     sessionId?: string;
     /** 本回合助手消息 id;登记进重连表,刷新后据此重挂。 */
     assistantMessageId?: string;
@@ -107,7 +106,7 @@ const api = {
   stopGeneration: (taskId: string) =>
     ipcRenderer.invoke("ai:stopGeneration", { taskId }),
 
-  // Planner
+  // 规划器
   generatePlan: (payload: {
     prompt: string;
     workspacePath: string;
@@ -120,17 +119,17 @@ const api = {
   cancelPlan: (planId: string) =>
     ipcRenderer.invoke("ai:cancelPlan", { planId }),
 
-  /** Reply to a pending askClarification suspension. Keyed by the
-   *  per-call clarificationId emitted in `ai:stream-clarification`.
-   *  Resolves to `{ok:false}` when no matching suspension exists, so
-   *  the renderer can fall back to a fresh chat turn for stale parts. */
+  /** 回复一个待处理的 askClarification 挂起。以 `ai:stream-clarification`
+   *  中发出的每次调用的 clarificationId 为键。
+   *  当不存在匹配的挂起时解析为 `{ok:false}`,从而让渲染进程
+   *  对陈旧片段回落为一次新的聊天回合。 */
   answerClarification: (payload: {
     clarificationId: string;
     answer: string;
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("ai:answerClarification", payload),
 
-  // Planner streaming events
+  // 规划器流式事件
   onPlanGenerating: (callback: (data: { prompt: string }) => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
@@ -251,7 +250,7 @@ const api = {
     return () => ipcRenderer.removeListener("ai:plan-step-artifacts", handler);
   },
 
-  // Skill events
+  // Skill 事件
   onSkillActivated: (
     callback: (data: {
       id: string;
@@ -288,7 +287,7 @@ const api = {
     return () => ipcRenderer.removeListener("skill:approval-request", handler);
   },
 
-  // AI streaming events
+  // AI 流式事件
   onStreamStart: (callback: (data: { id: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { id: string }) =>
       callback(data);
@@ -387,7 +386,7 @@ const api = {
     ipcRenderer.on("ai:stream-tool-approval", handler);
     return () => ipcRenderer.removeListener("ai:stream-tool-approval", handler);
   },
-  /** M12: CI watcher event when a tracked run completes. */
+  /** M12:被跟踪的运行完成时触发的 CI watcher 事件。 */
   onCiRunDone: (
     callback: (data: {
       id: string;
@@ -414,7 +413,7 @@ const api = {
     ipcRenderer.on("ai:ci-run-done", handler);
     return () => ipcRenderer.removeListener("ai:ci-run-done", handler);
   },
-  /** M12: CI watcher event when a tracked run hasn't completed within TIMEOUT_MS. */
+  /** M12:被跟踪的运行在 TIMEOUT_MS 内未完成时触发的 CI watcher 事件。 */
   onCiRunTimeout: (
     callback: (data: {
       id: string;
@@ -436,9 +435,9 @@ const api = {
     return () => ipcRenderer.removeListener("ai:ci-run-timeout", handler);
   },
   /**
-   * M13: CI watcher event when subscribeAfterDispatch couldn't find the new
-   * runId after a workflow_dispatch (3 retries × 2s). Surfaces a friendly
-   * "manually run listCIRuns" hint in the chat.
+   * M13:当 subscribeAfterDispatch 在一次 workflow_dispatch 后(重试 3 次 ×2 秒)
+   * 仍找不到新的 runId 时触发的 CI watcher 事件。会在聊天中给出友好的
+   * "manually run listCIRuns" 提示。
    */
   onCiDispatchResolveFailed: (
     callback: (data: {
@@ -579,9 +578,9 @@ const api = {
   },
 
   /**
-   * In-agent `createPlan` tool stream. Carries an executing-state `PlanView`
-   * that the renderer pushes/upserts as a `PlanMessagePart` inline in chat.
-   * Distinct from `onPlanReady`, which feeds the legacy approval flow.
+   * agent 内 `createPlan` 工具的流。携带一个执行中状态的 `PlanView`,
+   * 渲染进程会将其作为内联的 `PlanMessagePart` 推入/更新到聊天中。
+   * 区别于 `onPlanReady`,后者供给旧版审批流程。
    */
   onStreamPlan: (callback: (data: { id: string; plan: unknown }) => void) => {
     const handler = (
@@ -592,7 +591,7 @@ const api = {
     return () => ipcRenderer.removeListener("ai:stream-plan", handler);
   },
 
-  // Watchdog events (stall detection)
+  // Watchdog 事件(卡顿检测)
   onWatchdog: (
     callback: (data: {
       taskId: string;
@@ -618,7 +617,7 @@ const api = {
     return () => ipcRenderer.removeListener("ai:watchdog", handler);
   },
 
-  // Approval timeout event
+  // 审批超时事件
   onApprovalTimeout: (
     callback: (data: {
       id: string;
@@ -640,7 +639,7 @@ const api = {
     return () => ipcRenderer.removeListener("ai:approval-timeout", handler);
   },
 
-  // Auto-approved tool event (plan execution skips individual approval)
+  // 工具自动批准事件(计划执行时跳过单个审批)
   onToolAutoApproved: (
     callback: (data: {
       id: string;
@@ -662,7 +661,7 @@ const api = {
     return () => ipcRenderer.removeListener("ai:tool-auto-approved", handler);
   },
 
-  // Settings
+  // 设置
   getSetting: (key: string) => ipcRenderer.invoke("settings:get", key),
   setSetting: (key: string, value: string) =>
     ipcRenderer.invoke("settings:set", key, value),
@@ -676,7 +675,7 @@ const api = {
       ipcRenderer.invoke("tool-whitelist:set", { toolName, enabled }),
   },
 
-  // LLM Config
+  // LLM 配置
   llmConfig: {
     list: () => ipcRenderer.invoke("llm-config:list"),
     get: (id: string) => ipcRenderer.invoke("llm-config:get", { id }),
@@ -718,7 +717,7 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke("llm-config:delete", { id }),
   },
 
-  // Media (image / video generation)
+  // 媒体(图像 / 视频生成)
   media: {
     generateImage: (data: {
       llmConfigId: string;
@@ -758,7 +757,7 @@ const api = {
     },
   },
 
-  // Usage tracking
+  // 用量跟踪
   usage: {
     getTaskUsage: (taskId: string) =>
       ipcRenderer.invoke("usage:getTaskUsage", { taskId }),
@@ -771,7 +770,7 @@ const api = {
       ipcRenderer.invoke("usage:getRecentUsage", { limit }),
   },
 
-  // Memory debug
+  // 记忆调试
   memoryDebug: {
     getEvents: (limit?: number) =>
       ipcRenderer.invoke("memory-debug:getEvents", { limit }),
@@ -856,7 +855,7 @@ const api = {
       }),
   },
 
-  // Task trace (durable execution trace)
+  // 任务追踪(持久化执行追踪)
   taskTrace: {
     getEvents: (taskId: string, limit?: number) =>
       ipcRenderer.invoke("task-trace:getEvents", { taskId, limit }),
@@ -888,7 +887,7 @@ const api = {
     },
   },
 
-  // Local (non-clone) git operations
+  // 本地(非克隆)git 操作
   local: {
     probeGit: (payload: { path: string }) =>
       ipcRenderer.invoke("local-git:probe", payload),
@@ -898,14 +897,14 @@ const api = {
       ipcRenderer.invoke("local-git:checkoutBranch", payload),
   },
 
-  // Aggregate branch diff (codex-style "branch vs base" drawer).
+  // 聚合分支差异(codex 风格的「分支 vs 基线」抽屉)。
   getBranchDiff: (payload: {
     path: string;
     baseBranch?: string;
   }): Promise<import("../main/core/git-diff/types").BranchDiff> =>
     ipcRenderer.invoke("git:getBranchDiff", payload),
 
-  // Workspace-level events
+  // 工作区级事件
   onWorkspaceBranchChanged: (
     callback: (data: { cloneDir: string; branch: string }) => void,
   ) => {
@@ -918,7 +917,7 @@ const api = {
       ipcRenderer.removeListener("workspace:branch-changed", handler);
   },
 
-  // Workspace history
+  // 工作区历史
   getRecentWorkspaces: () => ipcRenderer.invoke("workspace:getRecent"),
   addRecentWorkspace: (
     pathOrId: string,
@@ -931,7 +930,7 @@ const api = {
   removeRecentWorkspace: (path: string) =>
     ipcRenderer.invoke("workspace:removeRecent", path),
 
-  // Credentials
+  // 凭证
   credentials: {
     list: () => ipcRenderer.invoke("credentials:list"),
     create: (payload: {
@@ -1013,7 +1012,7 @@ const api = {
     }) => ipcRenderer.invoke("gitlab:checkoutBranch", payload),
   },
 
-  // MCP (Model Context Protocol) servers
+  // MCP(Model Context Protocol)服务器
   mcp: {
     listServers: () => ipcRenderer.invoke("mcp:listServers"),
     addServer: (payload: {
@@ -1067,7 +1066,7 @@ const api = {
     },
   },
 
-  // Chat sessions
+  // 聊天会话
   createChatSession: (workspacePath: string, title?: string) =>
     ipcRenderer.invoke("chat:createSession", workspacePath, title),
   getChatSessions: (workspacePath: string) =>
@@ -1081,7 +1080,7 @@ const api = {
   forkChatSession: (sessionId: string, fromMessageId: string) =>
     ipcRenderer.invoke("chat:forkSession", sessionId, fromMessageId),
 
-  // Chat history (session-scoped)
+  // 聊天历史(会话作用域)
   getChatHistory: (sessionId: string) =>
     ipcRenderer.invoke("chat:getHistory", sessionId),
   saveChatHistory: (

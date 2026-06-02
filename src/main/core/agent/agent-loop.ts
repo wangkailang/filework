@@ -1,18 +1,18 @@
 /**
- * AgentLoop — domain-neutral orchestrator that runs one model turn-set
- * via Vercel AI SDK's `streamText`, translates the `fullStream` into
- * typed `AgentEvent`s, and yields them as an async iterable.
+ * AgentLoop —— 领域无关的编排器,通过 Vercel AI SDK 的 `streamText`
+ * 运行一组模型回合,把 `fullStream` 转换为带类型的 `AgentEvent`,
+ * 并以异步可迭代对象的形式产出。
  *
- * Replaces the inline `streamAndConsume` loop at
- * `src/main/ipc/ai-handlers.ts:476-568`. Behavior parity:
- * - Single `streamText` call wrapped in optional retry (per-turn granularity)
- * - `transformContext` hook for compaction (was inline at lines 243-305)
- * - `beforeToolCall` routes through ToolRegistry (PR 1) — no extra wiring here
- * - Cancellation via AbortSignal
+ * 取代 `src/main/ipc/ai-handlers.ts:476-568` 处内联的 `streamAndConsume`
+ * 循环。行为对齐:
+ * - 单次 `streamText` 调用,外包可选的重试(回合级粒度)
+ * - 用于压缩的 `transformContext` 钩子(原内联于 243-305 行)
+ * - `beforeToolCall` 经由 ToolRegistry 路由(PR 1)—— 此处无需额外接线
+ * - 通过 AbortSignal 取消
  *
- * Note: AI-SDK `streamText` already loops up to `stepCountIs(N)` internal
- * steps. Each "step" is one model decision (text-only or text+tool-calls)
- * — we map step boundaries to PI-style turn events.
+ * 注意:AI-SDK 的 `streamText` 本身已最多循环 `stepCountIs(N)` 个内部
+ * 步骤。每个 "step" 是一次模型决策(纯文本或文本+工具调用)
+ * —— 我们把步骤边界映射为 PI 风格的回合事件。
  */
 
 import { randomUUID } from "node:crypto";
@@ -39,12 +39,12 @@ import type { BeforeToolCallHook, ToolContext } from "./tool-registry";
 import { ToolRegistry } from "./tool-registry";
 
 // ---------------------------------------------------------------------------
-// Hooks
+// 钩子
 // ---------------------------------------------------------------------------
 
 export interface TransformContextResult {
   messages: ModelMessage[];
-  /** Optional metrics surfaced as a `context_compressed` event. */
+  /** 可选指标,以 `context_compressed` 事件形式暴露。 */
   originalTokens?: number;
   compressedTokens?: number;
 }
@@ -58,52 +58,50 @@ export interface AgentLoopHooks {
   beforeToolCall?: BeforeToolCallHook;
   transformContext?: TransformContextHook;
   /**
-   * Optional post-stream verdict hook. When present, AgentLoop runs the
-   * hook after each `streamText` call and may loop with appended
-   * feedback up to `maxReflections` times. Unset → identical behavior
-   * to pre-reflection AgentLoop.
+   * 可选的流后裁决钩子。存在时,AgentLoop 会在每次 `streamText` 调用后
+   * 运行该钩子,并可附加反馈最多循环 `maxReflections` 次。
+   * 未设置 → 行为与引入 reflection 之前的 AgentLoop 完全一致。
    */
   reflect?: ReflectHook;
 }
 
 // ---------------------------------------------------------------------------
-// Config
+// 配置
 // ---------------------------------------------------------------------------
 
 export interface AgentLoopConfig {
   workspace: Workspace;
   model: LanguageModel;
   /**
-   * Tools available to the model. Pass either a `ToolRegistry` (which
-   * AgentLoop will convert via `toAiSdkTools()` honoring the
-   * `beforeToolCall` hook) or a pre-built ai-sdk `Record<string, Tool>`
-   * (when the IPC layer wants to keep its existing approval-wrapped tools).
+   * 模型可用的工具。可传入 `ToolRegistry`(AgentLoop 会经由
+   * `toAiSdkTools()` 转换并遵循 `beforeToolCall` 钩子),或传入预先
+   * 构建好的 ai-sdk `Record<string, Tool>`(当 IPC 层想保留其既有的
+   * 带审批包装的工具时)。
    */
   tools: ToolRegistry | Record<string, Tool>;
   systemPrompt: string;
-  /** Existing conversation history. Excludes the new user prompt. */
+  /** 既有的对话历史。不含新的用户 prompt。 */
   history?: ModelMessage[];
   hooks?: AgentLoopHooks;
-  /** Hard cap on internal AI-SDK steps per `streamText` call. Default 20. */
+  /** 每次 `streamText` 调用的 AI-SDK 内部步数硬上限。默认 20。 */
   maxStepsPerTurn?: number;
   /**
-   * Sampling temperature passed to `streamText`. Default unset (uses
-   * provider default, typically 0.7-1.0). Eval harnesses should set this
-   * to `0` for reproducible runs.
+   * 传给 `streamText` 的采样 temperature。默认不设置(使用 provider
+   * 默认值,通常为 0.7-1.0)。评测框架应将其设为 `0` 以获得可复现的运行。
    */
   temperature?: number;
-  /** Provider-specific options merged into the streamText call. */
+  /** 合并进 streamText 调用的 provider 专属选项。 */
   providerOptions?: ProviderOptions;
-  /** Caller-provided abort. Aborting cancels the run. */
+  /** 调用方提供的 abort。中止会取消本次运行。 */
   signal?: AbortSignal;
-  /** Stable id used in event payloads. Auto-generated if absent. */
+  /** 用于事件载荷的稳定 id。缺省时自动生成。 */
   agentId?: string;
-  /** Optional error classifier to enable retry. Without it, no retries. */
+  /** 可选的错误分类器,用于启用重试。没有它则不重试。 */
   classifyError?: ErrorClassifier;
   /**
-   * Max reflection cycles when `hooks.reflect` is set. Each cycle is one
-   * extra `streamText` call. Default 2 (so up to 3 total streamText
-   * invocations: initial + 2 retries).
+   * 设置了 `hooks.reflect` 时的最大 reflection 循环次数。每个循环额外
+   * 发起一次 `streamText` 调用。默认 2(因此 streamText 最多调用 3 次:
+   * 初始 + 2 次重试)。
    */
   maxReflections?: number;
 }
@@ -139,7 +137,7 @@ export class AgentLoop {
       }
     });
 
-    // Avoid uncaught rejection while consumer drains the queue.
+    // 在消费方排空队列期间避免未捕获的 rejection。
     work.catch(() => {});
 
     while (true) {
@@ -152,8 +150,8 @@ export class AgentLoop {
         waiter = resolve;
       });
     }
-    // Surface producer errors AFTER the queue has fully drained so the
-    // consumer sees the final agent_end event before the throw.
+    // 在队列完全排空之后再抛出生产方错误,以便消费方在 throw 之前
+    // 先看到最终的 agent_end 事件。
     await work;
   }
 
@@ -171,7 +169,7 @@ export class AgentLoop {
 
     let history = this.cfg.history ?? [];
 
-    // ── transformContext hook ────────────────────────────────────────
+    // ── transformContext 钩子 ────────────────────────────────────────
     if (this.cfg.hooks?.transformContext) {
       try {
         const r = await this.cfg.hooks.transformContext(
@@ -191,7 +189,7 @@ export class AgentLoop {
           });
         }
       } catch (err) {
-        // Non-fatal: log and continue with raw history.
+        // 非致命:记录日志并以原始历史继续。
         console.warn(
           "[AgentLoop] transformContext hook failed:",
           err instanceof Error ? err.message : err,
@@ -219,14 +217,14 @@ export class AgentLoop {
     let totalUsage: TokenUsage | undefined;
     let providerMetadata: Record<string, unknown> | undefined;
     let finalTextAccum = "";
-    // Only collected when a reflect hook is configured — saves Map
-    // allocation + per-tool-call writes on the default chat path.
+    // 仅在配置了 reflect 钩子时收集 —— 在默认聊天路径上省去 Map
+    // 分配与每次工具调用的写入。
     const reflectEnabled = this.cfg.hooks?.reflect !== undefined;
 
     const callStreamText = async (
       passNoTools: boolean,
     ): Promise<TurnSummary> => {
-      // Per-turn buffers — reset on retry.
+      // 回合级缓冲 —— 重试时重置。
       let turnIndex = -1;
       let messageId = "";
       let messageText = "";
@@ -242,9 +240,9 @@ export class AgentLoop {
         stopWhen: stepCountIs(this.cfg.maxStepsPerTurn ?? 20),
         system: this.cfg.systemPrompt,
         messages,
-        // Shrink older tool results before each internal step so a big
-        // webFetch/runCommand result isn't re-sent at full size every step
-        // (the input-token multiplier). Latest result stays intact.
+        // 在每个内部步骤前收缩较早的工具结果,避免大体量的
+        // webFetch/runCommand 结果在每一步都以全尺寸重发
+        //(输入 token 的倍增因素)。最新结果保持完整。
         prepareStep: ({ messages: stepMessages }) => {
           const compacted = compactToolResults(stepMessages);
           return compacted ? { messages: compacted } : {};
@@ -287,9 +285,8 @@ export class AgentLoop {
             break;
           }
           case "reasoning-start": {
-            // No-op — the renderer creates a reasoning block lazily on the
-            // first delta. Emitting `start` would force every UI to keep
-            // its own flag; deltas are enough.
+            // 空操作 —— 渲染端会在首个 delta 时惰性创建 reasoning 块。
+            // 发出 `start` 会迫使每个 UI 各自维护标记;仅靠 delta 已足够。
             break;
           }
           case "reasoning-delta": {
@@ -348,14 +345,12 @@ export class AgentLoop {
             break;
           }
           case "tool-error": {
-            // A tool whose `execute` threw (MCP timeout / not-connected,
-            // isError result, network failure, …) surfaces here rather than
-            // as `tool-result`. Without this case the part is dropped and the
-            // renderer's tool bubble stays in "执行中" forever. Mirror the
-            // tool-result path: emit a terminal `tool_execution_end` with
-            // success=false so the UI transitions and the model sees the
-            // failure. The AI SDK still feeds the error back into the loop,
-            // so the turn continues normally.
+            // `execute` 抛错的工具(MCP 超时 / 未连接、isError 结果、
+            // 网络失败……)会在此处暴露,而非作为 `tool-result`。缺少这个
+            // 分支时该 part 会被丢弃,渲染端的工具气泡将永远停留在"执行中"。
+            // 镜像 tool-result 路径:发出一个 success=false 的终结性
+            // `tool_execution_end`,使 UI 完成状态切换、模型也能看到失败。
+            // AI SDK 仍会把错误回灌进循环,因此回合正常继续。
             const message =
               part.error instanceof Error
                 ? part.error.message
@@ -407,20 +402,19 @@ export class AgentLoop {
         }
       }
 
-      // Capture aggregated usage + provider metadata from the resolved
-      // streamText handle. These are promises that settle once the stream
-      // finishes consuming.
+      // 从已 resolve 的 streamText 句柄上获取聚合的 usage 与 provider
+      // metadata。它们是流消费完成后才 settle 的 promise。
       try {
         const usage = await result.totalUsage;
         totalUsage = mapUsage(usage);
       } catch {
-        // Non-critical
+        // 非关键
       }
       try {
         const meta = await result.providerMetadata;
         providerMetadata = meta as Record<string, unknown> | undefined;
       } catch {
-        // Non-critical
+        // 非关键
       }
 
       return {
@@ -434,7 +428,7 @@ export class AgentLoop {
     };
 
     const onRetry = (attempt: number, errorType: string) => {
-      // Reset accumulated text on retry — the assistant message restarts.
+      // 重试时重置累积文本 —— 助手消息重新开始。
       finalTextAccum = "";
       emit({
         type: "retry",
@@ -449,8 +443,8 @@ export class AgentLoop {
       const maxReflections = this.cfg.maxReflections ?? 2;
       let reflectionAttempts = 0;
       let aborted: { reason: string } | undefined;
-      // Cleared each iteration; set by the previous turn's reflection
-      // verdict when `forceNoTools` was true.
+      // 每次迭代清空;当上一回合的 reflection 裁决 `forceNoTools` 为 true
+      // 时由其设置。
       let passNoTools = false;
 
       while (true) {
@@ -478,13 +472,11 @@ export class AgentLoop {
           aborted = { reason: verdict.reason };
           break;
         }
-        // Retry: append the assistant's prior answer (so the model has
-        // its own output as context) plus the reflection feedback. The
-        // feedback is tagged so the model treats it as a quality-review
-        // note rather than a new user request. When `forceNoTools` is
-        // honored, the appended note tells the model tools are off — the
-        // prose lives here (not in the rule) so it stays paired with the
-        // actual tool-stripping done above.
+        // Retry:追加助手先前的回答(让模型把自己的输出作为上下文)
+        // 以及 reflection 反馈。该反馈带有标签,使模型将其视为质量复审
+        // 备注而非新的用户请求。当 `forceNoTools` 生效时,追加的备注会
+        // 告知模型工具已关闭 —— 这段文案放在此处(而非规则里),以便它
+        // 与上面实际的去工具操作保持配对。
         messages.push({ role: "assistant", content: summary.finalText });
         const toolsOffNote = verdict.forceNoTools
           ? "\n\n(Tools are disabled for the next attempt — answer from the information already gathered.)"
@@ -519,10 +511,9 @@ export class AgentLoop {
         });
       }
     } catch (err) {
-      // Surface zod cause for AI SDK prompt-schema errors so a bad
-      // message shape is debuggable from the main-process log. The
-      // SDK wraps the ZodError two levels deep:
-      // InvalidPromptError → TypeValidationError → ZodError.
+      // 暴露 AI SDK prompt-schema 错误的 zod cause,使异常的消息结构
+      // 可从主进程日志中调试。SDK 把 ZodError 包了两层:
+      // InvalidPromptError → TypeValidationError → ZodError。
       if (err instanceof Error && err.name === "AI_InvalidPromptError") {
         const c1 = (err as { cause?: unknown }).cause;
         const c2 = (c1 as { cause?: unknown } | undefined)?.cause;
@@ -557,7 +548,7 @@ export class AgentLoop {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 辅助函数
 // ---------------------------------------------------------------------------
 
 interface RawUsage {
@@ -566,7 +557,7 @@ interface RawUsage {
   totalTokens?: number | null;
   cachedInputTokens?: number | null;
   reasoningTokens?: number | null;
-  /** AI SDK v6 nested form (preferred over the deprecated flat field). */
+  /** AI SDK v6 的嵌套形式(优先于已废弃的扁平字段)。 */
   outputTokenDetails?: {
     reasoningTokens?: number | null;
     textTokens?: number | null;
@@ -581,8 +572,8 @@ export function mapUsage(raw: unknown): TokenUsage | undefined {
   const total =
     u.totalTokens ??
     (input !== null || output !== null ? (input ?? 0) + (output ?? 0) : null);
-  // Prefer the v6 nested `outputTokenDetails.reasoningTokens`; fall back to
-  // the deprecated flat `reasoningTokens` field for older SDK responses.
+  // 优先使用 v6 嵌套的 `outputTokenDetails.reasoningTokens`;对较旧的 SDK
+  // 响应则回退到已废弃的扁平 `reasoningTokens` 字段。
   const reasoning =
     u.outputTokenDetails?.reasoningTokens ?? u.reasoningTokens ?? null;
   return {

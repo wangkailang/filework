@@ -1,10 +1,10 @@
 /**
- * IPC: credentials:* — manage stored secrets (currently GitHub PATs).
+ * IPC：credentials:* — 管理已存储的密钥(目前为 GitHub PAT)。
  *
- * Tokens are encrypted at rest via `db/crypto.ts` (AES-256-GCM, key
- * derived from `app.getPath("userData")`). The renderer never sees the
- * raw token after creation — every read returns metadata only. This
- * mirrors the LLM-config handler at `llm-config-handlers.ts`.
+ * Token 通过 `db/crypto.ts` 加密落盘(AES-256-GCM,密钥
+ * 由 `app.getPath("userData")` 派生)。渲染进程在创建后永远拿不到
+ * 原始 token —— 每次读取仅返回元数据。该实现
+ * 与 `llm-config-handlers.ts` 中的 LLM 配置处理器保持一致。
  */
 
 import { ipcMain } from "electron";
@@ -25,7 +25,7 @@ interface TestTokenResult {
   error?: string;
 }
 
-/** Hit GET /user with a token; success means the PAT is valid. */
+/** 用 token 请求 GET /user;成功即表示 PAT 有效。 */
 const testGithubToken = async (token: string): Promise<TestTokenResult> => {
   try {
     const res = await fetch("https://api.github.com/user", {
@@ -122,8 +122,8 @@ export const registerCredentialsHandlers = () => {
     ): Promise<TestTokenResult> => {
       const token = payload.id ? getCredentialToken(payload.id) : payload.token;
       if (!token) return { ok: false, error: "Missing token or credential id" };
-      // Tavily and Firecrawl charge per request — skip the test round-trip
-      // and trust the user-entered key. Accept any non-empty string.
+      // Tavily 和 Firecrawl 按请求计费 —— 跳过测试往返,
+      // 直接信任用户输入的 key。接受任意非空字符串。
       if (payload.kind === "tavily_pat" || payload.kind === "firecrawl_pat") {
         return { ok: true };
       }
@@ -132,11 +132,11 @@ export const registerCredentialsHandlers = () => {
           ? await testGitlabToken(token, payload.host ?? "gitlab.com")
           : await testGithubToken(token);
 
-      // M7: persist the test result on every manual click so the
-      // CredentialsPanel badge stays in sync without a separate IPC.
-      // Only writes when the user tested a stored credential (has id).
-      // For gitlab_pat with an explicit host, also remember it so the
-      // batch monitor uses the right host on next launch.
+      // M7:每次手动点击都持久化测试结果,使
+      // CredentialsPanel 角标无需额外 IPC 即可保持同步。
+      // 仅当用户测试的是已存储凭证(带 id)时才写入。
+      // 对带显式 host 的 gitlab_pat,同时记住该 host,
+      // 以便批量监控在下次启动时使用正确的 host。
       if (payload.id) {
         recordCredentialTest({
           id: payload.id,
@@ -154,10 +154,10 @@ export const registerCredentialsHandlers = () => {
 };
 
 /**
- * Returns the most recently created token of the given kind, or null.
- * Used by the agent's web tools (Tavily / Firecrawl) to resolve API
- * keys without per-tool wiring. Delegates to `getLatestCredentialToken`
- * — the SQL-side ORDER BY + LIMIT 1 is cheaper than listAll + sort.
+ * 返回指定类型中最近创建的 token,若无则返回 null。
+ * 供 agent 的 Web 工具(Tavily / Firecrawl)解析 API
+ * key,无需为每个工具单独接线。委托给 `getLatestCredentialToken`
+ * —— SQL 侧的 ORDER BY + LIMIT 1 比 listAll + 排序更省。
  */
 export const tavilyCredentialResolver = async (): Promise<string | null> =>
   getLatestCredentialToken("tavily_pat");

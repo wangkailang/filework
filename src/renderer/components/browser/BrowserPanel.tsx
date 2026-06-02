@@ -17,31 +17,31 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
 interface BrowserPanelProps {
-  /** Initial URL. Subsequent prop changes load the new URL only if it
-   *  differs from the webview's current location — internal navigation
-   *  (back/forward, link clicks inside the page) is not clobbered. */
+  /** 初始 URL。后续 prop 变化仅在新 URL 与 webview 当前位置
+   *  不同时才加载 —— 内部导航
+   *  (前进/后退、页面内的链接点击)不会被覆盖。 */
   url: string;
 }
 
-// Vite inlines process.env.NODE_ENV at build time in the renderer.
+// Vite 在渲染进程构建时内联 process.env.NODE_ENV。
 const WEBVIEW_PARTITION =
   process.env.NODE_ENV === "production"
     ? "persist:in-app-browser"
     : "in-app-browser";
 
-/** Mirror BranchDiffPanel — sits in the App flex row, not a modal. */
+/** 对应 BranchDiffPanel —— 位于 App 的 flex 行中,而非模态框。 */
 export function BrowserPanel({ url }: BrowserPanelProps) {
   const { LL } = useI18nContext();
   const webviewRef = useRef<WebviewTag | null>(null);
 
-  // Snapshot the very first URL for the webview's `src` attribute.
-  // Subsequent prop changes route through the imperative loadURL effect
-  // — never through React updating src — to avoid Chromium's webview
-  // double-loading (one nav from src attr change + one from loadURL).
+  // 为 webview 的 `src` 属性快照最初的 URL。
+  // 后续 prop 变化都经由命令式的 loadURL effect ——
+  // 而非通过 React 更新 src —— 以避免 Chromium webview 的
+  // 双重加载(src 属性变化触发一次导航 + loadURL 触发一次)。
   const initialUrlRef = useRef(url);
   const [currentUrl, setCurrentUrl] = useState(url);
-  // Mirror of currentUrl into a ref so the prop-change effect can compare
-  // without re-running on every internal navigation.
+  // 将 currentUrl 镜像到 ref,使 prop 变化的 effect 可以比较
+  // 而无需在每次内部导航时重新执行。
   const currentUrlRef = useRef(currentUrl);
   currentUrlRef.current = currentUrl;
   const [draftUrl, setDraftUrl] = useState(url);
@@ -50,16 +50,16 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
   const [canGoForward, setCanGoForward] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
-  // True once the webview has fired dom-ready. loadURL before this
-  // point throws inside Electron's webview impl; queue intent here and
-  // flush on dom-ready.
+  // 一旦 webview 触发 dom-ready 即为 true。在此之前调用 loadURL
+  // 会在 Electron 的 webview 实现内部抛错;在此排队记录意图,
+  // 并在 dom-ready 时刷出。
   const [domReady, setDomReady] = useState(false);
   const pendingLoadRef = useRef<string | null>(null);
 
-  // Tracks listeners we've attached so the ref-callback can detach them
-  // cleanly when the webview element changes (StrictMode mount cycle,
-  // key changes, etc.). Without this, listeners bind once at first
-  // mount and never re-attach to the new element.
+  // 跟踪我们已附加的监听器,以便 ref 回调在 webview 元素变化时
+  // (StrictMode 挂载周期、key 变化等)能干净地解绑。
+  // 否则监听器只会在首次挂载时绑定一次,
+  // 永远不会重新附加到新元素上。
   const attachedRef = useRef<{
     wv: WebviewTag;
     handlers: Record<string, (e: Event) => void>;
@@ -71,7 +71,7 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         setCanGoBack(wv.canGoBack());
         setCanGoForward(wv.canGoForward());
       } catch {
-        // webview not yet attached
+        // webview 尚未附加
       }
     };
 
@@ -96,9 +96,9 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         setLoading(false);
         refreshNavState();
       },
-      // Full top-level navigation: refresh both currentUrl and the URL
-      // bar's draft value (user is not mid-edit because focus is in
-      // the page, not the address bar).
+      // 完整的顶层导航:同时刷新 currentUrl 和地址栏的
+      // 草稿值(用户此时不在编辑中,因为焦点在
+      // 页面里而非地址栏)。
       "did-navigate": (e) => {
         const navUrl = (e as Event & { url: string }).url;
         if (navUrl) {
@@ -107,9 +107,9 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         }
         refreshNavState();
       },
-      // In-page nav (hash / SPA route): update currentUrl for the
-      // "open in system browser" target, but DON'T touch the draft URL
-      // bar — the user may be typing.
+      // 页面内导航(hash / SPA 路由):更新 currentUrl 作为
+      // "在系统浏览器打开"的目标,但不要触碰地址栏草稿值 ——
+      // 用户可能正在输入。
       "did-navigate-in-page": (e) => {
         const navUrl = (e as Event & { url: string }).url;
         if (navUrl) setCurrentUrl(navUrl);

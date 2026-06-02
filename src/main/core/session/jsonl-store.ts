@@ -1,18 +1,18 @@
 /**
- * JsonlSessionStore — file-backed chat session persistence.
+ * JsonlSessionStore —— 基于文件的聊天会话持久化。
  *
- * Layout: <rootDir>/<workspaceKey>/<sessionId>.jsonl
- *   - line 1: SessionLine (always)
- *   - lines 2..N: MessageLine in timestamp order
- *   - trailing newline, UTF-8
+ * 布局:<rootDir>/<workspaceKey>/<sessionId>.jsonl
+ *   - 第 1 行:SessionLine(始终存在)
+ *   - 第 2..N 行:按时间戳顺序排列的 MessageLine
+ *   - 末尾换行,UTF-8
  *
- * All mutations write to a `.tmp` sibling and atomically rename over the
- * target. Crash mid-write leaves either the previous valid file or an
- * orphan `.tmp`; orphans are cleaned by `cleanupOrphanTmp()` (called from
- * the lazy session→workspace index build).
+ * 所有写入都先写到一个 `.tmp` 同级文件,再原子地重命名覆盖
+ * 目标文件。写入中途崩溃会留下要么是之前的有效文件,要么是
+ * 一个孤立的 `.tmp`;孤立文件由 `cleanupOrphanTmp()` 清理(在
+ * 惰性构建 会话→工作区 索引时调用)。
  *
- * Pure Node — no Electron, no SQLite, no Drizzle. Safe for the future
- * headless SDK to import directly.
+ * 纯 Node —— 不依赖 Electron、SQLite、Drizzle。可供未来的
+ * 无头 SDK 直接导入。
  */
 
 import { randomUUID } from "node:crypto";
@@ -41,7 +41,7 @@ import { workspaceKey } from "./workspace-key";
 const SESSION_FILE_EXT = ".jsonl";
 const TMP_FILE_EXT = ".jsonl.tmp";
 
-// ─── Helpers ────────────────────────────────────────────────────────
+// ─── 辅助函数 ───────────────────────────────────────────────────────
 
 const stripForkFields = (line: SessionLine): ChatSession => ({
   id: line.id,
@@ -52,14 +52,14 @@ const stripForkFields = (line: SessionLine): ChatSession => ({
 });
 
 /**
- * Drop transient fields that must never reach disk:
- *   - `ToolPart.previewSnapshot`  — process-local snapshot used to
- *     hydrate the post-execute diff; stale on reload, so persisting
- *     it would mislead the renderer next session.
- *   - `BatchApprovalEntry.preview` — same rationale; only relevant
- *     between flush and settle, never afterwards.
+ * 丢弃绝不应落盘的瞬态字段:
+ *   - `ToolPart.previewSnapshot`  —— 进程本地的快照,用于
+ *     注水执行后的 diff;重新加载后已过期,因此持久化
+ *     它会在下一次会话误导渲染器。
+ *   - `BatchApprovalEntry.preview` —— 同理;仅在 flush 与
+ *     settle 之间有意义,此后不再相关。
  *
- * Idempotent: parts without these fields pass through unchanged.
+ * 幂等:不含这些字段的 part 原样透传。
  */
 const stripTransientPreview = (parts: MessagePart[]): MessagePart[] =>
   parts.map((part) => {
@@ -100,13 +100,13 @@ const parseLines = (raw: string): SessionFileRecord[] => {
     try {
       out.push(JSON.parse(ln) as SessionFileRecord);
     } catch {
-      // Skip malformed lines; we'd rather lose one record than the file.
+      // 跳过格式错误的行;宁可丢掉一条记录,也不要丢掉整个文件。
     }
   }
   return out;
 };
 
-// ─── Class ──────────────────────────────────────────────────────────
+// ─── 类 ─────────────────────────────────────────────────────────────
 
 interface SessionLocation {
   workspaceKey: string;
@@ -121,7 +121,7 @@ export class JsonlSessionStore {
 
   constructor(private readonly rootDir: string) {}
 
-  // ─── Public API (1:1 with chat:* IPC) ─────────────────────────────
+  // ─── 公共 API(与 chat:* IPC 一一对应) ───────────────────────────
 
   async createSession(
     workspacePath: string,
@@ -157,11 +157,11 @@ export class JsonlSessionStore {
       const records = await this.readAllRecords(fp);
       const head = records[0];
       if (!head || head.kind !== "session") continue;
-      // Skip sessions that never got a message — otherwise they show
-      // up in the sidebar as click-through-to-nothing records.
+      // 跳过从未收到过消息的会话 —— 否则它们会在侧边栏中
+      // 显示为点进去什么也没有的记录。
       if (!records.some((r) => r.kind === "message")) continue;
       sessions.push(stripForkFields(head));
-      // Opportunistically populate the index.
+      // 顺带填充索引。
       this.sessionIndex.set(head.id, {
         workspaceKey: workspaceKey(workspacePath),
         filePath: fp,
@@ -191,7 +191,7 @@ export class JsonlSessionStore {
     try {
       await unlink(loc.filePath);
     } catch {
-      // Already gone; ignore.
+      // 已经不存在了;忽略。
     }
     this.sessionIndex.delete(sessionId);
   }
@@ -280,7 +280,7 @@ export class JsonlSessionStore {
       if (head && head.kind === "session") {
         sessionLine = head;
       } else {
-        // Corrupt header — synthesize a fresh one rather than lose the save.
+        // 头部损坏 —— 合成一个新的,而不是丢失这次保存。
         sessionLine = {
           kind: "session",
           schemaVersion: 1,
@@ -293,7 +293,7 @@ export class JsonlSessionStore {
       }
       filePath = loc.filePath;
     } else {
-      // First save for a session created elsewhere — synthesize its header.
+      // 对在别处创建的会话的首次保存 —— 合成它的头部。
       sessionLine = {
         kind: "session",
         schemaVersion: 1,
@@ -328,12 +328,11 @@ export class JsonlSessionStore {
     );
   }
 
-  // ─── Atomic write helper (also used by migration) ─────────────────
+  // ─── 原子写入辅助(也供迁移逻辑使用) ────────────────────────────
 
   /**
-   * Write `content` to `filePath` atomically. Creates parent dirs if
-   * needed. Public so the migration module can reuse the same atomicity
-   * guarantees.
+   * 原子地将 `content` 写入 `filePath`。必要时创建父目录。
+   * 设为 public 以便迁移模块复用同样的原子性保证。
    */
   async atomicWrite(filePath: string, content: string): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
@@ -349,15 +348,15 @@ export class JsonlSessionStore {
     await rename(tmpPath, filePath);
   }
 
-  /** Compute the target file path for `(workspacePath, sessionId)`. */
+  /** 计算 `(workspacePath, sessionId)` 对应的目标文件路径。 */
   async targetPath(workspacePath: string, sessionId: string): Promise<string> {
     const dir = path.join(this.rootDir, workspaceKey(workspacePath));
     return path.join(dir, `${sessionId}${SESSION_FILE_EXT}`);
   }
 
-  // ─── Internals ────────────────────────────────────────────────────
+  // ─── 内部实现 ──────────────────────────────────────────────────────
 
-  /** Lazily build the sessionId → location index from disk. */
+  /** 从磁盘惰性构建 sessionId → location 索引。 */
   private async ensureIndex(): Promise<void> {
     if (this.indexBuilt) return;
     if (this.indexBuilding) return this.indexBuilding;
@@ -370,7 +369,7 @@ export class JsonlSessionStore {
           const files = await this.readdirSafe(wsDir);
           for (const file of files) {
             if (file.endsWith(TMP_FILE_EXT)) {
-              // Orphan from a crashed write — remove.
+              // 来自崩溃写入的孤立文件 —— 删除。
               await rm(path.join(wsDir, file), { force: true });
               continue;
             }
@@ -393,7 +392,7 @@ export class JsonlSessionStore {
     return this.indexBuilding;
   }
 
-  /** Resolve a sessionId to its on-disk location. Builds the index lazily. */
+  /** 将 sessionId 解析为其磁盘位置。惰性构建索引。 */
   private async locate(sessionId: string): Promise<SessionLocation | null> {
     if (this.sessionIndex.has(sessionId)) {
       return this.sessionIndex.get(sessionId) ?? null;
@@ -442,10 +441,10 @@ export class JsonlSessionStore {
     try {
       await access(this.rootDir);
     } catch {
-      // Doesn't exist yet — that's fine, we'll create dirs on first write.
+      // 尚不存在 —— 没关系,我们会在首次写入时创建目录。
       return;
     }
-    // Exists — make sure it's a directory.
+    // 存在 —— 确认它是一个目录。
     try {
       await readdir(this.rootDir);
     } catch (err) {

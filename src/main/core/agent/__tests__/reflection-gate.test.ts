@@ -17,6 +17,7 @@ import {
   emptyAssistantWithTools,
   missingFinalAnswer,
   pdfParseFailure,
+  prematureConcession,
   type TurnSummary,
   toolDeniedSequence,
 } from "../reflection-gate";
@@ -32,8 +33,8 @@ const mkTurn = (overrides: Partial<TurnSummary> = {}): TurnSummary => ({
   ...overrides,
 });
 
-describe("pdfParseFailure rule", () => {
-  it("returns retry when tool named readPdf fails (tool name signal)", () => {
+describe("pdfParseFailure 规则", () => {
+  it("工具名为 readPdf 失败时返回 retry（按工具名识别）", () => {
     const v = pdfParseFailure(
       mkTurn({
         toolCalls: [
@@ -48,7 +49,7 @@ describe("pdfParseFailure rule", () => {
     expect(v?.kind).toBe("retry");
   });
 
-  it("returns retry when error message explicitly mentions pdf", () => {
+  it("错误信息明确提到 pdf 时返回 retry", () => {
     const v = pdfParseFailure(
       mkTurn({
         toolCalls: [
@@ -63,7 +64,7 @@ describe("pdfParseFailure rule", () => {
     expect(v?.kind).toBe("retry");
   });
 
-  it("abstains on generic parse errors that don't mention pdf", () => {
+  it("通用解析错误（未提及 pdf）时弃权", () => {
     expect(
       pdfParseFailure(
         mkTurn({
@@ -79,7 +80,7 @@ describe("pdfParseFailure rule", () => {
     ).toBeNull();
   });
 
-  it("abstains on CSV parse errors without pdf mention", () => {
+  it("CSV 解析错误（未提及 pdf）时弃权", () => {
     expect(
       pdfParseFailure(
         mkTurn({
@@ -95,23 +96,23 @@ describe("pdfParseFailure rule", () => {
     ).toBeNull();
   });
 
-  it("returns continue when assistant already acknowledged the failure", () => {
+  it("仅文本声称解析失败、本轮无失败 PDF 工具调用时弃权（null）—— 下沉给 prematureConcession", () => {
     const v = pdfParseFailure(
       mkTurn({
         toolCalls: [],
         finalText: "抱歉，PDF 解析失败，请重新上传。",
       }),
     );
-    expect(v?.kind).toBe("continue");
+    expect(v).toBeNull();
   });
 
-  it("abstains (null) when nothing PDF-related happened", () => {
+  it("完全与 PDF 无关时弃权（null）", () => {
     expect(pdfParseFailure(mkTurn({ finalText: "Hello, world." }))).toBeNull();
   });
 });
 
-describe("toolDeniedSequence rule", () => {
-  it("aborts when 2+ tools were denied", () => {
+describe("toolDeniedSequence 规则", () => {
+  it("2 个及以上工具被拒时 abort", () => {
     const v = toolDeniedSequence(
       mkTurn({
         toolCalls: [
@@ -123,7 +124,7 @@ describe("toolDeniedSequence rule", () => {
     expect(v?.kind).toBe("abort");
   });
 
-  it("abstains for a single denial", () => {
+  it("仅 1 次拒绝时弃权", () => {
     expect(
       toolDeniedSequence(
         mkTurn({
@@ -134,8 +135,8 @@ describe("toolDeniedSequence rule", () => {
   });
 });
 
-describe("emptyAssistantWithTools rule", () => {
-  it("retries when tool calls were made but no text was produced", () => {
+describe("emptyAssistantWithTools 规则", () => {
+  it("调用了工具却没有任何文本时 retry", () => {
     const v = emptyAssistantWithTools(
       mkTurn({
         toolCalls: [{ name: "x", success: true, result: { ok: true } }],
@@ -146,7 +147,7 @@ describe("emptyAssistantWithTools rule", () => {
     expect(v?.kind).toBe("retry");
   });
 
-  it("abstains when endReason is tool_calls (model is mid-flow)", () => {
+  it("endReason 为 tool_calls（模型仍在流程中）时弃权", () => {
     expect(
       emptyAssistantWithTools(
         mkTurn({
@@ -159,8 +160,8 @@ describe("emptyAssistantWithTools rule", () => {
   });
 });
 
-describe("missingFinalAnswer rule (GAIA opt-in)", () => {
-  it("retries when finalText has narration but no FINAL ANSWER line", () => {
+describe("missingFinalAnswer 规则（GAIA 选用）", () => {
+  it("有叙述但缺 FINAL ANSWER 行时 retry", () => {
     const v = missingFinalAnswer(
       mkTurn({
         finalText:
@@ -174,7 +175,7 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     }
   });
 
-  it("abstains when FINAL ANSWER line is present", () => {
+  it("存在 FINAL ANSWER 行时弃权", () => {
     expect(
       missingFinalAnswer(
         mkTurn({
@@ -185,7 +186,7 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     ).toBeNull();
   });
 
-  it("accepts dash and lowercase variants", () => {
+  it("接受短横线与小写变体", () => {
     expect(
       missingFinalAnswer(
         mkTurn({
@@ -204,7 +205,7 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     ).toBeNull();
   });
 
-  it("rejects FINAL ANSWER followed by only whitespace (no actual answer)", () => {
+  it("FINAL ANSWER 后仅空白（无实际答案）时拒绝", () => {
     const v = missingFinalAnswer(
       mkTurn({
         finalText: "I tried hard.\nFINAL ANSWER:   ",
@@ -214,11 +215,10 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     expect(v?.kind).toBe("retry");
   });
 
-  it("retries with budget-exhausted wording when endReason is tool_calls (step budget cut off mid-tool-flow)", () => {
-    // At the gate's call site (post-callStreamText), endReason=tool_calls
-    // means the SDK halted `stopWhen` while the model was still planning
-    // tool calls — i.e. budget exhausted. This is exactly when we want a
-    // retry, not a skip.
+  it("endReason 为 tool_calls（步数预算在工具流程中耗尽）时以预算耗尽话术 retry", () => {
+    // 在 gate 的调用点(callStreamText 之后),endReason=tool_calls
+    // 表示模型仍在规划工具调用时,SDK 因 `stopWhen` 中止 —— 即步数预算耗尽。
+    // 这正是我们想要 retry 而非跳过的场景。
     const v = missingFinalAnswer(
       mkTurn({
         finalText: "Let me try another tool.",
@@ -232,7 +232,7 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     }
   });
 
-  it("retries with natural-end wording when endReason is stop and no FINAL ANSWER", () => {
+  it("endReason 为 stop 且无 FINAL ANSWER 时以自然结束话术 retry", () => {
     const v = missingFinalAnswer(
       mkTurn({
         finalText: "Some reasoning but no sentinel.",
@@ -241,14 +241,14 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
     );
     expect(v?.kind).toBe("retry");
     if (v?.kind === "retry") {
-      // Natural-end wording explicitly references the missing line, not budget.
+      // 自然结束话术应明确指向缺失的那一行,而非预算。
       expect(v.feedback).toMatch(/required `FINAL ANSWER/);
       expect(v.feedback).not.toMatch(/budget/i);
       expect(v.forceNoTools).toBe(true);
     }
   });
 
-  it("abstains when finalText is empty (delegated to other rules)", () => {
+  it("finalText 为空时弃权（交由其他规则）", () => {
     expect(
       missingFinalAnswer(
         mkTurn({
@@ -260,29 +260,78 @@ describe("missingFinalAnswer rule (GAIA opt-in)", () => {
   });
 });
 
-describe("builtinRules ordering", () => {
-  it("contains all three rules in priority order", () => {
-    const rules = builtinRules();
-    expect(rules).toHaveLength(3);
-    expect(rules[0]).toBe(pdfParseFailure);
-    expect(rules[1]).toBe(toolDeniedSequence);
-    expect(rules[2]).toBe(emptyAssistantWithTools);
+describe("prematureConcession 规则", () => {
+  it("模型未升级就缴械时 retry", () => {
+    const v = prematureConcession(
+      mkTurn({
+        toolCalls: [{ name: "webSearch", success: true, result: {} }],
+        finalText:
+          "这是一个超出当前工具能力的问题，我遇到了无法克服的技术限制。",
+      }),
+    );
+    expect(v?.kind).toBe("retry");
+    expect(v && "feedback" in v && v.feedback).toContain("Wayback");
+  });
+
+  it("仅声称 PDF 解析失败时 retry（由 pdfParseFailure 下沉）", () => {
+    const v = prematureConcession(
+      mkTurn({ finalText: "1959 年标准 PDF 无法解析，请重新上传。" }),
+    );
+    expect(v?.kind).toBe("retry");
+  });
+
+  it("本轮已用过升级层工具时弃权", () => {
+    const v = prematureConcession(
+      mkTurn({
+        toolCalls: [{ name: "webScrape", success: false, result: {} }],
+        finalText: "我尝试了多种方式，仍然遇到技术限制，无法完成该任务。",
+      }),
+    );
+    expect(v).toBeNull();
+  });
+
+  it("文本已点名升级途径时弃权", () => {
+    const v = prematureConcession(
+      mkTurn({
+        finalText:
+          "我试过 webFetchRendered 和 Wayback 存档都取不到数据，确实存在技术限制。",
+      }),
+    );
+    expect(v).toBeNull();
+  });
+
+  it("无放弃措辞的正常回答时弃权", () => {
+    expect(
+      prematureConcession(mkTurn({ finalText: "已完成，结果见上。" })),
+    ).toBeNull();
   });
 });
 
-describe("defaultRules", () => {
-  it("excludes emptyAssistantWithTools to avoid false positives", () => {
+describe("builtinRules 顺序", () => {
+  it("按优先级顺序包含全部规则", () => {
+    const rules = builtinRules();
+    expect(rules).toHaveLength(4);
+    expect(rules[0]).toBe(pdfParseFailure);
+    expect(rules[1]).toBe(toolDeniedSequence);
+    expect(rules[2]).toBe(emptyAssistantWithTools);
+    expect(rules[3]).toBe(prematureConcession);
+  });
+});
+
+describe("defaultRules 规则集", () => {
+  it("排除 emptyAssistantWithTools 以避免误报", () => {
     const rules = defaultRules();
-    expect(rules).toHaveLength(2);
+    expect(rules).toHaveLength(3);
     expect(rules).toContain(pdfParseFailure);
     expect(rules).toContain(toolDeniedSequence);
+    expect(rules).toContain(prematureConcession);
     expect(rules).not.toContain(emptyAssistantWithTools);
   });
 
-  it("does not retry when askClarification leaves the assistant silent", async () => {
-    // The most important false-positive case: model calls askClarification,
-    // tool returns {asked: true}, model legitimately stays silent waiting
-    // for user input. Default rules must NOT force a retry here.
+  it("askClarification 后助手沉默时不 retry", async () => {
+    // 最重要的误报场景:模型调用 askClarification,
+    // 工具返回 {asked: true},模型合理地保持沉默以等待用户输入。
+    // 默认规则集在此处绝不能强制 retry。
     const hook = createReflectionGate({ rules: defaultRules() });
     const v = await hook(
       mkTurn({
@@ -296,7 +345,7 @@ describe("defaultRules", () => {
     expect(v.kind).toBe("continue");
   });
 
-  it("does not call LLM on the default path (no model passed)", async () => {
+  it("默认路径（未传 model）不调用 LLM", async () => {
     mockedGenerate.mockReset();
     const hook = createReflectionGate({ rules: defaultRules() });
     const v = await hook(mkTurn({ finalText: "answer." }));
@@ -304,7 +353,7 @@ describe("defaultRules", () => {
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it("still fires pdfParseFailure when a readPdf-style tool fails", async () => {
+  it("readPdf 类工具失败时仍触发 pdfParseFailure", async () => {
     const hook = createReflectionGate({ rules: defaultRules() });
     const v = await hook(
       mkTurn({
@@ -320,7 +369,7 @@ describe("defaultRules", () => {
     expect(v.kind).toBe("retry");
   });
 
-  it("still fires toolDeniedSequence on 2+ denials", async () => {
+  it("2 个及以上拒绝时仍触发 toolDeniedSequence", async () => {
     const hook = createReflectionGate({ rules: defaultRules() });
     const v = await hook(
       mkTurn({
@@ -335,7 +384,7 @@ describe("defaultRules", () => {
 });
 
 describe("createReflectionGate", () => {
-  it("returns first non-null rule verdict without calling LLM", async () => {
+  it("返回首个非空规则裁决且不调用 LLM", async () => {
     mockedGenerate.mockReset();
     const fakeModel = {} as LanguageModel;
     const hook = createReflectionGate({ model: fakeModel });
@@ -354,7 +403,7 @@ describe("createReflectionGate", () => {
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it("calls LLM fallback when all rules abstain and model is set", async () => {
+  it("所有规则弃权且设置了 model 时回退调用 LLM", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"retry","feedback":"add more detail"}',
@@ -368,7 +417,7 @@ describe("createReflectionGate", () => {
     expect(mockedGenerate).toHaveBeenCalledOnce();
   });
 
-  it("skips LLM when llmFallback=false even if rules abstain", async () => {
+  it("llmFallback=false 时即便规则弃权也跳过 LLM", async () => {
     mockedGenerate.mockReset();
     const fakeModel = {} as LanguageModel;
     const hook = createReflectionGate({ model: fakeModel, llmFallback: false });
@@ -377,7 +426,7 @@ describe("createReflectionGate", () => {
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it("skips LLM when no model is provided", async () => {
+  it("未提供 model 时跳过 LLM", async () => {
     mockedGenerate.mockReset();
     const hook = createReflectionGate({});
     const v = await hook(mkTurn({ finalText: "k." }));
@@ -385,7 +434,7 @@ describe("createReflectionGate", () => {
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it("treats malformed LLM JSON as continue", async () => {
+  it("LLM 返回非法 JSON 时按 continue 处理", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: "this is not json at all",
@@ -397,7 +446,7 @@ describe("createReflectionGate", () => {
     expect(v.kind).toBe("continue");
   });
 
-  it("parses fenced ```json``` verdicts", async () => {
+  it("解析 ```json``` 围栏内的裁决", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '```json\n{"verdict":"abort","reason":"loop detected"}\n```',
@@ -410,7 +459,7 @@ describe("createReflectionGate", () => {
     if (v.kind === "abort") expect(v.reason).toBe("loop detected");
   });
 
-  it("returns continue when LLM call throws (non-fatal)", async () => {
+  it("LLM 调用抛错时返回 continue（非致命）", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockRejectedValueOnce(new Error("rate limit"));
 
@@ -420,7 +469,7 @@ describe("createReflectionGate", () => {
     expect(v.kind).toBe("continue");
   });
 
-  it("uses a custom llmPromptBuilder when provided", async () => {
+  it("提供时使用自定义 llmPromptBuilder", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"continue"}',
@@ -440,7 +489,7 @@ describe("createReflectionGate", () => {
     expect(call.prompt).toBe("CUSTOM:answer-payload");
   });
 
-  it("stamps forceNoTools on LLM retry verdicts when llmForceNoTools is set", async () => {
+  it("设置 llmForceNoTools 时给 LLM retry 裁决标记 forceNoTools", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"retry","feedback":"fix unit"}',
@@ -459,7 +508,7 @@ describe("createReflectionGate", () => {
     }
   });
 
-  it("does NOT stamp forceNoTools on LLM continue verdicts even when llmForceNoTools is set", async () => {
+  it("即便设置 llmForceNoTools，也不给 LLM continue 裁决标记 forceNoTools", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"continue"}',
@@ -474,7 +523,7 @@ describe("createReflectionGate", () => {
     expect(v.kind).toBe("continue");
   });
 
-  it("passes llmTemperature to generateText when configured", async () => {
+  it("配置时把 llmTemperature 传给 generateText", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"continue"}',
@@ -492,7 +541,7 @@ describe("createReflectionGate", () => {
     expect(call.temperature).toBe(0);
   });
 
-  it("omits temperature when llmTemperature is unset", async () => {
+  it("未设置 llmTemperature 时省略 temperature", async () => {
     mockedGenerate.mockReset();
     mockedGenerate.mockResolvedValueOnce({
       text: '{"verdict":"continue"}',
@@ -506,9 +555,9 @@ describe("createReflectionGate", () => {
     expect("temperature" in call).toBe(false);
   });
 
-  it("does NOT stamp forceNoTools on rule-driven retry verdicts (only LLM verdicts)", async () => {
-    // A deterministic rule fires retry first; llmForceNoTools should not
-    // mutate that verdict because the LLM path was not taken.
+  it("不给规则驱动的 retry 裁决标记 forceNoTools（仅 LLM 裁决）", async () => {
+    // 某条确定性规则先触发 retry;由于未走 LLM 路径,
+    // llmForceNoTools 不应改写该裁决。
     mockedGenerate.mockReset();
     const fakeModel = {} as LanguageModel;
     const hook = createReflectionGate({
@@ -528,14 +577,14 @@ describe("createReflectionGate", () => {
     );
     expect(v.kind).toBe("retry");
     if (v.kind === "retry") {
-      // pdfParseFailure rule does not set forceNoTools, so the flag must
-      // remain unset (undefined or false).
+      // pdfParseFailure 规则不设置 forceNoTools,因此该标记必须
+      // 保持未设置状态(undefined 或 false)。
       expect(v.forceNoTools).toBeUndefined();
     }
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it("propagates abort signal failures", async () => {
+  it("透传 abort 信号导致的失败", async () => {
     mockedGenerate.mockReset();
     const controller = new AbortController();
     controller.abort();

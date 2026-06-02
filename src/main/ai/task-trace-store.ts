@@ -1,12 +1,12 @@
 /**
- * Task Trace Store
+ * 任务执行轨迹存储(Task Trace Store)
  *
- * Durable + streamable execution trace for tasks.
+ * 任务的持久化 + 可流式输出的执行轨迹。
  *
- * - Durable: persisted to SQLite (see db.addTaskTraceEvent)
- * - Streamable: optionally emitted to renderer as events arrive
+ * - 持久化:落盘到 SQLite(见 db.addTaskTraceEvent)
+ * - 可流式输出:事件到达时可选地发送给渲染进程
  *
- * This complements (not replaces) memory-debug-store which is in-memory only.
+ * 它是对仅存于内存的 memory-debug-store 的补充(而非替代)。
  */
 
 import type { WebContents } from "electron";

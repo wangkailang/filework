@@ -1,12 +1,12 @@
 /**
- * API Error Classification & Retry Logic
+ * API 错误分类与重试逻辑
  *
- * Provides structured error taxonomy and recovery strategies for LLM API calls.
- * Inspired by Hermes Agent's error_classifier.py.
+ * 为 LLM API 调用提供结构化的错误分类体系与恢复策略。
+ * 灵感来自 Hermes Agent 的 error_classifier.py。
  */
 
 // ---------------------------------------------------------------------------
-// Error taxonomy
+// 错误分类体系
 // ---------------------------------------------------------------------------
 
 export type ErrorType =
@@ -19,7 +19,7 @@ export type ErrorType =
   | "proxy_intercepted"
   | "unknown";
 
-/** Recovery actions the renderer can offer to the user */
+/** 渲染进程可向用户提供的恢复操作 */
 export type RecoveryAction = "retry" | "settings" | "new_chat";
 
 export interface ClassifiedError {
@@ -27,17 +27,17 @@ export interface ClassifiedError {
   retryable: boolean;
   shouldCompress: boolean;
   maxRetries: number;
-  /** Base backoff in ms (doubled each attempt) */
+  /** 基础退避时间(毫秒,每次尝试翻倍) */
   backoffMs: number;
-  /** User-facing message (Chinese) */
+  /** 面向用户的提示文案(中文) */
   userMessage: string;
-  /** Suggested recovery actions for the UI to render as buttons */
+  /** 供 UI 渲染为按钮的建议恢复操作 */
   recoveryActions: RecoveryAction[];
   originalError: Error;
 }
 
 // ---------------------------------------------------------------------------
-// Classification
+// 分类
 // ---------------------------------------------------------------------------
 
 const STATUS_PATTERNS: Array<{
@@ -169,16 +169,16 @@ const ERROR_DEFAULTS: Record<
 };
 
 /**
- * Classify an API error into a structured type with recovery hints.
+ * 将 API 错误分类为带有恢复提示的结构化类型。
  *
- * Checks error.message, error.name, and — for Vercel AI SDK APICallError —
- * the numeric statusCode property for robust classification.
+ * 为保证分类的健壮性,会检查 error.message、error.name,以及
+ * (针对 Vercel AI SDK 的 APICallError)数值型的 statusCode 属性。
  */
 export function classifyError(error: unknown): ClassifiedError {
   const err = error instanceof Error ? error : new Error(String(error));
 
-  // Build a combined string that includes message, name, and status code so
-  // that patterns can match on any of them.
+  // 构造一个包含 message、name 和状态码的合并字符串,
+  // 以便各匹配规则能命中其中任意一项。
   const statusCode =
     typeof (error as Record<string, unknown>)?.statusCode === "number"
       ? String((error as Record<string, unknown>).statusCode)
@@ -201,23 +201,23 @@ export function classifyError(error: unknown): ClassifiedError {
 }
 
 // ---------------------------------------------------------------------------
-// Retry wrapper
+// 重试包装器
 // ---------------------------------------------------------------------------
 
 export interface RetryOptions {
-  /** Called before each retry attempt */
+  /** 在每次重试前调用 */
   onRetry?: (attempt: number, classified: ClassifiedError) => void;
-  /** AbortSignal to cancel retries */
+  /** 用于取消重试的 AbortSignal */
   signal?: AbortSignal;
 }
 
 /**
- * Execute `fn` with automatic retries based on error classification.
+ * 基于错误分类对 `fn` 执行自动重试。
  *
- * - Classifies each error to determine retry eligibility
- * - Uses exponential backoff (backoffMs * 2^attempt)
- * - Respects AbortSignal
- * - Calls `onRetry` before each retry so callers can update UI
+ * - 对每个错误进行分类以判断是否可重试
+ * - 使用指数退避(backoffMs * 2^attempt)
+ * - 遵循 AbortSignal
+ * - 在每次重试前调用 `onRetry`,以便调用方更新 UI
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -242,7 +242,7 @@ export async function withRetry<T>(
       attempt++;
       opts?.onRetry?.(attempt, classified);
 
-      // Exponential backoff
+      // 指数退避
       const delay = classified.backoffMs * 2 ** (attempt - 1);
       if (delay > 0) {
         await sleep(delay, opts?.signal);

@@ -83,7 +83,7 @@ You are a code review expert.
   });
 
   it("throws SkillValidationError for name exceeding 64 characters", () => {
-    const longName = `a${"-b".repeat(32)}`; // 65 chars
+    const longName = `a${"-b".repeat(32)}`; // 65 个字符
     const content = `---\nname: ${longName}\n---\nBody`;
     expect(() => parseSkillMd(content, "/path/to/SKILL.md")).toThrow(
       SkillValidationError,
@@ -91,9 +91,9 @@ You are a code review expert.
   });
 
   it("accepts a valid kebab-case name at exactly 64 characters", () => {
-    // Build a 64-char kebab-case name: "a-b" repeated to fill
-    const _name = "a-bb".repeat(16); // 64 chars: "a-bba-bba-bb..."
-    // Actually let's be precise
+    // 构造一个 64 字符的 kebab-case 名称:用 "a-b" 重复填充
+    const _name = "a-bb".repeat(16); // 64 个字符: "a-bba-bba-bb..."
+    // 这里再精确处理一下
     const segments = [];
     let len = 0;
     while (len < 60) {
@@ -101,8 +101,8 @@ You are a code review expert.
       len += 5; // "abcd" + "-"
     }
     const _kebabName = segments.join("-").slice(0, 64);
-    // Ensure it's valid kebab-case and exactly 64 chars
-    const validName = "a".repeat(64); // simple: all lowercase, no hyphens, valid kebab
+    // 确保它是合法的 kebab-case 且恰好 64 个字符
+    const validName = "a".repeat(64); // 简单做法:全小写、无连字符,合法的 kebab
     expect(validName.length).toBe(64);
     const content = `---\nname: ${validName}\n---\nBody`;
     const result = parseSkillMd(content, "/path/to/SKILL.md");
@@ -130,7 +130,7 @@ unknown: value
 ---
 Body`;
     const result = parseSkillMd(content, "/path/to/SKILL.md");
-    // Unknown fields are stripped, so frontmatter should be empty
+    // 未知字段会被剥离,因此 frontmatter 应为空
     expect(result.frontmatter).toEqual({});
     expect(result.body).toContain("Body");
   });

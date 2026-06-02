@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mocks — capture every ipcMain.handle registration so we can invoke them.
+// Mock —— 捕获每次 ipcMain.handle 注册,以便后续调用它们。
 // ---------------------------------------------------------------------------
 
 const handlers = new Map<

@@ -1,17 +1,17 @@
 /**
- * Agent event taxonomy.
+ * Agent 事件分类体系。
  *
- * AgentLoop emits a stream of typed events that consumers (Electron IPC
- * translator in M1, future SDK consumers, internal tests) subscribe to.
+ * AgentLoop 发出一串带类型的事件,供消费者(M1 中的 Electron IPC
+ * 转换器、未来的 SDK 消费者、内部测试)订阅。
  *
- * The event shape mirrors PI's pi-agent-core event flow:
+ * 事件形态对应 PI 的 pi-agent-core 事件流:
  * agent_start → turn_start → message_start/update/end → tool_execution_*
- * → turn_end → agent_end. Plus retry / context_compressed for cross-cutting
- * lifecycle signals.
+ * → turn_end → agent_end。外加 retry / context_compressed 这类横切的
+ * 生命周期信号。
  *
- * Note: `message_update` carries RAW deltas. Throttling / batching is the
- * consumer's responsibility (Electron IPC consumer feeds these into
- * `DeltaBatcher`; an SDK consumer may pipe them straight to stdout).
+ * 注意:`message_update` 携带的是原始增量(RAW delta)。节流 / 批处理
+ * 由消费者负责(Electron IPC 消费者把它们喂给 `DeltaBatcher`;
+ * SDK 消费者可以直接将它们管道输出到 stdout)。
  */
 
 export interface TokenUsage {
@@ -20,7 +20,7 @@ export interface TokenUsage {
   totalTokens: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
-  /** Tokens the model spent on hidden reasoning (o-series, DeepSeek-R1, Claude extended thinking). */
+  /** 模型在隐藏推理上消耗的 token(o 系列、DeepSeek-R1、Claude 扩展思考)。 */
   reasoningTokens?: number | null;
 }
 
@@ -56,7 +56,7 @@ export type AgentEvent =
       type: "message_update";
       agentId: string;
       messageId: string;
-      /** Raw text delta — do not batch inside AgentLoop; consumers throttle if they need to. */
+      /** 原始文本增量——不要在 AgentLoop 内部批处理;消费者按需自行节流。 */
       deltaText: string;
     }
   | {
@@ -71,9 +71,9 @@ export type AgentEvent =
       agentId: string;
       messageId: string;
       /**
-       * Raw reasoning text delta. AgentLoop emits one event per
-       * `reasoning-delta` chunk from the AI SDK fullStream, so consumers
-       * should batch / throttle if they want smooth UI updates.
+       * 原始推理文本增量。AgentLoop 对 AI SDK fullStream 中的每个
+       * `reasoning-delta` 块发出一个事件,因此消费者若想要平滑的 UI 更新,
+       * 应自行批处理 / 节流。
        */
       deltaText: string;
     }
@@ -123,11 +123,11 @@ export type AgentEvent =
       agentId: string;
       status: AgentEndStatus;
       error?: ClassifiedAgentError;
-      /** Aggregated usage from all turns. Populated when streamText resolves it. */
+      /** 所有轮次的聚合用量。在 streamText 解析出它时填充。 */
       totalUsage?: TokenUsage;
-      /** Provider-specific metadata (e.g. cache headers). Opaque to core. */
+      /** 提供方特有的元数据(例如缓存头)。对 core 而言是不透明的。 */
       providerMetadata?: Record<string, unknown>;
-      /** Concatenation of all assistant message_end finalText values. */
+      /** 所有 assistant message_end 的 finalText 值的拼接。 */
       finalText?: string;
     }
   | {
@@ -146,7 +146,7 @@ export type AgentEvent =
   | {
       type: "reflection_verdict";
       agentId: string;
-      /** 0-based attempt counter for this reflection cycle. */
+      /** 本次反思周期的尝试计数器(从 0 开始)。 */
       attempt: number;
       verdict:
         | { kind: "continue" }
@@ -156,5 +156,5 @@ export type AgentEvent =
 
 export type AgentEventType = AgentEvent["type"];
 
-/** Subscriber callback. Awaited in registration order. */
+/** 订阅者回调。按注册顺序被 await。 */
 export type AgentEventListener = (event: AgentEvent) => void | Promise<void>;

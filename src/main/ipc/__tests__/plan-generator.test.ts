@@ -34,14 +34,14 @@ describe("buildRelevantSkillCatalog", () => {
   });
 
   it("falls back to the full catalog when fewer than 3 skills match", () => {
-    // An obviously empty prompt should match only task-category skills.
+    // 明显无意义的 prompt 应该只匹配到 task 类别的 skill。
     const empty = buildRelevantSkillCatalog("xyzzy");
     const lineCount = empty.split("\n").length;
     if (taskSkillCount >= 3) {
-      // Filtered path: only task skills surface.
+      // 过滤路径:只有 task skill 浮现。
       expect(lineCount).toBe(taskSkillCount);
     } else {
-      // Fallback path: full catalog returned.
+      // 回落路径:返回完整目录。
       expect(lineCount).toBe(totalCount);
     }
   });

@@ -1,17 +1,16 @@
 /**
- * `run_skill` — bridge tool that lets a model invoke a registered Skill
- * (built-in or SKILL.md-discovered) explicitly during a turn.
+ * `run_skill` —— 桥接工具,让模型在一轮对话中显式调用已注册的 Skill
+ * (内置或通过 SKILL.md 发现的)。
  *
- * In M1 only **default-mode** skills are supported: the tool resolves
- * the skill body (with security boundary wrapping) and returns it as
- * the tool result, which the model then incorporates as instructions
- * in the next turn.
+ * 在 M1 阶段只支持**默认模式**的 skill:该工具会解析
+ * skill 正文(带安全边界包裹)并将其作为工具结果返回,
+ * 模型随后在下一轮中将其作为指令加以采纳。
  *
- * Fork-mode skills (those with `context: fork` frontmatter) keep their
- * legacy activation path through `src/main/ipc/ai-handlers.ts` →
- * `skills-runtime/executor.ts:executeSubagent`. Promoting fork-mode into
- * the new AgentLoop event stream is M2 work because it requires touching
- * the PROTECTED skills-runtime.
+ * Fork 模式的 skill(frontmatter 中带 `context: fork` 的)仍保留其
+ * 旧有的激活路径,经由 `src/main/ipc/ai-handlers.ts` →
+ * `skills-runtime/executor.ts:executeSubagent`。将 fork 模式提升到
+ * 新的 AgentLoop 事件流属于 M2 阶段的工作,因为它需要改动
+ * 受保护的 skills-runtime。
  */
 
 import { z } from "zod/v4";
@@ -19,8 +18,8 @@ import { z } from "zod/v4";
 import type { ToolContext, ToolDefinition } from "../tool-registry";
 
 // ---------------------------------------------------------------------------
-// Minimal interfaces — keep this module independent of skills-runtime types
-// so `core/` does not transitively depend on Electron-bound modules.
+// 最小化接口 —— 让本模块独立于 skills-runtime 的类型,
+// 这样 `core/` 就不会间接依赖绑定到 Electron 的模块。
 // ---------------------------------------------------------------------------
 
 export interface SkillResolverSkill {

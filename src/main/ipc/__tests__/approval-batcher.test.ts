@@ -103,7 +103,7 @@ describe("approval-batcher", () => {
       args: { path: "/a/1" },
       description: "rm 1",
     });
-    // Within the debounce window — same batch.
+    // 在 debounce 窗口内 —— 同一批次。
     vi.advanceTimersByTime(150);
     enqueueForBatch({
       sender: sender as unknown as WebContents,
@@ -116,7 +116,7 @@ describe("approval-batcher", () => {
     vi.advanceTimersByTime(300);
     expect(flushedBatchIds(sender)).toHaveLength(1);
 
-    // After flush, a fresh arrival starts a new batch.
+    // flush 之后,新到达的请求开启一个新批次。
     enqueueForBatch({
       sender: sender as unknown as WebContents,
       taskId: "debounce-test",
@@ -132,9 +132,9 @@ describe("approval-batcher", () => {
   it("coalesces parallel arrivals staggered by filesystem jitter (~100ms apart)", async () => {
     vi.useFakeTimers();
     const sender = makeSender();
-    // Simulate 6 deleteFile calls arriving with 100ms gaps each — the
-    // realistic AI-SDK parallel-dispatch case where realpath() in
-    // isInWorkspace introduces per-call I/O latency.
+    // 模拟 6 次 deleteFile 调用,每次间隔 100ms 到达 —— 这是 AI-SDK
+    // 并行派发的真实场景:isInWorkspace 中的 realpath() 为每次调用引入
+    // I/O 延迟。
     for (let i = 0; i < 6; i++) {
       enqueueForBatch({
         sender: sender as unknown as WebContents,
@@ -144,9 +144,9 @@ describe("approval-batcher", () => {
         args: { path: `/tmp/f${i}.log` },
         description: `rm /tmp/f${i}.log`,
       });
-      vi.advanceTimersByTime(100); // gap < DEBOUNCE_MS (250)
+      vi.advanceTimersByTime(100); // 间隔 < DEBOUNCE_MS (250)
     }
-    // Final quiet period to trigger flush.
+    // 最后的静默期以触发 flush。
     vi.advanceTimersByTime(300);
     const ev = lastBatchEvent(sender);
     expect(ev).toBeDefined();
@@ -295,7 +295,7 @@ describe("approval-batcher", () => {
     vi.useFakeTimers();
     const sender = makeSender();
 
-    // Batch A: 2 deleteFile entries
+    // 批次 A:2 个 deleteFile 条目
     const promisesA = [0, 1].map((i) =>
       enqueueForBatch({
         sender: sender as unknown as WebContents,
@@ -306,9 +306,9 @@ describe("approval-batcher", () => {
         description: `rm a${i}`,
       }),
     );
-    vi.advanceTimersByTime(300); // flush A
+    vi.advanceTimersByTime(300); // flush 批次 A
 
-    // Batch B (different timing): 3 more deleteFile entries
+    // 批次 B(不同时序):再 3 个 deleteFile 条目
     const promisesB = [0, 1, 2].map((i) =>
       enqueueForBatch({
         sender: sender as unknown as WebContents,
@@ -319,7 +319,7 @@ describe("approval-batcher", () => {
         description: `rm b${i}`,
       }),
     );
-    vi.advanceTimersByTime(300); // flush B
+    vi.advanceTimersByTime(300); // flush 批次 B
 
     const events = sender.send.mock.calls.filter(
       (c) => c[0] === "ai:stream-tool-batch-approval",
@@ -329,16 +329,16 @@ describe("approval-batcher", () => {
       (c) => c[1] as { batchId: string; entries: unknown[] },
     );
 
-    // User approves batch A with "始终允许" (remember=true).
+    // 用户以「始终允许」(remember=true)批准批次 A。
     settleBatch(aEvent.batchId, true, true);
 
-    // Batch B should auto-resolve via cascade.
+    // 批次 B 应通过级联自动 resolve。
     const aResults = await Promise.all(promisesA);
     const bResults = await Promise.all(promisesB);
     expect(aResults).toEqual([true, true]);
     expect(bResults).toEqual([true, true, true]);
 
-    // Renderer should be notified that batch B was auto-approved.
+    // renderer 应被通知批次 B 已被自动批准。
     const cascadeEvents = sender.send.mock.calls.filter(
       (c) => c[0] === "ai:stream-tool-batch-auto-approved",
     );
@@ -354,7 +354,7 @@ describe("approval-batcher", () => {
     vi.useFakeTimers();
     const sender = makeSender();
 
-    // Batch A
+    // 批次 A
     const promisesA = [0].map((i) =>
       enqueueForBatch({
         sender: sender as unknown as WebContents,
@@ -365,9 +365,9 @@ describe("approval-batcher", () => {
         description: `rm a${i}`,
       }),
     );
-    vi.advanceTimersByTime(300); // flush A
+    vi.advanceTimersByTime(300); // flush 批次 A
 
-    // Batch B (sibling, flushed separately)
+    // 批次 B(兄弟批次,单独 flush)
     enqueueForBatch({
       sender: sender as unknown as WebContents,
       taskId: "plain-approve-test",
@@ -376,7 +376,7 @@ describe("approval-batcher", () => {
       args: { path: "/b/0" },
       description: "rm b0",
     });
-    vi.advanceTimersByTime(300); // flush B
+    vi.advanceTimersByTime(300); // flush 批次 B
 
     const events = sender.send.mock.calls.filter(
       (c) => c[0] === "ai:stream-tool-batch-approval",
@@ -433,15 +433,15 @@ describe("approval-batcher", () => {
     );
     const [aEvent, _bEvent] = events.map((c) => c[1] as { batchId: string });
 
-    // User denies batch A.
+    // 用户拒绝批次 A。
     settleBatch(aEvent.batchId, false);
     const aResults = await Promise.all(promisesA);
     expect(aResults).toEqual([false]);
 
-    // Batch B must still be pending (not cascade-resolved on deny).
+    // 批次 B 必须仍处于 pending(拒绝时不级联 resolve)。
     expect(__getBatcherState().pendingBatchCount).toBe(1);
-    // Clean up so the test doesn't leak the unresolved promise.
-    // Need to grab batch B's id — it's the last batch event.
+    // 清理,避免测试泄漏未 resolve 的 promise。
+    // 需要取出批次 B 的 id —— 即最后一个 batch 事件。
     const allEvents = sender.send.mock.calls.filter(
       (c) => c[0] === "ai:stream-tool-batch-approval",
     );
