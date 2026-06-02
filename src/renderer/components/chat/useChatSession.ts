@@ -133,6 +133,11 @@ export function useChatSession(
     pendingStopRef: stream.pendingStopRef,
   });
 
+  // 刷新/重载后:会话历史加载完成时,尝试重连其仍在后台运行的任务(若有)。
+  // 通过 useSessionCrud 的 onHistoryLoadedRef 接入,确保重连严格排在
+  // setMessages(history) 之后 —— 避免重连补的在途消息壳被历史加载覆盖(进而丢事件)。
+  crud.onHistoryLoadedRef.current = stream.reattachRunningTask;
+
   // ---------------------------------------------------------------------------
   // Submit & approval
   // ---------------------------------------------------------------------------
@@ -372,6 +377,7 @@ export function useChatSession(
         workspacePath,
         workspaceRefJson,
         sessionId,
+        assistantMessageId: assistantId,
         llmConfigId: selectedLlmConfigId || undefined,
         history,
       })

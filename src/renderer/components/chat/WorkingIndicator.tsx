@@ -63,9 +63,14 @@ export function WorkingIndicator({
     force((n) => n + 1);
   }, [signature]);
 
-  // Tick so the elapsed counter advances and the tier is re-evaluated.
+  // 新一轮生成开始(active 上升沿)即重置 idle 时钟,然后开始 tick 让计时前进。
+  // 不能只靠 signature 重置:静默回合(如 skill-creator 整段生成 skill 文件、
+  // 无可见文本输出)signature 始终不变,否则上一轮的计时会在「取消 → 重开」后
+  // 被带进新一轮(表现为计时不归零、继续累加)。
   useEffect(() => {
     if (!active) return;
+    lastChangeRef.current = Date.now();
+    force((n) => n + 1);
     const t = setInterval(() => force((n) => n + 1), TICK_MS);
     return () => clearInterval(t);
   }, [active]);

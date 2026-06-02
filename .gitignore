@@ -18,3 +18,9 @@ tmp/
 
 # TypeScript incremental build info
 tsconfig.tsbuildinfo
+
+# @ai-sdk/devtools 本地 LLM 日志(明文,勿提交)
+.devtools/
+
+# playwright mcp
+.playwright-mcp/

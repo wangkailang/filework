@@ -23,6 +23,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:devtools": "concurrently -k -n app,devtools \"FILEWORK_AI_DEVTOOLS=1 electron-vite dev\" \"pnpm ai-devtools\"",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "package": "electron-builder --mac",
@@ -30,6 +31,7 @@
     "lint:err": "biome format . --write && biome check . --write --diagnostic-level=error",
     "test": "vitest run",
     "test:watch": "vitest",
+    "ai-devtools": "devtools",
     "typecheck": "tsc --noEmit",
     "gaia-eval": "tsx src/eval/gaia/cli.ts",
     "gaia-eval-diff": "tsx src/eval/gaia/diff-cli.ts",
@@ -79,6 +81,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@ai-sdk/devtools": "0.0.18",
     "@biomejs/biome": "^2.4.11",
     "@electron/rebuild": "^4.0.3",
     "@tailwindcss/postcss": "^4.1.17",
@@ -89,6 +92,7 @@
     "@types/react-dom": "^19.2.2",
     "@types/turndown": "^5.0.6",
     "@types/which": "^3.0.4",
+    "concurrently": "^10.0.1",
     "electron": "^40.8.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",

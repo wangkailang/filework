@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import { ipcMain } from "electron";
 import { resolveAdapterName } from "../ai/adapters";
+import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
 import { compressContext } from "../ai/context-compressor";
 import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError } from "../ai/error-classifier";
@@ -68,8 +69,15 @@ import {
   awaitPlanGate,
   cleanupTask,
   drainClarificationResolver,
+  getActiveTaskForSession,
+  getActiveTaskTarget,
+  getTaskEvents,
   manualStopFlags,
   pendingApprovals,
+  pendingClarifications,
+  recordTaskEvent,
+  redirectActiveTask,
+  registerActiveTask,
   setTaskWorkspace,
   stopTaskExecution,
   toolCallToTaskMap,
@@ -121,7 +129,7 @@ const requireWorkspaceFactoryDeps = (): WorkspaceFactoryDeps => {
 /**
  * Main task execution handler
  */
-const handleTaskExecution = async (
+const handleTaskExecutionInner = async (
   event: Electron.IpcMainInvokeEvent,
   payload: {
     prompt: string;
@@ -136,6 +144,8 @@ const handleTaskExecution = async (
      * a ref-derived stable scope.
      */
     sessionId?: string;
+    /** 渲染层为本回合预生成的助手消息 id;登记进重连表,刷新后据此重挂。 */
+    assistantMessageId?: string;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
@@ -149,7 +159,21 @@ const handleTaskExecution = async (
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const taskStartMs = Date.now();
-  const sender = event.sender;
+  // 可重定向的发送目标:每次发送时从登记表实时解析当前 webContents
+  // (关窗重开后由 ai:reattachTask 改写),回退到最初的 event.sender。下游
+  // (agent-tools / approval-batcher)只用 send/isDestroyed,故仅代理这两个方法。
+  const originalSender = event.sender;
+  const sender = {
+    send: (channel: string, ...args: unknown[]) => {
+      // 录制每条流事件 —— 重连时按序重放重建消息(零缺口)。所有发送(含
+      // agent-tools / approval-batcher)都走此包装器,故录制天然集中且完整。
+      recordTaskEvent(id, channel, args[0]);
+      const t = getActiveTaskTarget(id) ?? originalSender;
+      if (!t.isDestroyed()) t.send(channel, ...args);
+    },
+    isDestroyed: () =>
+      (getActiveTaskTarget(id) ?? originalSender).isDestroyed(),
+  } as unknown as Electron.WebContents;
 
   addTask({
     id,
@@ -165,6 +189,13 @@ const handleTaskExecution = async (
   const controller = new AbortController();
   console.log("[Main] Created AbortController for executeTask taskId:", id);
   abortControllers.set(id, controller);
+  // 登记到重连表:刷新后渲染层据 sessionId 查到此 taskId + 助手消息 id 重新挂上。
+  registerActiveTask({
+    taskId: id,
+    sessionId: payload.sessionId,
+    assistantMessageId: payload.assistantMessageId,
+    target: originalSender,
+  });
 
   try {
     if (!sender.isDestroyed()) {
@@ -633,7 +664,10 @@ const handleTaskExecution = async (
           if (!controller.signal.aborted) controller.abort();
           // Continue draining events so agent_end is observed.
         }
-        if (sender.isDestroyed()) break;
+        // 注意:不要因 sender 销毁(关窗)就 break 终止任务 —— 否则关窗会杀掉
+        // 仍想后台继续、并在重开后重连的任务。各发送点已用 isDestroyed 守卫跳过
+        // 死 sender;重开后 ai:reattachTask 把投递目标重定向到新窗口即恢复。
+        // 任务始终 drain 到 agent_end 自然结束,再由 finally 的 cleanupTask 清理。
 
         switch (ev.type) {
           case "agent_start":
@@ -1180,7 +1214,42 @@ export const registerAIHandlers = () => {
     return getAllSuggestions();
   });
 
+  // devtools:把整个任务执行包进同一个 devtools run —— 主循环、结果摘要、上下文
+  // 压缩、重试创建的所有模型共享同一个 middleware,工具调用不再被拆散到多个 run。
+  const handleTaskExecution: typeof handleTaskExecutionInner = (
+    event,
+    payload,
+  ) => runWithDevtoolsTaskScope(() => handleTaskExecutionInner(event, payload));
   ipcMain.handle("ai:executeTask", handleTaskExecution);
+
+  // 重连查询:渲染层刷新后据 sessionId 问「这个会话当前有没有在跑的任务」。
+  // 有则返回 { taskId, assistantMessageId },渲染层据此重新挂上并续接后续流。
+  ipcMain.handle("ai:getActiveTask", (_event, sessionId?: string) =>
+    sessionId ? getActiveTaskForSession(sessionId) : null,
+  );
+
+  // 重连:先把任务已录制的事件按序「重放」给发起调用的新窗口(渲染层用同一套
+  // handler 重建消息,零缺口),再把后续流的投递目标重定向到该窗口。重放直接发往
+  // event.sender(不经录制包装器,故不会二次录制);两步同步执行,其间 agent loop
+  // 无法插入新发送,因此重放快照[0..N] 与后续 live[N+1..] 严丝合缝、不重不漏。
+  ipcMain.handle("ai:reattachTask", (event, taskId?: string) => {
+    if (!taskId) return false;
+    const target = event.sender;
+    if (!target.isDestroyed()) {
+      for (const e of getTaskEvents(taskId)) {
+        // 跳过「已解决」的澄清请求 —— 它的答案存在持久化的 part(answeredOption)上、
+        // 不作为流事件回传,故重放会把已答问题重现成可再次点击的待答卡。仍挂起的
+        // 澄清(clarificationId 还在 pending 表里)才需要重放,让用户看到并作答。
+        if (e.channel === "ai:stream-clarification") {
+          const cid = (e.payload as { clarificationId?: string })
+            ?.clarificationId;
+          if (!cid || !pendingClarifications.has(cid)) continue;
+        }
+        target.send(e.channel, e.payload);
+      }
+    }
+    return redirectActiveTask(taskId, target);
+  });
 
   /**
    * Resolve a pending askClarification suspension with the user's reply.

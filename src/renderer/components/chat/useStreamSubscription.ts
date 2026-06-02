@@ -1,4 +1,10 @@
-import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import {
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { PlanView } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
@@ -230,6 +236,9 @@ export function useStreamSubscription({
 
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
+  // 上次「流式期间」落盘的时间戳,用于节流。重连已由主进程事件日志重放权威负责,
+  // 故流式落盘只为进程崩溃兜底,无需每个停顿都全量重写会话文件 —— 限到每 ~5s 一次。
+  const lastStreamSaveRef = useRef(0);
   const pendingStopRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -240,6 +249,21 @@ export function useStreamSubscription({
     const offStart = window.filework.onStreamStart(({ id }) => {
       console.log("[Stream Start] Setting taskId:", id);
       streamTaskIdRef.current = id;
+      // 重置当前助手消息的 parts。正常新回合消息本就为空(no-op);重连重放时
+      // start 是首个事件,借此把盘上加载的部分内容清空,后续重放事件权威重建,
+      // 避免与盘上内容叠加重复。
+      const assistantId = streamAssistantIdRef.current;
+      if (assistantId) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const msg = prev[idx];
+          if ((msg.parts?.length ?? 0) === 0 && !msg.content) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...msg, content: "", parts: [] };
+          return updated;
+        });
+      }
       setIsStalled(false);
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -277,6 +301,13 @@ export function useStreamSubscription({
           parts: newParts,
           content: contentFromParts(newParts),
         };
+        // 流式期间落盘(崩溃兜底):限到每 ~5s 一次,避免每个工具停顿都全量重写
+        // 整份会话文件。重连本身由主进程事件日志重放负责,不依赖此处的盘上部分内容。
+        const sid = activeSessionIdRef.current;
+        if (sid && Date.now() - lastStreamSaveRef.current > 5000) {
+          lastStreamSaveRef.current = Date.now();
+          debouncedSave(updated, sid);
+        }
         return updated;
       });
     };
@@ -785,9 +816,46 @@ export function useStreamSubscription({
     activeSessionIdRef,
   ]);
 
+  // 刷新/重载后:若该会话仍有在跑的任务,重新挂上 —— 设回 taskId/assistantId、
+  // 标记 loading,并确保助手消息壳存在(历史尚未落盘时补一个空壳)。之后仍在
+  // 流向同一 webContents 的事件即可命中 streamTaskIdRef,继续渲染、直到 done。
+  const reattachRunningTask = useCallback(
+    async (sessionId: string) => {
+      if (streamTaskIdRef.current) return; // 已挂载,勿重复
+      const active = await window.filework.getActiveTask(sessionId);
+      if (!active || active.sessionId !== sessionId) return;
+      if (streamTaskIdRef.current) return; // 期间已有新任务,放弃重连
+      // 先把 refs / 消息壳 / loading 全部就位,最后再触发 reattachTask —— 保证主
+      // 进程重放的录制事件到达时,streamTaskIdRef 已设(能过滤命中)、助手消息壳
+      // 已存在(updateParts 能找到),重放的首个 start 会清空盘上部分内容再重建。
+      streamTaskIdRef.current = active.taskId;
+      const assistantId = active.assistantMessageId;
+      if (assistantId) {
+        streamAssistantIdRef.current = assistantId;
+        const shell: ChatMessage = {
+          id: assistantId,
+          sessionId,
+          role: "assistant",
+          content: "",
+          timestamp: new Date().toISOString(),
+          parts: [],
+        };
+        setMessages((prev) =>
+          prev.some((m) => m.id === assistantId) ? prev : [...prev, shell],
+        );
+      }
+      setIsLoading(true);
+      // 触发重连:主进程重放录制事件(零缺口重建)并把后续流重定向到本窗口。
+      // 纯刷新(webContents 不变)时重定向是无害 no-op;重放仍消除刷新窗口期缺口。
+      void window.filework.reattachTask(active.taskId);
+    },
+    [setMessages],
+  );
+
   return {
     isLoading,
     setIsLoading,
+    reattachRunningTask,
     activeSkill,
     setActiveSkill,
     pendingSkillApproval,

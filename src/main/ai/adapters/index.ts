@@ -12,6 +12,7 @@ export type { CacheMetrics, ProviderAdapter, ProviderConfig } from "./base";
 
 import { AnthropicAdapter } from "./anthropic";
 import { DeepSeekAdapter } from "./deepseek";
+import { maybeWrapWithDevtools } from "./devtools";
 import { OpenAIAdapter } from "./openai";
 import { XiaomiAdapter } from "./xiaomi";
 
@@ -91,6 +92,7 @@ export function getAdapter(provider: string): ProviderAdapter {
 export function createModelWithAdapter(config: ProviderConfig) {
   const resolved = resolveAdapterName(config.provider, config.baseUrl);
   const adapter = getAdapter(resolved);
-  const model = adapter.createModel(config);
+  // devtools 中间件套在最外层,确保覆盖到已被各 adapter(如 xiaomi)包装过的模型。
+  const model = maybeWrapWithDevtools(adapter.createModel(config));
   return { model, adapter };
 }

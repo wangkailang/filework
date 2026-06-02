@@ -84,6 +84,8 @@ const api = {
     workspacePath?: string;
     /** Chat session id — drives github auto-branching scope. */
     sessionId?: string;
+    /** 本回合助手消息 id;登记进重连表,刷新后据此重挂。 */
+    assistantMessageId?: string;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";
@@ -91,6 +93,17 @@ const api = {
       parts?: unknown[];
     }>;
   }) => ipcRenderer.invoke("ai:executeTask", payload),
+  /** 刷新后查询某会话当前是否有在跑的任务,用于重连续流。 */
+  getActiveTask: (
+    sessionId: string,
+  ): Promise<{
+    taskId: string;
+    sessionId?: string;
+    assistantMessageId?: string;
+  } | null> => ipcRenderer.invoke("ai:getActiveTask", sessionId),
+  /** 重连:把任务的流重定向到当前窗口(关窗重开 → 新 webContents)。 */
+  reattachTask: (taskId: string): Promise<boolean> =>
+    ipcRenderer.invoke("ai:reattachTask", taskId),
   stopGeneration: (taskId: string) =>
     ipcRenderer.invoke("ai:stopGeneration", { taskId }),
 
