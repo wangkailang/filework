@@ -420,6 +420,13 @@ export interface SubagentChildView {
   summary?: string;
   error?: string;
   durationMs?: number;
+  /**
+   * 子 agent 的执行过程(文本 / 推理 / 工具调用),供"钻入面板"复用主线程
+   * 渲染器回放。由 `useStreamSubscription` 从 ai:subagent-delta / -tool-call /
+   * -tool-result 累积。默认仅内存保留(不强制持久化,避免 JSONL 膨胀);
+   * 缺省/为空 → 钻入面板显示"无过程记录(可能已重载)"。
+   */
+  parts?: MessagePart[];
 }
 
 /**

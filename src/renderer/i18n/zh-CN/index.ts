@@ -33,6 +33,7 @@ const zhCN: Translation = {
   dock_preview: "预览",
   dock_diff: "差异",
   dock_web: "网页",
+  dock_subagent: "子 agent",
 
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",

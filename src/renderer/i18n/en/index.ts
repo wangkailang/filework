@@ -38,6 +38,7 @@ const en: BaseTranslation = {
   dock_preview: "Preview",
   dock_diff: "Diff",
   dock_web: "Web",
+  dock_subagent: "Subagent",
 
   // Settings
   settings_title: "Settings",

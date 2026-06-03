@@ -33,6 +33,7 @@ const ja: Translation = {
   dock_preview: "プレビュー",
   dock_diff: "差分",
   dock_web: "Web",
+  dock_subagent: "サブエージェント",
 
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",

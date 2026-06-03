@@ -107,6 +107,11 @@ export const App = () => {
   const [dockFilePath, setDockFilePath] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState<number>(getInitialDockWidth);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  // 钻入面板:当前在 dock 查看的子 agent(批次 + 子任务)。
+  const [dockSubagent, setDockSubagent] = useState<{
+    batchId: string;
+    childTaskId: string;
+  } | null>(null);
 
   // 窗口宽度:决定 Dock 用分栏还是浮层(避免对话被压到不可读)。
   const [winWidth, setWinWidth] = useState<number>(() => window.innerWidth);
@@ -129,6 +134,14 @@ export const App = () => {
     setDockTab("preview");
     setDockOpen(true);
   }, []);
+  const openSubagentInDock = useCallback(
+    (sel: { batchId: string; childTaskId: string }) => {
+      setDockSubagent(sel);
+      setDockTab("subagent");
+      setDockOpen(true);
+    },
+    [],
+  );
   const openInBrowserPanel = useCallback((u: string) => {
     // 非 git 项目不提供内置网页面板,链接交给系统浏览器打开(workspaceRef 见下方,
     // 闭包在调用时才读 .current,此时已初始化)。
@@ -144,6 +157,7 @@ export const App = () => {
     setDockOpen(false);
     setDockFilePath(null);
     setBrowserUrl(null);
+    setDockSubagent(null);
   }, []);
 
   useEffect(() => {
@@ -169,6 +183,23 @@ export const App = () => {
     window.addEventListener("filework:open-file", handler);
     return () => window.removeEventListener("filework:open-file", handler);
   }, [openFileInDock]);
+
+  // 子任务卡点击某行 → 在 ContextDock 的 subagent tab 钻入查看其执行过程。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ batchId?: string; childTaskId?: string }>
+      ).detail;
+      if (detail?.batchId && detail.childTaskId) {
+        openSubagentInDock({
+          batchId: detail.batchId,
+          childTaskId: detail.childTaskId,
+        });
+      }
+    };
+    window.addEventListener("filework:open-subagent", handler);
+    return () => window.removeEventListener("filework:open-subagent", handler);
+  }, [openSubagentInDock]);
 
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
@@ -451,6 +482,10 @@ export const App = () => {
                       onCommitWidth={commitDockWidth}
                       filePath={dockFilePath}
                       url={browserUrl}
+                      subagentSel={dockSubagent}
+                      onSelectSubagentChild={(childTaskId) =>
+                        setDockSubagent((s) => (s ? { ...s, childTaskId } : s))
+                      }
                       workspaceRoot={workspace.localPath}
                       currentBranch={workspace.currentBranch}
                       diffInvalidator={diffInvalidator}

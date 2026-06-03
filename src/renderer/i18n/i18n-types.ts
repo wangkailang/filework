@@ -112,6 +112,10 @@ type RootTranslation = {
 	 */
 	dock_web: string
 	/**
+	 * Subagent
+	 */
+	dock_subagent: string
+	/**
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
@@ -1396,6 +1400,10 @@ export type TranslationFunctions = {
 	 * Web
 	 */
 	dock_web: () => LocalizedString
+	/**
+	 * Subagent
+	 */
+	dock_subagent: () => LocalizedString
 	/**
 	 * Settings
 	 */

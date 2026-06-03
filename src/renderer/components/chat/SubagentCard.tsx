@@ -31,7 +31,11 @@ const STATUS_META: Record<
   },
 };
 
-function StatusBadge({ status }: { status: SubagentChildView["status"] }) {
+export function StatusBadge({
+  status,
+}: {
+  status: SubagentChildView["status"];
+}) {
   const { label, className, Icon } = STATUS_META[status];
   return (
     <span
@@ -51,48 +55,36 @@ function fmtTokens(n: number | null): string | null {
   return String(n);
 }
 
-function ChildRow({ child }: { child: SubagentChildView }) {
-  const [open, setOpen] = useState(false);
+function ChildRow({
+  batchId,
+  child,
+}: {
+  batchId: string;
+  child: SubagentChildView;
+}) {
   const total = fmtTokens(child.usage.totalTokens);
-  const canExpand = Boolean(child.summary || child.error);
+  // 点击整行 → 在 ContextDock 钻入查看该子 agent 的执行过程(App 监听该事件)。
+  const openTrace = () =>
+    window.dispatchEvent(
+      new CustomEvent("filework:open-subagent", {
+        detail: { batchId, childTaskId: child.childTaskId },
+      }),
+    );
   return (
-    <div className="border-t border-border/60 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => canExpand && setOpen((v) => !v)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
-          canExpand ? "cursor-pointer hover:bg-accent/40" : "cursor-default"
-        }`}
-        title={child.goal}
-      >
-        {canExpand ? (
-          open ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          )
-        ) : (
-          <span className="w-3.5 shrink-0" />
-        )}
-        <span className="truncate text-foreground/80">{child.goal}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
-          {child.stepCount > 0 && <span>{child.stepCount} 步</span>}
-          {total && <span className="font-mono">{total} tok</span>}
-          <StatusBadge status={child.status} />
-        </span>
-      </button>
-      {open && canExpand && (
-        <div className="px-3 pb-2 pl-8 text-xs text-muted-foreground">
-          {child.error ? (
-            <span className="whitespace-pre-wrap text-red-400">
-              {child.error}
-            </span>
-          ) : (
-            <span className="whitespace-pre-wrap">{child.summary}</span>
-          )}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={openTrace}
+      className="group flex w-full items-center gap-2 border-t border-border/60 px-3 py-1.5 text-left text-xs first:border-t-0 hover:bg-accent/40"
+      title={`查看「${child.goal}」的执行过程`}
+    >
+      <span className="truncate text-foreground/80">{child.goal}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
+        {child.stepCount > 0 && <span>{child.stepCount} 步</span>}
+        {total && <span className="font-mono">{total} tok</span>}
+        <StatusBadge status={child.status} />
+        <ChevronRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+      </span>
+    </button>
   );
 }
 
@@ -132,7 +124,7 @@ export function SubagentCard({ part }: { part: SubagentMessagePart }) {
       {expanded && (
         <div className="border-t border-border">
           {children.map((c) => (
-            <ChildRow key={c.childTaskId} child={c} />
+            <ChildRow key={c.childTaskId} batchId={part.batchId} child={c} />
           ))}
         </div>
       )}
