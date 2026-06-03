@@ -46,7 +46,14 @@ function findBatch(
 
 function TracePart({ part }: { part: MessagePart }) {
   if (part.type === "text" && part.text) {
-    return <MessageResponse>{part.text}</MessageResponse>;
+    // MessageResponse(Streamdown)带 `size-full`(height:100%)。在定高的
+    // overflow-auto 容器里直接渲染会让每段文本撑满高度并向下溢出、压住后续
+    // 内容(两层叠加)。包一层 auto 高度的 div,让 100% 解析为内容高度。
+    return (
+      <div className="text-sm">
+        <MessageResponse>{part.text}</MessageResponse>
+      </div>
+    );
   }
   if (part.type === "reasoning") {
     return <ReasoningBlock part={part as ReasoningPart} />;
@@ -172,8 +179,9 @@ export function SubagentTracePanel({
             />
           ))
         )}
-        {/* 末尾:完成后的摘要 / 错误 */}
-        {child.summary && child.status !== "running" && (
+        {/* 摘要仅在没有过程 parts 时作为兜底展示(parts 本身即子 agent 的
+            完整输出,summary 是它的截断副本——两者同时渲染会内容重复)。 */}
+        {parts.length === 0 && child.summary && child.status !== "running" && (
           <div className="mt-3 rounded-md border border-border bg-background/40 p-2 text-xs">
             <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
               摘要
