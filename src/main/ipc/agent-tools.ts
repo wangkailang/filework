@@ -42,6 +42,7 @@ import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcri
 import { resolveSandboxConfig } from "../core/sandbox";
 import { getSetting } from "../db";
 import { mcpManager } from "../mcp/manager";
+import { searchFiles as nativeSearchFiles } from "../native";
 import { skillRegistry } from "../skills";
 import { wrapWithSecurityBoundary } from "../skills-runtime";
 import {
@@ -617,6 +618,7 @@ export const buildAgentToolRegistry = ({
 
   for (const def of buildFileTools({
     incrementalScanner: wrapScanner(),
+    searchFiles: nativeSearchFiles,
     gitProtocol,
     sandbox: resolveSandboxConfig(sandboxModeSetting),
   })) {

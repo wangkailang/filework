@@ -112,13 +112,69 @@ type RootTranslation = {
 	 */
 	dock_web: string
 	/**
-	 * Subagent
+	 * S​u​b​a​g​e​n​t
 	 */
 	dock_subagent: string
 	/**
-	 * Panels
+	 * S​e​a​r​c​h
+	 */
+	dock_search: string
+	/**
+	 * T​r​a​s​h
+	 */
+	dock_trash: string
+	/**
+	 * P​a​n​e​l​s
 	 */
 	dock_menu: string
+	/**
+	 * S​e​a​r​c​h​ ​f​i​l​e​s​ ​b​y​ ​n​a​m​e​…
+	 */
+	search_placeholder: string
+	/**
+	 * T​y​p​e​ ​t​o​ ​f​i​n​d​ ​f​i​l​e​s​ ​i​n​ ​t​h​i​s​ ​w​o​r​k​s​p​a​c​e
+	 */
+	search_hint: string
+	/**
+	 * N​o​ ​m​a​t​c​h​i​n​g​ ​f​i​l​e​s
+	 */
+	search_empty: string
+	/**
+	 * S​h​o​w​i​n​g​ ​{​s​h​o​w​n​}​ ​o​f​ ​{​t​o​t​a​l​}
+	 * @param {number} shown
+	 * @param {number} total
+	 */
+	search_showing: RequiredParams<'shown' | 'total'>
+	/**
+	 * T​r​a​s​h​ ​i​s​ ​e​m​p​t​y
+	 */
+	trash_empty: string
+	/**
+	 * R​e​s​t​o​r​e
+	 */
+	trash_restore: string
+	/**
+	 * D​e​l​e​t​e​ ​f​o​r​e​v​e​r
+	 */
+	trash_deleteForever: string
+	/**
+	 * E​m​p​t​y​ ​t​r​a​s​h
+	 */
+	trash_emptyAll: string
+	/**
+	 * D​e​l​e​t​e​d​ ​{​w​h​e​n​}
+	 * @param {string} when
+	 */
+	trash_deletedAt: RequiredParams<'when'>
+	/**
+	 * P​e​r​m​a​n​e​n​t​l​y​ ​d​e​l​e​t​e​ ​a​l​l​ ​i​t​e​m​s​ ​i​n​ ​t​h​e​ ​t​r​a​s​h​?
+	 */
+	trash_confirmEmptyAll: string
+	/**
+	 * R​e​s​t​o​r​e​ ​f​a​i​l​e​d​:​ ​{​r​e​a​s​o​n​}
+	 * @param {string} reason
+	 */
+	trash_restoreFailed: RequiredParams<'reason'>
 	/**
 	 * S​e​t​t​i​n​g​s
 	 */
@@ -1429,9 +1485,61 @@ export type TranslationFunctions = {
 	 */
 	dock_subagent: () => LocalizedString
 	/**
+	 * Search
+	 */
+	dock_search: () => LocalizedString
+	/**
+	 * Trash
+	 */
+	dock_trash: () => LocalizedString
+	/**
 	 * Panels
 	 */
 	dock_menu: () => LocalizedString
+	/**
+	 * Search files by name…
+	 */
+	search_placeholder: () => LocalizedString
+	/**
+	 * Type to find files in this workspace
+	 */
+	search_hint: () => LocalizedString
+	/**
+	 * No matching files
+	 */
+	search_empty: () => LocalizedString
+	/**
+	 * Showing {shown} of {total}
+	 */
+	search_showing: (arg: { shown: number, total: number }) => LocalizedString
+	/**
+	 * Trash is empty
+	 */
+	trash_empty: () => LocalizedString
+	/**
+	 * Restore
+	 */
+	trash_restore: () => LocalizedString
+	/**
+	 * Delete forever
+	 */
+	trash_deleteForever: () => LocalizedString
+	/**
+	 * Empty trash
+	 */
+	trash_emptyAll: () => LocalizedString
+	/**
+	 * Deleted {when}
+	 */
+	trash_deletedAt: (arg: { when: string }) => LocalizedString
+	/**
+	 * Permanently delete all items in the trash?
+	 */
+	trash_confirmEmptyAll: () => LocalizedString
+	/**
+	 * Restore failed: {reason}
+	 */
+	trash_restoreFailed: (arg: { reason: string }) => LocalizedString
 	/**
 	 * Settings
 	 */

@@ -40,7 +40,9 @@ export const dangerousToolDescriptions: Record<
   string,
   (args: Record<string, unknown>) => string
 > = {
-  deleteFile: (args) => `删除 ${args.path}`,
+  deleteFile: (args) => `删除 ${args.path}(移入回收站,可恢复)`,
+  emptyTrash: (args) =>
+    args.id ? `永久清除回收站项 ${args.id}` : "永久清空回收站(不可恢复)",
   writeFile: (args) => `写入文件 ${args.path}`,
   moveFile: (args) => `移动 ${args.source} → ${args.destination}`,
   clearDirectoryCache: (args) =>

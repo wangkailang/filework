@@ -39,7 +39,24 @@ const en: BaseTranslation = {
   dock_diff: "Diff",
   dock_web: "Web",
   dock_subagent: "Subagent",
+  dock_search: "Search",
+  dock_trash: "Trash",
   dock_menu: "Panels",
+
+  // File search panel
+  search_placeholder: "Search files by name…",
+  search_hint: "Type to find files in this workspace",
+  search_empty: "No matching files",
+  search_showing: "Showing {shown:number} of {total:number}",
+
+  // Trash panel
+  trash_empty: "Trash is empty",
+  trash_restore: "Restore",
+  trash_deleteForever: "Delete forever",
+  trash_emptyAll: "Empty trash",
+  trash_deletedAt: "Deleted {when:string}",
+  trash_confirmEmptyAll: "Permanently delete all items in the trash?",
+  trash_restoreFailed: "Restore failed: {reason:string}",
 
   // Settings
   settings_title: "Settings",

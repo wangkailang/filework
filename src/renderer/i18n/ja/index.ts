@@ -34,7 +34,24 @@ const ja: Translation = {
   dock_diff: "差分",
   dock_web: "Web",
   dock_subagent: "サブエージェント",
+  dock_search: "検索",
+  dock_trash: "ゴミ箱",
   dock_menu: "パネル",
+
+  // ファイル検索パネル
+  search_placeholder: "ファイル名で検索…",
+  search_hint: "入力してこのワークスペース内のファイルを検索",
+  search_empty: "一致するファイルがありません",
+  search_showing: "{total} 件中 {shown} 件を表示",
+
+  // ゴミ箱パネル
+  trash_empty: "ゴミ箱は空です",
+  trash_restore: "復元",
+  trash_deleteForever: "完全に削除",
+  trash_emptyAll: "ゴミ箱を空にする",
+  trash_deletedAt: "削除日時 {when}",
+  trash_confirmEmptyAll: "ゴミ箱内のすべての項目を完全に削除しますか?",
+  trash_restoreFailed: "復元に失敗しました:{reason}",
 
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",

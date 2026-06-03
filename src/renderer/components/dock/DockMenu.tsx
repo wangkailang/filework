@@ -42,6 +42,8 @@ export const DockMenu = ({
     on: boolean;
   }[] = [
     { tab: "preview", label: LL.dock_preview(), shortcut: "⇧⌘P", on: true },
+    { tab: "search", label: LL.dock_search(), shortcut: "⇧⌘F", on: true },
+    { tab: "trash", label: LL.dock_trash(), shortcut: "⇧⌘T", on: true },
     {
       tab: "subagent",
       label: LL.dock_subagent(),

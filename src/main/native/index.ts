@@ -33,6 +33,37 @@ export interface NativeDirEntry {
   mtimeMs: number;
 }
 
+/** native 文件搜索的过滤选项。全部可选。 */
+export interface NativeSearchOptions {
+  /** 扩展名白名单(带或不带前导点均可,转小写比较)。 */
+  extensions?: string[];
+  minSize?: number;
+  maxSize?: number;
+  modifiedAfterMs?: number;
+  modifiedBeforeMs?: number;
+  /** 返回上限,默认 100。 */
+  limit?: number;
+}
+
+/** native 搜索命中的一个文件条目。 */
+export interface NativeSearchHit {
+  name: string;
+  /** 相对于搜索根的 POSIX 风格相对路径。 */
+  relPath: string;
+  size: number;
+  mtimeMs: number;
+  /** 相关度评分,越大越靠前;纯过滤(空 query)时为 0。 */
+  score: number;
+}
+
+/** native 搜索的聚合结果。 */
+export interface NativeSearchResult {
+  hits: NativeSearchHit[];
+  /** 过滤/匹配后的总命中数(可能多于 hits.length,因 hits 受 limit 截断)。 */
+  totalMatched: number;
+  truncated: boolean;
+}
+
 interface NativeModule {
   findDuplicates(
     rootPath: string,
@@ -40,6 +71,11 @@ interface NativeModule {
   ): Promise<NativeDuplicateResult>;
   directoryStats(rootPath: string): Promise<NativeDirectoryStats>;
   scanDirectoryLevel(dirPath: string): Promise<NativeDirEntry[]>;
+  searchFiles(
+    rootPath: string,
+    query: string,
+    options?: NativeSearchOptions | null,
+  ): Promise<NativeSearchResult>;
 }
 
 // createRequire 在两种环境下都可用:
@@ -90,4 +126,17 @@ export function directoryStats(
  */
 export function scanDirectoryLevel(dirPath: string): Promise<NativeDirEntry[]> {
   return loadNative().scanDirectoryLevel(dirPath);
+}
+
+/**
+ * 用 native (Rust) 在 `rootPath` 下递归搜索文件:并行遍历 + 词元匹配 + 元数据
+ * 过滤,本地毫秒级返回排序后的候选集。query 为空时退化为纯过滤(按扩展名/
+ * 大小/修改时间)。命中按相关度降序返回(命中文件名权重高于仅命中路径)。
+ */
+export function searchFiles(
+  rootPath: string,
+  query: string,
+  options?: NativeSearchOptions,
+): Promise<NativeSearchResult> {
+  return loadNative().searchFiles(rootPath, query, options ?? null);
 }
