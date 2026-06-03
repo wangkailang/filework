@@ -1,7 +1,16 @@
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { ipcMain } from "electron";
-import { directoryStats } from "../native";
+import {
+  emptyTrash,
+  listTrash,
+  restoreFromTrash,
+} from "../core/agent/tools/trash";
+import {
+  directoryStats,
+  type NativeSearchOptions,
+  searchFiles,
+} from "../native";
 
 // 文件预览的读取上限:超过则只读前 N 字节并标记 truncated,
 // 避免把几百 MB 的文件整体读入内存、序列化过 IPC 拖垮渲染进程。
@@ -129,5 +138,23 @@ export const registerFileHandlers = () => {
   // 返回结构保持不变 { totalFiles, totalDirs, totalSize, extensions }。
   ipcMain.handle("fs:directoryStats", (_event, dirPath: string) =>
     directoryStats(dirPath),
+  );
+
+  // native 加速的文件检索:供右侧搜索面板使用,本地毫秒级返回候选集。
+  ipcMain.handle(
+    "fs:searchFiles",
+    (_event, rootPath: string, query: string, options?: NativeSearchOptions) =>
+      searchFiles(rootPath, query, options),
+  );
+
+  // 回收站:列出 / 恢复 / 永久清除(以 workspaceRoot 区分各工作区的回收站)。
+  ipcMain.handle("trash:list", (_event, workspaceRoot: string) =>
+    listTrash(workspaceRoot),
+  );
+  ipcMain.handle("trash:restore", (_event, workspaceRoot: string, id: string) =>
+    restoreFromTrash(workspaceRoot, id),
+  );
+  ipcMain.handle("trash:empty", (_event, workspaceRoot: string, id?: string) =>
+    emptyTrash(workspaceRoot, id),
   );
 };

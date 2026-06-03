@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+import type { TrashEntry } from "../main/core/agent/tools/trash";
+import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
 import type { CredentialKind } from "../shared/credentials";
 
 /** 工作目录记忆的单条结构化条目(与主进程 MemoryEntry 同形)。 */
@@ -37,6 +39,27 @@ const api = {
     ipcRenderer.invoke("fs:readFilePreview", path),
   directoryStats: (path: string) =>
     ipcRenderer.invoke("fs:directoryStats", path),
+  // native 加速的文件检索(按名字/路径词元 + 元数据过滤)。
+  searchFiles: (
+    workspaceRoot: string,
+    query: string,
+    options?: NativeSearchOptions,
+  ): Promise<NativeSearchResult> =>
+    ipcRenderer.invoke("fs:searchFiles", workspaceRoot, query, options),
+
+  // 回收站
+  trashList: (workspaceRoot: string): Promise<TrashEntry[]> =>
+    ipcRenderer.invoke("trash:list", workspaceRoot),
+  trashRestore: (
+    workspaceRoot: string,
+    id: string,
+  ): Promise<{ restoredTo: string }> =>
+    ipcRenderer.invoke("trash:restore", workspaceRoot, id),
+  trashEmpty: (
+    workspaceRoot: string,
+    id?: string,
+  ): Promise<{ removed: number }> =>
+    ipcRenderer.invoke("trash:empty", workspaceRoot, id),
 
   /**
    * 拖拽辅助:解析从 `DataTransfer.files` 取出的 `File` 对象的绝对文件系统路径。

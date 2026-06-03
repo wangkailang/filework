@@ -34,7 +34,24 @@ const zhCN: Translation = {
   dock_diff: "差异",
   dock_web: "网页",
   dock_subagent: "子 agent",
+  dock_search: "搜索",
+  dock_trash: "回收站",
   dock_menu: "面板",
+
+  // 文件搜索面板
+  search_placeholder: "按文件名搜索…",
+  search_hint: "输入以在当前工作区查找文件",
+  search_empty: "没有匹配的文件",
+  search_showing: "显示 {shown} / {total}",
+
+  // 回收站面板
+  trash_empty: "回收站为空",
+  trash_restore: "恢复",
+  trash_deleteForever: "永久删除",
+  trash_emptyAll: "清空回收站",
+  trash_deletedAt: "删除于 {when}",
+  trash_confirmEmptyAll: "确定永久删除回收站中的所有项目吗?",
+  trash_restoreFailed: "恢复失败:{reason}",
 
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",

@@ -30,6 +30,7 @@ import {
   isDeliverableCommand,
   parseTestStats,
 } from "./command-classify";
+import { emptyTrash, listTrash, moveToTrash, restoreFromTrash } from "./trash";
 
 // ---------------------------------------------------------------------------
 // 增量扫描的可选依赖(在 PR 2 中接入)
@@ -66,8 +67,38 @@ export interface IncrementalScannerLike {
   clearCache(absDir?: string): Promise<void>;
 }
 
+/**
+ * 注入式文件搜索实现(由 IPC 层接入 native Rust 搜索)。签名刻意与
+ * `src/main/native` 的 `searchFiles` 对齐,使 native 函数可直接传入,
+ * 同时保持 core 与 native 解耦(core 不直接 import native)。
+ */
+export type FileSearchFn = (
+  rootAbs: string,
+  query: string,
+  options?: {
+    extensions?: string[];
+    minSize?: number;
+    maxSize?: number;
+    modifiedAfterMs?: number;
+    modifiedBeforeMs?: number;
+    limit?: number;
+  },
+) => Promise<{
+  hits: {
+    name: string;
+    relPath: string;
+    size: number;
+    mtimeMs: number;
+    score: number;
+  }[];
+  totalMatched: number;
+  truncated: boolean;
+}>;
+
 export interface FileToolsDeps {
   incrementalScanner?: IncrementalScannerLike;
+  /** 提供则注册 `searchFiles` 工具(native 加速的全工作区文件检索)。 */
+  searchFiles?: FileSearchFn;
   /**
    * 嵌入到 `runCommand` description 中的可选 git 工作流手册。当前活跃
    * workspace 由 git 支撑时,IPC 层(见
@@ -195,6 +226,42 @@ const clearCacheSchema = z.object({
     .describe(
       "Directory path to clear cache for (optional, clears all if not provided)",
     ),
+});
+
+const searchFilesSchema = z.object({
+  query: z
+    .string()
+    .describe(
+      "Space-separated terms matched against file name and path (case-insensitive, ALL terms must match). Leave empty to filter by metadata only (extension/size/date).",
+    ),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Subdirectory to search under (absolute or workspace-relative). Defaults to the workspace root.",
+    ),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe('Extension whitelist, e.g. ["pdf", "docx"] or [".pdf"].'),
+  minSize: z.number().int().nonnegative().optional().describe("Min bytes"),
+  maxSize: z.number().int().nonnegative().optional().describe("Max bytes"),
+  modifiedAfter: z
+    .string()
+    .optional()
+    .describe("ISO date/time; only files modified at or after this instant"),
+  modifiedBefore: z
+    .string()
+    .optional()
+    .describe("ISO date/time; only files modified at or before this instant"),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(1000)
+    .optional()
+    .default(100)
+    .describe("Max results to return (default 100)"),
 });
 
 // ---------------------------------------------------------------------------
@@ -348,13 +415,76 @@ const moveFileTool: ToolDefinition<z.infer<typeof moveFileSchema>, unknown> = {
 const deleteFileTool: ToolDefinition<{ path: string }, unknown> = {
   name: "deleteFile",
   description:
-    "Delete a file or directory (recursive). Requires user approval. To empty a file without removing it, use `writeFile` with empty content.",
+    "Delete a file or directory (recursive) by moving it to the workspace trash — it is recoverable via `restoreFromTrash`, not erased. Requires user approval. To empty a file without removing it, use `writeFile` with empty content; to erase permanently use `emptyTrash`.",
   safety: "destructive",
   inputSchema: pathSchema,
   execute: async (args, ctx) => {
     const rel = await resolveRel(ctx.workspace, args.path);
-    await ctx.workspace.fs.rm(rel, { recursive: true });
-    return { success: true, path: args.path };
+    const abs = ctx.workspace.fs.resolve(rel);
+    // 软删除:移入工作区回收站而非物理删除,使误删可恢复。
+    const entry = await moveToTrash(ctx.workspace.root, abs);
+    return {
+      success: true,
+      path: args.path,
+      trashed: true,
+      trashId: entry.id,
+      restoreHint: `已移入回收站,可用 restoreFromTrash({ id: "${entry.id}" }) 撤销。`,
+    };
+  },
+};
+
+const restoreFromTrashSchema = z.object({
+  id: z.string().describe("Trash entry id returned by deleteFile or listTrash"),
+});
+
+const restoreFromTrashTool: ToolDefinition<
+  z.infer<typeof restoreFromTrashSchema>,
+  unknown
+> = {
+  name: "restoreFromTrash",
+  description:
+    "Restore a previously deleted file/directory from the workspace trash back to its original path. Fails if something already exists at that path. Use the id from deleteFile's result or listTrash.",
+  safety: "safe",
+  inputSchema: restoreFromTrashSchema,
+  execute: async (args, ctx) => {
+    const { restoredTo } = await restoreFromTrash(ctx.workspace.root, args.id);
+    return { success: true, restoredTo };
+  },
+};
+
+const listTrashTool: ToolDefinition<Record<string, never>, unknown> = {
+  name: "listTrash",
+  description:
+    "List items currently in the workspace trash (most recently deleted first), with their id, original path, size and deletion time.",
+  safety: "safe",
+  inputSchema: z.object({}),
+  execute: async (_args, ctx) => {
+    const entries = await listTrash(ctx.workspace.root);
+    return { entries, count: entries.length };
+  },
+};
+
+const emptyTrashSchema = z.object({
+  id: z
+    .string()
+    .optional()
+    .describe(
+      "Trash entry id to erase. Omit to permanently empty the whole trash.",
+    ),
+});
+
+const emptyTrashTool: ToolDefinition<
+  z.infer<typeof emptyTrashSchema>,
+  unknown
+> = {
+  name: "emptyTrash",
+  description:
+    "Permanently erase trash contents (cannot be undone). Pass an id to erase one entry, or omit it to empty the entire workspace trash. Requires user approval.",
+  safety: "destructive",
+  inputSchema: emptyTrashSchema,
+  execute: async (args, ctx) => {
+    const { removed } = await emptyTrash(ctx.workspace.root, args.id);
+    return { success: true, removed };
   },
 };
 
@@ -551,6 +681,54 @@ const directoryStatsTool: ToolDefinition<
   },
 };
 
+function searchFilesTool(
+  search: FileSearchFn,
+): ToolDefinition<z.infer<typeof searchFilesSchema>, unknown> {
+  return {
+    name: "searchFiles",
+    description:
+      "Find files across the workspace by name/path terms and metadata (extension, size, modified date) in one fast native call. Use this instead of recursively walking with listDirectory or reading files to locate them — it returns ranked candidates (name matches rank above path-only matches) without opening any file. Returns absolute paths ready for readFile.",
+    safety: "safe",
+    inputSchema: searchFilesSchema,
+    execute: async (args, ctx) => {
+      const rel = args.path ? await resolveRel(ctx.workspace, args.path) : ".";
+      const rootAbs = ctx.workspace.fs.resolve(rel);
+
+      const toMs = (iso?: string): number | undefined => {
+        if (!iso) return undefined;
+        const ms = Date.parse(iso);
+        return Number.isNaN(ms) ? undefined : ms;
+      };
+
+      const result = await search(rootAbs, args.query, {
+        extensions: args.extensions,
+        minSize: args.minSize,
+        maxSize: args.maxSize,
+        modifiedAfterMs: toMs(args.modifiedAfter),
+        modifiedBeforeMs: toMs(args.modifiedBefore),
+        limit: args.limit ?? 100,
+      });
+
+      const results = result.hits.map((h) => ({
+        // 绝对路径,可直接喂给 readFile/moveFile 等工具。
+        path: path.join(rootAbs, h.relPath),
+        relPath: h.relPath,
+        name: h.name,
+        size: h.size,
+        modifiedAt: new Date(h.mtimeMs).toISOString(),
+        score: h.score,
+      }));
+
+      return {
+        results,
+        count: results.length,
+        totalMatched: result.totalMatched,
+        truncated: result.truncated,
+      };
+    },
+  };
+}
+
 function getCacheStatsTool(
   scanner: IncrementalScannerLike,
 ): ToolDefinition<Record<string, never>, unknown> {
@@ -613,10 +791,16 @@ export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
     writeFileTool as ToolDefinition,
     moveFileTool as ToolDefinition,
     deleteFileTool as ToolDefinition,
+    restoreFromTrashTool as ToolDefinition,
+    listTrashTool as ToolDefinition,
+    emptyTrashTool as ToolDefinition,
     runCommandTool(deps?.gitProtocol, deps?.sandbox) as ToolDefinition,
     readShellOutputTool as ToolDefinition,
     killShellTool as ToolDefinition,
   ];
+  if (deps?.searchFiles) {
+    tools.push(searchFilesTool(deps.searchFiles) as ToolDefinition);
+  }
   if (deps?.incrementalScanner) {
     tools.push(getCacheStatsTool(deps.incrementalScanner) as ToolDefinition);
     tools.push(

@@ -207,6 +207,8 @@ export const App = () => {
   useEffect(() => {
     const map: Record<string, DockTab> = {
       p: "preview",
+      f: "search",
+      t: "trash",
       d: "diff",
       w: "web",
       a: "subagent",

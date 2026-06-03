@@ -1,5 +1,6 @@
 mod dedup;
 mod scan;
+mod search;
 mod stats;
 mod walker;
 
@@ -157,4 +158,96 @@ impl Task for ScanDirLevelTask {
 #[napi(ts_return_type = "Promise<Array<DirEntryInfo>>")]
 pub fn scan_directory_level(dir_path: String) -> AsyncTask<ScanDirLevelTask> {
     AsyncTask::new(ScanDirLevelTask { dir: dir_path })
+}
+
+#[napi(object)]
+pub struct SearchOptions {
+    /// 扩展名白名单(带或不带前导点均可,转小写比较,如 "pdf" / ".pdf")。
+    pub extensions: Option<Vec<String>>,
+    pub min_size: Option<f64>,
+    pub max_size: Option<f64>,
+    pub modified_after_ms: Option<f64>,
+    pub modified_before_ms: Option<f64>,
+    /// 返回上限,默认 100。
+    pub limit: Option<u32>,
+}
+
+#[napi(object)]
+pub struct SearchHitInfo {
+    pub name: String,
+    /// 相对于搜索根的 POSIX 风格相对路径。
+    pub rel_path: String,
+    pub size: f64,
+    pub mtime_ms: f64,
+    pub score: f64,
+}
+
+#[napi(object)]
+pub struct SearchResult {
+    pub hits: Vec<SearchHitInfo>,
+    pub total_matched: u32,
+    pub truncated: bool,
+}
+
+impl From<search::SearchHit> for SearchHitInfo {
+    fn from(h: search::SearchHit) -> Self {
+        SearchHitInfo {
+            name: h.name,
+            rel_path: h.rel_path,
+            size: h.size as f64,
+            mtime_ms: h.mtime_ms,
+            score: h.score,
+        }
+    }
+}
+
+impl From<search::SearchOutput> for SearchResult {
+    fn from(o: search::SearchOutput) -> Self {
+        SearchResult {
+            hits: o.hits.into_iter().map(Into::into).collect(),
+            total_matched: o.total_matched,
+            truncated: o.truncated,
+        }
+    }
+}
+
+pub struct SearchFilesTask {
+    root: String,
+    query: String,
+    options: Option<SearchOptions>,
+}
+
+impl Task for SearchFilesTask {
+    type Output = search::SearchOutput;
+    type JsValue = SearchResult;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let opts = self.options.take();
+        let filters = search::SearchFilters {
+            extensions: opts.as_ref().and_then(|o| o.extensions.clone()),
+            min_size: opts.as_ref().and_then(|o| o.min_size).map(|v| v as u64),
+            max_size: opts.as_ref().and_then(|o| o.max_size).map(|v| v as u64),
+            modified_after_ms: opts.as_ref().and_then(|o| o.modified_after_ms),
+            modified_before_ms: opts.as_ref().and_then(|o| o.modified_before_ms),
+        };
+        let limit = opts.as_ref().and_then(|o| o.limit).unwrap_or(100) as usize;
+        Ok(search::search_files(&self.root, &self.query, &filters, limit))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output.into())
+    }
+}
+
+#[napi(ts_return_type = "Promise<SearchResult>")]
+pub fn search_files(
+    root_path: String,
+    query: String,
+    options: Option<SearchOptions>,
+) -> AsyncTask<SearchFilesTask> {
+    AsyncTask::new(SearchFilesTask {
+        root: root_path,
+        query,
+        options,
+    })
 }

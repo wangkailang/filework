@@ -13,8 +13,16 @@ import {
   DOCK_MIN_WIDTH,
   type DockMode,
 } from "../layout/layout-geometry";
+import { SearchPanel } from "./SearchPanel";
+import { TrashPanel } from "./TrashPanel";
 
-export type DockTab = "preview" | "diff" | "web" | "subagent";
+export type DockTab =
+  | "preview"
+  | "diff"
+  | "web"
+  | "subagent"
+  | "search"
+  | "trash";
 
 export const ContextDock = ({
   mode,
@@ -57,16 +65,18 @@ export const ContextDock = ({
   widthRef.current = width;
   // 全屏:铺满窗口(fixed inset-0),忽略 width 与 mode。关闭面板时一并复位。
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 非 git 项目不提供「差异 / 网页」;subagent 标签需有选中项才有效。
-  // 任一不满足时回落到预览。
+  // 预览 / 搜索 / 回收站对所有工作区可用;「差异 / 网页」仅 git 项目;
+  // subagent 标签需有选中项才有效。任一不满足时回落到预览。
   const effectiveTab: DockTab =
     activeTab === "subagent"
       ? subagentSel
         ? "subagent"
         : "preview"
-      : isGitRepo
-        ? activeTab
-        : "preview";
+      : activeTab === "diff" || activeTab === "web"
+        ? isGitRepo
+          ? activeTab
+          : "preview"
+        : activeTab;
 
   // 左边缘拖拽:向左拖变宽(dock 在右侧,故 delta 取负)。
   const startResize = useCallback(
@@ -140,6 +150,8 @@ export const ContextDock = ({
       )}
       <div className="titlebar-no-drag flex h-9 items-center gap-1 border-b border-border px-2">
         {tabBtn("preview", LL.dock_preview())}
+        {tabBtn("search", LL.dock_search())}
+        {tabBtn("trash", LL.dock_trash())}
         {isGitRepo && tabBtn("diff", LL.dock_diff())}
         {isGitRepo && tabBtn("web", LL.dock_web())}
         {subagentSel && tabBtn("subagent", LL.dock_subagent())}
@@ -182,6 +194,19 @@ export const ContextDock = ({
               {LL.session_empty()}
             </div>
           )}
+        </div>
+        {/* 搜索 / 回收站:对所有工作区可用,常驻挂载,仅 CSS 隐藏。 */}
+        <div className={cn("h-full", effectiveTab !== "search" && "hidden")}>
+          <SearchPanel
+            workspaceRoot={workspaceRoot}
+            active={effectiveTab === "search"}
+          />
+        </div>
+        <div className={cn("h-full", effectiveTab !== "trash" && "hidden")}>
+          <TrashPanel
+            workspaceRoot={workspaceRoot}
+            active={effectiveTab === "trash"}
+          />
         </div>
         {/* 差异 / 网页:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
         {isGitRepo && (
