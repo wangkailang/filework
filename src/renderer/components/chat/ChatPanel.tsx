@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Brain,
+  Check,
   CopyIcon,
   GitBranch,
   HelpCircle,
@@ -67,6 +68,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
 import { SkillMenu } from "./SkillMenu";
+import { SubagentCard } from "./SubagentCard";
 import { TurnSummaryCard } from "./TurnSummaryCard";
 import type {
   ArticleMetaPart,
@@ -81,6 +83,7 @@ import type {
   PlanMessagePart,
   ReasoningPart,
   RecoveryAction,
+  SubagentMessagePart,
   ToolApproval,
   ToolPart,
   TurnSummaryPart,
@@ -90,6 +93,30 @@ import type {
 } from "./types";
 import { VideoGallery } from "./VideoGallery";
 import { WorkingIndicator } from "./WorkingIndicator";
+
+// 用户消息渲染前:折叠空行(连续 2+ 个换行、含仅空白的空行 → 单个换行),
+// 但保留单换行与行内空格。配合 `whitespace-pre-wrap` 实现「留空格、去空行」。
+const collapseBlankLines = (text: string): string =>
+  text.replace(/\r?\n(?:[ \t]*\r?\n)+/g, "\n");
+
+// 一键复制按钮:点击后写入剪贴板,短暂显示「已复制」反馈。
+const CopyMessageAction = ({ content }: { content: string }) => {
+  const { LL } = useI18nContext();
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <MessageAction
+      onClick={handleCopy}
+      label={copied ? LL.chat_copied() : LL.chat_copy()}
+    >
+      {copied ? <Check className="size-3" /> : <CopyIcon className="size-3" />}
+    </MessageAction>
+  );
+};
 
 const formatTokens = (n: number | null): string => {
   if (n == null) return "-";
@@ -873,6 +900,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
           <TurnSummaryCard key="turn-summary" part={part as TurnSummaryPart} />
         );
       }
+      if (part.type === "subagent") {
+        const sp = part as SubagentMessagePart;
+        return <SubagentCard key={`subagent-${sp.batchId}`} part={sp} />;
+      }
       if (part.type === "usage") {
         const u = part as UsagePart;
         return (
@@ -1056,7 +1087,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         | undefined) ?? [])
                     : [];
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} className="group">
                     <Message from={msg.role}>
                       <MessageContent>
                         {msg.role === "assistant" ? (
@@ -1066,13 +1097,18 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                             {userAttachments.length > 0 && (
                               <AttachmentList attachments={userAttachments} />
                             )}
-                            {msg.content}
+                            {/* 用户消息按纯文本渲染:保留换行与行内空格
+                                (默认 HTML 会折叠),但去掉空行。 */}
+                            <div className="whitespace-pre-wrap break-words">
+                              {collapseBlankLines(msg.content)}
+                            </div>
                           </>
                         )}
                       </MessageContent>
                     </Message>
                     {msg.role === "user" && !chat.isLoading && (
                       <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                        <CopyMessageAction content={msg.content} />
                         <MessageAction
                           onClick={() => chat.handleForkSession(msg.id)}
                           label={LL.chat_forkHere()}
@@ -1082,16 +1118,15 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                       </MessageActions>
                     )}
                     {msg.role === "assistant" &&
-                      index === chat.messages.length - 1 && (
-                        <MessageActions>
-                          <MessageAction
-                            onClick={() =>
-                              navigator.clipboard.writeText(msg.content)
-                            }
-                            label="Copy"
-                          >
-                            <CopyIcon className="size-3" />
-                          </MessageAction>
+                      msg.content.trim().length > 0 && (
+                        <MessageActions
+                          className={
+                            index === chat.messages.length - 1
+                              ? undefined
+                              : "opacity-0 group-hover:opacity-100 transition-opacity"
+                          }
+                        >
+                          <CopyMessageAction content={msg.content} />
                         </MessageActions>
                       )}
                   </div>

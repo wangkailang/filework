@@ -18,6 +18,13 @@
 import crypto from "node:crypto";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
+import {
+  DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
+  DEFAULT_SUB_AGENT_MAX_TURNS,
+  DEFAULT_SUB_AGENT_MAX_WALL_MS,
+  type SubAgentContract,
+  type SubAgentOutputFormat,
+} from "../core/agent/sub-agent-contract";
 import { type ToolDefinition, ToolRegistry } from "../core/agent/tool-registry";
 import {
   buildFileTools,
@@ -35,6 +42,8 @@ import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcri
 import { resolveSandboxConfig } from "../core/sandbox";
 import { getSetting } from "../db";
 import { mcpManager } from "../mcp/manager";
+import { skillRegistry } from "../skills";
+import { wrapWithSecurityBoundary } from "../skills-runtime";
 import {
   type FileEntry,
   getIncrementalScanner,
@@ -46,7 +55,10 @@ import {
   pendingPlanApprovals,
   registerPlanGate,
 } from "./ai-task-control";
-import { buildGitRunCommandProtocol } from "./system-prompt";
+import {
+  buildGitRunCommandProtocol,
+  buildSubagentSystemPrompt,
+} from "./system-prompt";
 
 interface BuildAgentToolRegistryOptions {
   sender: WebContents;
@@ -65,6 +77,27 @@ interface BuildAgentToolRegistryOptions {
    * 原因参见 `system-prompt.buildGitRunCommandProtocol`。
    */
   isGitWorkspace?: boolean;
+  /**
+   * 注册 `spawnSubagent` 工具(让本 agent 能委派并行子 agent)。
+   * 仅主 agent 路径应设为 true;子 agent 路径必须保持 false/缺省 ——
+   * 否则子 agent 会再委派,导致递归爆炸。
+   */
+  enableSubagent?: boolean;
+  /**
+   * spawnSubagent 用:父级 abort signal。子 agent 批次级联此 signal,
+   * 父级取消时所有子 agent 一并中止。enableSubagent 时必填。
+   */
+  parentSignal?: AbortSignal;
+  /** spawnSubagent 用:解析 model/adapter 的 llmConfig id。 */
+  llmConfigId?: string;
+  /** spawnSubagent 用:子 agent 的工作目录(继承父级 workspace.root)。 */
+  workspacePath?: string;
+  /**
+   * spawnSubagent 用:父 agent 当前可委派的 skill id 全集。子 agent 的
+   * allowedSkills 只能是它的子集(主 agent 限制子 agent 能力的硬边界)。
+   * 缺省 → 子 agent 不获注入任何 skill 描述。
+   */
+  parentAllowedSkills?: string[];
 }
 
 /**
@@ -317,12 +350,254 @@ const createPlanTool = (
   },
 });
 
+const spawnSubagentInputSchema = z.object({
+  tasks: z
+    .array(
+      z.object({
+        goal: z
+          .string()
+          .min(1)
+          .describe(
+            "One sentence stating exactly what this sub-agent must accomplish. It does NOT see your conversation.",
+          ),
+        prompt: z
+          .string()
+          .min(1)
+          .describe(
+            "Full instructions plus ALL context the sub-agent needs (file paths, constraints, what to return). Assume zero shared memory.",
+          ),
+        outputFormat: z
+          .enum(["summary", "json", "answer", "patch"])
+          .default("summary")
+          .describe(
+            "How the sub-agent must shape its result. Use 'json' only when you will machine-consume the artifacts.",
+          ),
+        allowedTools: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Restrict this sub-agent to a SUBSET of your tools. Omit to inherit your set. Cannot exceed what you have.",
+          ),
+        allowedSkills: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Subset of skill ids the sub-agent may use. Omit to inherit yours. Cannot exceed yours.",
+          ),
+        maxTurns: z.number().int().min(1).max(20).optional(),
+        maxTotalTokens: z.number().int().min(1000).optional(),
+        maxWallMs: z.number().int().min(5000).optional(),
+      }),
+    )
+    .min(1)
+    .max(6)
+    .describe(
+      "One entry per parallel sub-agent. Provide multiple ONLY for genuinely independent sub-tasks.",
+    ),
+  concurrency: z.number().int().min(1).max(4).default(3),
+  failFast: z
+    .boolean()
+    .default(false)
+    .describe("If true, the first failing sub-agent cancels the rest."),
+});
+
+type SpawnSubagentInput = z.infer<typeof spawnSubagentInputSchema>;
+
+interface SpawnSubagentDeps {
+  sender: WebContents;
+  /** 父任务 id —— 用于子事件路由(parentTaskId)。 */
+  taskId: string;
+  parentSignal: AbortSignal;
+  llmConfigId?: string;
+  workspacePath: string;
+  /** 父 agent 的工具白名单(undefined=全部)。子工具集不可超此。 */
+  parentAllowedTools?: string[];
+  /** 父 agent 可委派的 skill id 全集。 */
+  parentAllowedSkills?: string[];
+}
+
+/**
+ * 工具集子集求交:子 agent 的可用工具不能超过父 agent。
+ *  - 子未指定 → 继承父集
+ *  - 父=全部(undefined)→ 用子的请求
+ *  - 两者都有 → 取交集
+ */
+const intersectTools = (
+  parent: string[] | undefined,
+  requested: string[] | undefined,
+): string[] | undefined => {
+  if (!requested) return parent;
+  if (!parent) return requested;
+  return requested.filter((t) => parent.includes(t));
+};
+
+/**
+ * LLM 可调用的委派工具。把模型给的任务数组翻译成 ForkPoolItem[],经
+ * `runForkBatch` 有界并发执行一批隔离上下文的子 agent,把结构化报告作为
+ * tool-result 返回供模型下一回合消费。
+ *
+ * 设计要点:
+ *  - 每个子 agent 走 fork-skill-runner → 同一套沙箱 / 审批 / 工具注册,
+ *    天然继承父能力;allowedTools / allowedSkills 取父子交集,父级据此限制。
+ *  - 三硬上限(turn/token/wall)经 SubAgentContract.termination 下发,
+ *    最终由 AgentLoop 强制。
+ *  - 子事件通过 ai:subagent-* 通道(携带 parentTaskId)流回 UI,可观测。
+ *  - 子 agent 路径 enableSubagent=false → 无法再委派,防递归。
+ *  - runForkBatch 经动态 import 引入,规避 agent-tools↔fork-pool 循环依赖。
+ */
+const spawnSubagentTool = (
+  deps: SpawnSubagentDeps,
+): ToolDefinition<SpawnSubagentInput, unknown> => ({
+  name: "spawnSubagent",
+  description: [
+    "Delegate one or more independent, well-scoped sub-tasks to fresh sub-agents that run in ISOLATED context (they cannot see this conversation) and return a structured report you consume next turn.",
+    "",
+    "PREFER THIS over running searches/reads one-by-one yourself whenever the work splits into independent parallel units. For a request like 'research/compare X, Y, Z', open one sub-agent per item in a SINGLE call instead of N sequential webSearch calls.",
+    "",
+    "WHEN TO USE:",
+    "- Multi-topic research or comparison — one sub-agent per topic (e.g. compare 3 frameworks/libraries → 3 sub-agents).",
+    "- Genuinely independent sub-tasks that can run in parallel (e.g. analyze 3 separate directories).",
+    "- Large/noisy exploration you want kept OUT of your context (e.g. read 50 files and return one paragraph).",
+    "- Same-shape fan-out (apply the same processing to each of N inputs).",
+    "",
+    "WHEN NOT TO USE:",
+    "- Single-step or linear tasks — just do them yourself, it's faster and cheaper.",
+    "- Tasks needing back-and-forth with the user — sub-agents cannot ask the user questions.",
+    "- Tasks with ordering dependencies — sub-agents run in parallel and cannot talk to each other; sequence those yourself across turns.",
+    "",
+    "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents; allowedTools / allowedSkills can only be a SUBSET of yours.",
+    "RESULT: returns a `reports` array (one per task) with status / summary / artifacts. Synthesize them yourself for the user next turn.",
+  ].join("\n"),
+  safety: "destructive",
+  inputSchema: spawnSubagentInputSchema,
+  execute: async (input, ctx) => {
+    const batchId = `batch-${crypto.randomUUID()}`;
+    // 与 runForkBatch 内部的钳制保持一致,避免 UI 卡显示的并发数
+    // 超过实际启动的 worker 数(如 2 个任务 + concurrency 4)。
+    const concurrency = Math.max(
+      1,
+      Math.min(input.concurrency ?? 3, input.tasks.length),
+    );
+
+    // 预生成 childTaskId(必须与 runForkBatch 的显式 item.taskId 一致),
+    // 先发 spawn 事件让 UI 立刻出现进度卡。
+    const items = input.tasks.map((task, idx) => {
+      const childTaskId = `${batchId}:${idx}`;
+      const allowedTools = intersectTools(
+        deps.parentAllowedTools,
+        task.allowedTools,
+      );
+      // skill 子集:子请求 ∩ 父全集;再解析描述注入子 systemPrompt。
+      const childSkillIds = task.allowedSkills
+        ? task.allowedSkills.filter(
+            (s) => deps.parentAllowedSkills?.includes(s) ?? false,
+          )
+        : (deps.parentAllowedSkills ?? []);
+      const allowedSkills = childSkillIds
+        .map((id) => {
+          const sk = skillRegistry.getById(id);
+          return sk ? { id: sk.id, description: sk.description } : undefined;
+        })
+        .filter(
+          (s): s is { id: string; description: string } => s !== undefined,
+        );
+
+      const systemPrompt = wrapWithSecurityBoundary(
+        buildSubagentSystemPrompt({
+          workspacePath: deps.workspacePath,
+          goal: task.goal,
+          allowedTools,
+          allowedSkills,
+        }),
+        `subagent:${childTaskId}`,
+      );
+
+      const contract: SubAgentContract = {
+        goal: task.goal,
+        input: { prompt: task.prompt },
+        output: { format: task.outputFormat as SubAgentOutputFormat },
+        termination: {
+          maxTurns: task.maxTurns ?? DEFAULT_SUB_AGENT_MAX_TURNS,
+          maxTotalTokens:
+            task.maxTotalTokens ?? DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
+          maxWallMs: task.maxWallMs ?? DEFAULT_SUB_AGENT_MAX_WALL_MS,
+        },
+      };
+
+      return {
+        childTaskId,
+        goal: task.goal,
+        item: {
+          contract,
+          systemPrompt,
+          workspacePath: deps.workspacePath,
+          allowedTools,
+          taskId: childTaskId,
+        },
+      };
+    });
+
+    if (!deps.sender.isDestroyed()) {
+      deps.sender.send("ai:subagent-spawn", {
+        parentTaskId: deps.taskId,
+        batchId,
+        toolCallId: ctx.toolCallId,
+        concurrency,
+        children: items.map((i) => ({
+          childTaskId: i.childTaskId,
+          goal: i.goal,
+        })),
+      });
+    }
+
+    // 动态 import 规避 agent-tools → fork-pool → fork-skill-runner → agent-tools 循环。
+    const { runForkBatch } = await import("./fork-pool");
+    const result = await runForkBatch(
+      items.map((i) => i.item),
+      {
+        sender: deps.sender,
+        // ctx.signal 已合并父 signal + 工具级 signal。
+        parentSignal: ctx.signal,
+        parentTaskId: deps.taskId,
+        workspacePath: deps.workspacePath,
+        llmConfigId: deps.llmConfigId,
+      },
+      {
+        concurrency,
+        failFast: input.failFast === true,
+        forkBatchId: batchId,
+      },
+    );
+
+    return {
+      success: true,
+      batchId,
+      // reports 与 items 同序(runForkBatch 按 idx 回填),用 index 取回
+      // 派发时的 goal 文本,让父 agent 能把报告对应到它委派的任务
+      //(r.agentId 是合成的 childTaskId,对父 agent 无意义)。
+      reports: result.reports.map((r, i) => ({
+        goal: input.tasks[i]?.goal ?? r.agentId,
+        status: r.status,
+        summary: r.summary,
+        artifacts: r.artifacts,
+        usage: r.usage,
+        error: r.error,
+      })),
+    };
+  },
+});
+
 export const buildAgentToolRegistry = ({
   sender,
   taskId,
   allowedTools,
   modelName,
   isGitWorkspace,
+  enableSubagent,
+  parentSignal,
+  llmConfigId,
+  workspacePath,
+  parentAllowedSkills,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
@@ -415,6 +690,27 @@ export const buildAgentToolRegistry = ({
   // 像处理内置工具一样路由它们。
   for (const def of mcpManager.getActiveToolDefs()) {
     if (allow(def.name)) registry.register(def);
+  }
+
+  // spawnSubagent —— 仅主 agent 路径注册(enableSubagent)。子 agent 路径
+  // 缺省 false,因此子 agent 拿不到此工具,无法递归委派。
+  if (
+    enableSubagent &&
+    parentSignal &&
+    workspacePath &&
+    allow("spawnSubagent")
+  ) {
+    registry.register(
+      spawnSubagentTool({
+        sender,
+        taskId,
+        parentSignal,
+        llmConfigId,
+        workspacePath,
+        parentAllowedTools: allowedTools,
+        parentAllowedSkills,
+      }),
+    );
   }
 
   return registry;

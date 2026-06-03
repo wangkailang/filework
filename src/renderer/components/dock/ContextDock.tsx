@@ -6,6 +6,7 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { BranchDiffPanel } from "../branch-diff/BranchDiffPanel";
 import { BrowserPanel } from "../browser/BrowserPanel";
+import { SubagentTracePanel } from "../chat/SubagentTracePanel";
 import { FilePreviewPanel } from "../file-preview/FilePreviewPanel";
 import {
   DOCK_MAX_WIDTH,
@@ -13,7 +14,7 @@ import {
   type DockMode,
 } from "../layout/layout-geometry";
 
-export type DockTab = "preview" | "diff" | "web";
+export type DockTab = "preview" | "diff" | "web" | "subagent";
 
 export const ContextDock = ({
   mode,
@@ -25,6 +26,8 @@ export const ContextDock = ({
   onCommitWidth,
   filePath,
   url,
+  subagentSel,
+  onSelectSubagentChild,
   workspaceRoot,
   currentBranch,
   diffInvalidator,
@@ -39,6 +42,10 @@ export const ContextDock = ({
   onCommitWidth: (w: number) => void;
   filePath: string | null;
   url: string | null;
+  /** 钻入面板:当前查看的子 agent(批次 + 子任务)。null → 不显示 subagent 标签。 */
+  subagentSel?: { batchId: string; childTaskId: string } | null;
+  /** 兄弟 chip 切换某个子任务时回调。 */
+  onSelectSubagentChild?: (childTaskId: string) => void;
   workspaceRoot: string;
   currentBranch?: string | null;
   diffInvalidator: number;
@@ -50,8 +57,16 @@ export const ContextDock = ({
   widthRef.current = width;
   // 全屏:铺满窗口(fixed inset-0),忽略 width 与 mode。关闭面板时一并复位。
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 非 git 项目不提供「差异 / 网页」,即使 activeTab 残留也回落到预览。
-  const effectiveTab: DockTab = isGitRepo ? activeTab : "preview";
+  // 非 git 项目不提供「差异 / 网页」;subagent 标签需有选中项才有效。
+  // 任一不满足时回落到预览。
+  const effectiveTab: DockTab =
+    activeTab === "subagent"
+      ? subagentSel
+        ? "subagent"
+        : "preview"
+      : isGitRepo
+        ? activeTab
+        : "preview";
 
   // 左边缘拖拽:向左拖变宽(dock 在右侧,故 delta 取负)。
   const startResize = useCallback(
@@ -127,6 +142,7 @@ export const ContextDock = ({
         {tabBtn("preview", LL.dock_preview())}
         {isGitRepo && tabBtn("diff", LL.dock_diff())}
         {isGitRepo && tabBtn("web", LL.dock_web())}
+        {subagentSel && tabBtn("subagent", LL.dock_subagent())}
         <div className="flex-1" />
         <button
           type="button"
@@ -184,6 +200,19 @@ export const ContextDock = ({
             ) : (
               <div className="p-4 text-sm text-muted-foreground">—</div>
             )}
+          </div>
+        )}
+        {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,
+            随子 agent 流式实时更新)。 */}
+        {subagentSel && (
+          <div
+            className={cn("h-full", effectiveTab !== "subagent" && "hidden")}
+          >
+            <SubagentTracePanel
+              batchId={subagentSel.batchId}
+              childTaskId={subagentSel.childTaskId}
+              onSelectChild={onSelectSubagentChild}
+            />
           </div>
         )}
       </div>

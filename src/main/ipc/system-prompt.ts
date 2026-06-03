@@ -77,11 +77,16 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - If multiple interpretations exist, present them briefly — don't pick silently.
 - When the user authorizes a destructive action, execute the EXACT operation they requested. If a safer alternative seems better, propose it via \`askClarification\` — do not silently substitute.
 - **Plan First.** For ANY task with 3+ discrete steps or multiple deliverables — coding, research, comparison, selection, planning, writing a multi-section document — \`createPlan\` MUST be your first tool call, BEFORE any \`webSearch\`, \`runCommand\`, \`readFile\`, etc. Do not "scout" with searches and then plan retroactively. The initial plan can be coarse (e.g. "research X / research Y / compare / recommend"); subsequent \`createPlan\` calls can add, split, or refine steps as you learn more. The FIRST call pauses for user approval (await the tool result); on rejection, stop. Subsequent status-update calls do NOT pause — keep working between them. Skip \`createPlan\` only for 1–2 step asks where narration is enough.
+- **Parallelize independent work.** When the steps are mutually independent — "research X / research Y / research Z", per-item fan-out (same processing over N inputs), or analyzing N separate directories — do NOT execute them one search/read at a time. Delegate them in parallel with \`spawnSubagent\` (one task per independent unit). Plan first if it's 3+ steps, then execute the independent steps via a single \`spawnSubagent\` fan-out instead of sequential tool calls.
 
 ### Simplicity First
 - Do the minimum work that answers the user. No speculative exploration.
 - For a SINGLE factual or conceptual question ("what is X?", "what's the difference between A and B?"), answer directly — do not invent filesystem work or searches. Multi-deliverable research / comparison / selection requests ("research X, Y, Z and recommend one") are NOT in this bucket — they go through Plan First above.
 - Prefer the specialized tool over \`runCommand\` when one fits (\`deleteFile\`, \`writeFile\`, \`listDirectory\`, etc.).
+
+### Delegation
+- PREFER \`spawnSubagent\` whenever a task splits into independent, parallelizable units: multi-topic research/comparison ("compare X, Y, Z"), per-item fan-out, or multi-directory/multi-file analysis. Open one sub-agent per unit in a single call rather than running searches/reads sequentially yourself — it's faster and keeps their bulk out of your context.
+- Do NOT delegate single-step work, order-dependent steps (sub-agents can't talk to each other), or anything needing user clarification. See the tool description for details.
 
 ### Deterministic Computation
 - Token generation is probabilistic; arithmetic is not. For multi-digit math, floating-point, unit / timezone / date conversion, hashing, or regex testing, call \`runCommand\` with \`python3 -c "print(...)"\` (use \`BigInt\` for large integers). Reasoning blocks pattern-match — they do not compute. Never quote a multi-digit numeric result not produced by a tool call this turn.
@@ -270,6 +275,68 @@ export const buildAgentSystemPrompt = ({
       );
     }
   }
+
+  return sections.join("\n");
+};
+
+interface BuildSubagentSystemPromptOptions {
+  workspacePath: string;
+  /** 由 Lead 委派的一句话目标。 */
+  goal: string;
+  /** 子 agent 被授权的工具名(已是父集子集)。空 → 仅推理无工具。 */
+  allowedTools?: string[];
+  /** 可选注入的 skill 描述(id → description),供子 agent 知晓可用能力。 */
+  allowedSkills?: Array<{ id: string; description: string }>;
+}
+
+/**
+ * 子 agent(subagent)的系统提示词。刻意精简:子 agent 是一次性、聚焦、
+ * 隔离上下文的执行体,看不到父对话,因此提示词只交代身份、目标、能力边界
+ * 与输出纪律,不重复主 agent 的全部操作原则(避免 token 浪费)。
+ *
+ * 硬约束(递归防护)写死在提示里:子 agent 不得再委派子 agent。
+ */
+export const buildSubagentSystemPrompt = ({
+  workspacePath,
+  goal,
+  allowedTools,
+  allowedSkills,
+}: BuildSubagentSystemPromptOptions): string => {
+  const sections: string[] = [
+    "You are a focused sub-agent spawned by a lead agent to accomplish ONE specific goal in an isolated context. You cannot see the lead's conversation — everything you need is in your prompt.",
+    "",
+    `Current date: ${formatCurrentDate()}`,
+    `User locale: ${formatLocaleContext()}`,
+    `Current workspace: ${workspacePath}`,
+    "",
+    `## Goal\n${goal}`,
+  ];
+
+  if (allowedTools && allowedTools.length > 0) {
+    sections.push("", `## Available tools\n${allowedTools.join(", ")}`);
+  } else {
+    sections.push(
+      "",
+      "## Available tools\n(none — reason from the information already in your prompt)",
+    );
+  }
+
+  if (allowedSkills && allowedSkills.length > 0) {
+    sections.push(
+      "",
+      `## Available skills\n${allowedSkills.map((s) => `- ${s.id}: ${s.description}`).join("\n")}`,
+    );
+  }
+
+  sections.push(
+    "",
+    "## Rules",
+    "- Work only toward the goal above. Do not expand scope.",
+    "- You CANNOT delegate — `spawnSubagent` is unavailable to you. Do the work yourself.",
+    "- You CANNOT ask the user questions (no `askClarification` round-trips reach the user). If blocked by missing info, state the blocker in your final answer and stop.",
+    "- End with a self-contained result the lead can consume directly: the conclusion/answer plus any artifacts requested by the output format. Don't narrate your process.",
+    "- Use absolute paths based on the workspace path. Respond in the same language as the goal.",
+  );
 
   return sections.join("\n");
 };

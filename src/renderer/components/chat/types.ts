@@ -24,6 +24,8 @@ export type {
   PlanMessagePart,
   ReasoningPart,
   RecoveryAction,
+  SubagentChildView,
+  SubagentMessagePart,
   TextPart,
   ToolApproval,
   ToolPart,

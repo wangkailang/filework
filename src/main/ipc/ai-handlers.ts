@@ -579,12 +579,24 @@ const handleTaskExecutionInner = async (
     // Registry 工具(文件操作 + askClarification)会经过 beforeToolCall
     // 审批 hook。skill 自带的工具(如 pdf-processor)是预先构建好的
     // ai-sdk Tool 对象,合并时不加守卫。
+    // 主 agent 可委派的 skill 全集 —— 子 agent 的 allowedSkills 只能是它的
+    // 子集(主 agent 限制子 agent 能力的硬边界)。
+    const parentAllowedSkills = skillRegistry
+      .listUserVisible()
+      .map((s) => s.id);
     const toolRegistry = buildAgentToolRegistry({
       sender,
       taskId: id,
       allowedTools,
       modelName: llmConfig?.model,
       isGitWorkspace,
+      // 主 agent 路径:开放 spawnSubagent 委派能力。子 agent 路径
+      //(fork-skill-runner)不传 enableSubagent → 无法递归委派。
+      enableSubagent: true,
+      parentSignal: controller.signal,
+      llmConfigId: payload.llmConfigId,
+      workspacePath: workspace.root,
+      parentAllowedSkills,
     });
     const beforeToolCall = buildApprovalHook({
       sender,

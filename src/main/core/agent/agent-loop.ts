@@ -24,6 +24,7 @@ import { compactToolResults } from "./compact-tool-results";
 import type {
   AgentEndStatus,
   AgentEvent,
+  AgentStopReason,
   ClassifiedAgentError,
   TokenUsage,
   TurnEndReason,
@@ -104,6 +105,18 @@ export interface AgentLoopConfig {
    * 初始 + 2 次重试)。
    */
   maxReflections?: number;
+  /**
+   * 整个 run 的累计 token 硬上限(input+output,跨所有 step 与 reflection)。
+   * 命中后立即中止本次运行,agent_end 以 status="completed" +
+   * stopReason="token_budget" 返回(已产出内容有效)。不设 → 不限。
+   */
+  maxTotalTokens?: number;
+  /**
+   * 整个 run 的墙钟硬上限(毫秒,跨所有 step 与 reflection)。命中后立即
+   * 中止,agent_end 以 status="completed" + stopReason="wall_clock" 返回。
+   * 不设 → 不限。子 agent 路径的 fork-skill-runner 另有外层 setTimeout 兜底。
+   */
+  maxWallMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +180,29 @@ export class AgentLoop {
       timestamp: new Date().toISOString(),
     });
 
+    // ── 硬上限统一收口 ────────────────────────────────────────────────
+    // internalController 让 AgentLoop 能因 token/wall 超限主动中止自身
+    //(cfg.signal 是外部传入的,AgentLoop 不能 abort 它)。把它与 cfg.signal
+    // 合并后传给 streamText / 工具 / reflect,任一触发都干净传播。
+    const internalController = new AbortController();
+    const effectiveSignal: AbortSignal = this.cfg.signal
+      ? AbortSignal.any([this.cfg.signal, internalController.signal])
+      : internalController.signal;
+    let stopReason: AgentStopReason | undefined;
+    // 跨所有 step 与 reflection 的累计 token(input+output)。独立于用于
+    // 上报的 totalUsage,避免与"每次 streamText 覆盖式赋值"语义打架。
+    let cumulativeTokens = 0;
+
+    const wallTimer =
+      this.cfg.maxWallMs && this.cfg.maxWallMs > 0
+        ? setTimeout(() => {
+            if (!internalController.signal.aborted) {
+              stopReason = "wall_clock";
+              internalController.abort();
+            }
+          }, this.cfg.maxWallMs)
+        : undefined;
+
     let history = this.cfg.history ?? [];
 
     // ── transformContext 钩子 ────────────────────────────────────────
@@ -207,7 +243,7 @@ export class AgentLoop {
         ? this.cfg.tools.toAiSdkTools({
             ctxFactory: ({ toolCallId }): ToolContext => ({
               workspace: this.cfg.workspace,
-              signal: this.cfg.signal ?? new AbortController().signal,
+              signal: effectiveSignal,
               toolCallId,
             }),
             beforeToolCall: this.cfg.hooks?.beforeToolCall,
@@ -247,7 +283,7 @@ export class AgentLoop {
           const compacted = compactToolResults(stepMessages);
           return compacted ? { messages: compacted } : {};
         },
-        abortSignal: this.cfg.signal,
+        abortSignal: effectiveSignal,
         providerOptions: this.cfg.providerOptions,
         ...(this.cfg.temperature !== undefined && {
           temperature: this.cfg.temperature,
@@ -375,8 +411,8 @@ export class AgentLoop {
             break;
           }
           case "finish-step": {
+            const stepUsage = mapUsage(part.usage);
             if (messageOpen) {
-              const stepUsage = mapUsage(part.usage);
               emit({
                 type: "message_end",
                 agentId,
@@ -394,6 +430,27 @@ export class AgentLoop {
               turnIndex,
               reason: mapTurnEndReason(part.finishReason),
             });
+            // ── token 预算核算(每个 step 都计,含纯工具步)──────────────
+            const stepTotal =
+              stepUsage?.totalTokens ??
+              (stepUsage?.inputTokens ?? 0) + (stepUsage?.outputTokens ?? 0);
+            cumulativeTokens += stepTotal;
+            if (
+              this.cfg.maxTotalTokens &&
+              cumulativeTokens >= this.cfg.maxTotalTokens &&
+              !internalController.signal.aborted
+            ) {
+              stopReason = "token_budget";
+              internalController.abort();
+            } else if (
+              part.finishReason === "tool-calls" &&
+              turnIndex + 1 >= (this.cfg.maxStepsPerTurn ?? 20) &&
+              !stopReason
+            ) {
+              // 模型还想继续(发了 tool-calls)但步数到顶被 stepCountIs 截停。
+              // 仅记录,供可观测;不主动 abort(streamText 自身会停)。
+              stopReason = "max_steps";
+            }
             break;
           }
           case "error": {
@@ -452,14 +509,19 @@ export class AgentLoop {
         const summary = await withRetry(() => callStreamText(captured), {
           classify: this.cfg.classifyError,
           onRetry,
-          signal: this.cfg.signal,
+          signal: effectiveSignal,
         });
 
+        // 命中**中止式**硬上限(token/wall)→ 停止后续 reflection,走正常
+        // 收束路径。max_steps 只是可观测信号、不中止,必须继续走 reflection
+        //(否则步数耗尽且模型还想调工具的回合会跳过 missingFinalAnswer 的
+        // 强制收尾重试 —— 正是最需要它的时候)。
+        if (stopReason === "token_budget" || stopReason === "wall_clock") break;
         if (!this.cfg.hooks?.reflect) break;
-        if (this.cfg.signal?.aborted) break;
+        if (effectiveSignal.aborted) break;
         if (reflectionAttempts >= maxReflections) break;
 
-        const verdict = await this.cfg.hooks.reflect(summary, this.cfg.signal);
+        const verdict = await this.cfg.hooks.reflect(summary, effectiveSignal);
         emit({
           type: "reflection_verdict",
           agentId,
@@ -500,6 +562,16 @@ export class AgentLoop {
           providerMetadata,
           finalText: finalTextAccum,
         });
+      } else if (this.cfg.signal?.aborted && !stopReason) {
+        // 用户/父级在 reflect 间隙取消(streamText 内中止会走 catch)。
+        emit({
+          type: "agent_end",
+          agentId,
+          status: "cancelled",
+          totalUsage,
+          providerMetadata,
+          finalText: finalTextAccum,
+        });
       } else {
         emit({
           type: "agent_end",
@@ -508,6 +580,7 @@ export class AgentLoop {
           totalUsage,
           providerMetadata,
           finalText: finalTextAccum,
+          stopReason,
         });
       }
     } catch (err) {
@@ -523,26 +596,40 @@ export class AgentLoop {
           JSON.stringify(issues?.issues, null, 2),
         );
       }
-      const status: AgentEndStatus =
-        err instanceof Error && err.name === "AbortError"
-          ? "cancelled"
-          : "failed";
-      const errorPayload: ClassifiedAgentError | undefined =
-        status === "failed"
-          ? {
-              message: err instanceof Error ? err.message : String(err),
-              type: "unknown",
-            }
-          : undefined;
-      emit({
-        type: "agent_end",
-        agentId,
-        status,
-        error: errorPayload,
-        totalUsage,
-        providerMetadata,
-        finalText: finalTextAccum,
-      });
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      // 因 token/wall 硬上限触发的 internal abort:产出有效,视为完成 +
+      // stopReason,而非 cancelled。
+      if (isAbort && stopReason) {
+        emit({
+          type: "agent_end",
+          agentId,
+          status: "completed",
+          totalUsage,
+          providerMetadata,
+          finalText: finalTextAccum,
+          stopReason,
+        });
+      } else {
+        const status: AgentEndStatus = isAbort ? "cancelled" : "failed";
+        const errorPayload: ClassifiedAgentError | undefined =
+          status === "failed"
+            ? {
+                message: err instanceof Error ? err.message : String(err),
+                type: "unknown",
+              }
+            : undefined;
+        emit({
+          type: "agent_end",
+          agentId,
+          status,
+          error: errorPayload,
+          totalUsage,
+          providerMetadata,
+          finalText: finalTextAccum,
+        });
+      }
+    } finally {
+      if (wallTimer) clearTimeout(wallTimer);
     }
   }
 }

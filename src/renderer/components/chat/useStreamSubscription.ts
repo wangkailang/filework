@@ -20,6 +20,8 @@ import type {
   MessagePart,
   PlanMessagePart,
   ReasoningPart,
+  SubagentChildView,
+  SubagentMessagePart,
   ToolApproval,
   ToolPart,
   UsagePart,
@@ -397,6 +399,10 @@ export function useStreamSubscription({
         // (via `ai:stream-plan`). Suppress the generic tool bubble so N
         // status-update calls don't stack as N "完成 createPlan" rows.
         if (toolName === "createPlan") return;
+        // `spawnSubagent` is rendered as a SubagentMessagePart (via
+        // `ai:subagent-*`). Suppress the generic tool bubble — a fan-out of
+        // N children can't fit the single args/result ToolPart shape.
+        if (toolName === "spawnSubagent") return;
         updateParts((parts) => {
           const existingIdx = parts.findIndex(
             (p) => p.type === "tool" && p.toolCallId === toolCallId,
@@ -786,6 +792,170 @@ export function useStreamSubscription({
         });
       });
 
+    // ── subagent(spawnSubagent fan-out)聚合 ────────────────────────
+    // 全部按 parentTaskId 过滤(等于当前主任务才处理),用 batchId 定位
+    // SubagentMessagePart、childTaskId 定位卡内某一行。
+    const updateSubagentChild = (
+      batchId: string,
+      childTaskId: string,
+      fn: (child: SubagentChildView) => SubagentChildView,
+    ) => {
+      updateParts((parts) => {
+        const idx = parts.findIndex(
+          (p) => p.type === "subagent" && p.batchId === batchId,
+        );
+        if (idx === -1) return parts;
+        const part = parts[idx] as SubagentMessagePart;
+        parts[idx] = {
+          ...part,
+          children: part.children.map((c) =>
+            c.childTaskId === childTaskId ? fn(c) : c,
+          ),
+        };
+        return parts;
+      });
+    };
+
+    const offSubagentSpawn = window.filework.onSubagentSpawn(
+      ({ parentTaskId, batchId, toolCallId, concurrency, children }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        updateParts((parts) => {
+          if (parts.some((p) => p.type === "subagent" && p.batchId === batchId))
+            return parts;
+          parts.push({
+            type: "subagent",
+            batchId,
+            toolCallId,
+            concurrency,
+            children: children.map((c) => ({
+              childTaskId: c.childTaskId,
+              goal: c.goal,
+              status: "running",
+              stepCount: 0,
+              toolCalls: [],
+              usage: {
+                inputTokens: null,
+                outputTokens: null,
+                totalTokens: null,
+              },
+            })),
+          });
+          return parts;
+        });
+      },
+    );
+
+    // 子 agent 文本增量 → 累积进 child.parts(供钻入面板回放)。
+    const offSubagentDelta = window.filework.onSubagentDelta(
+      ({ parentTaskId, batchId, childTaskId, delta }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        updateSubagentChild(batchId, childTaskId, (c) => {
+          const parts = c.parts ? [...c.parts] : [];
+          const last = parts[parts.length - 1];
+          if (last && last.type === "text") {
+            parts[parts.length - 1] = { ...last, text: last.text + delta };
+          } else {
+            parts.push({ type: "text", text: delta });
+          }
+          return { ...c, parts };
+        });
+      },
+    );
+
+    const offSubagentToolCall = window.filework.onSubagentToolCall(
+      ({ parentTaskId, batchId, childTaskId, toolCallId, toolName, args }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        updateSubagentChild(batchId, childTaskId, (c) => {
+          const parts = c.parts ? [...c.parts] : [];
+          if (
+            !parts.some((p) => p.type === "tool" && p.toolCallId === toolCallId)
+          ) {
+            parts.push({
+              type: "tool",
+              toolCallId,
+              toolName,
+              args,
+              state: "input-available",
+            });
+          }
+          return {
+            ...c,
+            stepCount: c.stepCount + 1,
+            toolCalls: c.toolCalls.some((t) => t.toolCallId === toolCallId)
+              ? c.toolCalls
+              : [
+                  ...c.toolCalls,
+                  { toolCallId, toolName, state: "input-available" as const },
+                ],
+            parts,
+          };
+        });
+      },
+    );
+
+    const offSubagentToolResult = window.filework.onSubagentToolResult(
+      ({ parentTaskId, batchId, childTaskId, toolCallId, result }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        const resultObj =
+          result != null && typeof result === "object"
+            ? (result as Record<string, unknown>)
+            : null;
+        const isFailure =
+          resultObj != null &&
+          (resultObj.success === false || resultObj.isError === true);
+        const nextState = isFailure
+          ? ("output-error" as const)
+          : ("output-available" as const);
+        updateSubagentChild(batchId, childTaskId, (c) => ({
+          ...c,
+          toolCalls: c.toolCalls.map((t) =>
+            t.toolCallId === toolCallId ? { ...t, state: nextState } : t,
+          ),
+          parts: c.parts?.map((p) =>
+            p.type === "tool" && p.toolCallId === toolCallId
+              ? { ...p, result, state: nextState }
+              : p,
+          ),
+        }));
+      },
+    );
+
+    const offSubagentChildUsage = window.filework.onSubagentChildUsage(
+      ({ parentTaskId, batchId, childTaskId, usage }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        updateSubagentChild(batchId, childTaskId, (c) => ({
+          ...c,
+          usage: {
+            inputTokens: usage?.inputTokens ?? c.usage.inputTokens,
+            outputTokens: usage?.outputTokens ?? c.usage.outputTokens,
+            totalTokens:
+              usage?.totalTokens ??
+              (usage?.inputTokens != null || usage?.outputTokens != null
+                ? (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
+                : c.usage.totalTokens),
+          },
+        }));
+      },
+    );
+
+    const offSubagentReport = window.filework.onSubagentReport(
+      ({ parentTaskId, batchId, childTaskId, report }) => {
+        if (parentTaskId !== streamTaskIdRef.current) return;
+        updateSubagentChild(batchId, childTaskId, (c) => ({
+          ...c,
+          status: report.status,
+          summary: report.summary || c.summary,
+          error: report.error,
+          durationMs: report.durationMs,
+          usage: {
+            inputTokens: report.usage.inputTokens ?? c.usage.inputTokens,
+            outputTokens: report.usage.outputTokens ?? c.usage.outputTokens,
+            totalTokens: report.usage.totalTokens ?? c.usage.totalTokens,
+          },
+        }));
+      },
+    );
+
     return () => {
       offStart();
       offSkillActivated();
@@ -806,6 +976,12 @@ export function useStreamSubscription({
       offCiRunDone();
       offCiRunTimeout();
       offCiDispatchResolveFailed();
+      offSubagentSpawn();
+      offSubagentDelta();
+      offSubagentToolCall();
+      offSubagentToolResult();
+      offSubagentChildUsage();
+      offSubagentReport();
     };
   }, [
     debouncedSave,

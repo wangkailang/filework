@@ -169,3 +169,52 @@ describe("askClarification tool — blocks until user answers", () => {
     expect(sA).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("spawnSubagent tool — 注册门控与递归防护", () => {
+  const sender = {
+    isDestroyed: () => false,
+    send: vi.fn(),
+  } as unknown as WebContents;
+
+  it("主 agent 路径(enableSubagent + parentSignal + workspacePath)注册 spawnSubagent", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "main-1",
+      enableSubagent: true,
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    expect(registry.has("spawnSubagent")).toBe(true);
+  });
+
+  it("子 agent 路径(enableSubagent 缺省)不注册 spawnSubagent —— 防递归委派", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "child-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    expect(registry.has("spawnSubagent")).toBe(false);
+  });
+
+  it("enableSubagent 但缺 parentSignal/workspacePath 时不注册(避免半接线)", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "main-2",
+      enableSubagent: true,
+    });
+    expect(registry.has("spawnSubagent")).toBe(false);
+  });
+
+  it("allowedTools 不含 spawnSubagent 时即便 enableSubagent 也不注册", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "main-3",
+      enableSubagent: true,
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+      allowedTools: ["readFile"],
+    });
+    expect(registry.has("spawnSubagent")).toBe(false);
+  });
+});

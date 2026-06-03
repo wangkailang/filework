@@ -62,6 +62,19 @@ export async function runForkBatch(
     deps.parentSignal.addEventListener("abort", onParentAbort, { once: true });
   }
 
+  // spawnSubagent 路径:每个子任务收束后回传 report,使 UI 进度卡把对应
+  // 行切到终态(含 failFast 级联未启动而被合成 cancelled 的行 —— 否则它们
+  // 会永远停在 spinner)。legacy fork 技能路径无 parentTaskId,跳过。
+  const emitReport = (childTaskId: string, report: SubAgentReport): void => {
+    if (!deps.parentTaskId || deps.sender.isDestroyed()) return;
+    deps.sender.send("ai:subagent-report", {
+      parentTaskId: deps.parentTaskId,
+      batchId: forkBatchId,
+      childTaskId,
+      report,
+    });
+  };
+
   let cursor = 0;
   const runWorker = async (): Promise<void> => {
     while (true) {
@@ -74,6 +87,10 @@ export async function runForkBatch(
         ...deps,
         taskId: childTaskId,
         parentSignal: batchController.signal,
+        // 必须传 batchId,否则子 agent 的 ai:subagent-* 事件携带
+        // batchId=undefined,渲染层按 batchId 定位进度卡时匹配不到,
+        // 全部 live 进度被丢弃(只剩 spawn 卡和最终 report)。
+        batchId: forkBatchId,
       });
       const runOpts: RunSubagentOptions = {
         systemPrompt: item.systemPrompt,
@@ -87,11 +104,14 @@ export async function runForkBatch(
       try {
         const report = await runner(runOpts);
         reports[idx] = report;
-        if (failFast && report.status !== "ok") {
+        emitReport(childTaskId, report);
+        // 仅在**真正失败**时级联中止。timeout / token_limit 是"被硬上限
+        // 截断但仍有可用产出"的降级结果,不应连累还在正常推进的兄弟任务。
+        if (failFast && report.status === "failed") {
           batchController.abort();
         }
       } catch (err) {
-        reports[idx] = {
+        const failedReport: SubAgentReport = {
           agentId: childTaskId,
           status: "failed",
           summary: "",
@@ -104,6 +124,8 @@ export async function runForkBatch(
           durationMs: 0,
           error: err instanceof Error ? err.message : String(err),
         };
+        reports[idx] = failedReport;
+        emitReport(childTaskId, failedReport);
         if (failFast) batchController.abort();
       }
     }
@@ -119,8 +141,9 @@ export async function runForkBatch(
   // 任何从未启动的槽位(failFast 级联)都会得到一个合成的 cancelled 报告。
   for (let i = 0; i < items.length; i++) {
     if (reports[i] === undefined) {
-      reports[i] = {
-        agentId: items[i].taskId ?? `${forkBatchId}:${i}`,
+      const childTaskId = items[i].taskId ?? `${forkBatchId}:${i}`;
+      const cancelledReport: SubAgentReport = {
+        agentId: childTaskId,
         status: "cancelled",
         summary: "",
         usage: {
@@ -132,6 +155,8 @@ export async function runForkBatch(
         durationMs: 0,
         error: "cancelled before start (failFast cascade)",
       };
+      reports[i] = cancelledReport;
+      emitReport(childTaskId, cancelledReport);
     }
   }
 

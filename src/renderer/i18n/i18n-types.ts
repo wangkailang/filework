@@ -112,6 +112,10 @@ type RootTranslation = {
 	 */
 	dock_web: string
 	/**
+	 * Subagent
+	 */
+	dock_subagent: string
+	/**
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
@@ -272,43 +276,43 @@ type RootTranslation = {
 	 */
 	session_newChat: string
 	/**
-	 * Rename
+	 * R​e​n​a​m​e
 	 */
 	session_rename: string
 	/**
-	 * Today
+	 * T​o​d​a​y
 	 */
 	session_group_today: string
 	/**
-	 * Yesterday
+	 * Y​e​s​t​e​r​d​a​y
 	 */
 	session_group_yesterday: string
 	/**
-	 * Previous 7 days
+	 * P​r​e​v​i​o​u​s​ ​7​ ​d​a​y​s
 	 */
 	session_group_week: string
 	/**
-	 * Previous 30 days
+	 * P​r​e​v​i​o​u​s​ ​3​0​ ​d​a​y​s
 	 */
 	session_group_month: string
 	/**
-	 * Earlier
+	 * E​a​r​l​i​e​r
 	 */
 	session_group_earlier: string
 	/**
-	 * Delete chat
+	 * D​e​l​e​t​e​ ​c​h​a​t
 	 */
 	session_delete_confirm_title: string
 	/**
-	 * This chat will be permanently deleted. Continue?
+	 * T​h​i​s​ ​c​h​a​t​ ​w​i​l​l​ ​b​e​ ​p​e​r​m​a​n​e​n​t​l​y​ ​d​e​l​e​t​e​d​.​ ​C​o​n​t​i​n​u​e​?
 	 */
 	session_delete_confirm_desc: string
 	/**
-	 * Delete
+	 * D​e​l​e​t​e
 	 */
 	session_confirm: string
 	/**
-	 * Cancel
+	 * C​a​n​c​e​l
 	 */
 	session_cancel: string
 	/**
@@ -357,6 +361,14 @@ type RootTranslation = {
 	 * F​o​r​k​ ​f​r​o​m​ ​h​e​r​e
 	 */
 	chat_forkHere: string
+	/**
+	 * C​o​p​y
+	 */
+	chat_copy: string
+	/**
+	 * C​o​p​i​e​d
+	 */
+	chat_copied: string
 	/**
 	 * T​e​l​l​ ​m​e​ ​w​h​a​t​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​d​o​.​.​.​ ​(​E​n​t​e​r​ ​t​o​ ​s​e​n​d​)
 	 */
@@ -1389,6 +1401,10 @@ export type TranslationFunctions = {
 	 */
 	dock_web: () => LocalizedString
 	/**
+	 * Subagent
+	 */
+	dock_subagent: () => LocalizedString
+	/**
 	 * Settings
 	 */
 	settings_title: () => LocalizedString
@@ -1632,6 +1648,14 @@ export type TranslationFunctions = {
 	 * Fork from here
 	 */
 	chat_forkHere: () => LocalizedString
+	/**
+	 * Copy
+	 */
+	chat_copy: () => LocalizedString
+	/**
+	 * Copied
+	 */
+	chat_copied: () => LocalizedString
 	/**
 	 * Tell me what you want to do... (Enter to send)
 	 */

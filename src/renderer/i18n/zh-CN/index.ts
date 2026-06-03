@@ -33,6 +33,7 @@ const zhCN: Translation = {
   dock_preview: "预览",
   dock_diff: "差异",
   dock_web: "网页",
+  dock_subagent: "子 agent",
 
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",
@@ -103,6 +104,8 @@ const zhCN: Translation = {
   chat_generating: "正在生成",
   chat_generatingLong: "正在生成较长内容",
   chat_forkHere: "从此处分支",
+  chat_copy: "复制",
+  chat_copied: "已复制",
   chat_inputPlaceholder: "告诉我你想做什么... (Enter 发送)",
 
   // Error types

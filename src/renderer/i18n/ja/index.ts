@@ -33,6 +33,7 @@ const ja: Translation = {
   dock_preview: "プレビュー",
   dock_diff: "差分",
   dock_web: "Web",
+  dock_subagent: "サブエージェント",
 
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",
@@ -106,6 +107,8 @@ const ja: Translation = {
   chat_generating: "生成中",
   chat_generatingLong: "長めの内容を生成中",
   chat_forkHere: "ここから分岐",
+  chat_copy: "コピー",
+  chat_copied: "コピーしました",
   chat_inputPlaceholder: "やりたいことを教えてください... (Enter で送信)",
 
   // Error types
