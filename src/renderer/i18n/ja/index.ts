@@ -34,6 +34,7 @@ const ja: Translation = {
   dock_diff: "差分",
   dock_web: "Web",
   dock_subagent: "サブエージェント",
+  dock_menu: "パネル",
 
   settings_title: "設定",
   settings_aiProvider: "AIプロバイダー",
@@ -210,6 +211,9 @@ const ja: Translation = {
   branch_diff_no_base: "ベースブランチ(main)が見つかりません",
   branch_diff_exec_failed: "git コマンドが失敗しました",
   branch_diff_refresh: "更新",
+  branch_diff_compareBase: "比較対象",
+  branch_diff_filterFiles: "ファイルを絞り込み...",
+  branch_diff_toggleTree: "ファイルツリー",
   branch_diff_ahead: "未プッシュ {0}",
   branch_diff_behind: "{0} 遅れ",
   branch_diff_uncommitted: "未コミット {0}",
@@ -389,6 +393,8 @@ const ja: Translation = {
   browser_open_external: "システムブラウザで開く",
   browser_url_placeholder: "URLを入力…",
   browser_failed_to_load: "ページの読み込みに失敗しました",
+  browser_start_title: "ウェブを閲覧",
+  browser_start_hint: "アドレスバーにURLを入力して閲覧を開始",
 };
 
 export default ja;

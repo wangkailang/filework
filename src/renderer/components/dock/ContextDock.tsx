@@ -195,11 +195,8 @@ export const ContextDock = ({
         )}
         {isGitRepo && (
           <div className={cn("h-full", effectiveTab !== "web" && "hidden")}>
-            {url ? (
-              <BrowserPanel url={url} />
-            ) : (
-              <div className="p-4 text-sm text-muted-foreground">—</div>
-            )}
+            {/* 无 URL 时也挂载:BrowserPanel 自行展示起始页(地址栏可用)。 */}
+            <BrowserPanel url={url ?? ""} />
           </div>
         )}
         {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,

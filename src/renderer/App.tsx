@@ -3,6 +3,7 @@ import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
 import { ContextDock, type DockTab } from "./components/dock/ContextDock";
+import { DockMenu } from "./components/dock/DockMenu";
 import {
   LeftRail,
   RailExpandButton,
@@ -201,6 +202,34 @@ export const App = () => {
     return () => window.removeEventListener("filework:open-subagent", handler);
   }, [openSubagentInDock]);
 
+  // 全局快捷键:⇧⌘ + 首字母 切换右侧面板(与 DockMenu 的提示一致)。
+  // 非 git 项目无 diff/web;无选中子 agent 时跳过 subagent。
+  useEffect(() => {
+    const map: Record<string, DockTab> = {
+      p: "preview",
+      d: "diff",
+      w: "web",
+      a: "subagent",
+    };
+    const handler = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.shiftKey) return;
+      const tab = map[e.key.toLowerCase()];
+      if (!tab) return;
+      if ((tab === "diff" || tab === "web") && !workspaceRef.current?.isGitRepo)
+        return;
+      if (tab === "subagent" && !dockSubagent) return;
+      e.preventDefault();
+      if (dockOpen && dockTab === tab) {
+        setDockOpen(false);
+      } else {
+        setDockTab(tab);
+        setDockOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [dockOpen, dockTab, dockSubagent]);
+
   const resolveWorkspace = useCallback(
     async (ref: WorkspaceRef): Promise<ResolvedWorkspace> => {
       if (ref.kind === "local") {
@@ -376,15 +405,17 @@ export const App = () => {
     recordRecent(updatedRef, workspaceRefLabel(updatedRef));
   };
 
-  // Diff 开关:已在 Diff 标签且开着 → 关;否则切到 Diff 并打开 Dock。
-  const toggleDiff = () => {
-    if (dockOpen && dockTab === "diff") {
+  // 面板开关:已在该标签且开着 → 关;否则切到该标签并打开 Dock。
+  // 顶部 DockMenu、快捷键、LeftRail 的 Diff 按钮共用此逻辑。
+  const openDockTab = (tab: DockTab) => {
+    if (dockOpen && dockTab === tab) {
       setDockOpen(false);
     } else {
-      setDockTab("diff");
+      setDockTab(tab);
       setDockOpen(true);
     }
   };
+  const toggleDiff = () => openDockTab("diff");
 
   if (isRestoring) {
     return (
@@ -468,8 +499,18 @@ export const App = () => {
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <main className="relative flex min-w-0 flex-1 overflow-hidden">
-                  <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="relative min-w-0 flex-1 overflow-hidden">
                     <ChatPanel workspacePath={workspace.localPath} />
+                    {/* 顶部右上角面板菜单:统一打开/切换 预览 / 子 agent / 差异 / 网页。 */}
+                    <div className="titlebar-no-drag absolute top-1.5 right-2 z-30">
+                      <DockMenu
+                        activeTab={dockTab}
+                        dockOpen={dockOpen}
+                        isGitRepo={workspace.isGitRepo}
+                        hasSubagent={dockSubagent != null}
+                        onSelect={openDockTab}
+                      />
+                    </div>
                   </div>
                   {dockOpen && (
                     <ContextDock

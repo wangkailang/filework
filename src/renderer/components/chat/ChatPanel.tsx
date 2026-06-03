@@ -1244,7 +1244,10 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
             </>
           )}
         </ConversationContent>
-        {hasMessages && <ConversationDownload messages={chat.messages} />}
+        {/* 右移避开右上角常驻的 DockMenu(面板菜单)按钮,避免重叠。 */}
+        {hasMessages && (
+          <ConversationDownload messages={chat.messages} className="right-14" />
+        )}
         <ConversationScrollButton />
       </Conversation>
 

@@ -34,6 +34,7 @@ const zhCN: Translation = {
   dock_diff: "差异",
   dock_web: "网页",
   dock_subagent: "子 agent",
+  dock_menu: "面板",
 
   settings_title: "设置",
   settings_aiProvider: "AI 服务商",
@@ -200,6 +201,9 @@ const zhCN: Translation = {
   branch_diff_no_base: "找不到基线分支(main)",
   branch_diff_exec_failed: "git 命令执行失败",
   branch_diff_refresh: "刷新",
+  branch_diff_compareBase: "对比基线",
+  branch_diff_filterFiles: "筛选文件...",
+  branch_diff_toggleTree: "文件树",
   branch_diff_ahead: "未推送 {0}",
   branch_diff_behind: "落后 {0}",
   branch_diff_uncommitted: "未提交 {0}",
@@ -377,6 +381,8 @@ const zhCN: Translation = {
   browser_open_external: "在系统浏览器中打开",
   browser_url_placeholder: "输入网址…",
   browser_failed_to_load: "页面加载失败",
+  browser_start_title: "浏览网页",
+  browser_start_hint: "在上方地址栏输入网址开始浏览",
 };
 
 export default zhCN;
