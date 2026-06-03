@@ -116,6 +116,10 @@ type RootTranslation = {
 	 */
 	dock_subagent: string
 	/**
+	 * Panels
+	 */
+	dock_menu: string
+	/**
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
@@ -692,6 +696,18 @@ type RootTranslation = {
 	 * R​e​f​r​e​s​h
 	 */
 	branch_diff_refresh: string
+	/**
+	 * C​o​m​p​a​r​e​ ​a​g​a​i​n​s​t
+	 */
+	branch_diff_compareBase: string
+	/**
+	 * F​i​l​t​e​r​ ​f​i​l​e​s​.​.​.
+	 */
+	branch_diff_filterFiles: string
+	/**
+	 * F​i​l​e​ ​t​r​e​e
+	 */
+	branch_diff_toggleTree: string
 	/**
 	 * {​0​}​ ​u​n​p​u​s​h​e​d
 	 * @param {unknown} 0
@@ -1301,6 +1317,14 @@ type RootTranslation = {
 	 * F​a​i​l​e​d​ ​t​o​ ​l​o​a​d​ ​p​a​g​e
 	 */
 	browser_failed_to_load: string
+	/**
+	 * B​r​o​w​s​e​ ​t​h​e​ ​w​e​b
+	 */
+	browser_start_title: string
+	/**
+	 * E​n​t​e​r​ ​a​ ​U​R​L​ ​i​n​ ​t​h​e​ ​a​d​d​r​e​s​s​ ​b​a​r​ ​t​o​ ​s​t​a​r​t​ ​b​r​o​w​s​i​n​g
+	 */
+	browser_start_hint: string
 }
 
 export type TranslationFunctions = {
@@ -1404,6 +1428,10 @@ export type TranslationFunctions = {
 	 * Subagent
 	 */
 	dock_subagent: () => LocalizedString
+	/**
+	 * Panels
+	 */
+	dock_menu: () => LocalizedString
 	/**
 	 * Settings
 	 */
@@ -1968,6 +1996,18 @@ export type TranslationFunctions = {
 	 * Refresh
 	 */
 	branch_diff_refresh: () => LocalizedString
+	/**
+	 * Compare against
+	 */
+	branch_diff_compareBase: () => LocalizedString
+	/**
+	 * Filter files...
+	 */
+	branch_diff_filterFiles: () => LocalizedString
+	/**
+	 * File tree
+	 */
+	branch_diff_toggleTree: () => LocalizedString
 	/**
 	 * {0} unpushed
 	 */
@@ -2556,6 +2596,14 @@ export type TranslationFunctions = {
 	 * Failed to load page
 	 */
 	browser_failed_to_load: () => LocalizedString
+	/**
+	 * Browse the web
+	 */
+	browser_start_title: () => LocalizedString
+	/**
+	 * Enter a URL in the address bar to start browsing
+	 */
+	browser_start_hint: () => LocalizedString
 }
 
 export type Formatters = {}

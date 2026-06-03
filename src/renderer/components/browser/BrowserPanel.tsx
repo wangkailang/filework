@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ExternalLink,
+  Globe,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -17,9 +18,9 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
 interface BrowserPanelProps {
-  /** 初始 URL。后续 prop 变化仅在新 URL 与 webview 当前位置
-   *  不同时才加载 —— 内部导航
-   *  (前进/后退、页面内的链接点击)不会被覆盖。 */
+  /** 初始 URL。空串 → 展示起始页(地址栏可用),不预加载任何页面。
+   *  后续 prop 变化仅在新 URL 与 webview 当前位置不同时才加载 ——
+   *  内部导航(前进/后退、页面内的链接点击)不会被覆盖。 */
   url: string;
 }
 
@@ -29,16 +30,21 @@ const WEBVIEW_PARTITION =
     ? "persist:in-app-browser"
     : "in-app-browser";
 
+/** 空 / about:blank 视为"无页面",据此展示起始页。 */
+const isBlank = (u: string): boolean => !u || u === "about:blank";
+
 /** 对应 BranchDiffPanel —— 位于 App 的 flex 行中,而非模态框。 */
 export function BrowserPanel({ url }: BrowserPanelProps) {
   const { LL } = useI18nContext();
   const webviewRef = useRef<WebviewTag | null>(null);
 
-  // 为 webview 的 `src` 属性快照最初的 URL。
+  // 为 webview 的 `src` 属性快照最初的 URL。无初始 URL 时加载
+  // about:blank —— webview 仍会触发 dom-ready,使地址栏提交可命令式
+  // loadURL,同时起始页覆盖层遮住空白 webview。
   // 后续 prop 变化都经由命令式的 loadURL effect ——
   // 而非通过 React 更新 src —— 以避免 Chromium webview 的
   // 双重加载(src 属性变化触发一次导航 + loadURL 触发一次)。
-  const initialUrlRef = useRef(url);
+  const initialUrlRef = useRef(isBlank(url) ? "about:blank" : url);
   const [currentUrl, setCurrentUrl] = useState(url);
   // 将 currentUrl 镜像到 ref,使 prop 变化的 effect 可以比较
   // 而无需在每次内部导航时重新执行。
@@ -101,7 +107,12 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
       // 页面里而非地址栏)。
       "did-navigate": (e) => {
         const navUrl = (e as Event & { url: string }).url;
-        if (navUrl) {
+        // about:blank(起始页占位)对外呈现为"无页面":清空地址栏与
+        // currentUrl,让起始页覆盖层显示,而非把 about:blank 写进地址栏。
+        if (isBlank(navUrl)) {
+          setCurrentUrl("");
+          setDraftUrl("");
+        } else if (navUrl) {
           setCurrentUrl(navUrl);
           setDraftUrl(navUrl);
         }
@@ -264,7 +275,8 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         <button
           type="button"
           onClick={handleOpenExternal}
-          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+          disabled={isBlank(currentUrl)}
+          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
           title={LL.browser_open_external()}
           aria-label={LL.browser_open_external()}
         >
@@ -284,8 +296,22 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
           // affects future sessions.
           partition={WEBVIEW_PARTITION}
           allowpopups={true}
-          className={cn("absolute inset-0 w-full h-full", failure && "hidden")}
+          className={cn(
+            "absolute inset-0 w-full h-full",
+            (failure || isBlank(currentUrl)) && "hidden",
+          )}
         />
+        {!failure && isBlank(currentUrl) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center">
+            <Globe className="size-10 text-muted-foreground/40" />
+            <div className="text-sm font-medium text-foreground/80">
+              {LL.browser_start_title()}
+            </div>
+            <div className="max-w-xs text-xs text-muted-foreground">
+              {LL.browser_start_hint()}
+            </div>
+          </div>
+        )}
         {failure && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center bg-background">
             <div className="text-xs text-destructive">

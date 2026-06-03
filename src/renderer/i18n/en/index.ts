@@ -39,6 +39,7 @@ const en: BaseTranslation = {
   dock_diff: "Diff",
   dock_web: "Web",
   dock_subagent: "Subagent",
+  dock_menu: "Panels",
 
   // Settings
   settings_title: "Settings",
@@ -217,6 +218,9 @@ const en: BaseTranslation = {
   branch_diff_no_base: "Base branch (main) not found",
   branch_diff_exec_failed: "git command failed",
   branch_diff_refresh: "Refresh",
+  branch_diff_compareBase: "Compare against",
+  branch_diff_filterFiles: "Filter files...",
+  branch_diff_toggleTree: "File tree",
   branch_diff_ahead: "{0} unpushed",
   branch_diff_behind: "{0} behind",
   branch_diff_uncommitted: "{0} uncommitted",
@@ -397,6 +401,8 @@ const en: BaseTranslation = {
   browser_open_external: "Open in system browser",
   browser_url_placeholder: "Enter URL…",
   browser_failed_to_load: "Failed to load page",
+  browser_start_title: "Browse the web",
+  browser_start_hint: "Enter a URL in the address bar to start browsing",
 };
 
 export default en;
