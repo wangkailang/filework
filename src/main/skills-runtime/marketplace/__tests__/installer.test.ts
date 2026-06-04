@@ -87,3 +87,65 @@ describe("uninstallSkill", () => {
     expect(existsSync(join(skillsRoot, "gone"))).toBe(false);
   });
 });
+
+describe("installEntry — git rollback", () => {
+  it("returns ok:false and removes target when runGit throws", async () => {
+    const entry: MarketEntry = {
+      id: "gitfail",
+      name: "Git Fail",
+      description: "d",
+      level: "official",
+      source: { type: "git", repo: "https://github.com/x/y", subdir: "sub" },
+    };
+    const runGit = vi.fn(async () => {
+      throw new Error("clone failed");
+    });
+    const res = await installEntry(entry, { skillsRoot, runGit });
+    expect(res.ok).toBe(false);
+    expect(existsSync(join(skillsRoot, "gitfail"))).toBe(false);
+  });
+});
+
+describe("installEntry — path traversal guard", () => {
+  it("rejects an id that escapes skillsRoot", async () => {
+    const entry: MarketEntry = {
+      id: "../../evil",
+      name: "Evil",
+      description: "d",
+      level: "community",
+      source: { type: "url", url: "https://example.com/SKILL.md" },
+    };
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue({ ok: true, text: async () => "x" });
+    const res = await installEntry(entry, { skillsRoot, fetcher });
+    expect(res.ok).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects a subdir that escapes the clone dir", async () => {
+    const entry: MarketEntry = {
+      id: "evilsub",
+      name: "Evil Sub",
+      description: "d",
+      level: "official",
+      source: {
+        type: "git",
+        repo: "https://github.com/x/y",
+        subdir: "../../etc",
+      },
+    };
+    const runGit = vi.fn(async (args: string[]) => {
+      const clone = args[args.length - 1];
+      mkdirSync(clone, { recursive: true });
+    });
+    const res = await installEntry(entry, { skillsRoot, runGit });
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("uninstallSkill — path traversal guard", () => {
+  it("throws on an id that escapes skillsRoot", async () => {
+    await expect(uninstallSkill("../../etc", { skillsRoot })).rejects.toThrow();
+  });
+});

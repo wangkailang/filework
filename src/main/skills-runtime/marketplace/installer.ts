@@ -8,14 +8,22 @@
  */
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 import type { GitSource, InstallResult, MarketEntry } from "./types";
 
 const execFileAsync = promisify(execFile);
+
+/** 确保 target 解析后仍在 root 之内,挡掉来自远端 registry 的路径穿越(如 id="../../etc")。 */
+function assertInsideRoot(root: string, target: string): void {
+  const rel = relative(root, target);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`unsafe path escapes root: ${target}`);
+  }
+}
 
 /** 安装后 skill 的默认根目录(= 现有 discovery 的 personal 源)。 */
 export const DEFAULT_SKILLS_ROOT = join(homedir(), ".agents", "skills");
@@ -49,7 +57,17 @@ export async function installEntry(
   const skillsRoot = opts.skillsRoot ?? DEFAULT_SKILLS_ROOT;
   const target = join(skillsRoot, entry.id);
 
+  // 探测目标是否已存在,回滚时只删本次新建的目录(路径守卫之前确定初始值)
+  let preexisted = false;
+
   try {
+    // 防止远端 registry 中的恶意 id(如 "../../etc")穿越到 skillsRoot 之外
+    assertInsideRoot(skillsRoot, target);
+
+    preexisted = await access(target)
+      .then(() => true)
+      .catch(() => false);
+
     await mkdir(target, { recursive: true });
     if (entry.source.type === "url") {
       await installFromUrl(entry.source.url, target, opts.fetcher);
@@ -58,7 +76,9 @@ export async function installEntry(
     }
     return { ok: true, skillId: entry.id, installedPath: target };
   } catch (err) {
-    await rm(target, { recursive: true, force: true }).catch(() => undefined);
+    if (!preexisted) {
+      await rm(target, { recursive: true, force: true }).catch(() => undefined);
+    }
     return {
       ok: false,
       skillId: entry.id,
@@ -73,6 +93,9 @@ async function installFromUrl(
   fetcher?: Fetcher,
 ): Promise<void> {
   const f = fetcher ?? (globalThis.fetch as unknown as Fetcher);
+  if (typeof f !== "function") {
+    throw new Error("no fetch available in this environment");
+  }
   const res = await f(url);
   if (!res.ok) {
     throw new Error(`download failed: HTTP ${res.status ?? "?"}`);
@@ -95,6 +118,8 @@ async function installFromGit(
     await run(args, tmpdir());
 
     const from = source.subdir ? join(clonePath, source.subdir) : clonePath;
+    // 只在有 subdir 时校验,防止远端注入 "../../etc" 类路径
+    if (source.subdir) assertInsideRoot(clonePath, from);
     await cp(from, target, { recursive: true });
     await rm(join(target, ".git"), { recursive: true, force: true }).catch(
       () => undefined,
@@ -112,5 +137,8 @@ export async function uninstallSkill(
   opts: { skillsRoot?: string } = {},
 ): Promise<void> {
   const skillsRoot = opts.skillsRoot ?? DEFAULT_SKILLS_ROOT;
-  await rm(join(skillsRoot, skillId), { recursive: true, force: true });
+  const target = join(skillsRoot, skillId);
+  // 防止恶意 skillId 穿越到 skillsRoot 之外(会 throw,不静默)
+  assertInsideRoot(skillsRoot, target);
+  await rm(target, { recursive: true, force: true });
 }
