@@ -305,6 +305,24 @@ export function isCommandAllowed(
   return trustLevel === "high";
 }
 
+// ─── 内存灌入函数 ────────────────────────────────────────────────────
+
+/**
+ * 单条写入信任记录（供 Electron 侧在市场安装后调用，使其本会话即生效）。
+ * 仅写内存；持久化由调用方（ai-handlers）另行写 skill_trust 表。
+ */
+export function recordTrust(record: SkillTrustRecord): void {
+  trustStore.set(record.skillId, record);
+}
+
+/**
+ * 批量灌入信任记录（供 Electron 侧启动时从 skill_trust 表读出后调用）。
+ * 覆盖式写入内存缓存。
+ */
+export function hydrateTrust(records: SkillTrustRecord[]): void {
+  for (const r of records) trustStore.set(r.skillId, r);
+}
+
 // ─── 测试辅助函数 ────────────────────────────────────────────────────
 
 /**
