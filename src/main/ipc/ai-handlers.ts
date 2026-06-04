@@ -46,11 +46,15 @@ import { readWorkspaceMemory } from "../core/workspace/workspace-memory";
 import { decodeRef, type WorkspaceRef } from "../core/workspace/workspace-ref";
 import {
   addTask,
+  deleteSkillTrust,
   getDefaultLlmConfig,
   getLlmConfig,
   getSetting,
+  listSkillTrust,
+  type SkillTrustRow,
   setSetting,
   updateTask,
+  upsertSkillTrust,
 } from "../db";
 import { getAllSuggestions, skillRegistry, skills } from "../skills";
 import type { ExecutorDeps } from "../skills-runtime";
@@ -62,18 +66,12 @@ import {
   initSkillDiscovery,
   installMarketSkill,
   listMarket,
+  type MarketEntry,
   preprocessSkill,
   recordTrust,
   uninstallMarketSkill,
   wrapWithSecurityBoundary,
-  type MarketEntry,
 } from "../skills-runtime";
-import {
-  deleteSkillTrust,
-  listSkillTrust,
-  upsertSkillTrust,
-  type SkillTrustRow,
-} from "../db";
 import type { UnifiedSkill } from "../skills-runtime/types";
 import { buildAgentToolRegistry } from "./agent-tools";
 import { getModelAndAdapterByConfigId } from "./ai-models";

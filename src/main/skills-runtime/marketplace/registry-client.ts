@@ -1,38 +1,13 @@
 /**
  * 市场 registry 客户端。
  *
- * 拉取自托管的 registry.json、按 schema 校验每个条目,并在
- * 内存中缓存结果(TTL)。校验失败的条目被静默丢弃,坏掉的
- * 单条不影响整张清单。
+ * 直接读取随 app 打包的本地 registry.json,按 schema 逐条校验,
+ * 校验失败的单条被静默丢弃,不影响整张清单。上新 skill 需改本文件
+ * 同目录的 registry.json 并随版本发布。
  */
 
+import registryData from "./registry.json";
 import type { MarketEntry } from "./types";
-
-/** registry.json 的托管地址(MVP 写死,后续可改为设置项)。 */
-export const MARKETPLACE_REGISTRY_URL =
-  "https://raw.githubusercontent.com/wangkailang/skills-registry/main/registry.json";
-
-type Fetcher = (url: string) => Promise<{
-  ok: boolean;
-  status?: number;
-  json: () => Promise<unknown>;
-}>;
-
-interface FetchOpts {
-  /** 注入的 fetch 实现(测试用);默认全局 fetch。 */
-  fetcher?: Fetcher;
-  /** 缓存有效期(毫秒)。0 表示禁用缓存。 */
-  cacheMs?: number;
-  /** 覆盖默认 registry 地址(测试 / 私有部署用)。 */
-  url?: string;
-}
-
-interface CacheState {
-  at: number;
-  entries: MarketEntry[];
-}
-
-let cache: CacheState | null = null;
 
 /**
  * 只允许 https / ssh(scp 简写 git@host:path 或 ssh://)形式的 git 仓库地址,
@@ -76,34 +51,23 @@ export function validateEntry(raw: unknown): raw is MarketEntry {
   return true;
 }
 
-/**
- * 拉取并校验市场清单。命中缓存(在 TTL 内)时直接返回缓存,
- * 不重新请求。
- */
-export async function fetchRegistry(
-  opts: FetchOpts = {},
-): Promise<MarketEntry[]> {
-  const cacheMs = opts.cacheMs ?? 5 * 60_000;
-  const now = Date.now();
-  if (cache && cacheMs > 0 && now - cache.at < cacheMs) {
-    return cache.entries;
-  }
-
-  const fetcher = opts.fetcher ?? (globalThis.fetch as Fetcher);
-  const url = opts.url ?? MARKETPLACE_REGISTRY_URL;
-  const res = await fetcher(url);
-  if (!res.ok) {
-    throw new Error(`registry fetch failed: HTTP ${res.status ?? "?"}`);
-  }
-  const payload = (await res.json()) as { entries?: unknown[] };
-  const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
-  const entries = rawEntries.filter(validateEntry) as MarketEntry[];
-
-  cache = { at: now, entries };
-  return entries;
+interface RegistryOpts {
+  /** 覆盖默认 registry 数据(测试用);默认本地打包的 registry.json。 */
+  source?: unknown;
 }
 
-/** 清空内存缓存(测试 / 强制刷新用)。 */
-export function clearRegistryCache(): void {
-  cache = null;
+/** 读取并校验本地市场清单,只返回通过校验的条目。 */
+export function getRegistry(opts: RegistryOpts = {}): MarketEntry[] {
+  const data = (opts.source ?? registryData) as { entries?: unknown[] };
+  const rawEntries = Array.isArray(data?.entries) ? data.entries : [];
+  return rawEntries.filter(validateEntry) as MarketEntry[];
+}
+
+/**
+ * 兼容旧调用方的异步入口。本地读取不会失败,直接包成 Promise 返回。
+ */
+export async function fetchRegistry(
+  opts: RegistryOpts = {},
+): Promise<MarketEntry[]> {
+  return getRegistry(opts);
 }

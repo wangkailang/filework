@@ -1366,5 +1366,7 @@ export const upsertSkillTrust = (rec: SkillTrustRow): void => {
 };
 
 export const deleteSkillTrust = (skillId: string): void => {
-  db.delete(schema.skillTrust).where(eq(schema.skillTrust.skillId, skillId)).run();
+  db.delete(schema.skillTrust)
+    .where(eq(schema.skillTrust.skillId, skillId))
+    .run();
 };

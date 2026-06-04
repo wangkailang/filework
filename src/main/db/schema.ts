@@ -174,7 +174,9 @@ export const skillTrust = sqliteTable("skill_trust", {
   allowCommands: integer("allow_commands", { mode: "boolean" })
     .notNull()
     .default(false),
-  allowHooks: integer("allow_hooks", { mode: "boolean" }).notNull().default(false),
+  allowHooks: integer("allow_hooks", { mode: "boolean" })
+    .notNull()
+    .default(false),
 });
 
 export const llmConfigs = sqliteTable("llm_configs", {

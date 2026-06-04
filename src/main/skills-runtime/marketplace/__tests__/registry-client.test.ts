@@ -1,11 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  clearRegistryCache,
-  fetchRegistry,
-  validateEntry,
-} from "../registry-client";
-
-beforeEach(() => clearRegistryCache());
+import { describe, expect, it } from "vitest";
+import { fetchRegistry, getRegistry, validateEntry } from "../registry-client";
 
 const goodEntry = {
   id: "pdf-tools",
@@ -106,48 +100,37 @@ describe("validateEntry", () => {
   });
 });
 
-describe("fetchRegistry", () => {
-  it("returns only valid entries from the payload", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ entries: [goodEntry, { id: "broken" }] }),
+describe("getRegistry", () => {
+  it("returns only valid entries from the source", () => {
+    const entries = getRegistry({
+      source: { entries: [goodEntry, { id: "broken" }] },
     });
-    const entries = await fetchRegistry({ fetcher, cacheMs: 0 });
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe("pdf-tools");
   });
 
-  it("caches within TTL and does not re-fetch", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ entries: [goodEntry] }),
-    });
-    await fetchRegistry({ fetcher, cacheMs: 60_000 });
-    await fetchRegistry({ fetcher, cacheMs: 60_000 });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+  it("returns an empty list when entries is not an array", () => {
+    expect(getRegistry({ source: { entries: null } })).toEqual([]);
   });
 
-  it("throws on a non-ok response", async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 500 });
-    await expect(fetchRegistry({ fetcher, cacheMs: 0 })).rejects.toThrow();
+  it("returns an empty list when source has no entries", () => {
+    expect(getRegistry({ source: {} })).toEqual([]);
   });
 
-  it("re-fetches after the TTL expires", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ entries: [goodEntry] }),
-    });
-    await fetchRegistry({ fetcher, cacheMs: 0 });
-    await fetchRegistry({ fetcher, cacheMs: 0 });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+  it("reads the bundled registry.json by default", () => {
+    const entries = getRegistry();
+    expect(Array.isArray(entries)).toBe(true);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((e) => validateEntry(e))).toBe(true);
   });
+});
 
-  it("returns an empty list when entries is not an array", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ entries: null }),
+describe("fetchRegistry", () => {
+  it("resolves to the validated entries from the source", async () => {
+    const entries = await fetchRegistry({
+      source: { entries: [goodEntry, { id: "broken" }] },
     });
-    const entries = await fetchRegistry({ fetcher, cacheMs: 0 });
-    expect(entries).toEqual([]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe("pdf-tools");
   });
 });
