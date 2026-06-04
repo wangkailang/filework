@@ -6,6 +6,7 @@
  */
 
 import crypto from "node:crypto";
+import { join } from "node:path";
 import { ipcMain } from "electron";
 import { resolveAdapterName } from "../ai/adapters";
 import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
@@ -56,10 +57,22 @@ import type { ExecutorDeps } from "../skills-runtime";
 import {
   executeSkill,
   getTrustLevel,
+  hydrateTrust,
   initSkillDiscovery,
+  installMarketSkill,
+  listMarket,
   preprocessSkill,
+  recordTrust,
+  uninstallMarketSkill,
   wrapWithSecurityBoundary,
+  type MarketEntry,
 } from "../skills-runtime";
+import {
+  deleteSkillTrust,
+  listSkillTrust,
+  upsertSkillTrust,
+  type SkillTrustRow,
+} from "../db";
 import type { UnifiedSkill } from "../skills-runtime/types";
 import { buildAgentToolRegistry } from "./agent-tools";
 import { getModelAndAdapterByConfigId } from "./ai-models";
@@ -935,6 +948,16 @@ const handleTaskExecutionInner = async (
   }
 };
 
+/** DB 行 → skills-runtime 内存信任记录。 */
+const trustRowToRecord = (r: SkillTrustRow) => ({
+  skillId: r.skillId,
+  sourcePath: r.sourcePath,
+  contentHash: r.contentHash,
+  approved: r.approved,
+  approvedAt: r.approvedAt ?? undefined,
+  permissions: { allowCommands: r.allowCommands, allowHooks: r.allowHooks },
+});
+
 /**
  * 注册所有 AI 相关的 IPC handler
  */
@@ -1105,6 +1128,8 @@ export const registerAIHandlers = () => {
           payload.workspacePath,
           payload.additionalDirs,
         );
+        // 将已存信任记录从 DB 灌入内存信任缓存,使当次会话立即生效
+        hydrateTrust(listSkillTrust().map(trustRowToRecord));
         return { ok: true, registered: count };
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : "Unknown error";
@@ -1220,6 +1245,74 @@ export const registerAIHandlers = () => {
   ipcMain.handle("ai:getSuggestions", async () => {
     return getAllSuggestions();
   });
+
+  // ── Skills 市场通道 ────────────────────────────────────────────────
+
+  ipcMain.handle("market:list", async () => {
+    try {
+      return { ok: true, entries: await listMarket() };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[market:list] Failed:", msg);
+      return { ok: false, error: msg, entries: [] };
+    }
+  });
+
+  ipcMain.handle(
+    "market:install",
+    async (_event, payload: { entry: MarketEntry }) => {
+      try {
+        const res = await installMarketSkill(payload.entry);
+        if (!res.ok) return res;
+        // 写信任(DB 持久化 + 内存即时生效)
+        const row: SkillTrustRow = {
+          skillId: payload.entry.id,
+          sourcePath: join(res.installedPath ?? "", "SKILL.md"),
+          contentHash: res.contentHash ?? "",
+          approved: true,
+          approvedAt: new Date().toISOString(),
+          allowCommands: true,
+          allowHooks: true,
+        };
+        upsertSkillTrust(row);
+        recordTrust(trustRowToRecord(row));
+        // 重扫 personal 源并自动启用新装 skill
+        const ids = new Set(skillRegistry.getEnabledSkillIds());
+        ids.add(payload.entry.id);
+        await skillRegistry.refreshPersonalSkills(ids);
+        skillRegistry.setSkillEnabled(payload.entry.id, true);
+        setSetting(
+          "skills.enabled-ids",
+          JSON.stringify(skillRegistry.getEnabledSkillIds()),
+        );
+        return res;
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("[market:install] Failed:", msg);
+        return { ok: false, skillId: payload.entry.id, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "market:uninstall",
+    async (_event, payload: { skillId: string }) => {
+      try {
+        await uninstallMarketSkill(payload.skillId);
+        deleteSkillTrust(payload.skillId);
+        const ids = skillRegistry
+          .getEnabledSkillIds()
+          .filter((id) => id !== payload.skillId);
+        await skillRegistry.refreshPersonalSkills(new Set(ids));
+        setSetting("skills.enabled-ids", JSON.stringify(ids));
+        return { ok: true };
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("[market:uninstall] Failed:", msg);
+        return { ok: false, error: msg };
+      }
+    },
+  );
 
   // devtools:把整个任务执行包进同一个 devtools run —— 主循环、结果摘要、上下文
   // 压缩、重试创建的所有模型共享同一个 middleware,工具调用不再被拆散到多个 run。

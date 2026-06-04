@@ -31,11 +31,14 @@ export {
   buildSafeEnv,
   computeSkillHash,
   getTrustLevel,
+  hydrateTrust,
   isCommandAllowed,
   isSkillTrusted,
+  recordTrust,
   requestSkillApproval,
   SAFE_COMMAND_PREFIXES,
 } from "./security";
+export type { SkillTrustRecord } from "./types";
 
 export {
   installMarketSkill,
