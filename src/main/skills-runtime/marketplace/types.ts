@@ -37,5 +37,7 @@ export interface InstallResult {
   ok: boolean;
   skillId: string;
   installedPath?: string;
+  /** 安装成功后计算的 SKILL.md(+hooks) 内容哈希,供上层写信任记录。 */
+  contentHash?: string;
   error?: string;
 }

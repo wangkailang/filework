@@ -37,6 +37,17 @@ export {
   SAFE_COMMAND_PREFIXES,
 } from "./security";
 
+export {
+  installMarketSkill,
+  listMarket,
+  uninstallMarketSkill,
+} from "./marketplace";
+export type {
+  InstallResult,
+  MarketEntry,
+  MarketEntryWithStatus,
+} from "./marketplace/types";
+
 /**
  * 初始化技能发现并注册外部技能。
  *

@@ -150,6 +150,32 @@ export class SkillRegistry {
     this.registerExternal(discovered);
   }
 
+  /**
+   * 刷新 personal 级别技能(~/.agents/skills)。
+   * 市场安装 / 卸载后调用,使新装的技能被发现。personal 源
+   * 不依赖工作区路径,故 buildDiscoverySources 传空串即可。
+   */
+  async refreshPersonalSkills(
+    enabledSkillIds?: Iterable<string>,
+  ): Promise<void> {
+    // 从两个存储中移除已有的 personal 级别技能
+    for (const [id, skill] of this.skills) {
+      if (skill.external?.source.type === "personal") this.skills.delete(id);
+    }
+    for (const [id, d] of this.allDiscovered) {
+      if (d.source.type === "personal") this.allDiscovered.delete(id);
+    }
+
+    // 仅重新发现 personal 技能
+    const sources = buildDiscoverySources("");
+    const personalSources = sources.filter((s) => s.type === "personal");
+    const discovered = await discoverSkills(personalSources);
+    this.registerExternal(
+      discovered,
+      enabledSkillIds ? { enabledSkillIds } : undefined,
+    );
+  }
+
   // ─── 查找 ──────────────────────────────────────────────────────
 
   /** 按唯一标识符获取技能。 */
