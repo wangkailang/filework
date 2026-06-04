@@ -10,7 +10,7 @@ import type { MarketEntry } from "./types";
 
 /** registry.json 的托管地址(MVP 写死,后续可改为设置项)。 */
 export const MARKETPLACE_REGISTRY_URL =
-  "https://raw.githubusercontent.com/filework/skills-registry/main/registry.json";
+  "https://raw.githubusercontent.com/wangkailang/skills-registry/main/registry.json";
 
 type Fetcher = (url: string) => Promise<{
   ok: boolean;
