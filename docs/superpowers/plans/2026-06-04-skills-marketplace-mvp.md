@@ -12,6 +12,23 @@
 
 ---
 
+## ⚠️ 架构修正(Task 3 执行中发现,已采纳)
+
+`better-sqlite3` 是按 **Electron ABI** 编译的原生模块,无法在 vitest/Node 下加载;项目原本就**没有任何 db 单测**。决定:**跟随该惯例,不做 db 单测**。直接推论 ——
+
+> **任何 `import` 了 db 模块的代码都不能有 Node 单测**(require 原生模块即抛 ABI 错)。因此把所有碰 SQLite 的代码限制在 **Electron-only、不做 Node 单测**的 IPC / 初始化层。
+
+落到本计划:
+- `marketplace/*`(registry-client / installer / index)与 `security.ts` **保持不 import db**、纯函数、Node 可测。
+- `marketplace/index.ts` 的 `installMarketSkill` **不写信任**,只安装文件 + 计算 hash 并把 hash 一并返回;`uninstallMarketSkill` 只删目录。
+- `security.ts` 仍用内存 `trustStore`(现有 Node 测试不破),新增纯函数 `recordTrust` / `hydrateTrust` 供外部灌入。
+- `skill_trust` 的读写(`upsert/delete/listSkillTrust`)+ 启动灌入 + 安装写库,**全部在 Electron 侧的 `ai-handlers` 完成**(Task 6),不单测。
+- Task 3 已按此改为 **Drizzle schema + Drizzle CRUD**(`schema.skillTrust`,`mode:"boolean"` 自动映射),不再用 raw sqlite,无模块级重构。
+
+Task 4 / 5 / 6 的描述以本节为准(下文旧描述中"security.ts 改为走 DB""index.ts 写信任"等已被本节覆盖)。
+
+---
+
 ## 文件结构
 
 **新建**
