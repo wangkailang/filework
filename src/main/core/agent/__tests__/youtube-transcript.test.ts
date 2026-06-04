@@ -374,7 +374,31 @@ describe("buildYoutubeTranscriptTool.execute", () => {
     const tool = buildYoutubeTranscriptTool({ fetchImpl });
     await expect(
       tool.execute({ url: "dQw4w9WgXcQ" }, buildCtx()),
-    ).rejects.toThrow(/no caption tracks/);
+    ).rejects.toThrow(/no subtitles available/);
+  });
+
+  it("throws a clear restriction error when the caption endpoint returns an empty body", async () => {
+    const watchHtml = buildWatchHtml({
+      videoDetails: { videoId: "dQw4w9WgXcQ" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [
+            { baseUrl: "https://example.com/captions", languageCode: "en" },
+          ],
+        },
+      },
+    });
+    const fetchImpl: typeof fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(watchHtml, { status: 200 }))
+      // timedtext 接口被 YouTube 拒绝,返回 200 但 body 为空
+      .mockResolvedValueOnce(new Response("", { status: 200 }));
+    const tool = buildYoutubeTranscriptTool({ fetchImpl });
+    await expect(
+      tool.execute({ url: "dQw4w9WgXcQ" }, buildCtx()),
+    ).rejects.toThrow(
+      /empty caption track|access restriction|proof-of-origin/i,
+    );
   });
 
   it("surfaces playabilityStatus=ERROR with the reason", async () => {

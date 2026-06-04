@@ -360,8 +360,13 @@ export const buildYoutubeTranscriptTool = (
 
     const tracks = extractCaptionTracks(player);
     if (tracks.length === 0) {
+      // 视频本身没有任何字幕(作者未上传、YouTube 也未自动生成)。
+      // 这是视频的固有属性,而非抓取失败 — 明确告知模型据此向用户解释。
       throw new Error(
-        `Video ${videoId} has no caption tracks available (no auto-captions, no manual subtitles).`,
+        `This video has no subtitles available — the uploader did not add captions ` +
+          `and YouTube did not auto-generate any (common for music or non-speech videos). ` +
+          `This is a property of the video, not a fetch failure. ` +
+          `Tell the user the video simply has no transcript; do not retry. (videoId=${videoId})`,
       );
     }
     const track = pickCaptionTrack(tracks, lang);
@@ -386,6 +391,20 @@ export const buildYoutubeTranscriptTool = (
       );
     }
     const trackText = await trackRes.text();
+    // YouTube 反爬:字幕轨道在播放页里存在,但 timedtext 接口对缺少有效
+    // PO token(proof-of-origin)的请求会返回 200 + 空 body,而非真正的字幕。
+    // 这是平台访问限制,不是抓取 bug — 明确告知模型,避免它把空响应当成
+    // JSON 解析故障并反复重试。
+    if (trackText.trim().length === 0) {
+      throw new Error(
+        `YouTube returned an empty caption track for this video — the subtitle ` +
+          `endpoint refused the request (it requires a proof-of-origin token that ` +
+          `this tool cannot generate). The video DOES have subtitles, but YouTube ` +
+          `is blocking programmatic access. This is a platform restriction, not a ` +
+          `fetch failure; do not retry. Tell the user the transcript could not be ` +
+          `retrieved due to YouTube access restrictions. (videoId=${videoId})`,
+      );
+    }
     let json3: Json3Doc;
     try {
       json3 = JSON.parse(trackText) as Json3Doc;
