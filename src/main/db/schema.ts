@@ -164,6 +164,19 @@ export const mcpServers = sqliteTable("mcp_servers", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** 技能信任:市场安装 / 外部 skill 审批的持久化记录。 */
+export const skillTrust = sqliteTable("skill_trust", {
+  skillId: text("skill_id").primaryKey(),
+  sourcePath: text("source_path").notNull(),
+  contentHash: text("content_hash").notNull(),
+  approved: integer("approved", { mode: "boolean" }).notNull().default(false),
+  approvedAt: text("approved_at"),
+  allowCommands: integer("allow_commands", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  allowHooks: integer("allow_hooks", { mode: "boolean" }).notNull().default(false),
+});
+
 export const llmConfigs = sqliteTable("llm_configs", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

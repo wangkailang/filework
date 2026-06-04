@@ -12,44 +12,19 @@ import * as schema from "./schema";
 export type { CredentialKind };
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
-// 模块级 sqlite 句柄,initDatabase / _initTestDatabase 写入后供 CRUD 函数使用
-let sqlite: InstanceType<typeof Database>;
 
 const MAX_RECENT = 20;
-
-/**
- * 仅测试用:用指定路径(可传 ":memory:")初始化数据库,跳过 Electron app 依赖。
- * @internal
- */
-export const _initTestDatabase = (dbPath: string): void => {
-  sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
-  db = drizzle(sqlite, { schema });
-  _runMigrations();
-};
 
 export const initDatabase = async () => {
   const userDataPath = app.getPath("userData");
   const dbDir = join(userDataPath, "data");
   mkdirSync(dbDir, { recursive: true });
 
-  sqlite = new Database(join(dbDir, "filework.db"));
+  const sqlite = new Database(join(dbDir, "filework.db"));
   sqlite.pragma("journal_mode = WAL");
 
   db = drizzle(sqlite, { schema });
 
-  _runMigrations();
-
-  // 首次运行时把 .env 的 LLM 配置迁移进数据库
-  migrateLlmConfigFromEnv();
-};
-
-/**
- * 运行建表 SQL 及全部结构迁移。
- * 由 initDatabase(生产) 和 _initTestDatabase(测试) 共同调用。
- * @internal
- */
-const _runMigrations = (): void => {
   // 表不存在时创建
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS workspaces (
@@ -374,6 +349,9 @@ const _runMigrations = (): void => {
   if (!recentCols.some((c) => c.name === "metadata")) {
     sqlite.exec("ALTER TABLE recent_workspaces ADD COLUMN metadata TEXT");
   }
+
+  // 首次运行时把 .env 的 LLM 配置迁移进数据库
+  migrateLlmConfigFromEnv();
 };
 
 // ============================================================================
@@ -1344,7 +1322,7 @@ export const deleteMcpServer = (id: string): void => {
 export type { FileOperation, RecentWorkspace, Task, Workspace };
 
 // ============================================================================
-// 技能信任(市场安装 / 外部 skill 审批的持久化)
+// 技能信任(持久化外部 skill / 市场安装的审批结果)
 // ============================================================================
 
 export interface SkillTrustRow {
@@ -1357,63 +1335,36 @@ export interface SkillTrustRow {
   allowHooks: boolean;
 }
 
-interface SkillTrustDbRow {
-  skill_id: string;
-  source_path: string;
-  content_hash: string;
-  approved: number;
-  approved_at: string | null;
-  allow_commands: number;
-  allow_hooks: number;
-}
-
-const mapSkillTrustRow = (r: SkillTrustDbRow): SkillTrustRow => ({
-  skillId: r.skill_id,
-  sourcePath: r.source_path,
-  contentHash: r.content_hash,
-  approved: r.approved === 1,
-  approvedAt: r.approved_at,
-  allowCommands: r.allow_commands === 1,
-  allowHooks: r.allow_hooks === 1,
-});
-
 export const getSkillTrust = (skillId: string): SkillTrustRow | null => {
-  const row = sqlite
-    .prepare("SELECT * FROM skill_trust WHERE skill_id = ?")
-    .get(skillId) as SkillTrustDbRow | undefined;
-  return row ? mapSkillTrustRow(row) : null;
+  const row = db
+    .select()
+    .from(schema.skillTrust)
+    .where(eq(schema.skillTrust.skillId, skillId))
+    .get();
+  return row ?? null;
 };
 
+/** 读取全部信任记录(供启动时灌入内存信任缓存)。 */
+export const listSkillTrust = (): SkillTrustRow[] =>
+  db.select().from(schema.skillTrust).all();
+
 export const upsertSkillTrust = (rec: SkillTrustRow): void => {
-  sqlite
-    .prepare(
-      `INSERT INTO skill_trust
-         (skill_id, source_path, content_hash, approved, approved_at, allow_commands, allow_hooks)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(skill_id) DO UPDATE SET
-         source_path = excluded.source_path,
-         content_hash = excluded.content_hash,
-         approved = excluded.approved,
-         approved_at = excluded.approved_at,
-         allow_commands = excluded.allow_commands,
-         allow_hooks = excluded.allow_hooks`,
-    )
-    .run(
-      rec.skillId,
-      rec.sourcePath,
-      rec.contentHash,
-      rec.approved ? 1 : 0,
-      rec.approvedAt,
-      rec.allowCommands ? 1 : 0,
-      rec.allowHooks ? 1 : 0,
-    );
+  db.insert(schema.skillTrust)
+    .values(rec)
+    .onConflictDoUpdate({
+      target: schema.skillTrust.skillId,
+      set: {
+        sourcePath: rec.sourcePath,
+        contentHash: rec.contentHash,
+        approved: rec.approved,
+        approvedAt: rec.approvedAt,
+        allowCommands: rec.allowCommands,
+        allowHooks: rec.allowHooks,
+      },
+    })
+    .run();
 };
 
 export const deleteSkillTrust = (skillId: string): void => {
-  sqlite.prepare("DELETE FROM skill_trust WHERE skill_id = ?").run(skillId);
-};
-
-/** 仅测试用:清空信任表。 @internal */
-export const _deleteAllSkillTrust = (): void => {
-  sqlite.prepare("DELETE FROM skill_trust").run();
+  db.delete(schema.skillTrust).where(eq(schema.skillTrust.skillId, skillId)).run();
 };
