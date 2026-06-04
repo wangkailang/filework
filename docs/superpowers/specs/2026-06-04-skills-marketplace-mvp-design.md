@@ -90,7 +90,8 @@ skillId 得出)。
   等级、含哪些 `!command` / hook / 依赖 → 用户确认 → 安装 → 计算 `contentHash`
   (复用现有 `computeSkillHash`)→ 写 `skill_trust(approved: true)`。
 - `level: "community"` 的条目给更醒目的警示文案;`official` 弱化。
-- 内容哈希已有,安装后若 SKILL.md 被改动 → 哈希不符 → 现有 `isSkillTrusted` 自动失信。
+- 安装时计算并存 `contentHash`,作为**安装审批 / 溯源记录**(记录"用户在何时批准了来自何处、内容哈希为何的这次安装")。
+- ⚠️ **MVP 范围修正**:`skill_trust` 在 MVP 中是**持久化的安装审批记录**,而非运行时门控。命令/hook 的实际放行仍走现有的**按来源等级**门控(`getTrustLevel`:personal=medium → `isCommandAllowed`)。把 `isSkillTrusted`(基于哈希的"改动即失信")接入全局命令门控会改变**所有** personal skill 的现有行为、有回归风险,故**留待 v2**。即:本 MVP 不提供"安装后 SKILL.md 被篡改即自动失信"的运行时强制。
 - MVP **不做**自动扫描器(留 v2)。
 
 ## IPC + 数据流(新增 3 个通道,挂 `src/main/ipc/ai-handlers.ts`)
