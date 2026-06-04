@@ -34,6 +34,21 @@ describe("validateEntry", () => {
   it("rejects an entry with invalid level", () => {
     expect(validateEntry({ ...goodEntry, level: "trusted" })).toBe(false);
   });
+
+  it("accepts a well-formed url entry", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "url", url: "https://example.com/SKILL.md" },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a url entry with empty url", () => {
+    expect(
+      validateEntry({ ...goodEntry, source: { type: "url", url: "" } }),
+    ).toBe(false);
+  });
 });
 
 describe("fetchRegistry", () => {
@@ -60,5 +75,24 @@ describe("fetchRegistry", () => {
   it("throws on a non-ok response", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     await expect(fetchRegistry({ fetcher, cacheMs: 0 })).rejects.toThrow();
+  });
+
+  it("re-fetches after the TTL expires", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ entries: [goodEntry] }),
+    });
+    await fetchRegistry({ fetcher, cacheMs: 0 });
+    await fetchRegistry({ fetcher, cacheMs: 0 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns an empty list when entries is not an array", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ entries: null }),
+    });
+    const entries = await fetchRegistry({ fetcher, cacheMs: 0 });
+    expect(entries).toEqual([]);
   });
 });

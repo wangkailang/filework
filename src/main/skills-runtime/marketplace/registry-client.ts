@@ -23,6 +23,7 @@ interface FetchOpts {
   fetcher?: Fetcher;
   /** 缓存有效期(毫秒)。0 表示禁用缓存。 */
   cacheMs?: number;
+  /** 覆盖默认 registry 地址(测试 / 私有部署用)。 */
   url?: string;
 }
 
