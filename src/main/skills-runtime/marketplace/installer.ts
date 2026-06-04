@@ -74,6 +74,14 @@ export async function installEntry(
     } else {
       await installFromGit(entry.source, target, opts.runGit);
     }
+    // 强制约定:安装后 SKILL.md 必须位于 <target>/SKILL.md,否则发现器推出的
+    // skillId 会与 entry.id 不符,导致启用/已装/信任键错配。
+    const { existsSync } = await import("node:fs");
+    if (!existsSync(join(target, "SKILL.md"))) {
+      throw new Error(
+        "installed skill has no SKILL.md at its root (check source subdir)",
+      );
+    }
     return { ok: true, skillId: entry.id, installedPath: target };
   } catch (err) {
     if (!preexisted) {

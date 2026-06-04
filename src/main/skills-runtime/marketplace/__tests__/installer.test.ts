@@ -149,3 +149,31 @@ describe("uninstallSkill — path traversal guard", () => {
     await expect(uninstallSkill("../../etc", { skillsRoot })).rejects.toThrow();
   });
 });
+
+describe("installEntry — SKILL.md 根目录强制校验", () => {
+  it("git 源安装后根目录无 SKILL.md 时返回 ok:false 并回滚目标目录", async () => {
+    const entry: MarketEntry = {
+      id: "no-skill-md",
+      name: "No SKILL.md",
+      description: "d",
+      level: "official",
+      source: { type: "git", repo: "https://github.com/x/y", subdir: "sub" },
+    };
+    // runGit 只建了 sub/ 但没放 SKILL.md;cp 后 target/ 下同样没有 SKILL.md
+    const runGit = vi.fn(async (args: string[]) => {
+      const clone = args[args.length - 1];
+      // 故意把文件放到 sub/sub/SKILL.md,而 entry 的 subdir 是 sub,
+      // 拷到 target 后根目录不存在 SKILL.md
+      mkdirSync(join(clone, "sub", "sub"), { recursive: true });
+      writeFileSync(
+        join(clone, "sub", "sub", "SKILL.md"),
+        "---\nname: no-skill-md\n---\nb",
+      );
+    });
+    const res = await installEntry(entry, { skillsRoot, runGit });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/SKILL\.md/);
+    // 目标目录应被回滚删除
+    expect(existsSync(join(skillsRoot, "no-skill-md"))).toBe(false);
+  });
+});

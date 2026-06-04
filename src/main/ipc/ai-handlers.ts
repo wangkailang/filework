@@ -56,6 +56,7 @@ import { getAllSuggestions, skillRegistry, skills } from "../skills";
 import type { ExecutorDeps } from "../skills-runtime";
 import {
   executeSkill,
+  forgetTrust,
   getTrustLevel,
   hydrateTrust,
   initSkillDiscovery,
@@ -1277,10 +1278,10 @@ export const registerAIHandlers = () => {
         upsertSkillTrust(row);
         recordTrust(trustRowToRecord(row));
         // 重扫 personal 源并自动启用新装 skill
+        // refreshPersonalSkills 已用含 entry.id 的白名单注册并启用该 skill,无需再调 setSkillEnabled
         const ids = new Set(skillRegistry.getEnabledSkillIds());
         ids.add(payload.entry.id);
         await skillRegistry.refreshPersonalSkills(ids);
-        skillRegistry.setSkillEnabled(payload.entry.id, true);
         setSetting(
           "skills.enabled-ids",
           JSON.stringify(skillRegistry.getEnabledSkillIds()),
@@ -1300,6 +1301,7 @@ export const registerAIHandlers = () => {
       try {
         await uninstallMarketSkill(payload.skillId);
         deleteSkillTrust(payload.skillId);
+        forgetTrust(payload.skillId);
         const ids = skillRegistry
           .getEnabledSkillIds()
           .filter((id) => id !== payload.skillId);

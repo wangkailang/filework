@@ -323,6 +323,11 @@ export function hydrateTrust(records: SkillTrustRecord[]): void {
   for (const r of records) trustStore.set(r.skillId, r);
 }
 
+/** 从内存信任缓存移除一条(供卸载时调用;持久化删除由调用方做)。 */
+export function forgetTrust(skillId: string): void {
+  trustStore.delete(skillId);
+}
+
 // ─── 测试辅助函数 ────────────────────────────────────────────────────
 
 /**

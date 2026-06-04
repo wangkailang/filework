@@ -34,6 +34,18 @@ interface CacheState {
 
 let cache: CacheState | null = null;
 
+/**
+ * 只允许 https / ssh(scp 简写 git@host:path 或 ssh://)形式的 git 仓库地址,
+ * 挡掉 git 的危险传输(ext::、file::、- 开头会被当作选项等)。
+ */
+function isSafeGitRepo(repo: string): boolean {
+  if (repo.startsWith("-")) return false;
+  if (/^https:\/\//i.test(repo)) return true;
+  if (/^ssh:\/\//i.test(repo)) return true;
+  if (/^git@[\w.-]+:/.test(repo)) return true; // git@github.com:owner/repo.git
+  return false;
+}
+
 /** 按 MarketEntry schema 校验一个未知对象。 */
 export function validateEntry(raw: unknown): raw is MarketEntry {
   if (!raw || typeof raw !== "object") return false;
@@ -46,8 +58,18 @@ export function validateEntry(raw: unknown): raw is MarketEntry {
   if (!src || typeof src !== "object") return false;
   if (src.type === "git") {
     if (typeof src.repo !== "string" || !src.repo) return false;
+    if (!isSafeGitRepo(src.repo)) return false;
+    if (
+      src.ref !== undefined &&
+      (typeof src.ref !== "string" || src.ref.startsWith("-"))
+    ) {
+      return false;
+    }
+    if (src.subdir !== undefined && typeof src.subdir !== "string")
+      return false;
   } else if (src.type === "url") {
     if (typeof src.url !== "string" || !src.url) return false;
+    if (!/^https:\/\//i.test(src.url)) return false; // 仅允许 https 单文件直链
   } else {
     return false;
   }

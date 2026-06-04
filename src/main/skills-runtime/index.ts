@@ -30,6 +30,7 @@ export {
   BLOCKED_COMMAND_PREFIXES,
   buildSafeEnv,
   computeSkillHash,
+  forgetTrust,
   getTrustLevel,
   hydrateTrust,
   isCommandAllowed,

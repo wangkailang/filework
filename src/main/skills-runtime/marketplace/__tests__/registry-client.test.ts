@@ -49,6 +49,61 @@ describe("validateEntry", () => {
       validateEntry({ ...goodEntry, source: { type: "url", url: "" } }),
     ).toBe(false);
   });
+
+  // 安全修复:git transport 注入防护
+  it("rejects a git entry with ext:: repo (危险传输协议)", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "git", repo: "ext::evil-command" },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a git entry with ref starting with '-' (选项注入)", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "git", repo: "https://github.com/x/y", ref: "-x" },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a git entry with file:: repo (本地文件传输)", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "git", repo: "file:///etc/passwd" },
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts a git entry with ssh:// repo", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "git", repo: "ssh://git@github.com/x/y.git" },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a git entry with git@ scp form repo", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "git", repo: "git@github.com:owner/repo.git" },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a url entry with http:// (非 https)", () => {
+    expect(
+      validateEntry({
+        ...goodEntry,
+        source: { type: "url", url: "http://example.com/SKILL.md" },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("fetchRegistry", () => {
