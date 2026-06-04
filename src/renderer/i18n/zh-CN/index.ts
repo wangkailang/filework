@@ -321,6 +321,17 @@ const zhCN: Translation = {
   skillsModal_sourcePersonal: "个人",
   skillsModal_sourceAdditional: "扩展",
   skillsModal_sourceDisabled: "未启用",
+  skillsModal_market: "市场",
+  skillsModal_marketInstall: "安装",
+  skillsModal_marketInstalled: "已安装",
+  skillsModal_marketUninstall: "卸载",
+  skillsModal_marketCommunity: "社区",
+  skillsModal_marketOfficial: "官方",
+  skillsModal_marketInstalling: "安装中…",
+  skillsModal_marketConfirmCommunity:
+    "这是社区贡献的技能,安装后可在你的工作区中执行命令与脚本。仅在信任来源时安装。",
+  skillsModal_marketEmpty: "市场暂无可用技能",
+  skillsModal_marketError: "加载市场失败",
 
   // Usage panel
   usage_loading: "加载用量数据...",

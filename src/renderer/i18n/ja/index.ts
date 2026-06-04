@@ -332,6 +332,17 @@ const ja: Translation = {
   skillsModal_sourcePersonal: "個人",
   skillsModal_sourceAdditional: "拡張",
   skillsModal_sourceDisabled: "未有効化",
+  skillsModal_market: "マーケット",
+  skillsModal_marketInstall: "インストール",
+  skillsModal_marketInstalled: "インストール済み",
+  skillsModal_marketUninstall: "アンインストール",
+  skillsModal_marketCommunity: "コミュニティ",
+  skillsModal_marketOfficial: "公式",
+  skillsModal_marketInstalling: "インストール中…",
+  skillsModal_marketConfirmCommunity:
+    "これはコミュニティ提供のスキルです。インストール後、ワークスペースでコマンドやスクリプトを実行できます。信頼できるソースの場合のみインストールしてください。",
+  skillsModal_marketEmpty: "マーケットに利用可能なスキルがありません",
+  skillsModal_marketError: "マーケットの読み込みに失敗しました",
 
   // Usage panel
   usage_loading: "使用量データを読み込み中...",
