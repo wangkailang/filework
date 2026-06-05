@@ -57,14 +57,16 @@ export async function installEntry(
   const skillsRoot = opts.skillsRoot ?? DEFAULT_SKILLS_ROOT;
   const target = join(skillsRoot, entry.id);
 
-  // 探测目标是否已存在,回滚时只删本次新建的目录(路径守卫之前确定初始值)
+  // 是否已存在一个「有效的」既装 skill(目标根有 SKILL.md)。回滚只保护它,
+  // 不保护空目录 / 上次失败安装留下的残骸 —— 后者必须被清掉,否则下次安装会
+  // cp 合并到残骸上得到一个损坏的 skill 目录。
   let preexisted = false;
 
   try {
     // 防止远端 registry 中的恶意 id(如 "../../etc")穿越到 skillsRoot 之外
     assertInsideRoot(skillsRoot, target);
 
-    preexisted = await access(target)
+    preexisted = await access(join(target, "SKILL.md"))
       .then(() => true)
       .catch(() => false);
 

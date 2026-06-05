@@ -57,9 +57,14 @@ export async function installMarketSkill(
   let contentHash = "";
   try {
     contentHash = await computeSkillHash(join(skillsRoot, entry.id));
-  } catch {
-    // 哈希计算失败不影响安装结果,以空串兜底
+  } catch (err) {
+    // 哈希计算失败不阻断安装(用户已审批),但留空 hash 会让未来的运行时
+    // 完整性校验失效 —— 必须留下诊断痕迹,不能静默吞掉。
     contentHash = "";
+    console.error(
+      `[market:install] computeSkillHash failed for ${entry.id}; persisting empty contentHash:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
   return { ...res, contentHash };
 }

@@ -106,6 +106,41 @@ describe("installEntry — git rollback", () => {
   });
 });
 
+describe("installEntry — rollback vs pre-existing state", () => {
+  const entry: MarketEntry = {
+    id: "redo",
+    name: "Redo",
+    description: "d",
+    level: "official",
+    source: { type: "git", repo: "https://github.com/x/y", subdir: "sub" },
+  };
+  const failingGit = vi.fn(async () => {
+    throw new Error("clone failed");
+  });
+
+  it("cleans up debris (dir without SKILL.md) left by a prior failed install", async () => {
+    // 模拟上次失败安装的残骸:目录存在但根没有 SKILL.md
+    mkdirSync(join(skillsRoot, "redo"), { recursive: true });
+    writeFileSync(join(skillsRoot, "redo", "partial.txt"), "junk");
+    const res = await installEntry(entry, { skillsRoot, runGit: failingGit });
+    expect(res.ok).toBe(false);
+    // 残骸应被回滚清掉,而不是留下来让下次安装 cp 合并到损坏目录
+    expect(existsSync(join(skillsRoot, "redo"))).toBe(false);
+  });
+
+  it("preserves a valid pre-existing install (dir with SKILL.md) when a reinstall fails", async () => {
+    mkdirSync(join(skillsRoot, "redo"), { recursive: true });
+    writeFileSync(
+      join(skillsRoot, "redo", "SKILL.md"),
+      "---\nname: redo\n---\nold",
+    );
+    const res = await installEntry(entry, { skillsRoot, runGit: failingGit });
+    expect(res.ok).toBe(false);
+    // 既有的有效 skill 不能被失败的重装清掉
+    expect(existsSync(join(skillsRoot, "redo", "SKILL.md"))).toBe(true);
+  });
+});
+
 describe("installEntry — path traversal guard", () => {
   it("rejects an id that escapes skillsRoot", async () => {
     const entry: MarketEntry = {
