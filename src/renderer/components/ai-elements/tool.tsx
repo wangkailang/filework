@@ -52,7 +52,7 @@ export const Tool = ({
           // 收起态:无边框密集单行,几乎不占视觉空间
           // 展开态:才显示边框 + 背景,凸显出当前查看的调用
           "rounded-md text-sm overflow-hidden transition-colors",
-          isOpen && "border border-border bg-muted/30",
+          isOpen && "border border-border-strong bg-card",
           className,
         )}
         {...props}
@@ -81,15 +81,15 @@ const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   },
   "input-available": {
     icon: <Loader2 className="size-3.5 animate-spin" />,
-    color: "text-blue-500",
+    color: "text-status-running",
   },
   "output-available": {
     icon: <CheckCircle2 className="size-3.5" />,
-    color: "text-green-500",
+    color: "text-status-success",
   },
   "output-error": {
     icon: <XCircle className="size-3.5" />,
-    color: "text-red-500",
+    color: "text-status-error",
   },
 };
 
@@ -223,7 +223,7 @@ export const ToolOutput = ({
         {errorText ? LL.tool_errorLabel() : LL.tool_result()}
       </div>
       {errorText ? (
-        <pre className="text-xs font-mono text-red-400 whitespace-pre-wrap break-all">
+        <pre className="text-xs font-mono text-status-error whitespace-pre-wrap break-all">
           {errorText}
         </pre>
       ) : (

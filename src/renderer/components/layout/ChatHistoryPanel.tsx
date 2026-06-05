@@ -143,7 +143,7 @@ export const ChatHistoryPanel = () => {
                           onBlur={() => commitRename(s.id)}
                           className="w-full rounded border border-input bg-background px-1.5 py-0.5 text-sm text-foreground outline-none focus:border-primary"
                         />
-                        <div className="mt-0.5 text-xs text-muted-foreground">
+                        <div className="mt-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                           {formatStamp(s.updatedAt, group.key, locale)}
                         </div>
                       </div>
@@ -157,7 +157,7 @@ export const ChatHistoryPanel = () => {
                         <div className="truncate text-sm text-foreground">
                           {s.title}
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="font-mono text-xs tabular-nums text-muted-foreground">
                           {formatStamp(s.updatedAt, group.key, locale)}
                         </div>
                       </button>
@@ -226,11 +226,11 @@ export const ChatHistoryPanel = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <button
             type="button"
-            className="absolute inset-0 cursor-default bg-black/50"
+            className="absolute inset-0 cursor-default bg-black/50 animate-in fade-in-0 duration-150"
             onClick={() => setPendingDelete(null)}
             aria-label={LL.session_cancel()}
           />
-          <div className="relative w-full max-w-sm rounded-lg border border-border bg-background shadow-lg">
+          <div className="relative w-full max-w-sm rounded-lg border border-border bg-background shadow-lg animate-in fade-in-0 zoom-in-95 duration-150">
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-sm font-medium">
                 {LL.session_delete_confirm_title()}

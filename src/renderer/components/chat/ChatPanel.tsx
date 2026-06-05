@@ -11,7 +11,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import {
@@ -57,6 +57,7 @@ import {
 import { getToolLabels } from "../ai-elements/tool-labels";
 import { toolPresenters } from "../ai-elements/tool-presenters";
 import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
+import { type AgentState, AgentTelemetry } from "./AgentTelemetry";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
 import { useChatSessionContext } from "./ChatSessionProvider";
@@ -64,6 +65,7 @@ import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
 import { MediaVideoCard } from "./MediaVideoCard";
+import { MentionMenu } from "./MentionMenu";
 import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
@@ -142,6 +144,10 @@ const renderApprovalRequest = ({
       <ConfirmationAction variant="default" onClick={() => onDecide(true)}>
         {LL.chat_approve()}
       </ConfirmationAction>
+      {/* 键盘快捷键提示(实际监听在 ChatPanel,见 pendingApprovalToolCallId) */}
+      <span className="ml-auto self-center font-mono text-[10px] text-muted-foreground/70">
+        ⌘↵ / ⌘⌫
+      </span>
     </ConfirmationActions>
   </>
 );
@@ -392,7 +398,14 @@ const ClarificationCard = ({
   );
 };
 
-export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
+export const ChatPanel = ({
+  workspacePath,
+  railCollapsed,
+}: {
+  workspacePath: string;
+  /** 左栏折叠时,telemetry 左侧为浮动展开按钮预留空间,避免压住读数。 */
+  railCollapsed?: boolean;
+}) => {
   const { LL } = useI18nContext();
   const [memoryOpen, setMemoryOpen] = useState(false);
   const chat = useChatSessionContext();
@@ -1032,6 +1045,78 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
 
   const hasMessages = chat.messages.length > 0;
 
+  // ★ telemetry 状态条数据 —— 从会话状态派生 Agent 当前状态(idle/running/awaiting/error)
+  const telemetryLastParts =
+    chat.messages[chat.messages.length - 1]?.parts ?? [];
+  const telemetryAwaiting = telemetryLastParts.some(
+    (p) =>
+      (p.type === "tool" && p.approval?.state === "approval-requested") ||
+      (p.type === "batch-approval" && p.state === "approval-requested") ||
+      (p.type === "clarification" && !p.answeredOption) ||
+      (p.type === "plan" && (p as PlanMessagePart).plan.status === "draft"),
+  );
+  const agentState: AgentState =
+    chat.lastError && !chat.isLoading
+      ? "error"
+      : telemetryAwaiting
+        ? "awaiting"
+        : chat.isLoading
+          ? "running"
+          : "idle";
+  // running 时取最后一个执行中的工具名(已 i18n)作为当前动作
+  const telemetryAction =
+    agentState === "running"
+      ? (telemetryLastParts
+          .filter(
+            (p): p is ToolPart =>
+              p.type === "tool" && (p as ToolPart).state === "input-available",
+          )
+          .map((p) => toolLabels[p.toolName] || p.toolName)
+          .pop() ?? null)
+      : null;
+  // 单个工具审批待批时支持键盘:⌘↵ 批准 / ⌘⌫ 拒绝。仅在「只有这一个」待决
+  // 审批(无批量/计划草稿/澄清)且焦点不在输入框时生效,避免误批敏感操作。
+  const pendingApprovalToolCallId = (() => {
+    const parts = chat.messages[chat.messages.length - 1]?.parts ?? [];
+    const pendingTools = parts.filter(
+      (p): p is ToolPart =>
+        p.type === "tool" && p.approval?.state === "approval-requested",
+    );
+    const hasOther = parts.some(
+      (p) =>
+        (p.type === "batch-approval" && p.state === "approval-requested") ||
+        (p.type === "plan" && (p as PlanMessagePart).plan.status === "draft") ||
+        (p.type === "clarification" && !p.answeredOption),
+    );
+    return pendingTools.length === 1 && !hasOther
+      ? pendingTools[0].toolCallId
+      : null;
+  })();
+  useEffect(() => {
+    if (!pendingApprovalToolCallId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const t = e.target as HTMLElement | null;
+      // 输入框/可编辑区聚焦时不拦截,避免吞掉打字
+      if (
+        t &&
+        (t.tagName === "TEXTAREA" ||
+          t.tagName === "INPUT" ||
+          t.isContentEditable)
+      )
+        return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        chat.handleApproval(pendingApprovalToolCallId, true);
+      } else if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        chat.handleApproval(pendingApprovalToolCallId, false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingApprovalToolCallId, chat.handleApproval]);
+
   // ---------------------------------------------------------------------------
   // JSX
   // ---------------------------------------------------------------------------
@@ -1056,6 +1141,14 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
         onClose={() => setMemoryOpen(false)}
         workspacePath={workspacePath}
       />
+
+      {hasMessages && (
+        <AgentTelemetry
+          state={agentState}
+          action={telemetryAction}
+          reserveLeft={railCollapsed}
+        />
+      )}
 
       <Conversation className="group">
         <ConversationContent>
@@ -1087,7 +1180,7 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                         | undefined) ?? [])
                     : [];
                 return (
-                  <div key={msg.id} className="group">
+                  <div key={msg.id} className="group animate-rise">
                     <Message from={msg.role}>
                       <MessageContent>
                         {msg.role === "assistant" ? (
@@ -1267,6 +1360,11 @@ export const ChatPanel = ({ workspacePath }: { workspacePath: string }) => {
                 <SkillMenu
                   input={chat.input}
                   onSelect={(cmd) => chat.setInput(cmd)}
+                />
+                <MentionMenu
+                  input={chat.input}
+                  workspaceRoot={workspacePath}
+                  onReplace={(v) => chat.setInput(v)}
                 />
                 <PromptInputTextarea
                   value={chat.input}

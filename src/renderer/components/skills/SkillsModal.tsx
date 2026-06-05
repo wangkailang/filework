@@ -267,11 +267,11 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
+        className="absolute inset-0 bg-black/50 cursor-default animate-in fade-in-0 duration-150"
         onClick={onClose}
         aria-label="Close skills"
       />
-      <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[80vh] flex flex-col">
+      <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[80vh] flex flex-col animate-in fade-in-0 zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">

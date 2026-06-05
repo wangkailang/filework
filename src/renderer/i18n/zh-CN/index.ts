@@ -37,6 +37,15 @@ const zhCN: Translation = {
   dock_search: "搜索",
   dock_trash: "回收站",
   dock_menu: "面板",
+  telemetry_idle: "空闲",
+  telemetry_running: "运行中",
+  telemetry_awaiting: "待审批",
+  telemetry_error: "错误",
+  cmdk_placeholder: "输入命令…",
+  cmdk_empty: "无匹配命令",
+  cmdk_switchWorkspace: "切换工作区…",
+  mention_empty: "无匹配文件",
+  toast_branchSwitched: "已切换到 {branch}",
 
   // 文件搜索面板
   search_placeholder: "按文件名搜索…",

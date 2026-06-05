@@ -1,5 +1,7 @@
 import { Check, ChevronDown, GitBranch, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useI18nContext } from "../../i18n/i18n-react";
 import type { WorkspaceRef } from "../../types/workspace-ref";
 
 /**
@@ -30,6 +32,7 @@ export const BranchSwitcher = ({
   currentBranch,
   onSwitched,
 }: BranchSwitcherProps) => {
+  const { LL } = useI18nContext();
   const [open, setOpen] = useState(false);
   const [branches, setBranches] = useState<BranchOption[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,8 +82,15 @@ export const BranchSwitcher = ({
         setOpen(false);
       }
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const handleToggle = () => {
@@ -125,6 +135,7 @@ export const BranchSwitcher = ({
       }
       onSwitched(branch);
       setOpen(false);
+      toast.success(LL.toast_branchSwitched({ branch }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Strip Electron's "Error invoking remote method ..." preamble
@@ -143,9 +154,10 @@ export const BranchSwitcher = ({
         type="button"
         onClick={handleToggle}
         disabled={switching}
-        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:bg-accent transition-colors max-w-[140px]"
+        className="flex max-w-[160px] items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         title={`Current branch: ${currentBranch}`}
       >
+        <span className="size-1.5 shrink-0 rounded-full bg-status-success" />
         {switching ? (
           <Loader2 className="w-3 h-3 animate-spin" />
         ) : (
@@ -182,7 +194,7 @@ export const BranchSwitcher = ({
                 disabled={switching}
                 className="w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-accent text-left disabled:opacity-50"
               >
-                <span className="truncate flex-1">
+                <span className="truncate flex-1 font-mono">
                   {b.name}
                   {b.protected && (
                     <span className="ml-1.5 text-[10px] text-muted-foreground">

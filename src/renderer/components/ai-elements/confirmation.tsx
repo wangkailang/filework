@@ -34,9 +34,12 @@ export const Confirmation = ({
     data-state={state}
     className={cn(
       "rounded-lg border text-sm",
-      state === "approval-requested" && "border-amber-500/40 bg-amber-500/5",
-      state === "approval-accepted" && "border-green-500/40 bg-green-500/5",
-      state === "approval-rejected" && "border-red-500/40 bg-red-500/5",
+      state === "approval-requested" &&
+        "border-status-await/40 bg-status-await/5",
+      state === "approval-accepted" &&
+        "border-status-success/40 bg-status-success/5",
+      state === "approval-rejected" &&
+        "border-status-error/40 bg-status-error/5",
       className,
     )}
     {...props}
@@ -58,7 +61,7 @@ export const ConfirmationRequest = ({
     className={cn("flex items-start gap-2 px-3 py-2.5", className)}
     {...props}
   >
-    <ShieldAlert className="size-4 text-amber-500 mt-0.5 shrink-0" />
+    <ShieldAlert className="size-4 text-status-await mt-0.5 shrink-0" />
     <div className="text-foreground/90 text-xs leading-relaxed">{children}</div>
   </div>
 );
@@ -76,8 +79,8 @@ export const ConfirmationAccepted = ({
     className={cn("flex items-center gap-2 px-3 py-2", className)}
     {...props}
   >
-    <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
-    <span className="text-xs text-green-400">{children}</span>
+    <CheckCircle2 className="size-3.5 text-status-success shrink-0" />
+    <span className="text-xs text-status-success">{children}</span>
   </div>
 );
 
@@ -94,8 +97,8 @@ export const ConfirmationRejected = ({
     className={cn("flex items-center gap-2 px-3 py-2", className)}
     {...props}
   >
-    <XCircle className="size-3.5 text-red-500 shrink-0" />
-    <span className="text-xs text-red-400">{children}</span>
+    <XCircle className="size-3.5 text-status-error shrink-0" />
+    <span className="text-xs text-status-error">{children}</span>
   </div>
 );
 
@@ -136,11 +139,11 @@ export const ConfirmationAction = ({
     type="button"
     disabled={disabled}
     className={cn(
-      "inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium transition-colors",
-      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      "inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium transition-all active:scale-[0.98]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
       "disabled:pointer-events-none disabled:opacity-50",
       variant === "default" &&
-        "bg-primary text-primary-foreground hover:bg-primary/90",
+        "bg-status-await text-status-await-foreground hover:bg-status-await/90",
       variant === "outline" &&
         "border border-border bg-transparent hover:bg-accent hover:text-foreground",
       variant === "destructive" &&

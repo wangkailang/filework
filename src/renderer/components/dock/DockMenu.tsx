@@ -1,6 +1,16 @@
 // 右上角面板菜单:一个下拉入口,统一切换右侧停靠区的 预览 / 子 agent / 差异 / 网页。
 // 与 ContextDock 的标签等价,但即使停靠区关闭也能从这里打开;选中当前已开标签则收起。
-import { ChevronDown, PanelRight } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  FileText,
+  GitCompareArrows,
+  Globe,
+  type LucideIcon,
+  PanelRight,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
@@ -38,20 +48,52 @@ export const DockMenu = ({
   const items: {
     tab: DockTab;
     label: string;
+    icon: LucideIcon;
     shortcut: string;
     on: boolean;
   }[] = [
-    { tab: "preview", label: LL.dock_preview(), shortcut: "⇧⌘P", on: true },
-    { tab: "search", label: LL.dock_search(), shortcut: "⇧⌘F", on: true },
-    { tab: "trash", label: LL.dock_trash(), shortcut: "⇧⌘T", on: true },
+    {
+      tab: "preview",
+      label: LL.dock_preview(),
+      icon: FileText,
+      shortcut: "⇧⌘P",
+      on: true,
+    },
+    {
+      tab: "search",
+      label: LL.dock_search(),
+      icon: Search,
+      shortcut: "⇧⌘F",
+      on: true,
+    },
+    {
+      tab: "trash",
+      label: LL.dock_trash(),
+      icon: Trash2,
+      shortcut: "⇧⌘T",
+      on: true,
+    },
     {
       tab: "subagent",
       label: LL.dock_subagent(),
+      icon: Bot,
       shortcut: "⇧⌘A",
       on: hasSubagent,
     },
-    { tab: "diff", label: LL.dock_diff(), shortcut: "⇧⌘D", on: isGitRepo },
-    { tab: "web", label: LL.dock_web(), shortcut: "⇧⌘W", on: isGitRepo },
+    {
+      tab: "diff",
+      label: LL.dock_diff(),
+      icon: GitCompareArrows,
+      shortcut: "⇧⌘D",
+      on: isGitRepo,
+    },
+    {
+      tab: "web",
+      label: LL.dock_web(),
+      icon: Globe,
+      shortcut: "⇧⌘W",
+      on: isGitRepo,
+    },
   ];
 
   return (
@@ -80,6 +122,7 @@ export const DockMenu = ({
         <div className="absolute top-full right-0 z-50 mt-1 w-52 rounded-lg border border-border bg-popover py-1 shadow-xl">
           {items.map((item) => {
             const active = dockOpen && activeTab === item.tab;
+            const Icon = item.icon;
             return (
               <button
                 key={item.tab}
@@ -98,7 +141,10 @@ export const DockMenu = ({
                       : "text-foreground hover:bg-accent",
                 )}
               >
-                <span>{item.label}</span>
+                <span className="flex items-center gap-2">
+                  <Icon className="size-3.5 shrink-0" />
+                  {item.label}
+                </span>
                 <span className="font-mono text-[10px] text-muted-foreground/60">
                   {item.shortcut}
                 </span>

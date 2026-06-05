@@ -128,6 +128,43 @@ type RootTranslation = {
 	 */
 	dock_menu: string
 	/**
+	 * i​d​l​e
+	 */
+	telemetry_idle: string
+	/**
+	 * r​u​n​n​i​n​g
+	 */
+	telemetry_running: string
+	/**
+	 * a​w​a​i​t​i​n​g​ ​a​p​p​r​o​v​a​l
+	 */
+	telemetry_awaiting: string
+	/**
+	 * e​r​r​o​r
+	 */
+	telemetry_error: string
+	/**
+	 * T​y​p​e​ ​a​ ​c​o​m​m​a​n​d​…
+	 */
+	cmdk_placeholder: string
+	/**
+	 * N​o​ ​m​a​t​c​h​i​n​g​ ​c​o​m​m​a​n​d​s
+	 */
+	cmdk_empty: string
+	/**
+	 * S​w​i​t​c​h​ ​w​o​r​k​s​p​a​c​e​…
+	 */
+	cmdk_switchWorkspace: string
+	/**
+	 * N​o​ ​f​i​l​e​s
+	 */
+	mention_empty: string
+	/**
+	 * S​w​i​t​c​h​e​d​ ​t​o​ ​{​b​r​a​n​c​h​}
+	 * @param {string} branch
+	 */
+	toast_branchSwitched: RequiredParams<'branch'>
+	/**
 	 * S​e​a​r​c​h​ ​f​i​l​e​s​ ​b​y​ ​n​a​m​e​…
 	 */
 	search_placeholder: string
@@ -1536,6 +1573,42 @@ export type TranslationFunctions = {
 	 * Panels
 	 */
 	dock_menu: () => LocalizedString
+	/**
+	 * idle
+	 */
+	telemetry_idle: () => LocalizedString
+	/**
+	 * running
+	 */
+	telemetry_running: () => LocalizedString
+	/**
+	 * awaiting approval
+	 */
+	telemetry_awaiting: () => LocalizedString
+	/**
+	 * error
+	 */
+	telemetry_error: () => LocalizedString
+	/**
+	 * Type a command…
+	 */
+	cmdk_placeholder: () => LocalizedString
+	/**
+	 * No matching commands
+	 */
+	cmdk_empty: () => LocalizedString
+	/**
+	 * Switch workspace…
+	 */
+	cmdk_switchWorkspace: () => LocalizedString
+	/**
+	 * No files
+	 */
+	mention_empty: () => LocalizedString
+	/**
+	 * Switched to {branch}
+	 */
+	toast_branchSwitched: (arg: { branch: string }) => LocalizedString
 	/**
 	 * Search files by name…
 	 */

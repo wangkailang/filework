@@ -3,81 +3,218 @@
 
 @source "../../../node_modules/streamdown/dist/*.js";
 
+/* ════════════════════════════════════════════════════════════════
+   Instrument(仪表盘/工作台)设计系统 —— 暗色为默认
+   规范见 content/spec/design-system.md
+   ════════════════════════════════════════════════════════════════ */
 @theme {
-  --color-background: #0a0a0a;
-  --color-foreground: #fafafa;
-  --color-primary: #4f46e5;
-  --color-primary-foreground: #ffffff;
-  --color-muted: #262626;
-  --color-muted-foreground: #a3a3a3;
-  --color-accent: #1e1e2e;
-  --color-accent-foreground: #fafafa;
-  --color-destructive: #ef4444;
-  --color-border: #2e2e2e;
-  --color-input: #2e2e2e;
-  --color-ring: #4f46e5;
-  --color-secondary: #1e1e2e;
-  --color-secondary-foreground: #fafafa;
-  --color-popover: #171717;
-  --color-popover-foreground: #fafafa;
-  --color-card: #171717;
-  --color-card-foreground: #fafafa;
+  /* 冷石墨灰阶:近黑带一点蓝,金属感 */
+  --color-background: #0a0b0e;
+  --color-foreground: #e7eaef;
 
-  --color-file-folder: #f59e0b;
-  --color-file-code: #3b82f6;
-  --color-file-doc: #10b981;
-  --color-file-image: #8b5cf6;
-  --color-file-data: #f97316;
-  --color-ai-thinking: #6366f1;
-  --color-ai-success: #22c55e;
+  /* 表面分层 */
+  --color-surface: #101319; /* 面板:rail / dock */
+  --color-surface-sunken: #07080b; /* 内凹输入,比面板更暗 */
+  --color-card: #151921;
+  --color-card-foreground: #e7eaef;
+  --color-popover: #151921;
+  --color-popover-foreground: #e7eaef;
+  --color-secondary: #1b2029;
+  --color-secondary-foreground: #e7eaef;
+  --color-muted: #181c23;
+  --color-muted-foreground: #98a0ac;
+  --color-accent: #1b2029; /* hover / 选中底 */
+  --color-accent-foreground: #e7eaef;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* 信号主色:instrument 紫(电光紫,HUD 读数感) */
+  --color-primary: #a78bfa;
+  --color-primary-foreground: #1a1033; /* 紫底上用深色字 */
+  --color-primary-bright: #c4b5fd;
+
+  /* 边框三档(发丝边为精密感的关键) */
+  --color-border: #21262f;
+  --color-border-strong: #2c333e;
+  --color-border-faint: #181c23;
+  --color-input: #21262f;
+  --color-ring: #a78bfa;
+
+  --color-destructive: #f06a76;
+  --color-destructive-foreground: #ffffff;
+
+  /* ★ 状态系统:Agent 状态语义全局统一 */
+  --color-status-idle: #6b7480;
+  --color-status-running: #a78bfa;
+  --color-status-await: #f5b133;
+  --color-status-await-foreground: #1a1407;
+  --color-status-success: #3fcf8e;
+  --color-status-error: #f06a76;
+
+  /* 文件类型色(冷调化) */
+  --color-file-folder: #f0b144;
+  --color-file-code: #5b9cff;
+  --color-file-doc: #3fcf8e;
+  --color-file-image: #e879c9;
+  --color-file-data: #f5995b;
+  --color-ai-thinking: #a78bfa;
+  --color-ai-success: #3fcf8e;
+
+  /* 圆角:收紧到精密档 */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 9px;
+
+  /* 字体:mono 为共同主角(路径/工具/分支/数字/状态/代码) */
+  --font-sans:
+    "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* 机械感缓动:快进、稳定落位、不弹跳 */
+  --ease-snap: cubic-bezier(0.2, 0, 0, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 入场:消息逐条浮起 */
+  --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* 状态灯脉冲 / telemetry 扫描光线 / 迷你均衡器 */
+  --animate-ping-ring: ping-ring 1.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  --animate-scan: scan 2.2s linear infinite;
+  --animate-eq: eq 1s cubic-bezier(0.2, 0, 0, 1) infinite;
 }
 
-/* macOS-style titlebar drag region */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ping-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+@keyframes scan {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+@keyframes eq {
+  0%,
+  100% {
+    height: 25%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
+/* macOS 标题栏拖拽区 */
 .titlebar-drag {
   -webkit-app-region: drag;
 }
-
 .titlebar-no-drag {
   -webkit-app-region: no-drag;
 }
 
 body {
-  font-family:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   overflow: hidden;
 }
 
-/* Light theme overrides */
+/* 内凹输入(recessed)的触感:内阴影 + 发丝内描边 */
+.surface-sunken {
+  background: var(--color-surface-sunken);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px var(--color-border);
+}
+/* 聚焦时内描边转主色(青) */
+.surface-sunken:focus-within {
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px var(--color-ring);
+}
+.light .surface-sunken {
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px var(--color-border);
+}
+
+/* ─── Light theme(Instrument 浅色:暖中性纸 + 加深的青/状态色保对比) ─── */
 .light {
-  --color-background: #ffffff;
-  --color-foreground: #0a0a0a;
-  --color-primary: #4f46e5;
-  --color-primary-foreground: #ffffff;
-  --color-muted: #f5f5f5;
-  --color-muted-foreground: #737373;
-  --color-accent: #f0f0f5;
-  --color-accent-foreground: #0a0a0a;
-  --color-destructive: #ef4444;
-  --color-border: #e5e5e5;
-  --color-input: #e5e5e5;
-  --color-ring: #4f46e5;
-  --color-secondary: #f5f5f5;
-  --color-secondary-foreground: #0a0a0a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0a0a0a;
+  --color-background: #f8f8f6;
+  --color-foreground: #16181d;
+
+  --color-surface: #f1f1ef;
+  --color-surface-sunken: #ffffff;
   --color-card: #ffffff;
-  --color-card-foreground: #0a0a0a;
+  --color-card-foreground: #16181d;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #16181d;
+  --color-secondary: #ecedeb;
+  --color-secondary-foreground: #16181d;
+  --color-muted: #eeeeec;
+  --color-muted-foreground: #5b626c;
+  --color-accent: #ecedf0;
+  --color-accent-foreground: #16181d;
+
+  --color-primary: #7c3aed;
+  --color-primary-foreground: #ffffff;
+  --color-primary-bright: #8b5cf6;
+
+  --color-border: #e2e2df;
+  --color-border-strong: #d2d2ce;
+  --color-border-faint: #ececea;
+  --color-input: #e2e2df;
+  --color-ring: #7c3aed;
+
+  --color-destructive: #d64550;
+  --color-destructive-foreground: #ffffff;
+
+  --color-status-idle: #8a909a;
+  --color-status-running: #7c3aed;
+  --color-status-await: #c98a1a;
+  --color-status-await-foreground: #ffffff;
+  --color-status-success: #1f9d62;
+  --color-status-error: #d64550;
+
+  --color-ai-thinking: #7c3aed;
+  --color-ai-success: #1f9d62;
+}
+
+/* sonner toast —— 跟随 Instrument token,自动适配明暗;错误/成功仅描边着色 */
+[data-sonner-toaster] {
+  --normal-bg: var(--color-popover);
+  --normal-text: var(--color-popover-foreground);
+  --normal-border: var(--color-border);
+}
+[data-sonner-toast] {
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+[data-sonner-toast][data-type="error"] {
+  --normal-border: var(--color-status-error);
+}
+[data-sonner-toast][data-type="success"] {
+  --normal-border: var(--color-status-success);
 }
 
 /* Code viewer line numbers */
 .code-viewer-lines code {
   counter-reset: line;
 }
-
 .code-viewer-lines .line::before {
   counter-increment: line;
   content: counter(line);
@@ -89,4 +226,18 @@ body {
   opacity: 0.4;
   user-select: none;
   font-size: 0.75rem;
+}
+
+/* 动效降级:尊重系统「减少动态」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion 覆盖必须压过内联/工具类动画 */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: 同上 */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: 同上 */
+    transition-duration: 0.01ms !important;
+  }
 }

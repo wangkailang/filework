@@ -92,7 +92,7 @@ export const PromptInput = ({
         onSubmit={handleSubmit}
         {...props}
       >
-        <div className="relative flex flex-col rounded-lg border border-border bg-muted">
+        <div className="surface-sunken relative flex flex-col rounded-lg">
           {children}
         </div>
       </form>
@@ -265,9 +265,12 @@ export const PromptInputSubmit = ({
       type={isActive ? "button" : "submit"}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center rounded-md p-2 transition-colors",
-        "text-muted-foreground hover:text-foreground hover:bg-accent",
+        "inline-flex items-center justify-center rounded-md p-2 transition-all",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         "disabled:opacity-50 disabled:cursor-not-allowed",
+        isActive
+          ? "text-muted-foreground hover:bg-accent hover:text-foreground"
+          : "bg-primary text-primary-foreground hover:bg-primary-bright active:scale-95",
         className,
       )}
       aria-label={isActive ? "Stop" : "Send"}
@@ -309,8 +312,9 @@ export const PromptInputAttachButton = ({
     disabled={disabled}
     aria-label={ariaLabel}
     className={cn(
-      "inline-flex items-center justify-center rounded-md p-2 transition-colors",
+      "inline-flex items-center justify-center rounded-md p-2 transition-all active:scale-95",
       "text-muted-foreground hover:text-foreground hover:bg-accent",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
       "disabled:opacity-50 disabled:cursor-not-allowed",
       className,
     )}

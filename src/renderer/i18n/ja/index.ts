@@ -37,6 +37,15 @@ const ja: Translation = {
   dock_search: "検索",
   dock_trash: "ゴミ箱",
   dock_menu: "パネル",
+  telemetry_idle: "アイドル",
+  telemetry_running: "実行中",
+  telemetry_awaiting: "承認待ち",
+  telemetry_error: "エラー",
+  cmdk_placeholder: "コマンドを入力…",
+  cmdk_empty: "該当するコマンドなし",
+  cmdk_switchWorkspace: "ワークスペースを切り替え…",
+  mention_empty: "ファイルなし",
+  toast_branchSwitched: "{branch} に切り替えました",
 
   // ファイル検索パネル
   search_placeholder: "ファイル名で検索…",
