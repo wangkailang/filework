@@ -136,6 +136,15 @@ export const initDatabase = async () => {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS skill_trust (
+      skill_id TEXT PRIMARY KEY,
+      source_path TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      approved INTEGER NOT NULL DEFAULT 0,
+      approved_at TEXT,
+      allow_commands INTEGER NOT NULL DEFAULT 0,
+      allow_hooks INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // 迁移:Tavily 之前的数据库 CHECK 约束仅限
@@ -1311,3 +1320,53 @@ export const deleteMcpServer = (id: string): void => {
 };
 
 export type { FileOperation, RecentWorkspace, Task, Workspace };
+
+// ============================================================================
+// 技能信任(持久化外部 skill / 市场安装的审批结果)
+// ============================================================================
+
+export interface SkillTrustRow {
+  skillId: string;
+  sourcePath: string;
+  contentHash: string;
+  approved: boolean;
+  approvedAt: string | null;
+  allowCommands: boolean;
+  allowHooks: boolean;
+}
+
+export const getSkillTrust = (skillId: string): SkillTrustRow | null => {
+  const row = db
+    .select()
+    .from(schema.skillTrust)
+    .where(eq(schema.skillTrust.skillId, skillId))
+    .get();
+  return row ?? null;
+};
+
+/** 读取全部信任记录(供启动时灌入内存信任缓存)。 */
+export const listSkillTrust = (): SkillTrustRow[] =>
+  db.select().from(schema.skillTrust).all();
+
+export const upsertSkillTrust = (rec: SkillTrustRow): void => {
+  db.insert(schema.skillTrust)
+    .values(rec)
+    .onConflictDoUpdate({
+      target: schema.skillTrust.skillId,
+      set: {
+        sourcePath: rec.sourcePath,
+        contentHash: rec.contentHash,
+        approved: rec.approved,
+        approvedAt: rec.approvedAt,
+        allowCommands: rec.allowCommands,
+        allowHooks: rec.allowHooks,
+      },
+    })
+    .run();
+};
+
+export const deleteSkillTrust = (skillId: string): void => {
+  db.delete(schema.skillTrust)
+    .where(eq(schema.skillTrust.skillId, skillId))
+    .run();
+};

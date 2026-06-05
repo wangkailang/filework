@@ -1108,6 +1108,46 @@ type RootTranslation = {
 	 */
 	skillsModal_sourceDisabled: string
 	/**
+	 * M​a​r​k​e​t​p​l​a​c​e
+	 */
+	skillsModal_market: string
+	/**
+	 * I​n​s​t​a​l​l
+	 */
+	skillsModal_marketInstall: string
+	/**
+	 * I​n​s​t​a​l​l​e​d
+	 */
+	skillsModal_marketInstalled: string
+	/**
+	 * U​n​i​n​s​t​a​l​l
+	 */
+	skillsModal_marketUninstall: string
+	/**
+	 * C​o​m​m​u​n​i​t​y
+	 */
+	skillsModal_marketCommunity: string
+	/**
+	 * O​f​f​i​c​i​a​l
+	 */
+	skillsModal_marketOfficial: string
+	/**
+	 * I​n​s​t​a​l​l​i​n​g​…
+	 */
+	skillsModal_marketInstalling: string
+	/**
+	 * T​h​i​s​ ​i​s​ ​a​ ​c​o​m​m​u​n​i​t​y​-​c​o​n​t​r​i​b​u​t​e​d​ ​s​k​i​l​l​.​ ​O​n​c​e​ ​i​n​s​t​a​l​l​e​d​,​ ​i​t​ ​c​a​n​ ​e​x​e​c​u​t​e​ ​c​o​m​m​a​n​d​s​ ​a​n​d​ ​s​c​r​i​p​t​s​ ​i​n​ ​y​o​u​r​ ​w​o​r​k​s​p​a​c​e​.​ ​O​n​l​y​ ​i​n​s​t​a​l​l​ ​i​f​ ​y​o​u​ ​t​r​u​s​t​ ​t​h​e​ ​s​o​u​r​c​e​.
+	 */
+	skillsModal_marketConfirmCommunity: string
+	/**
+	 * N​o​ ​s​k​i​l​l​s​ ​a​v​a​i​l​a​b​l​e​ ​i​n​ ​t​h​e​ ​m​a​r​k​e​t​p​l​a​c​e
+	 */
+	skillsModal_marketEmpty: string
+	/**
+	 * F​a​i​l​e​d​ ​t​o​ ​l​o​a​d​ ​m​a​r​k​e​t​p​l​a​c​e
+	 */
+	skillsModal_marketError: string
+	/**
 	 * L​o​a​d​i​n​g​ ​u​s​a​g​e​ ​d​a​t​a​.​.​.
 	 */
 	usage_loading: string
@@ -2448,6 +2488,46 @@ export type TranslationFunctions = {
 	 * Disabled
 	 */
 	skillsModal_sourceDisabled: () => LocalizedString
+	/**
+	 * Marketplace
+	 */
+	skillsModal_market: () => LocalizedString
+	/**
+	 * Install
+	 */
+	skillsModal_marketInstall: () => LocalizedString
+	/**
+	 * Installed
+	 */
+	skillsModal_marketInstalled: () => LocalizedString
+	/**
+	 * Uninstall
+	 */
+	skillsModal_marketUninstall: () => LocalizedString
+	/**
+	 * Community
+	 */
+	skillsModal_marketCommunity: () => LocalizedString
+	/**
+	 * Official
+	 */
+	skillsModal_marketOfficial: () => LocalizedString
+	/**
+	 * Installing…
+	 */
+	skillsModal_marketInstalling: () => LocalizedString
+	/**
+	 * This is a community-contributed skill. Once installed, it can execute commands and scripts in your workspace. Only install if you trust the source.
+	 */
+	skillsModal_marketConfirmCommunity: () => LocalizedString
+	/**
+	 * No skills available in the marketplace
+	 */
+	skillsModal_marketEmpty: () => LocalizedString
+	/**
+	 * Failed to load marketplace
+	 */
+	skillsModal_marketError: () => LocalizedString
 	/**
 	 * Loading usage data...
 	 */

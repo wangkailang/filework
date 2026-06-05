@@ -5,7 +5,17 @@ import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
 
 type SourceType = "built-in" | "project" | "personal" | "additional";
-type FilterType = "all" | SourceType;
+type FilterType = "all" | SourceType | "market";
+
+// 市场条目结构
+interface MarketItem {
+  id: string;
+  name: string;
+  description: string;
+  level: "official" | "community";
+  installed: boolean;
+  source: unknown;
+}
 
 interface SkillExternalInfo {
   context: "default" | "fork";
@@ -78,12 +88,81 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   const [detail, setDetail] = useState<SkillDetailData | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 市场状态
+  const [market, setMarket] = useState<MarketItem[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const isMarket = filter === "market";
+
   const refreshSkills = useCallback(async () => {
     const list = (await window.filework.listAllSkills()) as
       | SkillListItem[]
       | undefined;
     setSkills(list ?? []);
   }, []);
+
+  // 市场 tab 打开时加载条目
+  useEffect(() => {
+    if (!open || !isMarket) return;
+    let cancelled = false;
+    setMarketLoading(true);
+    setMarketError(null);
+    void (async () => {
+      const res = (await window.filework.marketList()) as {
+        ok: boolean;
+        error?: string;
+        entries: MarketItem[];
+      };
+      if (cancelled) return;
+      if (res.ok) setMarket(res.entries);
+      else setMarketError(res.error ?? "error");
+      setMarketLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isMarket]);
+
+  // 安装市场 skill(community 需弹窗确认)
+  const handleInstall = useCallback(
+    async (item: MarketItem) => {
+      if (item.level === "community") {
+        if (!window.confirm(LL.skillsModal_marketConfirmCommunity())) return;
+      }
+      setInstallingId(item.id);
+      const res = (await window.filework.marketInstall(item)) as {
+        ok: boolean;
+        error?: string;
+      };
+      setInstallingId(null);
+      if (res.ok) {
+        setMarket((prev) =>
+          prev.map((m) => (m.id === item.id ? { ...m, installed: true } : m)),
+        );
+        await refreshSkills();
+      } else {
+        console.warn("[market] install failed:", res.error);
+      }
+    },
+    [LL, refreshSkills],
+  );
+
+  // 卸载市场 skill
+  const handleUninstall = useCallback(
+    async (skillId: string) => {
+      const res = (await window.filework.marketUninstall(skillId)) as {
+        ok: boolean;
+      };
+      if (res.ok) {
+        setMarket((prev) =>
+          prev.map((m) => (m.id === skillId ? { ...m, installed: false } : m)),
+        );
+        await refreshSkills();
+      }
+    },
+    [refreshSkills],
+  );
 
   // Fetch skill list when modal opens
   useEffect(() => {
@@ -227,6 +306,20 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
             loading={loading}
             onToggle={handleSkillToggle}
           />
+        ) : isMarket ? (
+          <MarketView
+            items={market}
+            loading={marketLoading}
+            error={marketError}
+            search={search}
+            onSearchChange={setSearch}
+            filter={filter}
+            onFilterChange={setFilter}
+            availableSources={availableSources}
+            installingId={installingId}
+            onInstall={handleInstall}
+            onUninstall={handleUninstall}
+          />
         ) : (
           <SkillListView
             skills={filtered}
@@ -298,6 +391,13 @@ const SkillListView = ({
               {sourceLabels[src]}
             </FilterTab>
           ))}
+          {/* 市场 tab */}
+          <FilterTab
+            active={filter === "market"}
+            onClick={() => onFilterChange("market")}
+          >
+            {LL.skillsModal_market()}
+          </FilterTab>
         </div>
       </div>
 
@@ -482,6 +582,152 @@ const SkillSwitch = ({
     />
   </button>
 );
+
+/* ── Market View ─────────────────────────────────────────────────── */
+
+const MarketView = ({
+  items,
+  loading,
+  error,
+  search,
+  onSearchChange,
+  filter,
+  onFilterChange,
+  availableSources,
+  installingId,
+  onInstall,
+  onUninstall,
+}: {
+  items: MarketItem[];
+  loading: boolean;
+  error: string | null;
+  search: string;
+  onSearchChange: (s: string) => void;
+  filter: FilterType;
+  onFilterChange: (f: FilterType) => void;
+  availableSources: SourceType[];
+  installingId: string | null;
+  onInstall: (item: MarketItem) => void | Promise<void>;
+  onUninstall: (skillId: string) => void | Promise<void>;
+}) => {
+  const { LL } = useI18nContext();
+  const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
+  // 按搜索词过滤条目
+  const shown = items.filter((m) =>
+    !search
+      ? true
+      : (m.name + m.description).toLowerCase().includes(search.toLowerCase()),
+  );
+  return (
+    <>
+      <div className="px-6 pt-4 pb-2 space-y-3 shrink-0">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={LL.skillsModal_search()}
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border bg-muted/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {/* 「全部」tab:点击切回本地列表 */}
+          <FilterTab active={false} onClick={() => onFilterChange("all")}>
+            {LL.skillsModal_all(String(items.length))}
+          </FilterTab>
+          {availableSources.map((src) => (
+            <FilterTab
+              key={src}
+              active={false}
+              onClick={() => onFilterChange(src)}
+            >
+              {sourceLabels[src]}
+            </FilterTab>
+          ))}
+          {/* 市场 tab 高亮 */}
+          <FilterTab
+            active={filter === "market"}
+            onClick={() => onFilterChange("market")}
+          >
+            {LL.skillsModal_market()}
+          </FilterTab>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-6 pb-4">
+        {loading ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            {LL.skillsModal_loading()}
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center text-sm text-red-500">
+            {LL.skillsModal_marketError()}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            {LL.skillsModal_marketEmpty()}
+          </div>
+        ) : (
+          <div className="space-y-2 pt-1">
+            {shown.map((m) => (
+              <div
+                key={m.id}
+                className="relative rounded-lg border border-border p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-medium text-sm text-foreground truncate">
+                        {m.name}
+                      </span>
+                      {/* community/official 等级徽标 */}
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          m.level === "community"
+                            ? "bg-amber-500/10 text-amber-600"
+                            : "bg-blue-500/10 text-blue-500",
+                        )}
+                      >
+                        {m.level === "community"
+                          ? LL.skillsModal_marketCommunity()
+                          : LL.skillsModal_marketOfficial()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {m.description}
+                    </p>
+                  </div>
+                  {/* 安装/卸载按钮 */}
+                  {m.installed ? (
+                    <button
+                      type="button"
+                      onClick={() => onUninstall(m.id)}
+                      className="shrink-0 text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent"
+                    >
+                      {LL.skillsModal_marketUninstall()}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={installingId === m.id}
+                      onClick={() => void onInstall(m)}
+                      className="shrink-0 text-xs px-2 py-1 rounded-md border border-primary bg-primary/10 text-primary disabled:opacity-50"
+                    >
+                      {installingId === m.id
+                        ? LL.skillsModal_marketInstalling()
+                        : LL.skillsModal_marketInstall()}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
 
 /* ── Skill Detail View ───────────────────────────────────────────── */
 

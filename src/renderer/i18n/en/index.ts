@@ -340,6 +340,17 @@ const en: BaseTranslation = {
   skillsModal_sourcePersonal: "Personal",
   skillsModal_sourceAdditional: "Additional",
   skillsModal_sourceDisabled: "Disabled",
+  skillsModal_market: "Marketplace",
+  skillsModal_marketInstall: "Install",
+  skillsModal_marketInstalled: "Installed",
+  skillsModal_marketUninstall: "Uninstall",
+  skillsModal_marketCommunity: "Community",
+  skillsModal_marketOfficial: "Official",
+  skillsModal_marketInstalling: "Installing…",
+  skillsModal_marketConfirmCommunity:
+    "This is a community-contributed skill. Once installed, it can execute commands and scripts in your workspace. Only install if you trust the source.",
+  skillsModal_marketEmpty: "No skills available in the marketplace",
+  skillsModal_marketError: "Failed to load marketplace",
 
   // Usage panel
   usage_loading: "Loading usage data...",

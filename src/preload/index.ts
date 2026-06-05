@@ -96,6 +96,12 @@ const api = {
     ipcRenderer.invoke("ai:initSkills", payload),
   refreshSkills: (workspacePath: string) =>
     ipcRenderer.invoke("ai:refreshSkills", { workspacePath }),
+  // Skills 市场:列表 / 安装 / 卸载
+  marketList: (): Promise<unknown> => ipcRenderer.invoke("market:list"),
+  marketInstall: (entry: unknown): Promise<unknown> =>
+    ipcRenderer.invoke("market:install", { entry }),
+  marketUninstall: (skillId: string): Promise<unknown> =>
+    ipcRenderer.invoke("market:uninstall", { skillId }),
   approveSkill: (payload: { skillId: string; approved: boolean }) =>
     ipcRenderer.invoke("ai:approveSkill", payload),
   executeTask: (payload: {
