@@ -42,6 +42,15 @@ const en: BaseTranslation = {
   dock_search: "Search",
   dock_trash: "Trash",
   dock_menu: "Panels",
+  telemetry_idle: "idle",
+  telemetry_running: "running",
+  telemetry_awaiting: "awaiting approval",
+  telemetry_error: "error",
+  cmdk_placeholder: "Type a command…",
+  cmdk_empty: "No matching commands",
+  cmdk_switchWorkspace: "Switch workspace…",
+  mention_empty: "No files",
+  toast_branchSwitched: "Switched to {branch:string}",
 
   // File search panel
   search_placeholder: "Search files by name…",

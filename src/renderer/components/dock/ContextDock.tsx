@@ -112,7 +112,7 @@ export const ContextDock = ({
     <button
       type="button"
       onClick={() => onTabChange(t)}
-      className={`rounded-t-md px-3 py-1.5 text-xs ${
+      className={`rounded-t-md px-3 py-1.5 font-mono text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 ${
         effectiveTab === t
           ? "bg-card text-foreground shadow-[inset_0_-2px_0_var(--color-primary)]"
           : "text-muted-foreground hover:text-foreground"
@@ -123,15 +123,16 @@ export const ContextDock = ({
   );
 
   return (
+    // 打开时从右滑入 + 淡入,统一 200ms 节奏(fullscreen 让开顶部 28px 系统标题栏)
     <aside
-      className={
+      className={cn(
+        "animate-in fade-in-0 slide-in-from-right-2 duration-200",
         isFullscreen
-          ? // 让开顶部 28px 系统标题栏(hiddenInset):否则头部按钮落在 OS 拖拽区里点不动。
-            "fixed top-7 right-0 bottom-0 left-0 z-50 border-l border-border bg-background"
+          ? "fixed top-7 right-0 bottom-0 left-0 z-50 border-l border-border bg-surface"
           : mode === "overlay"
-            ? "absolute top-0 right-0 z-40 h-full border-l border-border bg-background shadow-2xl"
-            : "relative h-full shrink-0 border-l border-border bg-background"
-      }
+            ? "absolute top-0 right-0 z-40 h-full border-l border-border bg-surface shadow-2xl"
+            : "relative h-full shrink-0 border-l border-border bg-surface",
+      )}
       style={isFullscreen ? undefined : { width }}
     >
       {/* 全屏铺满窗口时调宽无意义,隐藏分隔条。 */}

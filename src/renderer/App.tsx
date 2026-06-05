@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Toaster } from "sonner";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
+import { CommandPalette } from "./components/command/CommandPalette";
 import { ContextDock, type DockTab } from "./components/dock/ContextDock";
 import { DockMenu } from "./components/dock/DockMenu";
 import {
@@ -502,9 +504,13 @@ export const App = () => {
                 />
                 <main className="relative flex min-w-0 flex-1 overflow-hidden">
                   <div className="relative min-w-0 flex-1 overflow-hidden">
-                    <ChatPanel workspacePath={workspace.localPath} />
-                    {/* 顶部右上角面板菜单:统一打开/切换 预览 / 子 agent / 差异 / 网页。 */}
-                    <div className="titlebar-no-drag absolute top-1.5 right-2 z-30">
+                    <ChatPanel
+                      workspacePath={workspace.localPath}
+                      railCollapsed={railCollapsed}
+                    />
+                    {/* 顶部右上角面板菜单:垂直居中嵌入 telemetry 状态条右端(h-[34px]),
+                        与状态条的 pr-16 留白配合,避免压住右侧读数文本。 */}
+                    <div className="titlebar-no-drag absolute top-0 right-2 z-30 flex h-[34px] items-center">
                       <DockMenu
                         activeTab={dockTab}
                         dockOpen={dockOpen}
@@ -537,6 +543,13 @@ export const App = () => {
                   )}
                 </main>
               </div>
+              <CommandPalette
+                isGitRepo={workspace.isGitRepo}
+                hasSubagent={dockSubagent != null}
+                onOpenDockTab={openDockTab}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onSwitchWorkspace={() => setWorkspace(null)}
+              />
             </BrowserRouterProvider>
           </ChatSessionProvider>
           <SettingsModal
@@ -546,6 +559,10 @@ export const App = () => {
           />
         </div>
       )}
+      <Toaster
+        position="bottom-right"
+        toastOptions={{ className: "font-mono" }}
+      />
     </TypesafeI18n>
   );
 };

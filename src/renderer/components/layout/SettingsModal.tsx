@@ -136,12 +136,12 @@ export const SettingsModal = ({
     <div className="fixed inset-0 z-100 flex items-center justify-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
+        className="absolute inset-0 bg-black/50 cursor-default animate-in fade-in-0 duration-150"
         onClick={onClose}
         aria-label="Close settings"
       />
 
-      <div className="relative flex bg-background border border-border rounded-xl shadow-2xl overflow-hidden w-[calc(100vw-64px)] h-[calc(100vh-48px)] max-w-[1200px] max-h-[900px]">
+      <div className="relative flex bg-background border border-border rounded-xl shadow-2xl overflow-hidden w-[calc(100vw-64px)] h-[calc(100vh-48px)] max-w-[1200px] max-h-[900px] animate-in fade-in-0 zoom-in-95 duration-150">
         {/* Left sidebar tabs */}
         <div className="flex flex-col w-44 shrink-0 border-r border-border bg-muted/50 py-3">
           <div className="flex items-center justify-between px-4 pb-3 border-b border-border mb-2">

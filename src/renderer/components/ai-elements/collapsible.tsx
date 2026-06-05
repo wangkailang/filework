@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
 } from "react";
+import { cn } from "../../lib/utils";
 
 interface CollapsibleContextType {
   open: boolean;
@@ -89,7 +90,13 @@ export const CollapsibleContent = ({
   const { open } = useContext(CollapsibleContext);
   if (!open) return null;
   return (
-    <div className={className} {...props}>
+    <div
+      className={cn(
+        "animate-in fade-in-0 slide-in-from-top-1 duration-200",
+        className,
+      )}
+      {...props}
+    >
       {children}
     </div>
   );

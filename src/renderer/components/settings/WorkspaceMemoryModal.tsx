@@ -27,12 +27,12 @@ export const WorkspaceMemoryModal = ({
     <div className="fixed inset-0 z-100 flex items-center justify-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
+        className="absolute inset-0 bg-black/50 cursor-default animate-in fade-in-0 duration-150"
         onClick={onClose}
         aria-label="Close workspace memory"
       />
 
-      <div className="relative flex flex-col bg-background border border-border rounded-xl shadow-2xl overflow-hidden w-[640px] max-w-[calc(100vw-64px)] max-h-[80vh]">
+      <div className="relative flex flex-col bg-background border border-border rounded-xl shadow-2xl overflow-hidden w-[640px] max-w-[calc(100vw-64px)] max-h-[80vh] animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Bot className="w-4 h-4 text-orange-400" />

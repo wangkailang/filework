@@ -14,7 +14,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import {
@@ -83,6 +83,16 @@ export const LeftRail = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const widthRef = useRef(width);
   widthRef.current = width;
+
+  // 左下角设置菜单:Esc 关闭(与点击外部一致)
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   // 分支 diff 摘要(用于 diff 开关上的 +/- 徽标)。便宜:hook 有缓存,
   // currentBranch 变化会 bust 缓存。
@@ -159,20 +169,25 @@ export const LeftRail = ({
     <button
       type="button"
       onClick={() => onRailTabChange(tab)}
-      className={`flex-1 py-1.5 text-xs ${
+      className={cn(
+        "relative flex-1 py-1.5 text-xs transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
         railTab === tab
-          ? "bg-primary font-semibold text-primary-foreground"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
+          ? "font-medium text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      )}
     >
       {label}
+      {railTab === tab && (
+        <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-primary shadow-[0_0_8px_var(--color-primary)] animate-in fade-in-0 duration-200" />
+      )}
     </button>
   );
 
   return (
     <>
       <aside
-        className="relative flex h-full shrink-0 flex-col border-r border-border bg-muted/30"
+        className="relative flex h-full shrink-0 flex-col border-r border-border bg-surface"
         style={{ width }}
       >
         {/* workspace 头部:名称(点击在 Finder 显示)+ 关闭 + 分支 + diff */}
@@ -217,10 +232,10 @@ export const LeftRail = ({
                   <GitCompareArrows className="size-3" />
                   {hasDiff && diffSummary && (
                     <span className="font-mono">
-                      <span className="text-emerald-500">
+                      <span className="text-status-success">
                         +{diffSummary.totalAdded}
                       </span>{" "}
-                      <span className="text-red-400">
+                      <span className="text-status-error">
                         -{diffSummary.totalRemoved}
                       </span>
                     </span>
@@ -236,7 +251,7 @@ export const LeftRail = ({
 
         {/* [对话 | 文件] 分段 */}
         <div className="m-2 flex items-center gap-2">
-          <div className="flex flex-1 overflow-hidden rounded-lg border border-border">
+          <div className="flex flex-1 border-b border-border">
             {segBtn("chats", LL.rail_chats())}
             {segBtn("files", LL.rail_files())}
           </div>
@@ -244,7 +259,7 @@ export const LeftRail = ({
             type="button"
             onClick={chat.handleNewChat}
             disabled={chat.isLoading}
-            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95 disabled:opacity-50"
             title={LL.session_newChat()}
           >
             <MessageSquarePlus className="size-4" />
@@ -348,7 +363,7 @@ export const RailExpandButton = ({ onClick }: { onClick: () => void }) => {
       type="button"
       onClick={onClick}
       title={LL.sidebar_expand()}
-      className="titlebar-no-drag absolute top-2 left-2 z-20 rounded-md p-1.5 transition-colors hover:bg-accent"
+      className="titlebar-no-drag absolute left-2 top-1 z-20 flex h-[34px] items-center rounded-md px-1.5 transition-all hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
     >
       <PanelLeftOpen className="size-4 text-muted-foreground" />
     </button>

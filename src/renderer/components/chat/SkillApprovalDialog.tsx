@@ -20,8 +20,8 @@ export const SkillApprovalDialog = ({
   const { LL } = useI18nContext();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in-0 duration-150">
+      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-lg animate-in fade-in-0 zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <ShieldAlert className="size-4 text-amber-500 shrink-0" />
