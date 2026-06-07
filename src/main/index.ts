@@ -209,7 +209,7 @@ app.whenReady().then(async () => {
   // 注册 local-file:// 协议以服务本地文件(用于 PDF/视频/图片预览)。
   // 支持 HTTP Range:视频可边下边播 + 拖拽 seek,大 PDF 按页按需加载,
   // 大图渐进式加载 —— 而不是把整文件读进内存再一次性返回。
-  protocol.handle("local-file", async (request) => {
+  const handleLocalFile = async (request: Request): Promise<Response> => {
     // URL 格式:local-file://open?path=/absolute/path/to/file.pdf
     const url = new URL(request.url);
     const filePath = url.searchParams.get("path");
@@ -269,7 +269,22 @@ app.whenReady().then(async () => {
         "Accept-Ranges": "bytes",
       },
     });
-  });
+  };
+
+  // 默认 session:宿主 renderer 的 <img> 缩略图、PDF / 视频预览。
+  protocol.handle("local-file", handleLocalFile);
+  // 应用内浏览器(BrowserPanel)的 webview 用独立 partition,其 session
+  // 不共享默认 session 的协议处理器 —— 须单独注册,否则本地 HTML 的
+  // local-file:// 活页面预览会加载失败。涵盖:真实网页浏览的 dev / prod
+  // partition,以及本地 HTML 预览专用的隔离 partition(artifact-preview,
+  // 非 persist,与浏览的 cookies / 存储互不可见)。未被使用的名称无副作用。
+  for (const part of [
+    "persist:in-app-browser",
+    "in-app-browser",
+    "artifact-preview",
+  ]) {
+    session.fromPartition(part).protocol.handle("local-file", handleLocalFile);
+  }
 
   // 初始化 SQLite 数据库
   await initDatabase();

@@ -2,6 +2,7 @@ import {
   Code2,
   Eye,
   FileWarning,
+  Globe,
   Loader2,
   ZoomIn,
   ZoomOut,
@@ -69,6 +70,12 @@ const isMarkdownFile = (filename: string): boolean => {
   return e === ".md" || e === ".markdown";
 };
 
+/** html 文件:源码就地查看,另提供"在网页面板渲染为活页面"入口。 */
+const isHtmlFile = (filename: string): boolean => {
+  const e = getFileExtension(filename).toLowerCase();
+  return e === ".html" || e === ".htm";
+};
+
 /** 人类可读的字节数(用于超大文件截断提示)。 */
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -107,6 +114,7 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const isVideo = isVideoFile(fileName);
   const isAudio = isAudioFile(fileName);
   const isMarkdown = isMarkdownFile(fileName);
+  const isHtml = isHtmlFile(fileName);
   const supported =
     isSupportedFile(fileName) || isPdf || isImage || isVideo || isAudio;
 
@@ -210,6 +218,26 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
               <Code2 className="h-4 w-4" />
             </button>
           </div>
+        )}
+        {/* html 文件:在网页面板渲染为活页面(走 local-file:// 协议,
+            内联脚本/样式可执行,适合预览打包好的 HTML artifact)。 */}
+        {isHtml && !isLoading && !error && (
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("filework:open-web", {
+                  detail: { url: localFileUrl(absolutePath) },
+                }),
+              )
+            }
+            title={LL.preview_openInBrowser()}
+            aria-label={LL.preview_openInBrowser()}
+            className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            {LL.preview_openInBrowser()}
+          </button>
         )}
       </div>
 

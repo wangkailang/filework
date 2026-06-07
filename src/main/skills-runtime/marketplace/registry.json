@@ -194,6 +194,9 @@
         "ref": "main",
         "subdir": "skills/web-artifacts-builder"
       },
+      "requires": {
+        "bins": ["node", "npm"]
+      },
       "homepage": "https://github.com/anthropics/skills/tree/main/skills/web-artifacts-builder"
     },
     {
