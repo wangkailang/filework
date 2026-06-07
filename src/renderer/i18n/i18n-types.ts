@@ -958,6 +958,10 @@ type RootTranslation = {
 	 */
 	preview_viewSource: string
 	/**
+	 * O​p​e​n​ ​i​n​ ​b​r​o​w​s​e​r
+	 */
+	preview_openInBrowser: string
+	/**
 	 * F​u​l​l​s​c​r​e​e​n
 	 */
 	preview_fullscreen: string
@@ -2377,6 +2381,10 @@ export type TranslationFunctions = {
 	 * Source
 	 */
 	preview_viewSource: () => LocalizedString
+	/**
+	 * Open in browser
+	 */
+	preview_openInBrowser: () => LocalizedString
 	/**
 	 * Fullscreen
 	 */

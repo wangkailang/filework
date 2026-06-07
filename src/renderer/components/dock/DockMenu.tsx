@@ -92,7 +92,7 @@ export const DockMenu = ({
       label: LL.dock_web(),
       icon: Globe,
       shortcut: "⇧⌘W",
-      on: isGitRepo,
+      on: true,
     },
   ];
 

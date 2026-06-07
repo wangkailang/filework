@@ -57,7 +57,7 @@ export const ContextDock = ({
   workspaceRoot: string;
   currentBranch?: string | null;
   diffInvalidator: number;
-  /** 非 git 项目隐藏「差异 / 网页」两个标签与内容。 */
+  /** 非 git 项目隐藏「差异」标签与内容(网页面板对所有工作区可用)。 */
   isGitRepo: boolean;
 }) => {
   const { LL } = useI18nContext();
@@ -65,14 +65,14 @@ export const ContextDock = ({
   widthRef.current = width;
   // 全屏:铺满窗口(fixed inset-0),忽略 width 与 mode。关闭面板时一并复位。
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 预览 / 搜索 / 回收站对所有工作区可用;「差异 / 网页」仅 git 项目;
+  // 预览 / 搜索 / 回收站 / 网页对所有工作区可用;「差异」仅 git 项目;
   // subagent 标签需有选中项才有效。任一不满足时回落到预览。
   const effectiveTab: DockTab =
     activeTab === "subagent"
       ? subagentSel
         ? "subagent"
         : "preview"
-      : activeTab === "diff" || activeTab === "web"
+      : activeTab === "diff"
         ? isGitRepo
           ? activeTab
           : "preview"
@@ -154,7 +154,7 @@ export const ContextDock = ({
         {tabBtn("search", LL.dock_search())}
         {tabBtn("trash", LL.dock_trash())}
         {isGitRepo && tabBtn("diff", LL.dock_diff())}
-        {isGitRepo && tabBtn("web", LL.dock_web())}
+        {tabBtn("web", LL.dock_web())}
         {subagentSel && tabBtn("subagent", LL.dock_subagent())}
         <div className="flex-1" />
         <button
@@ -209,7 +209,7 @@ export const ContextDock = ({
             active={effectiveTab === "trash"}
           />
         </div>
-        {/* 差异 / 网页:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
+        {/* 差异:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
         {isGitRepo && (
           <div className={cn("h-full", effectiveTab !== "diff" && "hidden")}>
             <BranchDiffPanel
@@ -219,12 +219,16 @@ export const ContextDock = ({
             />
           </div>
         )}
-        {isGitRepo && (
-          <div className={cn("h-full", effectiveTab !== "web" && "hidden")}>
-            {/* 无 URL 时也挂载:BrowserPanel 自行展示起始页(地址栏可用)。 */}
-            <BrowserPanel url={url ?? ""} />
-          </div>
-        )}
+        {/* 网页:对所有工作区常驻挂载。无 URL 时 BrowserPanel 自行展示
+            起始页(地址栏可用);本地 HTML 预览经 local-file:// 加载。
+            key 按 local / web 切换:本地预览与真实浏览用隔离 partition,
+            scheme 变化时整组件重挂载,使 webview 以正确 partition 重建。 */}
+        <div className={cn("h-full", effectiveTab !== "web" && "hidden")}>
+          <BrowserPanel
+            key={(url ?? "").startsWith("local-file://") ? "local" : "web"}
+            url={url ?? ""}
+          />
+        </div>
         {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,
             随子 agent 流式实时更新)。 */}
         {subagentSel && (

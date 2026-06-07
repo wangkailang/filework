@@ -25,13 +25,36 @@ interface BrowserPanelProps {
 }
 
 // Vite 在渲染进程构建时内联 process.env.NODE_ENV。
-const WEBVIEW_PARTITION =
+// 真实网页浏览:持久 partition(保留站点登录 / cookie)。
+const WEB_PARTITION =
   process.env.NODE_ENV === "production"
     ? "persist:in-app-browser"
     : "in-app-browser";
+// 本地 HTML 预览:非 persist 的内存 partition,与浏览的 cookies / 存储
+// 互不可见 —— AI 生成的产物页带内联脚本,隔离后无法越权读写浏览态。
+// (主进程已在该 partition 的 session 上注册 local-file:// 处理器。)
+const PREVIEW_PARTITION = "artifact-preview";
 
 /** 空 / about:blank 视为"无页面",据此展示起始页。 */
 const isBlank = (u: string): boolean => !u || u === "about:blank";
+
+/** 本地 HTML 预览经 local-file:// 协议加载,据此切换隔离 partition 与地址栏显示。 */
+const isLocalFileUrl = (u: string): boolean => u.startsWith("local-file://");
+
+/** 从 local-file://open?path=<abs> 取回绝对路径(失败回退原串)。 */
+const localFilePath = (u: string): string => {
+  try {
+    return new URL(u).searchParams.get("path") || u;
+  } catch {
+    return u;
+  }
+};
+
+/** 本地预览时地址栏展示的友好名(文件名),而非冗长的 local-file:// 串。 */
+const localFileLabel = (u: string): string => {
+  const p = localFilePath(u);
+  return p.split("/").pop() || p;
+};
 
 /** 对应 BranchDiffPanel —— 位于 App 的 flex 行中,而非模态框。 */
 export function BrowserPanel({ url }: BrowserPanelProps) {
@@ -50,6 +73,12 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
   // 而无需在每次内部导航时重新执行。
   const currentUrlRef = useRef(currentUrl);
   currentUrlRef.current = currentUrl;
+  // 本地预览 vs 真实浏览用不同 partition 隔离。父级(ContextDock)以
+  // local / web 作 key,scheme 切换时整组件重挂载,故此值在每次挂载内稳定,
+  // 不会触发 webview 改 partition(运行时不支持)。
+  const partition = isLocalFileUrl(url) ? PREVIEW_PARTITION : WEB_PARTITION;
+  // 当前所在页是否本地文件:地址栏改显文件名,且"系统打开"按钮失效。
+  const isLocalCurrent = isLocalFileUrl(currentUrl);
   const [draftUrl, setDraftUrl] = useState(url);
   const [loading, setLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -265,8 +294,14 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         <form onSubmit={handleSubmitUrl} className="flex-1 min-w-0">
           <input
             type="text"
-            value={draftUrl}
-            onChange={(e) => setDraftUrl(e.target.value)}
+            // 本地预览:只读显示文件名(hover 看完整路径),不暴露冗长的
+            // local-file:// 串,也避免误编辑后回车导航到无效地址。
+            value={isLocalCurrent ? localFileLabel(currentUrl) : draftUrl}
+            onChange={
+              isLocalCurrent ? undefined : (e) => setDraftUrl(e.target.value)
+            }
+            readOnly={isLocalCurrent}
+            title={isLocalCurrent ? localFilePath(currentUrl) : undefined}
             placeholder={LL.browser_url_placeholder()}
             spellCheck={false}
             className="w-full px-2 py-1 text-xs font-mono rounded bg-muted/40 border border-transparent focus:outline-none focus:border-border focus:bg-background"
@@ -275,7 +310,7 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
         <button
           type="button"
           onClick={handleOpenExternal}
-          disabled={isBlank(currentUrl)}
+          disabled={isBlank(currentUrl) || isLocalCurrent}
           className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
           title={LL.browser_open_external()}
           aria-label={LL.browser_open_external()}
@@ -294,7 +329,7 @@ export function BrowserPanel({ url }: BrowserPanelProps) {
           // In dev (no CSP applied to the host renderer), use an in-memory
           // partition so any test page can't drop persistent state that
           // affects future sessions.
-          partition={WEBVIEW_PARTITION}
+          partition={partition}
           allowpopups={true}
           className={cn(
             "absolute inset-0 w-full h-full",
@@ -384,6 +419,8 @@ function normalizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // 本地 HTML 预览:local-file:// 直接放行,不当作裸域名补 https。
+  if (/^local-file:\/\//i.test(trimmed)) return trimmed;
   // Bare domain: must look like host[.tld]+, optionally followed by
   // path / query / fragment. Reject trailing-label file extensions.
   const match = trimmed.match(/^([\w-]+(?:\.[\w-]+)+)(?:[/?#]|$)/);

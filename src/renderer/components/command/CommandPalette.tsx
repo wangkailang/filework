@@ -116,13 +116,14 @@ export const CommandPalette = ({
         icon: GitCompareArrows,
         run: wrap(() => onOpenDockTab("diff")),
       });
-      list.push({
-        id: "web",
-        label: LL.dock_web(),
-        icon: Globe,
-        run: wrap(() => onOpenDockTab("web")),
-      });
     }
+    // 网页面板对所有工作区可用(含非 git)。
+    list.push({
+      id: "web",
+      label: LL.dock_web(),
+      icon: Globe,
+      run: wrap(() => onOpenDockTab("web")),
+    });
     list.push({
       id: "settings",
       label: LL.topbar_settings(),

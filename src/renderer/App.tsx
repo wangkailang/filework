@@ -146,12 +146,8 @@ export const App = () => {
     [],
   );
   const openInBrowserPanel = useCallback((u: string) => {
-    // 非 git 项目不提供内置网页面板,链接交给系统浏览器打开(workspaceRef 见下方,
-    // 闭包在调用时才读 .current,此时已初始化)。
-    if (!workspaceRef.current?.isGitRepo) {
-      void window.filework.openExternal(u).catch(() => {});
-      return;
-    }
+    // 网页面板对所有工作区可用(含非 git):内置 webview 与 git 无依赖,
+    // 既承载聊天里的链接,也承载本地 HTML(local-file://)的活页面预览。
     setBrowserUrl(u);
     setDockTab("web");
     setDockOpen(true);
@@ -187,6 +183,16 @@ export const App = () => {
     return () => window.removeEventListener("filework:open-file", handler);
   }, [openFileInDock]);
 
+  // 文件预览里点「在浏览器中预览」(本地 HTML)→ 在网页面板渲染为活页面。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const url = (e as CustomEvent<{ url?: string }>).detail?.url;
+      if (url) openInBrowserPanel(url);
+    };
+    window.addEventListener("filework:open-web", handler);
+    return () => window.removeEventListener("filework:open-web", handler);
+  }, [openInBrowserPanel]);
+
   // 子任务卡点击某行 → 在 ContextDock 的 subagent tab 钻入查看其执行过程。
   useEffect(() => {
     const handler = (e: Event) => {
@@ -205,7 +211,7 @@ export const App = () => {
   }, [openSubagentInDock]);
 
   // 全局快捷键:⇧⌘ + 首字母 切换右侧面板(与 DockMenu 的提示一致)。
-  // 非 git 项目无 diff/web;无选中子 agent 时跳过 subagent。
+  // 非 git 项目无 diff(网页面板恒可用);无选中子 agent 时跳过 subagent。
   useEffect(() => {
     const map: Record<string, DockTab> = {
       p: "preview",
@@ -219,8 +225,7 @@ export const App = () => {
       if (!e.metaKey || !e.shiftKey) return;
       const tab = map[e.key.toLowerCase()];
       if (!tab) return;
-      if ((tab === "diff" || tab === "web") && !workspaceRef.current?.isGitRepo)
-        return;
+      if (tab === "diff" && !workspaceRef.current?.isGitRepo) return;
       if (tab === "subagent" && !dockSubagent) return;
       e.preventDefault();
       if (dockOpen && dockTab === tab) {
