@@ -270,7 +270,10 @@ export const LeftRail = ({
             重挂载并重新列目录(取代旧 Sidebar 在 onSwitched 里的 refresh)。 */}
         <div className="min-h-0 flex-1">
           <div className={cn("h-full", railTab !== "chats" && "hidden")}>
-            <ChatHistoryPanel />
+            <ChatHistoryPanel
+              currentBranch={branchForChip}
+              isGitRepo={isGitRepo}
+            />
           </div>
           <div className={cn("h-full", railTab !== "files" && "hidden")}>
             <FileTreePanel

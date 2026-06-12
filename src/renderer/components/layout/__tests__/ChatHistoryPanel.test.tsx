@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatSession } from "../../chat/types";
 
 const chatState = vi.hoisted(() => ({
@@ -26,6 +26,9 @@ vi.mock("../../../i18n/i18n-react", () => ({
       session_group_today: () => "今天",
       session_group_week: () => "近 7 天",
       session_group_yesterday: () => "昨天",
+      session_branch_current: () => "当前分支",
+      session_branch_hint: () =>
+        "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
       session_rename: () => "重命名",
       session_unread: () => "未读",
       task_pending: () => "等待中",
@@ -46,6 +49,8 @@ const session = (id: string, title: string): ChatSession => ({
 
 describe("ChatHistoryPanel", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-13T08:00:00.000Z"));
     chatState.value = {
       sessions: [session("session-1", "支持多会话管理")],
       activeSessionId: "session-1",
@@ -59,6 +64,61 @@ describe("ChatHistoryPanel", () => {
       handleDeleteSession: vi.fn(),
       handleRenameSession: vi.fn(),
     };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sorts sessions by recency before rendering groups", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("older", "旧会话"),
+          updatedAt: "2026-06-13T02:00:00.000Z",
+        },
+        {
+          ...session("newer", "新会话"),
+          updatedAt: "2026-06-13T06:00:00.000Z",
+        },
+      ],
+      activeSessionId: "newer",
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html.indexOf("新会话")).toBeLessThan(html.indexOf("旧会话"));
+  });
+
+  it("renders a compact Codex-style row with relative age on the right", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("session-1", "支持修改分镜 prompt"),
+          updatedAt: "2026-06-13T04:00:00.000Z",
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain('data-session-row="session-1"');
+    expect(html).toContain('data-session-age="4 小时"');
+    expect(html).toContain("grid-cols-[minmax(0,1fr)_auto]");
+  });
+
+  it("exposes current branch context in the session detail affordance", () => {
+    const html = renderToStaticMarkup(
+      <ChatHistoryPanel currentBranch="master" isGitRepo={true} />,
+    );
+
+    expect(html).toContain('data-session-branch="master"');
+    expect(html).toContain("当前分支");
+    expect(html).toContain(
+      "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
+    );
   });
 
   it("renders a fixed row status indicator for pending sessions", () => {

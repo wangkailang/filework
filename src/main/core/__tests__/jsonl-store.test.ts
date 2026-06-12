@@ -213,6 +213,30 @@ describe("JsonlSessionStore", () => {
       expect(messages.map((m) => m.id)).toEqual(["m3"]);
     });
 
+    it("uses the latest user message timestamp as the session recency", async () => {
+      const s = await store.createSession("/ws");
+      await store.saveMessages(s.id, "/ws", [
+        {
+          id: "u1",
+          sessionId: s.id,
+          role: "user",
+          content: "start",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          id: "a1",
+          sessionId: s.id,
+          role: "assistant",
+          content: "background answer finished much later",
+          timestamp: "2026-05-09T22:30:00.000Z",
+        },
+      ]);
+
+      const [listed] = await store.listSessions("/ws");
+
+      expect(listed.updatedAt).toBe("2026-05-09T22:00:00.000Z");
+    });
+
     it("messages come back sorted by timestamp", async () => {
       const s = await store.createSession("/ws");
       await store.saveMessages(s.id, "/ws", [

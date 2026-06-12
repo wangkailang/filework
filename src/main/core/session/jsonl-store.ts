@@ -310,8 +310,6 @@ export class JsonlSessionStore {
       });
     }
 
-    sessionLine.updatedAt = new Date().toISOString();
-
     const messageLines: MessageLine[] = messages.map((m) => ({
       kind: "message",
       id: m.id,
@@ -321,6 +319,17 @@ export class JsonlSessionStore {
       timestamp: m.timestamp,
       parts: m.parts ? stripTransientPreview(m.parts) : m.parts,
     }));
+    const latestUserMessage = messageLines
+      .filter((m) => m.role === "user")
+      .reduce<MessageLine | null>(
+        (latest, message) =>
+          latest == null || message.timestamp > latest.timestamp
+            ? message
+            : latest,
+        null,
+      );
+    sessionLine.updatedAt =
+      latestUserMessage?.timestamp ?? new Date().toISOString();
 
     await this.atomicWrite(
       filePath,

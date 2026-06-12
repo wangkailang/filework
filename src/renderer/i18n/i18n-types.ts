@@ -417,6 +417,14 @@ type RootTranslation = {
 	 */
 	session_unread: string
 	/**
+	 * C​u​r​r​e​n​t​ ​b​r​a​n​c​h
+	 */
+	session_branch_current: string
+	/**
+	 * A​ ​c​h​a​t​'​s​ ​b​r​a​n​c​h​ ​r​e​f​l​e​c​t​s​ ​t​h​e​ ​a​c​t​i​v​e​ ​b​r​a​n​c​h​ ​f​r​o​m​ ​i​t​s​ ​l​a​s​t​ ​u​s​e​.​ ​S​e​n​d​i​n​g​ ​a​ ​m​e​s​s​a​g​e​ ​u​p​d​a​t​e​s​ ​t​h​e​ ​c​h​a​t​ ​b​r​a​n​c​h​.
+	 */
+	session_branch_hint: string
+	/**
 	 * R​e​j​e​c​t
 	 */
 	chat_reject: string
@@ -1887,6 +1895,14 @@ export type TranslationFunctions = {
 	 * Unread
 	 */
 	session_unread: () => LocalizedString
+	/**
+	 * Current branch
+	 */
+	session_branch_current: () => LocalizedString
+	/**
+	 * A chat's branch reflects the active branch from its last use. Sending a message updates the chat branch.
+	 */
+	session_branch_hint: () => LocalizedString
 	/**
 	 * Reject
 	 */

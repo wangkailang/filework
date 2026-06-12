@@ -122,6 +122,9 @@ const ja: Translation = {
   session_confirm: "削除",
   session_cancel: "キャンセル",
   session_unread: "未読",
+  session_branch_current: "現在のブランチ",
+  session_branch_hint:
+    "チャットのブランチは前回使用時のアクティブブランチを反映します。メッセージ送信時に更新されます。",
 
   // Chat panel
   chat_reject: "拒否",
