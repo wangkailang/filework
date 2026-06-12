@@ -109,6 +109,16 @@ describe("ChatHistoryPanel", () => {
     expect(html).toContain("grid-cols-[minmax(0,1fr)_auto]");
   });
 
+  it("uses one trailing slot where hover hides time and shows actions", () => {
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain('data-session-row-meta="session-1"');
+    expect(html).toContain('data-session-row-actions="session-1"');
+    expect(html).toContain("group-hover:opacity-0");
+    expect(html).toContain("group-hover:opacity-100");
+    expect(html).not.toContain("w-11");
+  });
+
   it("exposes current branch context in the session detail affordance", () => {
     const html = renderToStaticMarkup(
       <ChatHistoryPanel currentBranch="master" isGitRepo={true} />,

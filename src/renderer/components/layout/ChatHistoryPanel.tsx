@@ -265,8 +265,33 @@ export const ChatHistoryPanel = ({
                         <div className="truncate text-sm font-medium text-foreground">
                           {s.title}
                         </div>
-                        <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {relativeAge}
+                        <div
+                          data-session-row-meta={s.id}
+                          className="ml-auto inline-flex h-5 shrink-0 items-center justify-end text-xs tabular-nums text-muted-foreground transition-opacity group-hover:opacity-0"
+                        >
+                          {runState && runStateLabel ? (
+                            <span
+                              data-session-run-status={runState.status}
+                              className="inline-flex shrink-0 items-center justify-center text-primary"
+                              role="img"
+                              aria-label={runStateLabel}
+                              title={runStateLabel}
+                            >
+                              {runState.status === "unread" ? (
+                                <span
+                                  className="size-2.5 rounded-full bg-primary ring-2 ring-primary/20"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Loader2
+                                  className="size-4 animate-spin"
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </span>
+                          ) : (
+                            relativeAge
+                          )}
                         </div>
                       </button>
                     )}
@@ -297,52 +322,32 @@ export const ChatHistoryPanel = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="relative ml-auto flex h-5 w-11 shrink-0 items-center justify-end">
-                        {runState && runStateLabel && (
-                          <span
-                            data-session-run-status={runState.status}
-                            className="inline-flex shrink-0 items-center justify-center text-primary transition-opacity group-hover:opacity-0"
-                            role="img"
-                            aria-label={runStateLabel}
-                            title={runStateLabel}
-                          >
-                            {runState.status === "unread" ? (
-                              <span
-                                className="size-2.5 rounded-full bg-primary ring-2 ring-primary/20"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <Loader2
-                                className="size-4 animate-spin"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </span>
-                        )}
-                        <div className="absolute right-0 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startRename(s);
-                            }}
-                            className="p-1 text-muted-foreground hover:text-foreground"
-                            aria-label={LL.session_rename()}
-                          >
-                            <Pencil className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPendingDelete(s);
-                            }}
-                            className="p-1 text-muted-foreground hover:text-destructive"
-                            aria-label={LL.session_delete()}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
+                      <div
+                        data-session-row-actions={s.id}
+                        className="absolute top-1/2 right-3 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startRename(s);
+                          }}
+                          className="p-1 text-muted-foreground hover:text-foreground"
+                          aria-label={LL.session_rename()}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDelete(s);
+                          }}
+                          className="p-1 text-muted-foreground hover:text-destructive"
+                          aria-label={LL.session_delete()}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
                       </div>
                     )}
                     {!isEditing && isGitRepo && currentBranch && (
