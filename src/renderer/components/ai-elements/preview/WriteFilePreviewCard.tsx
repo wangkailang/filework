@@ -85,7 +85,7 @@ export function WriteFilePreviewCard({
                   </span>
                 )}
               </div>
-              <div className="font-mono whitespace-pre-wrap break-all rounded border border-border bg-background/40">
+              <div className="overflow-x-auto rounded-md border border-border bg-background/40 font-mono text-[11px] leading-5">
                 {preview.hunks.map((h, i) => (
                   <DiffHunkView
                     // biome-ignore lint/suspicious/noArrayIndexKey: hunk position is the identity

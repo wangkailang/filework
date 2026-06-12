@@ -122,8 +122,8 @@ function renderQuote(file: GitFileDiff, LL: TranslationFunctions): ReactNode {
   }
   return (
     <>
-      <InlineCitationQuote className="font-mono whitespace-pre-wrap break-all bg-background/40 rounded px-0 not-italic">
-        <div className="rounded">
+      <InlineCitationQuote className="overflow-x-auto rounded-md border-l-0 bg-background/40 px-0 pl-0 font-mono text-[11px] leading-5 not-italic">
+        <div className="min-w-full">
           {file.hunks.map((h, i) => (
             <DiffHunkView
               // biome-ignore lint/suspicious/noArrayIndexKey: hunk position is the identity

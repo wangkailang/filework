@@ -72,6 +72,15 @@ interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   state: ToolState;
   /** 可选的单行摘要,渲染在工具名称之后(例如 "src/index.ts · 142 lines") */
   summary?: ReactNode;
+  /** 紧凑模式:隐藏状态文字与工具名,只留状态图标 + 摘要。用于分组子项 ——
+   *  分组头已标注工具名,子行不必逐条复读"完成 写入文件"。 */
+  dense?: boolean;
+  /** 该行是否有可展开内容。false 时不渲染 chevron / 触发器,行变为静态行
+   *  (用 chevron 等宽占位保持左边缘对齐)。用于没有内嵌 diff 的写入行等。 */
+  collapsible?: boolean;
+  /** 行尾常驻动作(hover 显现),挂在触发器之外,避免按钮嵌套按钮。
+   *  例如写入行的"打开文件"—— 不必展开折叠即可直达右侧预览。 */
+  action?: ReactNode;
 }
 
 const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
@@ -106,6 +115,9 @@ export const ToolHeader = ({
   toolName,
   state,
   summary,
+  dense,
+  collapsible = true,
+  action,
   className,
   ...props
 }: ToolHeaderProps) => {
@@ -117,38 +129,84 @@ export const ToolHeader = ({
   const label = toolLabelMap[toolName] || toolName;
   const { open } = useCollapsible();
 
-  return (
-    // 触发器是 <button>(默认 inline-block → max-content),不给 w-full 它会被
-    // 内容撑开,里面的 flex-1 summary 就拿不到收缩边界、truncate 永不生效。
-    <CollapsibleTrigger asChild className="block w-full min-w-0">
-      <div
-        className={cn(
-          "flex items-center gap-1.5 px-2 py-1 cursor-pointer select-none rounded-md hover:bg-muted/50 transition-colors min-w-0",
-          className,
-        )}
-        {...props}
-      >
-        {open ? (
+  const inner = (
+    <>
+      {collapsible ? (
+        open ? (
           <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
         ) : (
           <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
-        )}
+        )
+      ) : (
+        // 静态行:占位等宽,保持与可展开行的左边缘对齐。
+        <span className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      {/* dense 分组里"完成"是默认态,逐行重复绿勾只是噪声 —— 成功时省略
+          图标,只在进行中 / 准备中才标记,把状态色留给真正需要关注的行。 */}
+      {dense ? (
+        state !== "output-available" && (
+          <span className={cn("flex items-center shrink-0", config.color)}>
+            {config.icon}
+          </span>
+        )
+      ) : (
         <span
           className={cn("flex items-center gap-1.5 shrink-0", config.color)}
         >
           {config.icon}
           <span className="text-xs font-medium">{stateLabel}</span>
         </span>
+      )}
+      {!dense && (
         <span className="text-xs text-muted-foreground font-mono shrink-0">
           {label}
         </span>
-        {summary != null && (
-          <span className="text-xs text-muted-foreground/80 font-mono truncate min-w-0 flex-1">
-            {summary}
-          </span>
-        )}
-      </div>
-    </CollapsibleTrigger>
+      )}
+      {summary != null && (
+        <span className="text-xs text-muted-foreground/80 font-mono truncate min-w-0 flex-1">
+          {summary}
+        </span>
+      )}
+    </>
+  );
+
+  // 外层行承载 hover 背景与行尾动作;触发器只覆盖 chevron+摘要区,动作按钮
+  // 作为同级兄弟挂在触发器之外 —— 否则会形成 <button> 套 <button>。
+  return (
+    <div className="group flex items-center min-w-0 rounded-md hover:bg-muted/50 transition-colors">
+      {collapsible ? (
+        // 触发器须 flex-1 + min-w-0,内部 summary 才拿得到收缩边界、truncate 生效。
+        <CollapsibleTrigger
+          asChild
+          className="flex flex-1 min-w-0 cursor-pointer select-none"
+        >
+          <div
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 min-w-0",
+              className,
+            )}
+            {...props}
+          >
+            {inner}
+          </div>
+        </CollapsibleTrigger>
+      ) : (
+        <div
+          className={cn(
+            "flex flex-1 items-center gap-1.5 px-2 py-1 min-w-0",
+            className,
+          )}
+          {...props}
+        >
+          {inner}
+        </div>
+      )}
+      {action && (
+        <div className="shrink-0 pr-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {action}
+        </div>
+      )}
+    </div>
   );
 };
 

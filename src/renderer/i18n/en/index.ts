@@ -212,6 +212,7 @@ const en: BaseTranslation = {
   tool_summary_group_label: "{0:number} {1:string} calls",
   tool_summary_new_file: "new file",
   tool_diff_label: "Diff",
+  tool_open_file: "Open file",
   tool_stdout: "stdout",
   tool_stderr: "stderr",
   tool_show_full: "Show full content",
@@ -235,6 +236,11 @@ const en: BaseTranslation = {
   preview_dir_children: "{0} entries",
   preview_size_bytes: "{0} bytes",
   preview_no_changes: "No changes",
+  preview_diff_details_unavailable:
+    "Line-level details are unavailable for this write",
+  preview_removed_lines_unavailable: "{0:number} removed lines unavailable",
+  preview_added_lines_unavailable: "{0:number} added lines unavailable",
+  preview_written_snapshot_label: "Written content snapshot",
 
   // Branch diff drawer (codex-style aggregate diff)
   branch_diff_open: "View branch changes",

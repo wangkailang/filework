@@ -68,6 +68,7 @@ export async function computeWriteFilePreview(
           kind: "added",
           value: newContent,
           lineCount: newLines,
+          newStart: 1,
         },
       ],
     };
@@ -162,6 +163,8 @@ export async function computeWriteFilePreview(
   let removed = 0;
   const hunks: PreviewDiffHunk[] = [];
   let diffTruncated = false;
+  let oldLine = 1;
+  let newLine = 1;
   for (const c of changes) {
     const lineCount = c.count ?? countLines(c.value);
     const kind: PreviewDiffHunk["kind"] = c.added
@@ -169,6 +172,8 @@ export async function computeWriteFilePreview(
       : c.removed
         ? "removed"
         : "context";
+    const oldStart = kind === "added" ? undefined : oldLine;
+    const newStart = kind === "removed" ? undefined : newLine;
     if (kind === "added") added += lineCount;
     else if (kind === "removed") removed += lineCount;
 
@@ -181,7 +186,15 @@ export async function computeWriteFilePreview(
       diffTruncated = true;
       value = sliceUtf8(value, MAX_HUNK_BYTES);
     }
-    hunks.push({ kind, value, lineCount });
+    hunks.push({
+      kind,
+      value,
+      lineCount,
+      ...(oldStart !== undefined ? { oldStart } : {}),
+      ...(newStart !== undefined ? { newStart } : {}),
+    });
+    if (kind !== "added") oldLine += lineCount;
+    if (kind !== "removed") newLine += lineCount;
   }
 
   return {

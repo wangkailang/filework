@@ -57,6 +57,7 @@ export const CollapsibleTrigger = ({
   const { open, onOpenChange } = useContext(CollapsibleContext);
 
   if (asChild) {
+    const { className, ...rest } = props;
     return (
       <button
         type="button"
@@ -64,7 +65,10 @@ export const CollapsibleTrigger = ({
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpenChange(!open);
         }}
-        {...props}
+        // 内容被包进真实 <button>,而 button 的 UA 样式是 text-align:center,
+        // 会被里面的 flex 子项继承,导致工具行文本整体居中。强制左对齐。
+        className={cn("text-left", className)}
+        {...rest}
       >
         {children}
       </button>
@@ -72,7 +76,11 @@ export const CollapsibleTrigger = ({
   }
 
   return (
-    <button type="button" onClick={() => onOpenChange(!open)}>
+    <button
+      type="button"
+      onClick={() => onOpenChange(!open)}
+      className="text-left"
+    >
       {children}
     </button>
   );
