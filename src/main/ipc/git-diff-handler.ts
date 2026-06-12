@@ -406,7 +406,7 @@ function mapToFileDiff(
       value: `${headerLine}\n`,
       lineCount: 1,
     });
-    const runs = groupHunkLines(h.lines);
+    const runs = groupHunkLines(h.lines, h.oldStart, h.newStart);
     for (const run of runs) {
       const value = `${run.lines.join("\n")}\n`;
       const bytes = Buffer.byteLength(value, "utf8");
@@ -425,6 +425,8 @@ function mapToFileDiff(
         kind: run.kind,
         value: slicedValue,
         lineCount: keptLineCount,
+        ...(run.oldStart !== undefined ? { oldStart: run.oldStart } : {}),
+        ...(run.newStart !== undefined ? { newStart: run.newStart } : {}),
       });
       if (overSized) {
         truncated = true;
@@ -456,11 +458,19 @@ function mapToFileDiff(
 interface HunkRun {
   kind: PreviewDiffHunk["kind"];
   lines: string[];
+  oldStart?: number;
+  newStart?: number;
 }
 
-function groupHunkLines(rawLines: string[]): HunkRun[] {
+function groupHunkLines(
+  rawLines: string[],
+  oldStart: number,
+  newStart: number,
+): HunkRun[] {
   const runs: HunkRun[] = [];
   let current: HunkRun | null = null;
+  let oldLine = oldStart;
+  let newLine = newStart;
   for (const raw of rawLines) {
     if (raw.startsWith("\\")) continue; // "\ No newline at end of file"（文件末尾无换行符）
     const prefix = raw[0];
@@ -468,10 +478,17 @@ function groupHunkLines(rawLines: string[]): HunkRun[] {
     const kind: PreviewDiffHunk["kind"] =
       prefix === "+" ? "added" : prefix === "-" ? "removed" : "context";
     if (!current || current.kind !== kind) {
-      current = { kind, lines: [] };
+      current = {
+        kind,
+        lines: [],
+        ...(kind !== "added" ? { oldStart: oldLine } : {}),
+        ...(kind !== "removed" ? { newStart: newLine } : {}),
+      };
       runs.push(current);
     }
     current.lines.push(content);
+    if (kind !== "added") oldLine++;
+    if (kind !== "removed") newLine++;
   }
   return runs;
 }

@@ -54,6 +54,12 @@ describe("computeWriteFilePreview", () => {
     const kinds = preview.hunks.map((h) => h.kind);
     expect(kinds).toContain("added");
     expect(kinds).toContain("removed");
+    const removedHunk = preview.hunks.find((h) => h.kind === "removed");
+    expect(removedHunk?.oldStart).toBe(2);
+    expect(removedHunk?.newStart).toBeUndefined();
+    const addedHunk = preview.hunks.find((h) => h.kind === "added");
+    expect(addedHunk?.oldStart).toBeUndefined();
+    expect(addedHunk?.newStart).toBe(2);
     expect(preview.oldHash).toMatch(/^[0-9a-f]{40}$/);
   });
 

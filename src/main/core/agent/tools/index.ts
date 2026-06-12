@@ -18,6 +18,7 @@ import { z } from "zod/v4";
 import { isSandboxEffective, resolveWritableRoots } from "../../sandbox";
 import type { SandboxConfig, SandboxPolicy } from "../../sandbox/types";
 import type { Workspace } from "../../workspace/types";
+import type { PreviewDiffHunk } from "../preview/types";
 import { computeWriteFilePreview } from "../preview/write-file";
 import {
   killShell as killShellById,
@@ -384,6 +385,10 @@ async function computeWriteDiffStat(
   isNew: boolean;
   isBinary: boolean;
   truncated: boolean;
+  // 逐行 diff 一并随结果持久化 —— 执行后的工具卡片据此渲染红绿 diff,
+  // 不再依赖易丢的进程内快照(白名单短路 / 重载会话都会丢)。二进制或
+  // 超限时为空数组(由 computeWriteFilePreview 截断兜底)。
+  hunks: PreviewDiffHunk[];
 }> {
   const preview = await computeWriteFilePreview(args, ctx.workspace);
   return {
@@ -392,6 +397,7 @@ async function computeWriteDiffStat(
     isNew: !preview.oldExists,
     isBinary: preview.isBinary,
     truncated: preview.truncated != null,
+    hunks: preview.hunks,
   };
 }
 

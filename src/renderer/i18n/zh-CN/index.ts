@@ -195,6 +195,7 @@ const zhCN: Translation = {
   tool_summary_group_label: "{0} 个 {1}",
   tool_summary_new_file: "新建文件",
   tool_diff_label: "差异",
+  tool_open_file: "打开文件",
   tool_stdout: "标准输出",
   tool_stderr: "错误输出",
   tool_show_full: "查看完整内容",
@@ -218,6 +219,10 @@ const zhCN: Translation = {
   preview_dir_children: "{0} 个子项",
   preview_size_bytes: "{0} 字节",
   preview_no_changes: "无差异",
+  preview_diff_details_unavailable: "此写入记录缺少逐行差异明细",
+  preview_removed_lines_unavailable: "{0} 行删除内容不可用",
+  preview_added_lines_unavailable: "{0} 行新增内容不可用",
+  preview_written_snapshot_label: "写入后内容快照",
 
   // Branch diff drawer (codex-style aggregate diff)
   branch_diff_open: "查看分支改动",

@@ -10,6 +10,10 @@
 
 export interface PreviewDiffHunk {
   kind: "added" | "removed" | "context";
+  /** 可选的旧文件起始行号；新增行没有旧行号。 */
+  oldStart?: number;
+  /** 可选的新文件起始行号；删除行没有新行号。 */
+  newStart?: number;
   /**
    * 原始变更文本(含末尾换行),与 `diff` npm 包 `diffLines()` 返回的
    * `Change.value` 结构保持一致。

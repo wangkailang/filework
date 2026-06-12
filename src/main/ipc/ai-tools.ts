@@ -20,12 +20,38 @@ import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { Tool } from "ai";
 import { z } from "zod/v4";
+import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
+import { rememberPreview } from "../core/agent/preview/snapshot-store";
+import type { Workspace } from "../core/workspace/types";
 import {
   type FileEntry,
   getIncrementalScanner,
 } from "../utils/incremental-scanner";
 import { enqueueForBatch } from "./approval-batcher";
 import { isToolPersistentlyWhitelisted } from "./tool-whitelist";
+
+/** 生成工具预览(含 diff hunks)并以 toolCallId 记入快照存储,供执行后的
+ *  工具卡片渲染逐行 diff。尽力而为:预览失败 / 超时绝不阻塞工具执行。
+ *  必须在工具执行*前*调用 —— 此时前镜像尚未被覆盖。 */
+async function rememberPreviewBestEffort(
+  toolCallId: string,
+  toolName: string,
+  args: unknown,
+  workspace?: Workspace,
+): Promise<void> {
+  if (!workspace) return;
+  try {
+    const preview = await Promise.race([
+      dispatchPreview(toolName, args, workspace),
+      new Promise<undefined>((res) => {
+        setTimeout(() => res(undefined), PREVIEW_TIMEOUT_MS);
+      }),
+    ]);
+    if (preview) rememberPreview(toolCallId, preview);
+  } catch {
+    // 预览为尽力而为。
+  }
+}
 
 const pathSchema = z.object({ path: z.string().describe("Absolute path") });
 
@@ -403,7 +429,14 @@ export const requestApproval = (
         toolName,
       });
     }
-    return Promise.resolve(true);
+    // 跳过审批批处理器也就跳过了批级别的预览生成。在此补一次,使执行后的
+    // 工具卡片仍能从快照渲染逐行 diff,与手动批准 / 计划自动批准路径一致。
+    return rememberPreviewBestEffort(
+      toolCallId,
+      toolName,
+      args,
+      workspace,
+    ).then(() => true);
   }
 
   // 所有破坏性工具按 (task, toolName) 合并为单张审批卡片，

@@ -674,6 +674,10 @@ type RootTranslation = {
 	 */
 	tool_diff_label: string
 	/**
+	 * O​p​e​n​ ​f​i​l​e
+	 */
+	tool_open_file: string
+	/**
 	 * s​t​d​o​u​t
 	 */
 	tool_stdout: string
@@ -759,6 +763,24 @@ type RootTranslation = {
 	 * N​o​ ​c​h​a​n​g​e​s
 	 */
 	preview_no_changes: string
+	/**
+	 * L​i​n​e​-​l​e​v​e​l​ ​d​e​t​a​i​l​s​ ​a​r​e​ ​u​n​a​v​a​i​l​a​b​l​e​ ​f​o​r​ ​t​h​i​s​ ​w​r​i​t​e
+	 */
+	preview_diff_details_unavailable: string
+	/**
+	 * {​0​}​ ​r​e​m​o​v​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
+	 * @param {unknown} 0
+	 */
+	preview_removed_lines_unavailable: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​a​d​d​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
+	 * @param {unknown} 0
+	 */
+	preview_added_lines_unavailable: RequiredParams<'0'>
+	/**
+	 * W​r​i​t​t​e​n​ ​c​o​n​t​e​n​t​ ​s​n​a​p​s​h​o​t
+	 */
+	preview_written_snapshot_label: string
 	/**
 	 * V​i​e​w​ ​b​r​a​n​c​h​ ​c​h​a​n​g​e​s
 	 */
@@ -2110,6 +2132,10 @@ export type TranslationFunctions = {
 	 */
 	tool_diff_label: () => LocalizedString
 	/**
+	 * Open file
+	 */
+	tool_open_file: () => LocalizedString
+	/**
 	 * stdout
 	 */
 	tool_stdout: () => LocalizedString
@@ -2193,6 +2219,22 @@ export type TranslationFunctions = {
 	 * No changes
 	 */
 	preview_no_changes: () => LocalizedString
+	/**
+	 * Line-level details are unavailable for this write
+	 */
+	preview_diff_details_unavailable: () => LocalizedString
+	/**
+	 * {0} removed lines unavailable
+	 */
+	preview_removed_lines_unavailable: (arg0: unknown) => LocalizedString
+	/**
+	 * {0} added lines unavailable
+	 */
+	preview_added_lines_unavailable: (arg0: unknown) => LocalizedString
+	/**
+	 * Written content snapshot
+	 */
+	preview_written_snapshot_label: () => LocalizedString
 	/**
 	 * View branch changes
 	 */

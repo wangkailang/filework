@@ -205,6 +205,7 @@ const ja: Translation = {
   tool_summary_group_label: "{1} {0} 件",
   tool_summary_new_file: "新規ファイル",
   tool_diff_label: "差分",
+  tool_open_file: "ファイルを開く",
   tool_stdout: "標準出力",
   tool_stderr: "エラー出力",
   tool_show_full: "全文を表示",
@@ -228,6 +229,11 @@ const ja: Translation = {
   preview_dir_children: "{0} 件",
   preview_size_bytes: "{0} バイト",
   preview_no_changes: "差分なし",
+  preview_diff_details_unavailable:
+    "この書き込みには行単位の差分詳細がありません",
+  preview_removed_lines_unavailable: "{0} 行の削除内容を表示できません",
+  preview_added_lines_unavailable: "{0} 行の追加内容を表示できません",
+  preview_written_snapshot_label: "書き込み後の内容スナップショット",
 
   // Branch diff drawer (codex-style aggregate diff)
   branch_diff_open: "ブランチ変更を表示",

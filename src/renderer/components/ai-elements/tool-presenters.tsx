@@ -1,5 +1,5 @@
 import { type Change, diffLines } from "diff";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
   PreviewDiffHunk,
   ToolPreview,
@@ -37,6 +37,16 @@ export interface ToolPresenter {
    * "5 个 webSearch"。缺省时回退到通用的计数标签。
    */
   groupSummary?: (argsList: unknown[], ctx: PresenterCtx) => ReactNode | null;
+  /** 该行是否有值得展开的内嵌内容。返回 false 时渲染为静态行(无 chevron)。
+   *  缺省视为可展开(维持既有行为)。 */
+  expandable?: (
+    args: unknown,
+    result: unknown,
+    state: ToolState,
+    ctx: PresenterCtx,
+  ) => boolean;
+  /** 行尾常驻动作(hover 显现),挂在折叠触发器之外 —— 无需展开即可直达。 */
+  rowAction?: (args: unknown, ctx: PresenterCtx) => ReactNode | null;
   input?: (args: unknown, ctx: PresenterCtx) => ReactNode | null;
   output?: (
     result: unknown,
@@ -56,12 +66,13 @@ function asRecord(v: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function shortPath(p: string, max = 48): string {
-  if (!p || p.length <= max) return p;
-  const parts = p.split("/");
-  const last = parts[parts.length - 1] ?? p;
-  if (last.length >= max - 1) return `…${last.slice(-(max - 1))}`;
-  return `…/${last}`;
+/** 展示用路径:尽量展示完整路径。优先折成工作区相对路径(src/js/x.js),
+ *  否则原样保留。横向溢出交给 CSS truncate,完整绝对路径由调用处挂 title。 */
+function displayPath(p: string, workspacePath?: string): string {
+  if (!p) return p;
+  const root = workspacePath?.replace(/\/$/, "");
+  if (root && p.startsWith(`${root}/`)) return p.slice(root.length + 1);
+  return p;
 }
 
 function countLines(s: string): number {
@@ -396,13 +407,15 @@ function renderWithLinks(
 // ---------------------------------------------------------------------------
 
 const readFilePresenter: ToolPresenter = {
-  summary: (args, result, state, { LL }) => {
+  summary: (args, result, state, { LL, workspacePath }) => {
     const a = asRecord(args);
     const p = typeof a?.path === "string" ? a.path : "";
     const lines = typeof result === "string" ? countLines(result) : 0;
     return (
       <>
-        <span className="text-foreground/80">{shortPath(p)}</span>
+        <span className="text-foreground/80" title={p}>
+          {displayPath(p, workspacePath)}
+        </span>
         {state === "output-available" && lines > 0 && (
           <span className="ml-2 text-muted-foreground">
             {LL.tool_summary_lines(lines)}
@@ -411,56 +424,22 @@ const readFilePresenter: ToolPresenter = {
       </>
     );
   },
-  input: (args) => {
-    const a = asRecord(args);
-    const p = typeof a?.path === "string" ? a.path : "";
-    if (!p) return null;
+  // 展开展示"当时读到的内容"(result 随消息持久化)。默认折叠、有界滚动 ——
+  // 既不在对话流默认态铺成墙,又保证看到的是该次读取的快照,而非磁盘上可能
+  // 已被后续改动的活文件。
+  expandable: (_args, result) =>
+    typeof result === "string" && result.length > 0,
+  output: (result) => {
+    if (typeof result !== "string" || !result) return null;
     return (
-      <div className="px-3 py-2 border-b border-border">
-        <pre className="text-xs font-mono text-muted-foreground break-all">
-          {p}
+      <div className="px-3 py-2 text-xs">
+        <pre className="max-h-80 overflow-auto font-mono whitespace-pre-wrap break-all">
+          {result}
         </pre>
       </div>
     );
   },
-  output: (result, _args, _state, { LL }) => {
-    if (typeof result !== "string") return null;
-    return <FilePreview content={result} LL={LL} />;
-  },
 };
-
-function FilePreview({
-  content,
-  LL,
-}: {
-  content: string;
-  LL: TranslationFunctions;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const { shown, remaining } = useMemo(
-    () => truncateLines(content, MAX_OUTPUT_LINES),
-    [content],
-  );
-  const body = expanded ? content : shown;
-  return (
-    <div className="px-3 py-2 text-xs">
-      <pre className="font-mono whitespace-pre-wrap break-all max-h-80 overflow-auto">
-        {body}
-      </pre>
-      {remaining > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded((s) => !s)}
-          className="mt-1 text-xs text-blue-500 hover:underline"
-        >
-          {expanded
-            ? LL.tool_hide_full()
-            : `${LL.tool_show_full()} (${LL.tool_summary_more(remaining)})`}
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // listDirectory
@@ -480,7 +459,7 @@ function extractEntries(result: unknown): DirEntry[] {
 }
 
 const listDirectoryPresenter: ToolPresenter = {
-  summary: (args, result, state, { LL }) => {
+  summary: (args, result, state, { LL, workspacePath }) => {
     const a = asRecord(args);
     const p = typeof a?.path === "string" ? a.path : "";
     const entries = extractEntries(result);
@@ -488,7 +467,9 @@ const listDirectoryPresenter: ToolPresenter = {
     const files = entries.length - dirs;
     return (
       <>
-        <span className="text-foreground/80">{shortPath(p)}</span>
+        <span className="text-foreground/80" title={p}>
+          {displayPath(p, workspacePath)}
+        </span>
         {state === "output-available" && entries.length > 0 && (
           <span className="ml-2 text-muted-foreground">
             {LL.tool_summary_dirs_files(dirs, files)}
@@ -556,7 +537,7 @@ const listDirectoryPresenter: ToolPresenter = {
 interface WriteDiffPayload {
   added: number;
   removed: number;
-  changes: Change[];
+  hunks: PreviewDiffHunk[];
   isNew: boolean;
 }
 
@@ -574,7 +555,7 @@ function computeDiff(
     return {
       added: lines,
       removed: 0,
-      changes: [{ value: newText, added: true, removed: false, count: lines }],
+      hunks: [{ kind: "added", value: newText, lineCount: lines, newStart: 1 }],
       isNew: true,
     };
   }
@@ -586,7 +567,12 @@ function computeDiff(
     if (c.added) added += lines;
     else if (c.removed) removed += lines;
   }
-  return { added, removed, changes, isNew: false };
+  return {
+    added,
+    removed,
+    hunks: changesToPreviewHunks(changes),
+    isNew: false,
+  };
 }
 
 function setWriteCache(toolCallId: string, payload: WriteDiffPayload) {
@@ -653,16 +639,10 @@ function readWriteDiffSnap(toolCallId: string): WriteDiffSnap {
 }
 
 function snapshotToPayload(snapshot: WriteFilePreview): WriteDiffPayload {
-  const changes: Change[] = snapshot.hunks.map((h) => ({
-    value: h.value,
-    added: h.kind === "added",
-    removed: h.kind === "removed",
-    count: h.lineCount,
-  }));
   return {
     added: snapshot.added,
     removed: snapshot.removed,
-    changes,
+    hunks: snapshot.hunks,
     isNew: snapshot.action === "create",
   };
 }
@@ -709,19 +689,21 @@ function useWriteDiff(
 const writeFilePresenter: ToolPresenter = {
   summary: (
     args,
-    _result,
+    result,
     state,
-    { LL, workspacePath, toolCallId, previewSnapshot },
+    { workspacePath, toolCallId, previewSnapshot },
   ) => {
     const a = asRecord(args);
     const p = typeof a?.path === "string" ? a.path : "";
     return (
       <>
-        <span className="text-foreground/80">{shortPath(p)}</span>
+        <span className="text-foreground/80" title={p}>
+          {displayPath(p, workspacePath)}
+        </span>
         <WriteSummary
           args={args}
+          result={result}
           state={state}
-          LL={LL}
           workspacePath={workspacePath}
           toolCallId={toolCallId}
           previewSnapshot={previewSnapshot}
@@ -729,26 +711,23 @@ const writeFilePresenter: ToolPresenter = {
       </>
     );
   },
-  input: (args) => {
-    const a = asRecord(args);
-    const p = typeof a?.path === "string" ? a.path : "";
-    if (!p) return null;
-    return (
-      <div className="px-3 py-2 border-b border-border">
-        <pre className="text-xs font-mono text-muted-foreground break-all">
-          {p}
-        </pre>
-      </div>
-    );
+  // 展开看变更:有快照时显示 diff(编辑=+/-,新文件=全增);重载会话丢了
+  // 进程本地快照(见 jsonl-store)算不出 diff,则回退展示写入的内容本身
+  // (args.content 随消息持久化)。两种都默认折叠、有界滚动,且恒等于该次
+  // 写入的快照,而非磁盘上可能已被后续改动的活文件。
+  expandable: (args, _result, _state, { previewSnapshot: s }) => {
+    if (s && s.kind === "write" && s.added + s.removed > 0) return true;
+    return readWriteArgs(args).content.length > 0;
   },
   output: (
-    _result,
+    result,
     args,
     state,
     { LL, workspacePath, toolCallId, previewSnapshot },
   ) => (
     <WriteDiff
       args={args}
+      result={result}
       state={state}
       LL={LL}
       workspacePath={workspacePath}
@@ -766,23 +745,43 @@ function readWriteArgs(args: unknown): { path: string; content: string } {
   };
 }
 
+/** writeFile 工具在执行前对前镜像算好的权威 diff(随结果持久化,见
+ *  tools/index.ts)。是 isNew / +N -M / 逐行 hunks 的事实来源 —— 不靠快照、
+ *  也不靠渲染端凭 content 猜,且跨重载会话依然可用。 */
+function readWriteStat(result: unknown): {
+  added: number;
+  removed: number;
+  isNew: boolean;
+  hunks: PreviewDiffHunk[];
+} | null {
+  const d = asRecord(asRecord(result)?.diffStat);
+  if (!d) return null;
+  return {
+    added: typeof d.added === "number" ? d.added : 0,
+    removed: typeof d.removed === "number" ? d.removed : 0,
+    isNew: d.isNew === true,
+    hunks: Array.isArray(d.hunks) ? (d.hunks as PreviewDiffHunk[]) : [],
+  };
+}
+
 function WriteSummary({
   args,
+  result,
   state,
-  LL,
   workspacePath,
   toolCallId,
   previewSnapshot,
 }: {
   args: unknown;
+  result: unknown;
   state: ToolState;
-  LL: TranslationFunctions;
   workspacePath?: string;
   toolCallId: string;
   previewSnapshot?: ToolPreview;
 }) {
   const { path, content } = readWriteArgs(args);
-  const { cold, ready, payload } = useWriteDiff(
+  // 仍调用以预热共享 diff 缓存(供展开的 body 用),但统计数字以权威 diffStat 为准。
+  const { payload } = useWriteDiff(
     toolCallId,
     path,
     workspacePath,
@@ -791,31 +790,23 @@ function WriteSummary({
     previewSnapshot,
   );
   if (state !== "output-available") return null;
-  if (cold) {
-    return (
-      <span className="ml-2 text-muted-foreground font-mono">
-        {LL.tool_summary_lines(countLines(content))}
-      </span>
-    );
-  }
-  if (!ready || !payload) return null;
-  if (payload.isNew) {
-    return (
-      <span className="ml-2 text-emerald-500 font-mono">
-        {LL.tool_summary_new_file()} · {LL.tool_summary_lines(payload.added)}
-      </span>
-    );
-  }
+  // +N -M 直接放外层这一行。优先用工具权威 diffStat(执行前对前镜像算好、
+  // 已持久化),其次快照;都没有再等异步算出 —— 绝不靠 content 凭空当全增。
+  const stat = readWriteStat(result);
+  const added = stat?.added ?? payload?.added;
+  const removed = stat?.removed ?? payload?.removed;
+  if (added == null || removed == null) return null;
   return (
     <span className="ml-2 font-mono">
-      <span className="text-emerald-500">+{payload.added}</span>{" "}
-      <span className="text-red-400">-{payload.removed}</span>
+      <span className="text-emerald-500">+{added}</span>{" "}
+      <span className="text-red-400">-{removed}</span>
     </span>
   );
 }
 
 function WriteDiff({
   args,
+  result,
   state,
   LL,
   workspacePath,
@@ -823,6 +814,7 @@ function WriteDiff({
   previewSnapshot,
 }: {
   args: unknown;
+  result: unknown;
   state: ToolState;
   LL: TranslationFunctions;
   workspacePath?: string;
@@ -838,60 +830,131 @@ function WriteDiff({
     content,
     previewSnapshot,
   );
-  if (!cold && !ready) {
+  const stat = readWriteStat(result);
+  // 异步算 diff 尚未就绪(有前镜像可比对的编辑场景):等一拍。
+  if (!stat && !cold && !ready) {
     return (
       <div className="px-3 py-2 text-xs text-muted-foreground italic">…</div>
     );
   }
-  if (cold) {
-    return (
-      <div className="px-3 py-2 text-xs">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-          {LL.tool_summary_lines(countLines(content))}
-        </div>
-        <pre className="font-mono whitespace-pre-wrap break-all rounded border border-border bg-background/40 p-2">
-          {content}
-        </pre>
-      </div>
-    );
-  }
-  const isNew = payload?.isNew ?? false;
-  const changes: Change[] = payload?.changes ?? [];
+  // isNew 以工具权威 diffStat 为准(执行前对前镜像算好),其次快照 —— 绝不靠
+  // content 凭空判定。这样覆盖已存在文件不会被误标"新建文件"。
+  const isNew = stat?.isNew ?? payload?.isNew ?? false;
+  // 逐行 hunks 来源优先级:
+  //   1) 持久化的 result.diffStat.hunks —— 最稳,跨重载会话依然可用;
+  //   2) 进程内快照 / 异步算出的 diff;
+  //   3) 仅新文件可用持久化 content 合成"全增"(语义正确)。
+  // 都没有(如编辑但旧镜像不可得)→ 老实展示写入内容,不伪造。
+  const hunks: PreviewDiffHunk[] | null = stat?.hunks?.length
+    ? stat.hunks
+    : payload
+      ? payload.hunks
+      : isNew
+        ? computeDiff(null, content).hunks
+        : null;
+  const statOnlyHunks =
+    !hunks && stat && (stat.added > 0 || stat.removed > 0)
+      ? buildStatOnlyHunks(stat, LL)
+      : null;
+  const displayedHunks = hunks ?? statOnlyHunks;
   return (
     <div className="px-3 py-2 text-xs">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-        {LL.tool_diff_label()}
-        {isNew && (
-          <span className="ml-2 text-emerald-500 normal-case tracking-normal">
-            {LL.tool_summary_new_file()}
-          </span>
-        )}
-      </div>
-      <div className="font-mono whitespace-pre-wrap break-all rounded border border-border bg-background/40">
-        {changes.map((c, i) => (
+      {/* +N -M 已在外层头部那行展示;body 直接放 hunks,不再额外加"差异"标题。 */}
+      {isNew && (
+        <div className="mb-1 text-[10px] tracking-normal text-emerald-500">
+          {LL.tool_summary_new_file()}
+        </div>
+      )}
+      {statOnlyHunks && (
+        <div className="mb-1 text-[11px] text-muted-foreground">
+          {LL.preview_diff_details_unavailable()}
+        </div>
+      )}
+      {displayedHunks ? (
+        <div className="overflow-x-auto font-mono text-[11px] leading-5">
+          {displayedHunks.map((h, i) => (
+            <DiffHunkView
+              // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
+              key={`${i}-${h.value.slice(0, 8)}`}
+              hunk={h}
+              collapseContext={!isNew}
+            />
+          ))}
+        </div>
+      ) : (
+        // 编辑 + 无任何 diff 来源:老实展示该次写入的内容本身,不谎称新建、
+        // 不伪造全增。完整 +/- 统计在头部那行。
+        <div className="overflow-x-auto font-mono text-[11px] leading-5 opacity-80">
           <DiffHunkView
-            // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
-            key={`${i}-${c.value.slice(0, 8)}`}
-            hunk={changeToPreviewHunk(c)}
-            collapseContext={!isNew}
+            collapseContext={false}
+            hunk={{
+              kind: "context",
+              value: content,
+              lineCount: countLines(content),
+            }}
           />
-        ))}
-      </div>
+        </div>
+      )}
+      {statOnlyHunks && content.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            {LL.preview_written_snapshot_label()}
+          </div>
+          <pre
+            data-written-snapshot="true"
+            className="max-h-80 overflow-auto rounded-md border border-border bg-background/40 p-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-all"
+          >
+            {content}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
 
-function changeToPreviewHunk(c: Change): PreviewDiffHunk {
-  const kind: PreviewDiffHunk["kind"] = c.added
-    ? "added"
-    : c.removed
-      ? "removed"
-      : "context";
-  return {
-    kind,
-    value: c.value,
-    lineCount: c.count ?? countLines(c.value),
-  };
+function buildStatOnlyHunks(
+  stat: NonNullable<ReturnType<typeof readWriteStat>>,
+  LL: TranslationFunctions,
+): PreviewDiffHunk[] {
+  const hunks: PreviewDiffHunk[] = [];
+  if (stat.removed > 0) {
+    hunks.push({
+      kind: "removed",
+      value: `${LL.preview_removed_lines_unavailable(stat.removed)}\n`,
+      lineCount: 1,
+    });
+  }
+  if (stat.added > 0) {
+    hunks.push({
+      kind: "added",
+      value: `${LL.preview_added_lines_unavailable(stat.added)}\n`,
+      lineCount: 1,
+    });
+  }
+  return hunks;
+}
+
+function changesToPreviewHunks(changes: Change[]): PreviewDiffHunk[] {
+  let oldLine = 1;
+  let newLine = 1;
+  return changes.map((c) => {
+    const kind: PreviewDiffHunk["kind"] = c.added
+      ? "added"
+      : c.removed
+        ? "removed"
+        : "context";
+    const lineCount = c.count ?? countLines(c.value);
+    const hunk: PreviewDiffHunk = {
+      kind,
+      value: c.value,
+      lineCount,
+      ...(kind !== "added" ? { oldStart: oldLine } : {}),
+      ...(kind !== "removed" ? { newStart: newLine } : {}),
+    };
+    if (kind !== "added") oldLine += lineCount;
+    if (kind !== "removed") newLine += lineCount;
+    return hunk;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -945,31 +1008,41 @@ const webSearchPresenter: ToolPresenter = {
 //     "移动文件 a → b",而不是单纯的"完成 moveFile"。
 
 const moveFilePresenter: ToolPresenter = {
-  summary: (args) => {
+  summary: (args, _result, _state, { workspacePath }) => {
     const a = asRecord(args);
     const src = typeof a?.source === "string" ? a.source : "";
     const dst = typeof a?.destination === "string" ? a.destination : "";
     if (!src && !dst) return null;
     return (
-      <span className="text-foreground/80">
-        {shortPath(src)} <span className="text-muted-foreground">→</span>{" "}
-        {shortPath(dst)}
+      <span className="text-foreground/80" title={`${src} → ${dst}`}>
+        {displayPath(src, workspacePath)}{" "}
+        <span className="text-muted-foreground">→</span>{" "}
+        {displayPath(dst, workspacePath)}
       </span>
     );
   },
 };
 
-function pathOnlySummary(args: unknown): ReactNode | null {
+function pathOnlySummary(
+  args: unknown,
+  _result: unknown,
+  _state: ToolState,
+  ctx: PresenterCtx,
+): ReactNode | null {
   const a = asRecord(args);
   const p = typeof a?.path === "string" ? a.path : "";
-  return p ? <span className="text-foreground/80">{shortPath(p)}</span> : null;
+  return p ? (
+    <span className="text-foreground/80" title={p}>
+      {displayPath(p, ctx.workspacePath)}
+    </span>
+  ) : null;
 }
 
 const deleteFilePresenter: ToolPresenter = { summary: pathOnlySummary };
 const createDirectoryPresenter: ToolPresenter = { summary: pathOnlySummary };
 
 const directoryStatsPresenter: ToolPresenter = {
-  summary: (args, result, state, { LL }) => {
+  summary: (args, result, state, { LL, workspacePath }) => {
     const a = asRecord(args);
     const p = typeof a?.path === "string" ? a.path : "";
     const r = asRecord(result);
@@ -977,7 +1050,9 @@ const directoryStatsPresenter: ToolPresenter = {
     const dirs = typeof r?.totalDirs === "number" ? r.totalDirs : null;
     return (
       <>
-        <span className="text-foreground/80">{shortPath(p)}</span>
+        <span className="text-foreground/80" title={p}>
+          {displayPath(p, workspacePath)}
+        </span>
         {state === "output-available" && files !== null && dirs !== null && (
           <span className="ml-2 text-muted-foreground">
             {LL.tool_summary_dirs_files(dirs, files)}

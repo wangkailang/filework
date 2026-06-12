@@ -566,7 +566,7 @@ export const ChatPanel = ({
   // ---------------------------------------------------------------------------
   // Render helpers
   // ---------------------------------------------------------------------------
-  const renderToolPart = (inv: ToolPart) => {
+  const renderToolPart = (inv: ToolPart, opts?: { dense?: boolean }) => {
     const presenter = toolPresenters[inv.toolName];
     const presenterCtx = {
       LL,
@@ -585,6 +585,14 @@ export const ChatPanel = ({
       inv.state === "output-available"
         ? presenter?.output?.(inv.result, inv.args, inv.state, presenterCtx)
         : null;
+    const rowAction = presenter?.rowAction?.(inv.args, presenterCtx) ?? null;
+    // 审批 / 出错的行必须能展开看详情;其余交给 presenter 自判(缺省可展开)。
+    const forceBody = inv.state === "output-error" || !!inv.approval;
+    const collapsible =
+      forceBody ||
+      (presenter?.expandable
+        ? presenter.expandable(inv.args, inv.result, inv.state, presenterCtx)
+        : true);
 
     return (
       <Tool
@@ -596,56 +604,65 @@ export const ChatPanel = ({
           toolName={inv.toolName}
           state={inv.state}
           summary={summary}
+          dense={opts?.dense}
+          collapsible={collapsible}
+          action={rowAction}
         />
-        <ToolContent>
-          {customInput ?? <ToolInput input={inv.args} />}
-          {inv.approval && (
-            <div className="px-3 py-2 border-b border-border">
-              <Confirmation state={inv.approval.state}>
-                {inv.approval.state === "approval-requested" &&
-                  renderApprovalRequest({
-                    approval: inv.approval,
-                    onDecide: (approved) =>
-                      chat.handleApproval(inv.toolCallId, approved),
-                    LL,
-                  })}
-                {inv.approval.state === "approval-accepted" && (
-                  <ConfirmationAccepted>
-                    {LL.chat_approved()}
-                  </ConfirmationAccepted>
-                )}
-                {inv.approval.state === "approval-rejected" && (
-                  <ConfirmationRejected>
-                    {LL.chat_rejected()}
-                  </ConfirmationRejected>
-                )}
-              </Confirmation>
-            </div>
-          )}
-          {inv.state === "output-available" &&
-            (customOutput ? (
-              <ToolOutput output={customOutput} />
-            ) : (
+        {collapsible && (
+          <ToolContent>
+            {/* 有 presenter 的工具完全自管输入展示(可为 null);只有无 presenter
+                的工具才回落到通用 args dump —— 避免 writeFile 等把整段内容
+                作为参数 JSON 再次铺出来。 */}
+            {presenter ? customInput : <ToolInput input={inv.args} />}
+            {inv.approval && (
+              <div className="px-3 py-2 border-b border-border">
+                <Confirmation state={inv.approval.state}>
+                  {inv.approval.state === "approval-requested" &&
+                    renderApprovalRequest({
+                      approval: inv.approval,
+                      onDecide: (approved) =>
+                        chat.handleApproval(inv.toolCallId, approved),
+                      LL,
+                    })}
+                  {inv.approval.state === "approval-accepted" && (
+                    <ConfirmationAccepted>
+                      {LL.chat_approved()}
+                    </ConfirmationAccepted>
+                  )}
+                  {inv.approval.state === "approval-rejected" && (
+                    <ConfirmationRejected>
+                      {LL.chat_rejected()}
+                    </ConfirmationRejected>
+                  )}
+                </Confirmation>
+              </div>
+            )}
+            {inv.state === "output-available" &&
+              // presenter 的 output 自带 padding / 标签 / 滚动容器,直接渲染。
+              // 不再套 ToolOutput —— 否则叠加多余的「结果」标签和一层 max-h
+              // 内滚动,形成双重嵌套滚动条。仅无 presenter 时回落到通用框。
+              (customOutput ?? (
+                <ToolOutput
+                  output={
+                    <pre className="font-mono whitespace-pre-wrap break-all">
+                      {typeof inv.result === "string"
+                        ? inv.result
+                        : JSON.stringify(inv.result, null, 2)}
+                    </pre>
+                  }
+                />
+              ))}
+            {inv.state === "output-error" && (
               <ToolOutput
-                output={
-                  <pre className="font-mono whitespace-pre-wrap break-all">
-                    {typeof inv.result === "string"
-                      ? inv.result
-                      : JSON.stringify(inv.result, null, 2)}
-                  </pre>
+                errorText={
+                  typeof inv.result === "string"
+                    ? inv.result
+                    : JSON.stringify(inv.result, null, 2)
                 }
               />
-            ))}
-          {inv.state === "output-error" && (
-            <ToolOutput
-              errorText={
-                typeof inv.result === "string"
-                  ? inv.result
-                  : JSON.stringify(inv.result, null, 2)
-              }
-            />
-          )}
-        </ToolContent>
+            )}
+          </ToolContent>
+        )}
       </Tool>
     );
   };
@@ -692,9 +709,11 @@ export const ChatPanel = ({
                 );
               }
               const inv = p as ToolPart;
+              // 分组子项走紧凑模式:分组头已标注工具名,子行只留状态图标 +
+              // 摘要(文件名 · 变更),9 个写文件 = 9 行紧凑列表而非 9 张卡。
               return (
-                <div key={inv.toolCallId} className="p-2">
-                  {renderToolPart(inv)}
+                <div key={inv.toolCallId} className="px-2 py-1">
+                  {renderToolPart(inv, { dense: true })}
                 </div>
               );
             })}
