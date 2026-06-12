@@ -2,7 +2,7 @@
 // useChatSessionLite 取数据,流式期间不随 messages 重渲。
 // 列表按更新时间分段(今天/昨天/近 7 天/近 30 天/更早),每项显示
 // 到分钟的时间戳,并支持双击或点铅笔图标就地重命名。
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Loader2, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
@@ -119,6 +119,15 @@ export const ChatHistoryPanel = () => {
               </div>
               {group.items.map((s) => {
                 const isEditing = editingId === s.id;
+                const runState = chat.sessionRunStates[s.id];
+                const runStateLabel =
+                  runState?.status === "pending"
+                    ? LL.task_pending()
+                    : runState?.status === "running"
+                      ? LL.task_running()
+                      : runState?.status === "unread"
+                        ? LL.session_unread()
+                        : null;
                 return (
                   <div
                     key={s.id}
@@ -189,29 +198,52 @@ export const ChatHistoryPanel = () => {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startRename(s);
-                          }}
-                          className="p-1 text-muted-foreground hover:text-foreground"
-                          aria-label={LL.session_rename()}
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDelete(s);
-                          }}
-                          className="p-1 text-muted-foreground hover:text-destructive"
-                          aria-label={LL.session_delete()}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
+                      <div className="relative ml-auto flex h-5 w-11 shrink-0 items-center justify-end">
+                        {runState && runStateLabel && (
+                          <span
+                            data-session-run-status={runState.status}
+                            className="inline-flex shrink-0 items-center justify-center text-primary transition-opacity group-hover:opacity-0"
+                            role="img"
+                            aria-label={runStateLabel}
+                            title={runStateLabel}
+                          >
+                            {runState.status === "unread" ? (
+                              <span
+                                className="size-2.5 rounded-full bg-primary ring-2 ring-primary/20"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                        )}
+                        <div className="absolute right-0 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRename(s);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-foreground"
+                            aria-label={LL.session_rename()}
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDelete(s);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-destructive"
+                            aria-label={LL.session_delete()}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

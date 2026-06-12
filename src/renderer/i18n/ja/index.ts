@@ -121,6 +121,7 @@ const ja: Translation = {
     "削除後は元に戻せません。このチャットを削除しますか?",
   session_confirm: "削除",
   session_cancel: "キャンセル",
+  session_unread: "未読",
 
   // Chat panel
   chat_reject: "拒否",

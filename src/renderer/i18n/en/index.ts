@@ -129,6 +129,7 @@ const en: BaseTranslation = {
     "This chat will be permanently deleted. Continue?",
   session_confirm: "Delete",
   session_cancel: "Cancel",
+  session_unread: "Unread",
 
   // Chat panel
   chat_reject: "Reject",

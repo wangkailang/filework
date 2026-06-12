@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { migrateToParts } from "./helpers";
 import type { ChatMessage, ChatSession, MessagePart, UsagePart } from "./types";
 import type { StreamErrorInfo, UsageInfo } from "./useChatSession";
@@ -6,17 +13,20 @@ import type { StreamErrorInfo, UsageInfo } from "./useChatSession";
 export function useSessionCrud(workspacePath: string) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessagesState] = useState<ChatMessage[]>([]);
   const [lastUsage, setLastUsage] = useState<UsageInfo | null>(null);
   const [lastError, setLastError] = useState<StreamErrorInfo | null>(null);
 
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
   // 标记当前会话是否有"尚未落盘的真实改动"。仅在 debouncedSave(消息编辑/
   // 流式)时置 true,落盘后清零。纯预览会话只 setMessages、不触发它,因此
   // flushPendingSave 对预览是 no-op,不会无谓改写文件 → 不会刷新 updatedAt。
-  const dirtyRef = useRef(false);
+  const dirtySessionsRef = useRef(new Set<string>());
   const activeSessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const messagesBySessionRef = useRef(new Map<string, ChatMessage[]>());
   // Set by createNewSession() so the load-history effect below skips the
   // disk fetch on activation — the local caller (e.g. the chat submit
   // handler) has just put messages into state but the JSONL file hasn't
@@ -29,31 +39,88 @@ export function useSessionCrud(workspacePath: string) {
   activeSessionIdRef.current = activeSessionId;
   messagesRef.current = messages;
 
-  const flushPendingSave = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    // 无真实改动则不落盘 —— 切换/预览会话时不应改写文件刷新 updatedAt。
-    if (!dirtyRef.current) return;
-    dirtyRef.current = false;
+  const setMessages = useCallback<Dispatch<SetStateAction<ChatMessage[]>>>(
+    (nextOrUpdater) => {
+      setMessagesState((prev) => {
+        const next =
+          typeof nextOrUpdater === "function"
+            ? (nextOrUpdater as (prev: ChatMessage[]) => ChatMessage[])(prev)
+            : nextOrUpdater;
+        const sessionId = activeSessionIdRef.current;
+        if (sessionId) messagesBySessionRef.current.set(sessionId, next);
+        messagesRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
 
-    const sessionId = activeSessionIdRef.current;
-    const latestMessages = messagesRef.current;
-    if (latestMessages.length > 0 && sessionId) {
-      window.filework.saveChatHistory(sessionId, workspacePath, latestMessages);
-    }
-  }, [workspacePath]);
+  const updateSessionMessages = useCallback(
+    (
+      sessionId: string,
+      updater: (prev: ChatMessage[]) => ChatMessage[],
+    ): ChatMessage[] => {
+      const prev =
+        messagesBySessionRef.current.get(sessionId) ??
+        (activeSessionIdRef.current === sessionId ? messagesRef.current : []);
+      const next = updater(prev);
+      messagesBySessionRef.current.set(sessionId, next);
+      if (activeSessionIdRef.current === sessionId) {
+        messagesRef.current = next;
+        setMessagesState(next);
+      }
+      return next;
+    },
+    [],
+  );
+
+  const flushPendingSave = useCallback(
+    (sessionId?: string) => {
+      const ids = sessionId
+        ? [sessionId]
+        : Array.from(dirtySessionsRef.current.values());
+
+      for (const id of ids) {
+        const timer = saveTimersRef.current.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          saveTimersRef.current.delete(id);
+        }
+        // 无真实改动则不落盘 —— 切换/预览会话时不应改写文件刷新 updatedAt。
+        if (!dirtySessionsRef.current.has(id)) continue;
+        dirtySessionsRef.current.delete(id);
+
+        const latestMessages =
+          messagesBySessionRef.current.get(id) ??
+          (activeSessionIdRef.current === id ? messagesRef.current : []);
+        if (latestMessages.length > 0) {
+          window.filework.saveChatHistory(id, workspacePath, latestMessages);
+        }
+      }
+    },
+    [workspacePath],
+  );
 
   const debouncedSave = useCallback(
     (msgs: ChatMessage[], sessionId: string) => {
-      dirtyRef.current = true;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        window.filework.saveChatHistory(sessionId, workspacePath, msgs);
-        saveTimerRef.current = null;
-        dirtyRef.current = false;
+      messagesBySessionRef.current.set(sessionId, msgs);
+      dirtySessionsRef.current.add(sessionId);
+      const existing = saveTimersRef.current.get(sessionId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        const latestMessages =
+          messagesBySessionRef.current.get(sessionId) ?? msgs;
+        if (latestMessages.length > 0) {
+          window.filework.saveChatHistory(
+            sessionId,
+            workspacePath,
+            latestMessages,
+          );
+        }
+        saveTimersRef.current.delete(sessionId);
+        dirtySessionsRef.current.delete(sessionId);
       }, 500);
+      saveTimersRef.current.set(sessionId, timer);
     },
     [workspacePath],
   );
@@ -68,12 +135,14 @@ export function useSessionCrud(workspacePath: string) {
           setActiveSessionId(list[0].id);
         } else {
           setActiveSessionId(null);
-          setMessages([]);
+          messagesRef.current = [];
+          setMessagesState([]);
         }
       } catch {
         setSessions([]);
         setActiveSessionId(null);
-        setMessages([]);
+        messagesRef.current = [];
+        setMessagesState([]);
       }
     };
     load();
@@ -81,7 +150,8 @@ export function useSessionCrud(workspacePath: string) {
 
   useEffect(() => {
     if (!activeSessionId) {
-      setMessages([]);
+      messagesRef.current = [];
+      setMessagesState([]);
       return;
     }
     if (freshSessionIdRef.current === activeSessionId) {
@@ -97,7 +167,9 @@ export function useSessionCrud(workspacePath: string) {
         const migrated = (history ?? []).map((m: ChatMessage) =>
           m.role === "assistant" ? { ...m, parts: migrateToParts(m) } : m,
         );
-        setMessages(migrated);
+        messagesBySessionRef.current.set(activeSessionId, migrated);
+        messagesRef.current = migrated;
+        setMessagesState(migrated);
 
         for (let i = migrated.length - 1; i >= 0; i--) {
           const msg = migrated[i];
@@ -117,7 +189,9 @@ export function useSessionCrud(workspacePath: string) {
           }
         }
       } catch {
-        setMessages([]);
+        messagesBySessionRef.current.set(activeSessionId, []);
+        messagesRef.current = [];
+        setMessagesState([]);
       } finally {
         // 历史已就位(成功或失败)→ 此刻才尝试重连,壳会叠加在已加载历史之上。
         onHistoryLoadedRef.current?.(activeSessionId);
@@ -139,21 +213,23 @@ export function useSessionCrud(workspacePath: string) {
     // Flag the load-history effect to skip the disk read on activation —
     // the caller (submit handler) is about to set messages itself.
     freshSessionIdRef.current = session.id;
+    messagesBySessionRef.current.set(session.id, []);
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
-    setMessages([]);
+    messagesRef.current = [];
+    setMessagesState([]);
     return session.id;
   }, [flushPendingSave, workspacePath]);
 
   const handleNewChat = useCallback(
-    (isLoading: boolean) => {
-      if (isLoading) return;
+    (_isLoading?: boolean) => {
       // Don't persist a new session yet — it's created lazily on the
       // first message submit (useChatSession.ts). Otherwise an empty
       // ".jsonl" file leaks into the sidebar.
       flushPendingSave();
       setActiveSessionId(null);
-      setMessages([]);
+      messagesRef.current = [];
+      setMessagesState([]);
       setLastUsage(null);
       setLastError(null);
     },
@@ -161,8 +237,8 @@ export function useSessionCrud(workspacePath: string) {
   );
 
   const handleSelectSession = useCallback(
-    (sessionId: string, isLoading: boolean) => {
-      if (isLoading || sessionId === activeSessionId) return;
+    (sessionId: string, _isLoading?: boolean) => {
+      if (sessionId === activeSessionId) return;
       flushPendingSave();
       setActiveSessionId(sessionId);
       setLastUsage(null);
@@ -174,8 +250,13 @@ export function useSessionCrud(workspacePath: string) {
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       if (sessionId === activeSessionId) {
-        flushPendingSave();
+        flushPendingSave(sessionId);
       }
+      const timer = saveTimersRef.current.get(sessionId);
+      if (timer) clearTimeout(timer);
+      saveTimersRef.current.delete(sessionId);
+      dirtySessionsRef.current.delete(sessionId);
+      messagesBySessionRef.current.delete(sessionId);
       await window.filework.deleteChatSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (sessionId === activeSessionId) {
@@ -184,7 +265,8 @@ export function useSessionCrud(workspacePath: string) {
           setActiveSessionId(remaining[0].id);
         } else {
           setActiveSessionId(null);
-          setMessages([]);
+          messagesRef.current = [];
+          setMessagesState([]);
         }
       }
     },
@@ -237,6 +319,7 @@ export function useSessionCrud(workspacePath: string) {
     onHistoryLoadedRef,
     messages,
     setMessages,
+    updateSessionMessages,
     lastUsage,
     setLastUsage,
     lastError,

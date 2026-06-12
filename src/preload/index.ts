@@ -129,6 +129,13 @@ const api = {
     sessionId?: string;
     assistantMessageId?: string;
   } | null> => ipcRenderer.invoke("ai:getActiveTask", sessionId),
+  getActiveTasks: (): Promise<
+    Array<{
+      taskId: string;
+      sessionId?: string;
+      assistantMessageId?: string;
+    }>
+  > => ipcRenderer.invoke("ai:getActiveTasks"),
   /** 重连:把任务的流重定向到当前窗口(关窗重开 → 新 webContents)。 */
   reattachTask: (taskId: string): Promise<boolean> =>
     ipcRenderer.invoke("ai:reattachTask", taskId),
@@ -317,9 +324,21 @@ const api = {
   },
 
   // AI 流式事件
-  onStreamStart: (callback: (data: { id: string }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: { id: string }) =>
-      callback(data);
+  onStreamStart: (
+    callback: (data: {
+      id: string;
+      sessionId?: string;
+      assistantMessageId?: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        sessionId?: string;
+        assistantMessageId?: string;
+      },
+    ) => callback(data);
     ipcRenderer.on("ai:stream-start", handler);
     return () => ipcRenderer.removeListener("ai:stream-start", handler);
   },
@@ -700,15 +719,29 @@ const api = {
     ipcRenderer.on("ai:stream-retry", handler);
     return () => ipcRenderer.removeListener("ai:stream-retry", handler);
   },
-  onStreamDone: (callback: (data: { id: string }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: { id: string }) =>
-      callback(data);
+  onStreamDone: (
+    callback: (data: {
+      id: string;
+      sessionId?: string;
+      assistantMessageId?: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        sessionId?: string;
+        assistantMessageId?: string;
+      },
+    ) => callback(data);
     ipcRenderer.on("ai:stream-done", handler);
     return () => ipcRenderer.removeListener("ai:stream-done", handler);
   },
   onStreamError: (
     callback: (data: {
       id: string;
+      sessionId?: string;
+      assistantMessageId?: string;
       error: string;
       type?: string;
       recoveryActions?: string[];
@@ -718,6 +751,8 @@ const api = {
       _event: Electron.IpcRendererEvent,
       data: {
         id: string;
+        sessionId?: string;
+        assistantMessageId?: string;
         error: string;
         type?: string;
         recoveryActions?: string[];

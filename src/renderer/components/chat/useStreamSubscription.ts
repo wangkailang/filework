@@ -211,22 +211,32 @@ function extractArticleMetaFromToolResult(
   };
 }
 
+import type { RunningTaskRoute } from "./session-run-state";
 import type { RetryInfo, StreamErrorInfo, UsageInfo } from "./useChatSession";
 
 interface StreamSubscriptionDeps {
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  updateSessionMessages: (
+    sessionId: string,
+    updater: (prev: ChatMessage[]) => ChatMessage[],
+  ) => ChatMessage[];
   setLastUsage: React.Dispatch<React.SetStateAction<UsageInfo | null>>;
   setLastError: React.Dispatch<React.SetStateAction<StreamErrorInfo | null>>;
   debouncedSave: (msgs: ChatMessage[], sessionId: string) => void;
   activeSessionIdRef: MutableRefObject<string | null>;
+  onTaskStarted?: (task: RunningTaskRoute) => void;
+  onTaskSettled?: (taskId: string) => void;
 }
 
 export function useStreamSubscription({
   setMessages,
+  updateSessionMessages,
   setLastUsage,
   setLastError,
   debouncedSave,
   activeSessionIdRef,
+  onTaskStarted,
+  onTaskSettled,
 }: StreamSubscriptionDeps) {
   const { LL } = useI18nContext();
   const [isLoading, setIsLoading] = useState(false);
@@ -238,49 +248,81 @@ export function useStreamSubscription({
 
   const streamTaskIdRef = useRef<string | null>(null);
   const streamAssistantIdRef = useRef<string | null>(null);
+  const taskRoutesRef = useRef(
+    new Map<string, { sessionId?: string; assistantMessageId?: string }>(),
+  );
   // 上次「流式期间」落盘的时间戳,用于节流。重连已由主进程事件日志重放权威负责,
   // 故流式落盘只为进程崩溃兜底,无需每个停顿都全量重写会话文件 —— 限到每 ~5s 一次。
-  const lastStreamSaveRef = useRef(0);
+  const lastStreamSaveRef = useRef(new Map<string, number>());
   const pendingStopRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
 
+  const rememberTaskRoute = useCallback(
+    (task: RunningTaskRoute) => {
+      taskRoutesRef.current.set(task.taskId, {
+        sessionId: task.sessionId,
+        assistantMessageId: task.assistantMessageId,
+      });
+      onTaskStarted?.(task);
+    },
+    [onTaskStarted],
+  );
+
   useEffect(() => {
-    const offStart = window.filework.onStreamStart(({ id }) => {
-      console.log("[Stream Start] Setting taskId:", id);
-      streamTaskIdRef.current = id;
-      // 重置当前助手消息的 parts。正常新回合消息本就为空(no-op);重连重放时
-      // start 是首个事件,借此把盘上加载的部分内容清空,后续重放事件权威重建,
-      // 避免与盘上内容叠加重复。
-      const assistantId = streamAssistantIdRef.current;
-      if (assistantId) {
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return prev;
-          const msg = prev[idx];
-          if ((msg.parts?.length ?? 0) === 0 && !msg.content) return prev;
-          const updated = [...prev];
-          updated[idx] = { ...msg, content: "", parts: [] };
-          return updated;
-        });
-      }
-      setIsStalled(false);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-      if (pendingStopRef.current) {
-        pendingStopRef.current = false;
-        window.filework.stopGeneration(id).catch((error) => {
-          console.error(
-            "[Stop Generation] Failed to stop deferred task:",
-            error,
-          );
-        });
-      }
-    });
+    const routeForTask = (taskId: string) => taskRoutesRef.current.get(taskId);
+
+    const canRouteTask = (taskId: string): boolean =>
+      taskId === streamTaskIdRef.current || taskRoutesRef.current.has(taskId);
+
+    const offStart = window.filework.onStreamStart(
+      ({ id, sessionId, assistantMessageId }) => {
+        rememberTaskRoute({ taskId: id, sessionId, assistantMessageId });
+
+        const shouldAttach =
+          !sessionId || sessionId === activeSessionIdRef.current;
+        if (!shouldAttach) return;
+
+        console.log("[Stream Start] Setting taskId:", id);
+        streamTaskIdRef.current = id;
+        if (assistantMessageId) {
+          streamAssistantIdRef.current = assistantMessageId;
+        }
+        // 重置当前助手消息的 parts。正常新回合消息本就为空(no-op);重连重放时
+        // start 是首个事件,借此把盘上加载的部分内容清空,后续重放事件权威重建,
+        // 避免与盘上内容叠加重复。
+        const assistantId = streamAssistantIdRef.current;
+        const targetSessionId = sessionId ?? activeSessionIdRef.current;
+        if (assistantId && targetSessionId) {
+          updateSessionMessages(targetSessionId, (prev) => {
+            const idx = prev.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return prev;
+            const msg = prev[idx];
+            if ((msg.parts?.length ?? 0) === 0 && !msg.content) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...msg, content: "", parts: [] };
+            return updated;
+          });
+        }
+        setIsLoading(true);
+        setIsStalled(false);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
+        if (pendingStopRef.current) {
+          pendingStopRef.current = false;
+          window.filework.stopGeneration(id).catch((error) => {
+            console.error(
+              "[Stop Generation] Failed to stop deferred task:",
+              error,
+            );
+          });
+        }
+      },
+    );
 
     const offSkillActivated = window.filework.onSkillActivated(
       ({ id, skillId, skillName, source }) => {
@@ -289,11 +331,21 @@ export function useStreamSubscription({
       },
     );
 
-    const updateParts = (updater: (parts: MessagePart[]) => MessagePart[]) => {
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => m.id === streamAssistantIdRef.current,
-        );
+    const updateParts = (
+      taskId: string,
+      updater: (parts: MessagePart[]) => MessagePart[],
+    ) => {
+      const route = routeForTask(taskId);
+      const sessionId = route?.sessionId ?? activeSessionIdRef.current;
+      const assistantId =
+        route?.assistantMessageId ??
+        (taskId === streamTaskIdRef.current
+          ? streamAssistantIdRef.current
+          : null);
+      if (!sessionId || !assistantId) return;
+
+      updateSessionMessages(sessionId, (prev) => {
+        const idx = prev.findIndex((m) => m.id === assistantId);
         if (idx === -1) return prev;
         const updated = [...prev];
         const msg = updated[idx];
@@ -305,18 +357,18 @@ export function useStreamSubscription({
         };
         // 流式期间落盘(崩溃兜底):限到每 ~5s 一次,避免每个工具停顿都全量重写
         // 整份会话文件。重连本身由主进程事件日志重放负责,不依赖此处的盘上部分内容。
-        const sid = activeSessionIdRef.current;
-        if (sid && Date.now() - lastStreamSaveRef.current > 5000) {
-          lastStreamSaveRef.current = Date.now();
-          debouncedSave(updated, sid);
+        const lastSavedAt = lastStreamSaveRef.current.get(taskId) ?? 0;
+        if (Date.now() - lastSavedAt > 5000) {
+          lastStreamSaveRef.current.set(taskId, Date.now());
+          debouncedSave(updated, sessionId);
         }
         return updated;
       });
     };
 
     const offDelta = window.filework.onStreamDelta(({ id, delta }) => {
-      if (id !== streamTaskIdRef.current) return;
-      updateParts((parts) => {
+      if (!canRouteTask(id)) return;
+      updateParts(id, (parts) => {
         const last = parts[parts.length - 1];
         if (last && last.type === "text") {
           parts[parts.length - 1] = { ...last, text: last.text + delta };
@@ -328,8 +380,8 @@ export function useStreamSubscription({
     });
 
     const offReasoning = window.filework.onStreamReasoning(({ id, delta }) => {
-      if (id !== streamTaskIdRef.current) return;
-      updateParts((parts) => {
+      if (!canRouteTask(id)) return;
+      updateParts(id, (parts) => {
         // If an inline plan currently has a `running` step, attach the
         // reasoning delta to that step instead of surfacing it as a
         // top-level ReasoningPart. This keeps the model's thinking
@@ -378,8 +430,8 @@ export function useStreamSubscription({
     });
 
     const offReasoningEnd = window.filework.onStreamReasoningEnd(({ id }) => {
-      if (id !== streamTaskIdRef.current) return;
-      updateParts((parts) => {
+      if (!canRouteTask(id)) return;
+      updateParts(id, (parts) => {
         for (let i = parts.length - 1; i >= 0; i--) {
           const p = parts[i];
           if (p.type === "reasoning" && !p.done) {
@@ -394,7 +446,7 @@ export function useStreamSubscription({
 
     const offToolCall = window.filework.onStreamToolCall(
       ({ id, toolCallId, toolName, args, previewSnapshot }) => {
-        if (id !== streamTaskIdRef.current) return;
+        if (!canRouteTask(id)) return;
         // `createPlan` is rendered as a single evolving PlanMessagePart
         // (via `ai:stream-plan`). Suppress the generic tool bubble so N
         // status-update calls don't stack as N "完成 createPlan" rows.
@@ -403,7 +455,7 @@ export function useStreamSubscription({
         // `ai:subagent-*`). Suppress the generic tool bubble — a fan-out of
         // N children can't fit the single args/result ToolPart shape.
         if (toolName === "spawnSubagent") return;
-        updateParts((parts) => {
+        updateParts(id, (parts) => {
           const existingIdx = parts.findIndex(
             (p) => p.type === "tool" && p.toolCallId === toolCallId,
           );
@@ -430,8 +482,8 @@ export function useStreamSubscription({
 
     const offToolResult = window.filework.onStreamToolResult(
       ({ id, toolCallId, result }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
           const resultObj =
             result != null && typeof result === "object"
               ? (result as Record<string, unknown>)
@@ -501,8 +553,8 @@ export function useStreamSubscription({
 
     const offToolApproval = window.filework.onStreamToolApproval(
       ({ id, toolCallId, toolName, args, description }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
           const existingIdx = parts.findIndex(
             (p) => p.type === "tool" && p.toolCallId === toolCallId,
           );
@@ -534,8 +586,8 @@ export function useStreamSubscription({
 
     const offToolBatchApproval = window.filework.onStreamToolBatchApproval(
       ({ id, batchId, toolName, entries }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
           parts.push({
             type: "batch-approval",
             batchId,
@@ -550,8 +602,8 @@ export function useStreamSubscription({
 
     const offToolBatchAutoApproved =
       window.filework.onStreamToolBatchAutoApproved(({ id, batchId }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) =>
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) =>
           parts.map((p) =>
             p.type === "batch-approval" && p.batchId === batchId
               ? { ...p, state: "approval-accepted" as const }
@@ -560,116 +612,150 @@ export function useStreamSubscription({
         );
       });
 
-    const offDone = window.filework.onStreamDone(({ id }) => {
-      if (id !== streamTaskIdRef.current) return;
-      console.log("[Stream Done] Cleaning up taskId:", id);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-      const assistantId = streamAssistantIdRef.current;
-      const stoppedByUser = stopRequestedRef.current;
-      streamTaskIdRef.current = null;
-      pendingStopRef.current = false;
-      stopRequestedRef.current = false;
-      setIsLoading(false);
-      setActiveSkill(null);
-      setRetryInfo(null);
-      setLastError(null);
-      setIsStalled(false);
+    const offDone = window.filework.onStreamDone(
+      ({ id, sessionId, assistantMessageId }) => {
+        if (sessionId || assistantMessageId) {
+          rememberTaskRoute({ taskId: id, sessionId, assistantMessageId });
+        }
+        if (!canRouteTask(id)) return;
 
-      if (stoppedByUser && assistantId) {
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return prev;
-          const updated = [...prev];
-          const msg = updated[idx];
-          const normalizedParts = (msg.parts ?? []).map((part) => {
-            if (part.type !== "tool") return part;
-            if (
-              part.state === "output-available" ||
-              part.state === "output-error"
-            )
-              return part;
-            return {
-              ...part,
-              state: "output-available" as const,
-              result: part.result ?? {
-                success: false,
-                cancelled: true,
-                reason: LL.chat_userStopped(),
-              },
-            };
-          });
-          updated[idx] = {
-            ...msg,
-            parts: normalizedParts,
-            content: contentFromParts(normalizedParts),
-          };
-          return updated;
-        });
-      }
+        const route = routeForTask(id);
+        const isAttachedTask = id === streamTaskIdRef.current;
+        const targetSessionId = route?.sessionId ?? activeSessionIdRef.current;
+        const assistantId =
+          route?.assistantMessageId ??
+          (isAttachedTask ? streamAssistantIdRef.current : null);
+        onTaskSettled?.(id);
+        taskRoutesRef.current.delete(id);
+        lastStreamSaveRef.current.delete(id);
 
-      window.filework.usage
-        .getTaskUsage(id)
-        .then((usage: UsageInfo | null) => {
-          const hasUsage = usage != null && usage.totalTokens != null;
-          if (hasUsage && usage) setLastUsage(usage);
-          setMessages((prev) => {
+        console.log("[Stream Done] Cleaning up taskId:", id);
+        if (isAttachedTask && connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
+        const stoppedByUser = isAttachedTask && stopRequestedRef.current;
+        if (isAttachedTask) {
+          streamTaskIdRef.current = null;
+          pendingStopRef.current = false;
+          stopRequestedRef.current = false;
+          setIsLoading(false);
+          setActiveSkill(null);
+          setRetryInfo(null);
+          setLastError(null);
+          setIsStalled(false);
+        }
+
+        if (stoppedByUser && assistantId && targetSessionId) {
+          updateSessionMessages(targetSessionId, (prev) => {
             const idx = prev.findIndex((m) => m.id === assistantId);
             if (idx === -1) return prev;
             const updated = [...prev];
             const msg = updated[idx];
-            const baseParts = msg.parts ?? [];
-            // Machine-generated turn deliverable, aggregated from the (by now
-            // normalized) tool parts and inserted just before the usage row.
-            // Null for pure Q&A turns — nothing to append.
-            const summary = buildTurnSummary(baseParts);
-            const appended: MessagePart[] = [
-              ...(summary ? [summary] : []),
-              ...(hasUsage && usage
-                ? [{ type: "usage", ...usage } as UsagePart]
-                : []),
-            ];
-            if (appended.length > 0) {
-              updated[idx] = { ...msg, parts: [...baseParts, ...appended] };
-            }
-            if (activeSessionIdRef.current) {
-              debouncedSave(updated, activeSessionIdRef.current);
-            }
+            const normalizedParts = (msg.parts ?? []).map((part) => {
+              if (part.type !== "tool") return part;
+              if (
+                part.state === "output-available" ||
+                part.state === "output-error"
+              )
+                return part;
+              return {
+                ...part,
+                state: "output-available" as const,
+                result: part.result ?? {
+                  success: false,
+                  cancelled: true,
+                  reason: LL.chat_userStopped(),
+                },
+              };
+            });
+            updated[idx] = {
+              ...msg,
+              parts: normalizedParts,
+              content: contentFromParts(normalizedParts),
+            };
             return updated;
           });
-          streamAssistantIdRef.current = null;
-        })
-        .catch(() => {
-          streamAssistantIdRef.current = null;
-          setMessages((prev) => {
-            if (activeSessionIdRef.current) {
-              debouncedSave(prev, activeSessionIdRef.current);
+        }
+
+        window.filework.usage
+          .getTaskUsage(id)
+          .then((usage: UsageInfo | null) => {
+            const hasUsage = usage != null && usage.totalTokens != null;
+            if (isAttachedTask && hasUsage && usage) setLastUsage(usage);
+            if (!assistantId || !targetSessionId) return;
+            updateSessionMessages(targetSessionId, (prev) => {
+              const idx = prev.findIndex((m) => m.id === assistantId);
+              if (idx === -1) return prev;
+              const updated = [...prev];
+              const msg = updated[idx];
+              const baseParts = msg.parts ?? [];
+              // Machine-generated turn deliverable, aggregated from the (by now
+              // normalized) tool parts and inserted just before the usage row.
+              // Null for pure Q&A turns — nothing to append.
+              const summary = buildTurnSummary(baseParts);
+              const appended: MessagePart[] = [
+                ...(summary ? [summary] : []),
+                ...(hasUsage && usage
+                  ? [{ type: "usage", ...usage } as UsagePart]
+                  : []),
+              ];
+              if (appended.length > 0) {
+                updated[idx] = { ...msg, parts: [...baseParts, ...appended] };
+              }
+              debouncedSave(updated, targetSessionId);
+              return updated;
+            });
+            if (isAttachedTask) streamAssistantIdRef.current = null;
+          })
+          .catch(() => {
+            if (assistantId && targetSessionId) {
+              updateSessionMessages(targetSessionId, (prev) => {
+                debouncedSave(prev, targetSessionId);
+                return prev;
+              });
             }
-            return prev;
+            if (isAttachedTask) streamAssistantIdRef.current = null;
           });
-        });
-    });
+      },
+    );
 
     const offError = window.filework.onStreamError(
-      ({ id, error, type, recoveryActions }) => {
-        if (streamTaskIdRef.current && id !== streamTaskIdRef.current) return;
-        if (!streamTaskIdRef.current && !streamAssistantIdRef.current) return;
+      ({ id, sessionId, assistantMessageId, error, type, recoveryActions }) => {
+        if (sessionId || assistantMessageId) {
+          rememberTaskRoute({ taskId: id, sessionId, assistantMessageId });
+        }
+        if (!canRouteTask(id)) return;
+
         console.log("[Stream Error] Cleaning up taskId:", id, "error:", error);
-        if (connectionTimeoutRef.current) {
+        const route = routeForTask(id);
+        const isAttachedTask = id === streamTaskIdRef.current;
+        const targetSessionId = route?.sessionId ?? activeSessionIdRef.current;
+        const assistantId =
+          route?.assistantMessageId ??
+          (isAttachedTask ? streamAssistantIdRef.current : null);
+        onTaskSettled?.(id);
+        taskRoutesRef.current.delete(id);
+        lastStreamSaveRef.current.delete(id);
+
+        if (isAttachedTask && connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        const assistantId = streamAssistantIdRef.current;
-        streamTaskIdRef.current = null;
-        pendingStopRef.current = false;
-        stopRequestedRef.current = false;
-        setIsLoading(false);
-        setActiveSkill(null);
-        setRetryInfo(null);
-        setLastError({ message: error, type, recoveryActions });
-        setMessages((prev) => {
+        if (isAttachedTask) {
+          streamTaskIdRef.current = null;
+          pendingStopRef.current = false;
+          stopRequestedRef.current = false;
+          setIsLoading(false);
+          setActiveSkill(null);
+          setRetryInfo(null);
+          setLastError({ message: error, type, recoveryActions });
+        }
+        if (!assistantId || !targetSessionId) {
+          if (isAttachedTask) streamAssistantIdRef.current = null;
+          return;
+        }
+        updateSessionMessages(targetSessionId, (prev) => {
           const idx = prev.findIndex((m) => m.id === assistantId);
           if (idx === -1) return prev;
           const updated = [...prev];
@@ -688,19 +774,17 @@ export function useStreamSubscription({
             content: msg.content || error,
             parts: newParts,
           };
-          if (activeSessionIdRef.current) {
-            debouncedSave(updated, activeSessionIdRef.current);
-          }
+          debouncedSave(updated, targetSessionId);
           return updated;
         });
-        streamAssistantIdRef.current = null;
+        if (isAttachedTask) streamAssistantIdRef.current = null;
       },
     );
 
     const offClarification = window.filework.onStreamClarification(
       ({ id, clarificationId, question, options }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
           parts.push({
             type: "clarification",
             question,
@@ -718,9 +802,9 @@ export function useStreamSubscription({
     // call appends, subsequent calls replace steps + status in place so
     // the user sees a single evolving checklist, not stacked snapshots.
     const offStreamPlan = window.filework.onStreamPlan(({ id, plan }) => {
-      if (id !== streamTaskIdRef.current) return;
+      if (!canRouteTask(id)) return;
       const planView = plan as PlanView;
-      updateParts((parts) => {
+      updateParts(id, (parts) => {
         const idx = parts.findIndex(
           (p): p is PlanMessagePart =>
             p.type === "plan" && p.plan.id === planView.id,
@@ -751,9 +835,9 @@ export function useStreamSubscription({
     // Match by streamTaskIdRef so events for a stale task drop silently.
     const offCiRunDone = window.filework.onCiRunDone(
       ({ id, runId, conclusion, url, name }) => {
-        if (id !== streamTaskIdRef.current) return;
+        if (!canRouteTask(id)) return;
         const verdict = conclusion ?? "未知";
-        updateParts((parts) => {
+        updateParts(id, (parts) => {
           parts.push({
             type: "text",
             text: `🔔 CI 运行 ${name} (#${runId}) 已完成,结果: ${verdict} — ${url}`,
@@ -765,9 +849,9 @@ export function useStreamSubscription({
 
     const offCiRunTimeout = window.filework.onCiRunTimeout(
       ({ id, runId, elapsedMs }) => {
-        if (id !== streamTaskIdRef.current) return;
+        if (!canRouteTask(id)) return;
         const minutes = Math.round(elapsedMs / 60_000);
-        updateParts((parts) => {
+        updateParts(id, (parts) => {
           parts.push({
             type: "text",
             text: `⏱ CI 运行 #${runId} 在 ${minutes} 分钟内未完成,已停止跟踪。可调用 listCIRuns 手动查询。`,
@@ -782,8 +866,8 @@ export function useStreamSubscription({
     // back to manual listing.
     const offCiDispatchResolveFailed =
       window.filework.onCiDispatchResolveFailed(({ id, ref, workflowFile }) => {
-        if (id !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
           parts.push({
             type: "text",
             text: `⚠️ 已 dispatch ${workflowFile} on ${ref},但未能识别新 run id (GitHub 可能尚未创建);可调用 githubListWorkflowRuns 手动查询。`,
@@ -796,11 +880,12 @@ export function useStreamSubscription({
     // 全部按 parentTaskId 过滤(等于当前主任务才处理),用 batchId 定位
     // SubagentMessagePart、childTaskId 定位卡内某一行。
     const updateSubagentChild = (
+      parentTaskId: string,
       batchId: string,
       childTaskId: string,
       fn: (child: SubagentChildView) => SubagentChildView,
     ) => {
-      updateParts((parts) => {
+      updateParts(parentTaskId, (parts) => {
         const idx = parts.findIndex(
           (p) => p.type === "subagent" && p.batchId === batchId,
         );
@@ -818,8 +903,8 @@ export function useStreamSubscription({
 
     const offSubagentSpawn = window.filework.onSubagentSpawn(
       ({ parentTaskId, batchId, toolCallId, concurrency, children }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
-        updateParts((parts) => {
+        if (!canRouteTask(parentTaskId)) return;
+        updateParts(parentTaskId, (parts) => {
           if (parts.some((p) => p.type === "subagent" && p.batchId === batchId))
             return parts;
           parts.push({
@@ -848,8 +933,8 @@ export function useStreamSubscription({
     // 子 agent 文本增量 → 累积进 child.parts(供钻入面板回放)。
     const offSubagentDelta = window.filework.onSubagentDelta(
       ({ parentTaskId, batchId, childTaskId, delta }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
-        updateSubagentChild(batchId, childTaskId, (c) => {
+        if (!canRouteTask(parentTaskId)) return;
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
           const parts = c.parts ? [...c.parts] : [];
           const last = parts[parts.length - 1];
           if (last && last.type === "text") {
@@ -864,8 +949,8 @@ export function useStreamSubscription({
 
     const offSubagentToolCall = window.filework.onSubagentToolCall(
       ({ parentTaskId, batchId, childTaskId, toolCallId, toolName, args }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
-        updateSubagentChild(batchId, childTaskId, (c) => {
+        if (!canRouteTask(parentTaskId)) return;
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
           const parts = c.parts ? [...c.parts] : [];
           if (
             !parts.some((p) => p.type === "tool" && p.toolCallId === toolCallId)
@@ -895,7 +980,7 @@ export function useStreamSubscription({
 
     const offSubagentToolResult = window.filework.onSubagentToolResult(
       ({ parentTaskId, batchId, childTaskId, toolCallId, result }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
+        if (!canRouteTask(parentTaskId)) return;
         const resultObj =
           result != null && typeof result === "object"
             ? (result as Record<string, unknown>)
@@ -906,7 +991,7 @@ export function useStreamSubscription({
         const nextState = isFailure
           ? ("output-error" as const)
           : ("output-available" as const);
-        updateSubagentChild(batchId, childTaskId, (c) => ({
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => ({
           ...c,
           toolCalls: c.toolCalls.map((t) =>
             t.toolCallId === toolCallId ? { ...t, state: nextState } : t,
@@ -922,8 +1007,8 @@ export function useStreamSubscription({
 
     const offSubagentChildUsage = window.filework.onSubagentChildUsage(
       ({ parentTaskId, batchId, childTaskId, usage }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
-        updateSubagentChild(batchId, childTaskId, (c) => ({
+        if (!canRouteTask(parentTaskId)) return;
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => ({
           ...c,
           usage: {
             inputTokens: usage?.inputTokens ?? c.usage.inputTokens,
@@ -940,8 +1025,8 @@ export function useStreamSubscription({
 
     const offSubagentReport = window.filework.onSubagentReport(
       ({ parentTaskId, batchId, childTaskId, report }) => {
-        if (parentTaskId !== streamTaskIdRef.current) return;
-        updateSubagentChild(batchId, childTaskId, (c) => ({
+        if (!canRouteTask(parentTaskId)) return;
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => ({
           ...c,
           status: report.status,
           summary: report.summary || c.summary,
@@ -986,11 +1071,29 @@ export function useStreamSubscription({
   }, [
     debouncedSave,
     LL,
-    setMessages,
+    updateSessionMessages,
     setLastUsage,
     setLastError,
     activeSessionIdRef,
+    rememberTaskRoute,
+    onTaskSettled,
   ]);
+
+  const detachFromTask = useCallback(() => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+    streamTaskIdRef.current = null;
+    streamAssistantIdRef.current = null;
+    pendingStopRef.current = false;
+    stopRequestedRef.current = false;
+    setIsLoading(false);
+    setActiveSkill(null);
+    setPendingSkillApproval(null);
+    setRetryInfo(null);
+    setIsStalled(false);
+  }, []);
 
   // 刷新/重载后:若该会话仍有在跑的任务,重新挂上 —— 设回 taskId/assistantId、
   // 标记 loading,并确保助手消息壳存在(历史尚未落盘时补一个空壳)。之后仍在
@@ -1001,6 +1104,15 @@ export function useStreamSubscription({
       const active = await window.filework.getActiveTask(sessionId);
       if (!active || active.sessionId !== sessionId) return;
       if (streamTaskIdRef.current) return; // 期间已有新任务,放弃重连
+      taskRoutesRef.current.set(active.taskId, {
+        sessionId,
+        assistantMessageId: active.assistantMessageId,
+      });
+      onTaskStarted?.({
+        taskId: active.taskId,
+        sessionId,
+        assistantMessageId: active.assistantMessageId,
+      });
       // 先把 refs / 消息壳 / loading 全部就位,最后再触发 reattachTask —— 保证主
       // 进程重放的录制事件到达时,streamTaskIdRef 已设(能过滤命中)、助手消息壳
       // 已存在(updateParts 能找到),重放的首个 start 会清空盘上部分内容再重建。
@@ -1025,7 +1137,7 @@ export function useStreamSubscription({
       // 纯刷新(webContents 不变)时重定向是无害 no-op;重放仍消除刷新窗口期缺口。
       void window.filework.reattachTask(active.taskId);
     },
-    [setMessages],
+    [onTaskStarted, setMessages],
   );
 
   return {
@@ -1040,6 +1152,8 @@ export function useStreamSubscription({
     setRetryInfo,
     isStalled,
     setIsStalled,
+    detachFromTask,
+    rememberTaskRoute,
     streamTaskIdRef,
     streamAssistantIdRef,
     pendingStopRef,

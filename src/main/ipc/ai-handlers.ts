@@ -82,6 +82,7 @@ import {
   cleanupTask,
   drainClarificationResolver,
   getActiveTaskForSession,
+  getActiveTasks,
   getActiveTaskTarget,
   getTaskEvents,
   manualStopFlags,
@@ -170,6 +171,10 @@ const handleTaskExecutionInner = async (
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const taskStartMs = Date.now();
+  const streamRoute = {
+    sessionId: payload.sessionId,
+    assistantMessageId: payload.assistantMessageId,
+  };
   // 可重定向的发送目标:每次发送时从登记表实时解析当前 webContents
   // (关窗重开后由 ai:reattachTask 改写),回退到最初的 event.sender。下游
   // (agent-tools / approval-batcher)只用 send/isDestroyed,故仅代理这两个方法。
@@ -210,7 +215,7 @@ const handleTaskExecutionInner = async (
 
   try {
     if (!sender.isDestroyed()) {
-      sender.send("ai:stream-start", { id });
+      sender.send("ai:stream-start", { id, ...streamRoute });
     }
 
     // 一旦知道磁盘根目录就调用 setTaskWorkspace。对 local ref 立即可知;
@@ -501,7 +506,9 @@ const handleTaskExecutionInner = async (
           result: "",
           completedAt: new Date().toISOString(),
         });
-        if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-done", { id, ...streamRoute });
+        }
         return { id, status: "completed" };
       }
 
@@ -815,6 +822,7 @@ const handleTaskExecutionInner = async (
               if (!sender.isDestroyed()) {
                 sender.send("ai:stream-error", {
                   id,
+                  ...streamRoute,
                   error: errorMsg,
                   type: cls.type,
                   recoveryActions: cls.recoveryActions,
@@ -889,7 +897,9 @@ const handleTaskExecutionInner = async (
               totalUsage: ev.totalUsage,
               durationMs: Date.now() - taskStartMs,
             });
-            if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+            if (!sender.isDestroyed()) {
+              sender.send("ai:stream-done", { id, ...streamRoute });
+            }
             return { id, status: "completed" };
           }
         }
@@ -901,7 +911,9 @@ const handleTaskExecutionInner = async (
         result: fullText,
         completedAt: new Date().toISOString(),
       });
-      if (!sender.isDestroyed()) sender.send("ai:stream-done", { id });
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-done", { id, ...streamRoute });
+      }
       return { id, status: "completed" };
     } finally {
       deltaBatcher.drain();
@@ -933,6 +945,7 @@ const handleTaskExecutionInner = async (
     if (!sender.isDestroyed()) {
       sender.send("ai:stream-error", {
         id,
+        ...streamRoute,
         error: errorMsg,
         type: classified.type,
         recoveryActions: classified.recoveryActions,
@@ -1327,6 +1340,8 @@ export const registerAIHandlers = () => {
   ipcMain.handle("ai:getActiveTask", (_event, sessionId?: string) =>
     sessionId ? getActiveTaskForSession(sessionId) : null,
   );
+
+  ipcMain.handle("ai:getActiveTasks", () => getActiveTasks());
 
   // 重连:先把任务已录制的事件按序「重放」给发起调用的新窗口(渲染层用同一套
   // handler 重建消息,零缺口),再把后续流的投递目标重定向到该窗口。重放直接发往

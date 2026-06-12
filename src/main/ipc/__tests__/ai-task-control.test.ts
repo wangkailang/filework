@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   abortControllers,
+  activeTasks,
   activeToolExecutions,
+  getActiveTasks,
   manualStopFlags,
   pendingApprovals,
+  registerActiveTask,
   stopTaskExecution,
   toolCallToTaskMap,
 } from "../ai-task-control";
@@ -11,6 +14,7 @@ import {
 describe("stopTaskExecution", () => {
   afterEach(() => {
     abortControllers.clear();
+    activeTasks.clear();
     activeToolExecutions.clear();
     manualStopFlags.clear();
     pendingApprovals.clear();
@@ -68,5 +72,44 @@ describe("stopTaskExecution", () => {
     expect(stopped).toBe(false);
     expect(manualStopFlags.get(taskId)).toBe(true);
     expect(activeToolExecutions.get(taskId)?.size).toBe(0);
+  });
+});
+
+describe("active task snapshots", () => {
+  afterEach(() => {
+    activeTasks.clear();
+  });
+
+  it("returns every active task without leaking WebContents", () => {
+    const target = {
+      isDestroyed: () => false,
+      send: vi.fn(),
+    } as unknown as Electron.WebContents;
+
+    registerActiveTask({
+      taskId: "task-a",
+      sessionId: "session-a",
+      assistantMessageId: "assistant-a",
+      target,
+    });
+    registerActiveTask({
+      taskId: "task-b",
+      sessionId: "session-b",
+      assistantMessageId: undefined,
+      target,
+    });
+
+    expect(getActiveTasks()).toEqual([
+      {
+        taskId: "task-a",
+        sessionId: "session-a",
+        assistantMessageId: "assistant-a",
+      },
+      {
+        taskId: "task-b",
+        sessionId: "session-b",
+        assistantMessageId: undefined,
+      },
+    ]);
   });
 });

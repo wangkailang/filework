@@ -118,6 +118,7 @@ const zhCN: Translation = {
   session_delete_confirm_desc: "删除后无法恢复,确定删除这个对话吗?",
   session_confirm: "删除",
   session_cancel: "取消",
+  session_unread: "未读",
 
   // Chat panel
   chat_reject: "拒绝",

@@ -2,6 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { truncateTitle } from "./helpers";
+import {
+  clearSessionRunState,
+  clearSessionUnreadState,
+  getSessionRunState,
+  markSessionPending,
+  markSessionRunning,
+  type SessionRunStateMap,
+  settleSessionRunStateByTask,
+} from "./session-run-state";
 import type {
   AttachmentPart,
   ChatMessage,
@@ -40,6 +49,9 @@ export function useChatSession(
   const [input, setInput] = useState("");
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(
     () => localStorage.getItem("filework-selected-llm-config") || null,
+  );
+  const [sessionRunStates, setSessionRunStates] = useState<SessionRunStateMap>(
+    {},
   );
 
   // Validate persisted LLM config ID on mount
@@ -108,6 +120,29 @@ export function useChatSession(
   }, []);
 
   const crud = useSessionCrud(workspacePath);
+  const handleTaskStarted = useCallback(
+    (task: {
+      sessionId?: string;
+      taskId: string;
+      assistantMessageId?: string;
+    }) => {
+      setSessionRunStates((prev) => markSessionRunning(prev, task));
+    },
+    [],
+  );
+  const handleTaskSettled = useCallback(
+    (taskId: string) => {
+      setSessionRunStates((prev) =>
+        settleSessionRunStateByTask(
+          prev,
+          taskId,
+          crud.activeSessionIdRef.current,
+        ),
+      );
+    },
+    [crud.activeSessionIdRef],
+  );
+
   // Mirror the crud setters into a ref so the media-job subscriber
   // (mounted once, no deps) always sees the freshest setters without
   // re-subscribing on every render.
@@ -118,11 +153,69 @@ export function useChatSession(
   };
   const stream = useStreamSubscription({
     setMessages: crud.setMessages,
+    updateSessionMessages: crud.updateSessionMessages,
     setLastUsage: crud.setLastUsage,
     setLastError: crud.setLastError,
     debouncedSave: crud.debouncedSave,
     activeSessionIdRef: crud.activeSessionIdRef,
+    onTaskStarted: handleTaskStarted,
+    onTaskSettled: handleTaskSettled,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    const knownSessionIds = new Set(crud.sessions.map((s) => s.id));
+    if (crud.activeSessionId) knownSessionIds.add(crud.activeSessionId);
+    window.filework
+      .getActiveTasks()
+      .then((tasks) => {
+        if (cancelled) return;
+        const routedTasks = tasks.filter(
+          (task) => task.sessionId && knownSessionIds.has(task.sessionId),
+        );
+        for (const task of routedTasks) {
+          stream.rememberTaskRoute(task);
+        }
+        setSessionRunStates((prev) => {
+          let next: SessionRunStateMap = {};
+          for (const [sessionId, runState] of Object.entries(prev)) {
+            if (
+              (runState.status === "pending" || runState.status === "unread") &&
+              knownSessionIds.has(sessionId)
+            ) {
+              next[sessionId] = runState;
+            }
+          }
+          for (const task of routedTasks) next = markSessionRunning(next, task);
+          return next;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessionRunStates((prev) => {
+            const next: SessionRunStateMap = {};
+            for (const [sessionId, runState] of Object.entries(prev)) {
+              if (
+                (runState.status === "pending" ||
+                  runState.status === "unread") &&
+                knownSessionIds.has(sessionId)
+              ) {
+                next[sessionId] = runState;
+              }
+            }
+            return next;
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [crud.sessions, crud.activeSessionId, stream.rememberTaskRoute]);
+
+  const clearSessionRunStateBySession = useCallback((sessionId: string) => {
+    setSessionRunStates((prev) => clearSessionRunState(prev, sessionId));
+  }, []);
+
   const plan = usePlanFlow({
     setMessages: crud.setMessages,
     setIsLoading: stream.setIsLoading,
@@ -141,13 +234,22 @@ export function useChatSession(
   // ---------------------------------------------------------------------------
   // Submit & approval
   // ---------------------------------------------------------------------------
+  const activeSessionRunState = getSessionRunState(
+    sessionRunStates,
+    crud.activeSessionId,
+  );
+  const isActiveSessionLoading =
+    stream.isLoading ||
+    activeSessionRunState?.status === "pending" ||
+    activeSessionRunState?.status === "running";
+
   const handleSubmit = async (message: {
     text: string;
     attachments?: Array<Omit<AttachmentPart, "type">>;
   }) => {
     const text = message.text.trim();
     const attachments = message.attachments ?? [];
-    if ((!text && attachments.length === 0) || stream.isLoading) return;
+    if ((!text && attachments.length === 0) || isActiveSessionLoading) return;
 
     // Attachments are chat-modality only. Reject before persisting the
     // user message so the JSONL store doesn't carry an orphan record
@@ -214,6 +316,9 @@ export function useChatSession(
     stream.pendingStopRef.current = false;
     stream.stopRequestedRef.current = false;
     stream.streamAssistantIdRef.current = assistantId;
+    setSessionRunStates((prev) =>
+      markSessionPending(prev, { sessionId, assistantMessageId: assistantId }),
+    );
 
     if (isFirstMessage) {
       const title = truncateTitle(text || attachmentParts[0]?.name || "Files");
@@ -321,12 +426,14 @@ export function useChatSession(
           }
         }
         if (config?.modality === "image" || config?.modality === "video") {
+          clearSessionRunStateBySession(sessionId);
           stream.setIsLoading(false);
           stream.streamAssistantIdRef.current = null;
           return;
         }
       } catch (err) {
         replaceWithError(err instanceof Error ? err.message : String(err));
+        clearSessionRunStateBySession(sessionId);
         stream.setIsLoading(false);
         stream.streamAssistantIdRef.current = null;
         return;
@@ -365,6 +472,7 @@ export function useChatSession(
         stream.setRetryInfo(null);
         stream.streamTaskIdRef.current = null;
         stream.streamAssistantIdRef.current = null;
+        clearSessionRunStateBySession(sessionId);
         stream.connectionTimeoutRef.current = null;
       }
     }, 30_000);
@@ -408,6 +516,7 @@ export function useChatSession(
         stream.setRetryInfo(null);
         stream.streamTaskIdRef.current = null;
         stream.streamAssistantIdRef.current = null;
+        clearSessionRunStateBySession(sessionId);
       });
   };
 
@@ -522,8 +631,13 @@ export function useChatSession(
     handleSubmit({ text: opt });
   };
 
+  const activeSessionTaskId =
+    activeSessionRunState?.status === "running"
+      ? activeSessionRunState.taskId
+      : null;
+
   const handleStopGeneration = useCallback(() => {
-    const taskId = stream.streamTaskIdRef.current;
+    const taskId = stream.streamTaskIdRef.current ?? activeSessionTaskId;
     console.log(
       "[Stop Generation] Current taskId:",
       taskId,
@@ -560,6 +674,7 @@ export function useChatSession(
       });
   }, [
     stream.isLoading,
+    activeSessionTaskId,
     stream.pendingStopRef,
     stream.stopRequestedRef,
     stream.streamAssistantIdRef,
@@ -579,18 +694,39 @@ export function useChatSession(
 
   // 稳定下列 handler 的引用,使 ChatSessionProvider 的低频切片在流式期间
   // 能 bail-out(顶栏 / 左栏会话列表不随 messages 逐 token 重渲)。
-  const handleNewChat = useCallback(
-    () => crud.handleNewChat(stream.isLoading),
-    [crud.handleNewChat, stream.isLoading],
-  );
+  const handleNewChat = useCallback(() => {
+    stream.detachFromTask();
+    crud.handleNewChat(false);
+  }, [crud.handleNewChat, stream.detachFromTask]);
   const handleSelectSession = useCallback(
-    (id: string) => crud.handleSelectSession(id, stream.isLoading),
-    [crud.handleSelectSession, stream.isLoading],
+    (id: string) => {
+      stream.detachFromTask();
+      setSessionRunStates((prev) => clearSessionUnreadState(prev, id));
+      crud.handleSelectSession(id, false);
+    },
+    [crud.handleSelectSession, stream.detachFromTask],
+  );
+  const handleDeleteSession = useCallback(
+    async (id: string) => {
+      const runState = getSessionRunState(sessionRunStates, id);
+      if (runState?.status === "running") {
+        await window.filework.stopGeneration(runState.taskId);
+      }
+      setSessionRunStates((prev) => clearSessionRunState(prev, id));
+      if (id === crud.activeSessionId) stream.detachFromTask();
+      await crud.handleDeleteSession(id);
+    },
+    [
+      crud.activeSessionId,
+      crud.handleDeleteSession,
+      sessionRunStates,
+      stream.detachFromTask,
+    ],
   );
   const handleForkSession = useCallback(
     (fromMessageId: string) =>
-      crud.handleForkSession(fromMessageId, stream.isLoading),
-    [crud.handleForkSession, stream.isLoading],
+      crud.handleForkSession(fromMessageId, isActiveSessionLoading),
+    [crud.handleForkSession, isActiveSessionLoading],
   );
   const setSelectedLlmConfigIdStable = useCallback((id: string | null) => {
     setSelectedLlmConfigId(id);
@@ -604,10 +740,12 @@ export function useChatSession(
   return {
     sessions: crud.sessions,
     activeSessionId: crud.activeSessionId,
+    sessionRunStates,
+    activeSessionRunState,
     messages: crud.messages,
     input,
     setInput,
-    isLoading: stream.isLoading,
+    isLoading: isActiveSessionLoading,
     isPlanGenerating: plan.isPlanGenerating,
     activePlanId: plan.activePlanId,
     activeSkill: stream.activeSkill,
@@ -630,7 +768,7 @@ export function useChatSession(
     handleStopGeneration,
     handleNewChat,
     handleSelectSession,
-    handleDeleteSession: crud.handleDeleteSession,
+    handleDeleteSession,
     handleRenameSession: crud.handleRenameSession,
     handleForkSession,
   };

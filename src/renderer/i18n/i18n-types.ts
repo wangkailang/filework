@@ -413,6 +413,10 @@ type RootTranslation = {
 	 */
 	session_cancel: string
 	/**
+	 * U​n​r​e​a​d
+	 */
+	session_unread: string
+	/**
 	 * R​e​j​e​c​t
 	 */
 	chat_reject: string
@@ -769,12 +773,12 @@ type RootTranslation = {
 	preview_diff_details_unavailable: string
 	/**
 	 * {​0​}​ ​r​e​m​o​v​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
-	 * @param {unknown} 0
+	 * @param {number} 0
 	 */
 	preview_removed_lines_unavailable: RequiredParams<'0'>
 	/**
 	 * {​0​}​ ​a​d​d​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
-	 * @param {unknown} 0
+	 * @param {number} 0
 	 */
 	preview_added_lines_unavailable: RequiredParams<'0'>
 	/**
@@ -1880,6 +1884,10 @@ export type TranslationFunctions = {
 	 */
 	session_cancel: () => LocalizedString
 	/**
+	 * Unread
+	 */
+	session_unread: () => LocalizedString
+	/**
 	 * Reject
 	 */
 	chat_reject: () => LocalizedString
@@ -2226,11 +2234,11 @@ export type TranslationFunctions = {
 	/**
 	 * {0} removed lines unavailable
 	 */
-	preview_removed_lines_unavailable: (arg0: unknown) => LocalizedString
+	preview_removed_lines_unavailable: (arg0: number) => LocalizedString
 	/**
 	 * {0} added lines unavailable
 	 */
-	preview_added_lines_unavailable: (arg0: unknown) => LocalizedString
+	preview_added_lines_unavailable: (arg0: number) => LocalizedString
 	/**
 	 * Written content snapshot
 	 */
