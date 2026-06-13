@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "**",
+      "!.claude",
       "!src/renderer/i18n/i18n-types.ts",
       "!src/renderer/i18n/i18n-util.ts",
       "!src/renderer/i18n/i18n-util.sync.ts",

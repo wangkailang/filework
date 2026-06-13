@@ -413,6 +413,18 @@ type RootTranslation = {
 	 */
 	session_cancel: string
 	/**
+	 * U​n​r​e​a​d
+	 */
+	session_unread: string
+	/**
+	 * C​u​r​r​e​n​t​ ​b​r​a​n​c​h
+	 */
+	session_branch_current: string
+	/**
+	 * A​ ​c​h​a​t​'​s​ ​b​r​a​n​c​h​ ​r​e​f​l​e​c​t​s​ ​t​h​e​ ​a​c​t​i​v​e​ ​b​r​a​n​c​h​ ​f​r​o​m​ ​i​t​s​ ​l​a​s​t​ ​u​s​e​.​ ​S​e​n​d​i​n​g​ ​a​ ​m​e​s​s​a​g​e​ ​u​p​d​a​t​e​s​ ​t​h​e​ ​c​h​a​t​ ​b​r​a​n​c​h​.
+	 */
+	session_branch_hint: string
+	/**
 	 * R​e​j​e​c​t
 	 */
 	chat_reject: string
@@ -769,12 +781,12 @@ type RootTranslation = {
 	preview_diff_details_unavailable: string
 	/**
 	 * {​0​}​ ​r​e​m​o​v​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
-	 * @param {unknown} 0
+	 * @param {number} 0
 	 */
 	preview_removed_lines_unavailable: RequiredParams<'0'>
 	/**
 	 * {​0​}​ ​a​d​d​e​d​ ​l​i​n​e​s​ ​u​n​a​v​a​i​l​a​b​l​e
-	 * @param {unknown} 0
+	 * @param {number} 0
 	 */
 	preview_added_lines_unavailable: RequiredParams<'0'>
 	/**
@@ -1880,6 +1892,18 @@ export type TranslationFunctions = {
 	 */
 	session_cancel: () => LocalizedString
 	/**
+	 * Unread
+	 */
+	session_unread: () => LocalizedString
+	/**
+	 * Current branch
+	 */
+	session_branch_current: () => LocalizedString
+	/**
+	 * A chat's branch reflects the active branch from its last use. Sending a message updates the chat branch.
+	 */
+	session_branch_hint: () => LocalizedString
+	/**
 	 * Reject
 	 */
 	chat_reject: () => LocalizedString
@@ -2226,11 +2250,11 @@ export type TranslationFunctions = {
 	/**
 	 * {0} removed lines unavailable
 	 */
-	preview_removed_lines_unavailable: (arg0: unknown) => LocalizedString
+	preview_removed_lines_unavailable: (arg0: number) => LocalizedString
 	/**
 	 * {0} added lines unavailable
 	 */
-	preview_added_lines_unavailable: (arg0: unknown) => LocalizedString
+	preview_added_lines_unavailable: (arg0: number) => LocalizedString
 	/**
 	 * Written content snapshot
 	 */

@@ -15,6 +15,8 @@ type ChatSessionLiteValue = Pick<
   ChatSessionValue,
   | "sessions"
   | "activeSessionId"
+  | "sessionRunStates"
+  | "activeSessionRunState"
   | "selectedLlmConfigId"
   | "isLoading"
   | "setSelectedLlmConfigId"
@@ -41,6 +43,8 @@ export const ChatSessionProvider = ({
     () => ({
       sessions: value.sessions,
       activeSessionId: value.activeSessionId,
+      sessionRunStates: value.sessionRunStates,
+      activeSessionRunState: value.activeSessionRunState,
       selectedLlmConfigId: value.selectedLlmConfigId,
       isLoading: value.isLoading,
       setSelectedLlmConfigId: value.setSelectedLlmConfigId,
@@ -52,6 +56,8 @@ export const ChatSessionProvider = ({
     [
       value.sessions,
       value.activeSessionId,
+      value.sessionRunStates,
+      value.activeSessionRunState,
       value.selectedLlmConfigId,
       value.isLoading,
       value.setSelectedLlmConfigId,

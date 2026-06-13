@@ -1,16 +1,27 @@
 // 常驻会话列表(由原 SessionList 浮层提升到左栏)。从低频切片
 // useChatSessionLite 取数据,流式期间不随 messages 重渲。
 // 列表按更新时间分段(今天/昨天/近 7 天/近 30 天/更早),每项显示
-// 到分钟的时间戳,并支持双击或点铅笔图标就地重命名。
-import { Check, Pencil, Trash2, X } from "lucide-react";
+// 相对时间,并支持双击或点铅笔图标就地重命名。
+import {
+  AlertCircle,
+  Check,
+  GitBranch,
+  Loader2,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
 import type { ChatSession } from "../chat/types";
 
 type BucketKey = "today" | "yesterday" | "week" | "month" | "earlier";
 
 const DAY_MS = 86_400_000;
+const PREVIEW_WIDTH = 320;
+const PREVIEW_MARGIN = 12;
 
 // 按 updatedAt 落到对应分段(sessions 已由持久化层按时间倒序给出)。
 function bucketOf(iso: string, startOfToday: number): BucketKey {
@@ -39,13 +50,53 @@ function formatStamp(iso: string, bucket: BucketKey, locale: string): string {
   return `${date} ${time}`;
 }
 
-export const ChatHistoryPanel = () => {
+function formatAge(iso: string, nowMs: number, locale: string): string {
+  const elapsed = Math.max(0, nowMs - new Date(iso).getTime());
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const unit =
+    locale.startsWith("zh") || locale.startsWith("ja")
+      ? {
+          now: locale.startsWith("ja") ? "たった今" : "刚刚",
+          minute: locale.startsWith("ja") ? "分" : "分钟",
+          hour: locale.startsWith("ja") ? "時間" : "小时",
+          day: locale.startsWith("ja") ? "日" : "天",
+        }
+      : {
+          now: "now",
+          minute: "min",
+          hour: "h",
+          day: "d",
+        };
+
+  if (elapsed < minute) return unit.now;
+  if (elapsed < hour) return `${Math.floor(elapsed / minute)} ${unit.minute}`;
+  if (elapsed < day) return `${Math.floor(elapsed / hour)} ${unit.hour}`;
+  return `${Math.floor(elapsed / day)} ${unit.day}`;
+}
+
+type SessionPreview = {
+  session: ChatSession;
+  absoluteStamp: string;
+  left: number;
+  top: number;
+};
+
+export const ChatHistoryPanel = ({
+  currentBranch = null,
+  isGitRepo = false,
+}: {
+  currentBranch?: string | null;
+  isGitRepo?: boolean;
+}) => {
   const { LL, locale } = useI18nContext();
   const chat = useChatSessionLite();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   // 待二次确认删除的会话(null 表示无弹框)。
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
+  const [preview, setPreview] = useState<SessionPreview | null>(null);
 
   const groups = useMemo(() => {
     const now = new Date();
@@ -62,7 +113,13 @@ export const ChatHistoryPanel = () => {
       "earlier",
     ];
     const map = new Map<BucketKey, ChatSession[]>();
-    for (const s of chat.sessions) {
+    const sorted = [...chat.sessions].sort((a, b) => {
+      const byUpdatedAt =
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      if (byUpdatedAt !== 0) return byUpdatedAt;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    for (const s of sorted) {
       const k = bucketOf(s.updatedAt, startOfToday);
       const arr = map.get(k);
       if (arr) arr.push(s);
@@ -93,6 +150,32 @@ export const ChatHistoryPanel = () => {
   };
 
   const cancelRename = () => setEditingId(null);
+  const hidePreview = () => setPreview(null);
+
+  const showPreview = (
+    session: ChatSession,
+    absoluteStamp: string,
+    element: HTMLElement,
+  ) => {
+    const rect = element.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    setPreview({
+      session,
+      absoluteStamp,
+      left: Math.min(
+        rect.right + 8,
+        Math.max(
+          PREVIEW_MARGIN,
+          viewportWidth - PREVIEW_WIDTH - PREVIEW_MARGIN,
+        ),
+      ),
+      top: Math.min(
+        Math.max(rect.top + rect.height / 2, PREVIEW_MARGIN),
+        viewportHeight - PREVIEW_MARGIN,
+      ),
+    });
+  };
 
   // 删除确认弹框开启时,Esc 关闭。
   useEffect(() => {
@@ -106,7 +189,7 @@ export const ChatHistoryPanel = () => {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mt-2 flex-1 overflow-y-auto">
+      <div className="mt-2 flex-1 overflow-y-auto" onScroll={hidePreview}>
         {chat.sessions.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             {LL.session_empty()}
@@ -119,14 +202,31 @@ export const ChatHistoryPanel = () => {
               </div>
               {group.items.map((s) => {
                 const isEditing = editingId === s.id;
+                const runState = chat.sessionRunStates[s.id];
+                const absoluteStamp = formatStamp(
+                  s.updatedAt,
+                  group.key,
+                  locale,
+                );
+                const relativeAge = formatAge(s.updatedAt, Date.now(), locale);
+                const runStateLabel =
+                  runState?.status === "pending"
+                    ? LL.task_pending()
+                    : runState?.status === "running"
+                      ? LL.task_running()
+                      : runState?.status === "unread"
+                        ? LL.session_unread()
+                        : null;
                 return (
                   <div
                     key={s.id}
-                    className={`group flex cursor-pointer items-center gap-2 px-3 py-2.5 transition-colors hover:bg-accent ${
-                      s.id === chat.activeSessionId
-                        ? "bg-accent shadow-[inset_2px_0_0_var(--color-primary)]"
-                        : ""
-                    }`}
+                    data-session-row={s.id}
+                    data-session-age={relativeAge}
+                    className={cn(
+                      "group relative flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-accent",
+                      s.id === chat.activeSessionId &&
+                        "bg-accent shadow-[inset_2px_0_0_var(--color-primary)]",
+                    )}
                   >
                     {isEditing ? (
                       <div className="min-w-0 flex-1">
@@ -144,21 +244,54 @@ export const ChatHistoryPanel = () => {
                           className="w-full rounded border border-input bg-background px-1.5 py-0.5 text-sm text-foreground outline-none focus:border-primary"
                         />
                         <div className="mt-0.5 font-mono text-xs tabular-nums text-muted-foreground">
-                          {formatStamp(s.updatedAt, group.key, locale)}
+                          {absoluteStamp}
                         </div>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        className="min-w-0 flex-1 text-left"
+                        className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-left"
                         onClick={() => chat.handleSelectSession(s.id)}
                         onDoubleClick={() => startRename(s)}
+                        onPointerEnter={(event) =>
+                          showPreview(s, absoluteStamp, event.currentTarget)
+                        }
+                        onPointerLeave={hidePreview}
+                        onFocus={(event) =>
+                          showPreview(s, absoluteStamp, event.currentTarget)
+                        }
+                        onBlur={hidePreview}
                       >
-                        <div className="truncate text-sm text-foreground">
+                        <div className="truncate text-sm font-medium text-foreground">
                           {s.title}
                         </div>
-                        <div className="font-mono text-xs tabular-nums text-muted-foreground">
-                          {formatStamp(s.updatedAt, group.key, locale)}
+                        <div
+                          data-session-row-meta={s.id}
+                          className="ml-auto inline-flex h-5 shrink-0 items-center justify-end text-xs tabular-nums text-muted-foreground transition-opacity group-hover:opacity-0"
+                        >
+                          {runState && runStateLabel ? (
+                            <span
+                              data-session-run-status={runState.status}
+                              className="inline-flex shrink-0 items-center justify-center text-primary"
+                              role="img"
+                              aria-label={runStateLabel}
+                              title={runStateLabel}
+                            >
+                              {runState.status === "unread" ? (
+                                <span
+                                  className="size-2.5 rounded-full bg-primary ring-2 ring-primary/20"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Loader2
+                                  className="size-4 animate-spin"
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </span>
+                          ) : (
+                            relativeAge
+                          )}
                         </div>
                       </button>
                     )}
@@ -189,7 +322,10 @@ export const ChatHistoryPanel = () => {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-0.5 opacity-0 transition-all group-hover:opacity-100">
+                      <div
+                        data-session-row-actions={s.id}
+                        className="absolute top-1/2 right-3 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                      >
                         <button
                           type="button"
                           onClick={(e) => {
@@ -214,6 +350,15 @@ export const ChatHistoryPanel = () => {
                         </button>
                       </div>
                     )}
+                    {!isEditing && isGitRepo && currentBranch && (
+                      <span
+                        className="sr-only"
+                        data-session-branch={currentBranch}
+                      >
+                        {LL.session_branch_current()}: {currentBranch}.{" "}
+                        {LL.session_branch_hint()}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -221,6 +366,41 @@ export const ChatHistoryPanel = () => {
           ))
         )}
       </div>
+
+      {preview && (
+        <div
+          className="pointer-events-none fixed z-50 w-80 -translate-y-1/2 rounded-lg border border-border bg-popover px-4 py-3 text-popover-foreground shadow-xl"
+          style={{ left: preview.left, top: preview.top }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 truncate text-sm font-semibold">
+              {preview.session.title}
+            </div>
+            <div className="shrink-0 text-xs text-muted-foreground">
+              {preview.absoluteStamp}
+            </div>
+          </div>
+          {isGitRepo && currentBranch && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2 text-sm text-foreground">
+                <GitBranch
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">{LL.session_branch_current()}</span>
+                <span>{currentBranch}</span>
+              </div>
+              <div className="flex gap-2 text-sm font-medium text-status-await">
+                <AlertCircle
+                  className="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{LL.session_branch_hint()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {pendingDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

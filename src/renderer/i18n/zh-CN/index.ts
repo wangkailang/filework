@@ -118,6 +118,10 @@ const zhCN: Translation = {
   session_delete_confirm_desc: "删除后无法恢复,确定删除这个对话吗?",
   session_confirm: "删除",
   session_cancel: "取消",
+  session_unread: "未读",
+  session_branch_current: "当前分支",
+  session_branch_hint:
+    "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
 
   // Chat panel
   chat_reject: "拒绝",

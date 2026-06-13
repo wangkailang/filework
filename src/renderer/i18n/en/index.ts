@@ -129,6 +129,10 @@ const en: BaseTranslation = {
     "This chat will be permanently deleted. Continue?",
   session_confirm: "Delete",
   session_cancel: "Cancel",
+  session_unread: "Unread",
+  session_branch_current: "Current branch",
+  session_branch_hint:
+    "A chat's branch reflects the active branch from its last use. Sending a message updates the chat branch.",
 
   // Chat panel
   chat_reject: "Reject",

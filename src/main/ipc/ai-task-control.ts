@@ -112,6 +112,20 @@ export const getActiveTaskForSession = (
   return null;
 };
 
+export interface ActiveTaskSnapshot {
+  taskId: string;
+  sessionId?: string;
+  assistantMessageId?: string;
+}
+
+/** 返回全部活跃任务的可序列化快照,供会话列表恢复/展示运行态。 */
+export const getActiveTasks = (): ActiveTaskSnapshot[] =>
+  Array.from(activeTasks.values()).map((t) => ({
+    taskId: t.taskId,
+    sessionId: t.sessionId,
+    assistantMessageId: t.assistantMessageId,
+  }));
+
 /** 按任务 ID 存储手动停止标志，用于强制中止流式生成 */
 export const manualStopFlags = new Map<string, boolean>();
 
