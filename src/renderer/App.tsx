@@ -474,8 +474,6 @@ export const App = () => {
         </>
       ) : (
         <div className="flex h-screen w-screen flex-col overflow-hidden">
-          {/* 极简透明拖拽条:macOS 无边框窗口靠它拖动 + 让开红绿灯。非工具栏。 */}
-          <div className="titlebar-drag h-7 shrink-0" />
           <ChatSessionProvider
             key={workspace.localPath}
             workspacePath={workspace.localPath}
@@ -534,6 +532,8 @@ export const App = () => {
                       onClose={() => setDockOpen(false)}
                       onWidthChange={setDockWidth}
                       onCommitWidth={commitDockWidth}
+                      railWidth={railWidth}
+                      railCollapsed={railCollapsed}
                       filePath={dockFilePath}
                       url={browserUrl}
                       subagentSel={dockSubagent}

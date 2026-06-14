@@ -31,6 +31,7 @@ import {
   clampRailWidth,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
+  resolveRailMetaLayout,
 } from "./layout-geometry";
 
 export type RailTab = "chats" | "files";
@@ -164,6 +165,7 @@ export const LeftRail = ({
     (diffSummary.totalAdded > 0 || diffSummary.totalRemoved > 0);
   // 仅 git 项目展示 diff 入口(非 git 时分支 chip 本就因无分支名隐藏,这里再兜一层)。
   const diffButtonVisible = isGitRepo;
+  const railMetaLayout = resolveRailMetaLayout(width);
 
   const segBtn = (tab: RailTab, label: string) => (
     <button
@@ -212,18 +214,20 @@ export const LeftRail = ({
             </button>
           </div>
           {workspaceRef && branchForChip && (
-            <div className="flex items-center gap-1.5 pl-6">
+            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden pl-6">
               <BranchSwitcher
                 workspaceRef={workspaceRef}
                 currentBranch={branchForChip}
                 onSwitched={(b) => onBranchSwitched?.(b)}
+                className="min-w-0 flex-1"
+                buttonClassName="w-full justify-start"
               />
               {diffButtonVisible && onToggleDiff && (
                 <button
                   type="button"
                   onClick={onToggleDiff}
                   title={LL.branch_diff_open()}
-                  className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent hover:text-foreground ${
+                  className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-accent hover:text-foreground ${
                     diffOpen
                       ? "border-primary/50 bg-accent/50 text-foreground"
                       : "border-border/60 text-muted-foreground"
@@ -242,9 +246,11 @@ export const LeftRail = ({
                   )}
                 </button>
               )}
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
-                {kindBadge}
-              </span>
+              {railMetaLayout.showKindBadge && (
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+                  {kindBadge}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -365,7 +371,7 @@ export const RailExpandButton = ({ onClick }: { onClick: () => void }) => {
       type="button"
       onClick={onClick}
       title={LL.sidebar_expand()}
-      className="titlebar-no-drag absolute left-2 top-1 z-20 flex h-[34px] items-center rounded-md px-1.5 transition-all hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
+      className="titlebar-no-drag absolute left-2 top-1 z-[60] flex h-[34px] items-center rounded-md px-1.5 transition-all hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
     >
       <PanelLeftOpen className="size-4 text-muted-foreground" />
     </button>

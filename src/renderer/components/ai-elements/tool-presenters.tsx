@@ -966,6 +966,108 @@ function searchQuery(args: unknown): string {
   return typeof a?.query === "string" ? a.query : "";
 }
 
+interface WebSearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+function webSearchResults(result: unknown): WebSearchResultItem[] {
+  const r = asRecord(result);
+  const results = Array.isArray(r?.results) ? r.results : [];
+  return results
+    .map((item): WebSearchResultItem | null => {
+      const it = asRecord(item);
+      const title = typeof it?.title === "string" ? it.title.trim() : "";
+      const url = typeof it?.url === "string" ? it.url.trim() : "";
+      const snippet =
+        typeof it?.snippet === "string"
+          ? it.snippet.trim()
+          : typeof it?.content === "string"
+            ? it.content.trim()
+            : "";
+      if (!title && !url && !snippet) return null;
+      return { title, url, snippet };
+    })
+    .filter((item): item is WebSearchResultItem => item !== null);
+}
+
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function compactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname}${parsed.search}`.replace(/\/$/, "");
+    const shortPath = path.length > 48 ? `${path.slice(0, 48)}…` : path;
+    return `${parsed.hostname}${shortPath}`;
+  } catch {
+    return url;
+  }
+}
+
+function WebSearchResultList({ items }: { items: WebSearchResultItem[] }) {
+  const link = useLinkRouter();
+  return (
+    <ol className="max-h-72 overflow-auto px-2.5 py-1.5 text-xs">
+      {items.map((item, i) => {
+        const href = isHttpUrl(item.url) ? item.url : "";
+        const title = item.title || item.url || item.snippet;
+        const urlText = item.url ? compactUrl(item.url) : "";
+        return (
+          <li
+            key={item.url || `${title}-${i}`}
+            className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-1.5 border-border/70 border-t py-1.5 first:border-t-0"
+          >
+            <span className="pt-0.5 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              {href ? (
+                <a
+                  href={href}
+                  onClick={link.onClick}
+                  onAuxClick={link.onAuxClick}
+                  rel="noopener noreferrer"
+                  className="block truncate font-medium text-foreground/90 hover:text-primary hover:underline"
+                >
+                  {title}
+                </a>
+              ) : (
+                <div className="truncate font-medium text-foreground/90">
+                  {title}
+                </div>
+              )}
+              {href && (
+                <a
+                  href={href}
+                  onClick={link.onClick}
+                  onAuxClick={link.onAuxClick}
+                  rel="noopener noreferrer"
+                  className="mt-0.5 block truncate text-muted-foreground hover:text-primary hover:underline"
+                >
+                  {urlText}
+                </a>
+              )}
+              {item.snippet && (
+                <div className="mt-0.5 line-clamp-2 text-foreground/65 leading-snug">
+                  {item.snippet}
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 const webSearchPresenter: ToolPresenter = {
   // 单次调用:显示查询词(使该行不只是"完成 webSearch")。
   summary: (args) => {
@@ -981,26 +1083,9 @@ const webSearchPresenter: ToolPresenter = {
   },
   // 展开输出:排序后的结果(标题 + url)。
   output: (result) => {
-    const r = asRecord(result);
-    const results = Array.isArray(r?.results) ? r.results : [];
+    const results = webSearchResults(result);
     if (!results.length) return null;
-    return (
-      <div className="px-3 py-2 text-xs space-y-1.5 max-h-72 overflow-auto">
-        {results.map((item, i) => {
-          const it = asRecord(item);
-          const title = typeof it?.title === "string" ? it.title : "";
-          const url = typeof it?.url === "string" ? it.url : "";
-          return (
-            <div key={url || i} className="min-w-0">
-              <div className="truncate text-foreground/90">{title || url}</div>
-              {url && (
-                <div className="truncate text-muted-foreground">{url}</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
+    return <WebSearchResultList items={results} />;
   },
 };
 

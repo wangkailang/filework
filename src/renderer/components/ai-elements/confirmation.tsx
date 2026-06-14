@@ -6,8 +6,12 @@ import type {
 } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import {
+  getBatchApprovalTitle,
+  getBatchToolLabel,
+  summarizeBatchEntry,
+} from "./confirmation-copy";
 import { PreviewEntryRow } from "./preview";
-import { getToolLabels } from "./tool-labels";
 
 // ---------------------------------------------------------------------------
 // 类型 —— 从共享的核心类型中重新导出,使 JSONL 会话存储与渲染进程
@@ -33,7 +37,7 @@ export const Confirmation = ({
   <div
     data-state={state}
     className={cn(
-      "rounded-lg border text-sm",
+      "rounded-md border text-xs",
       state === "approval-requested" &&
         "border-status-await/40 bg-status-await/5",
       state === "approval-accepted" &&
@@ -58,10 +62,10 @@ export const ConfirmationRequest = ({
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex items-start gap-2 px-3 py-2.5", className)}
+    className={cn("flex items-start gap-1.5 px-2.5 py-2", className)}
     {...props}
   >
-    <ShieldAlert className="size-4 text-status-await mt-0.5 shrink-0" />
+    <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-status-await" />
     <div className="text-foreground/90 text-xs leading-relaxed">{children}</div>
   </div>
 );
@@ -76,7 +80,7 @@ export const ConfirmationAccepted = ({
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex items-center gap-2 px-3 py-2", className)}
+    className={cn("flex items-center gap-1.5 px-2.5 py-1.5", className)}
     {...props}
   >
     <CheckCircle2 className="size-3.5 text-status-success shrink-0" />
@@ -94,7 +98,7 @@ export const ConfirmationRejected = ({
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex items-center gap-2 px-3 py-2", className)}
+    className={cn("flex items-center gap-1.5 px-2.5 py-1.5", className)}
     {...props}
   >
     <XCircle className="size-3.5 text-status-error shrink-0" />
@@ -112,7 +116,7 @@ export const ConfirmationActions = ({
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex items-center gap-2 px-3 pb-2.5", className)}
+    className={cn("flex items-center gap-1.5 px-2.5 pb-2", className)}
     {...props}
   >
     {children}
@@ -188,51 +192,65 @@ export const ConfirmationBatch = ({
   const count = entries.length;
   const visible = entries.slice(0, previewLimit);
   const hidden = Math.max(0, count - previewLimit);
-  // 用本地化工具名(如「删除文件」)而非原始 toolName(deleteFile)
-  const label = getToolLabels(LL)[toolName] || toolName;
+  const label = getBatchToolLabel(LL, toolName);
   const single = count === 1;
+  const title = getBatchApprovalTitle({ LL, toolName, entries });
 
   return (
     <Confirmation state={state} className={className}>
-      <ConfirmationRequest>
-        <div className="flex flex-col gap-1">
-          <div className="font-medium">
-            {single ? `批准${label}操作？` : `批准 ${count} 个${label}操作？`}
+      {state === "approval-requested" && (
+        <ConfirmationRequest>
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="font-medium">{title}</div>
+            <div className="space-y-0.5 text-foreground/70">
+              {visible.map((e) => {
+                const summary = summarizeBatchEntry(toolName, e, LL);
+                if (summary) {
+                  return (
+                    <div key={e.toolCallId} className="truncate">
+                      {summary}
+                    </div>
+                  );
+                }
+                return <PreviewEntryRow key={e.toolCallId} entry={e} LL={LL} />;
+              })}
+              {hidden > 0 && (
+                <div className="text-foreground/50">
+                  {LL.approval_batch_more(hidden)}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="ml-1 mt-0.5 space-y-1 text-foreground/70">
-            {visible.map((e) => (
-              <PreviewEntryRow key={e.toolCallId} entry={e} LL={LL} />
-            ))}
-            {hidden > 0 && (
-              <div className="text-foreground/50">…还有 {hidden} 个</div>
-            )}
-          </div>
-        </div>
-      </ConfirmationRequest>
+        </ConfirmationRequest>
+      )}
       {state === "approval-requested" && (
         <ConfirmationActions>
           <ConfirmationAction
             variant="default"
             onClick={() => onApprove(false)}
           >
-            {single ? "批准" : `批准全部 ${count} 个`}
+            {single ? LL.chat_approve() : LL.approval_batch_approve_all(count)}
           </ConfirmationAction>
           <ConfirmationAction variant="outline" onClick={() => onApprove(true)}>
-            始终允许{label}
+            {LL.approval_batch_always_allow(label)}
           </ConfirmationAction>
           <ConfirmationAction variant="destructive" onClick={onDeny}>
-            {single ? "拒绝" : "拒绝全部"}
+            {single ? LL.chat_reject() : LL.approval_batch_reject_all()}
           </ConfirmationAction>
         </ConfirmationActions>
       )}
       {state === "approval-accepted" && (
         <ConfirmationAccepted>
-          {single ? "已批准" : `已批准 ${count} 个操作`}
+          {single
+            ? `${LL.chat_approved()} · ${label}`
+            : LL.approval_batch_accepted_multiple(count)}
         </ConfirmationAccepted>
       )}
       {state === "approval-rejected" && (
         <ConfirmationRejected>
-          {single ? "已拒绝" : `已拒绝 ${count} 个操作`}
+          {single
+            ? `${LL.chat_rejected()} · ${label}`
+            : LL.approval_batch_rejected_multiple(count)}
         </ConfirmationRejected>
       )}
     </Confirmation>

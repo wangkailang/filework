@@ -200,6 +200,7 @@ const ja: Translation = {
   toolName_webFetchRendered: "レンダリング取得",
   toolName_webScrape: "スクレイピング",
   toolName_youtubeTranscript: "動画字幕",
+  toolName_spawnSubagent: "サブタスク起動",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",
@@ -214,6 +215,17 @@ const ja: Translation = {
   tool_stderr: "エラー出力",
   tool_show_full: "全文を表示",
   tool_hide_full: "折りたたむ",
+
+  // Tool approval
+  approval_batch_title_single: "{0}を承認しますか?",
+  approval_batch_title_multiple: "{1} {0} 件を承認しますか?",
+  approval_batch_approve_all: "すべて承認 ({0})",
+  approval_batch_always_allow: "{0}を常に許可",
+  approval_batch_reject_all: "すべて拒否",
+  approval_batch_accepted_multiple: "{0} 件の操作を承認済み",
+  approval_batch_rejected_multiple: "{0} 件の操作を拒否済み",
+  approval_batch_more: "… 残り {0} 件",
+  approval_spawnSubagent_summary: "{0} 件のサブタスク · 並列 {1}",
 
   // Approval-card preview (codex-style change preview)
   preview_card_title_write: "ファイルに書き込み",

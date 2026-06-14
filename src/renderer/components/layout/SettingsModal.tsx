@@ -18,6 +18,11 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
 import { locales } from "../../i18n/i18n-util";
 import { loadLocale } from "../../i18n/i18n-util.sync";
+import {
+  getStoredThemePreference,
+  setStoredThemePreference,
+  type ThemePreference,
+} from "../../lib/theme";
 import { CommandSecurityPanel } from "../settings/CommandSecurityPanel";
 import { CredentialsPanel } from "../settings/CredentialsPanel";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
@@ -27,7 +32,6 @@ import { TaskTracePanel } from "../settings/TaskTracePanel";
 import { ToolWhitelistPanel } from "../settings/ToolWhitelistPanel";
 import { UsagePanel } from "../settings/UsagePanel";
 
-type Theme = "dark" | "light" | "system";
 type Tab =
   | "general"
   | "llm"
@@ -45,7 +49,7 @@ const LOCALE_LABELS: Record<Locales, string> = {
   "zh-CN": "简体中文",
 };
 
-const THEME_ICONS: Record<Theme, typeof Moon> = {
+const THEME_ICONS: Record<ThemePreference, typeof Moon> = {
   dark: Moon,
   light: Sun,
   system: Monitor,
@@ -57,41 +61,22 @@ interface SettingsModalProps {
   onLocaleChange: (locale: Locales) => void;
 }
 
-const applyTheme = (t: Theme) => {
-  const root = document.documentElement;
-  if (t === "system") {
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches;
-    root.classList.toggle("dark", prefersDark);
-    root.classList.toggle("light", !prefersDark);
-  } else {
-    root.classList.toggle("dark", t === "dark");
-    root.classList.toggle("light", t === "light");
-  }
-};
-
 export const SettingsModal = ({
   open,
   onClose,
   onLocaleChange,
 }: SettingsModalProps) => {
   const { LL, locale } = useI18nContext();
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<ThemePreference>("dark");
   const [activeTab, setActiveTab] = useState<Tab>("general");
 
   useEffect(() => {
-    const saved = localStorage.getItem("filework-theme") as Theme | null;
-    if (saved) {
-      setTheme(saved);
-      applyTheme(saved);
-    }
+    setTheme(getStoredThemePreference());
   }, []);
 
-  const handleThemeChange = (t: Theme) => {
+  const handleThemeChange = (t: ThemePreference) => {
     setTheme(t);
-    localStorage.setItem("filework-theme", t);
-    applyTheme(t);
+    setStoredThemePreference(t);
   };
 
   const handleLocaleChange = useCallback(
@@ -113,8 +98,8 @@ export const SettingsModal = ({
 
   if (!open) return null;
 
-  const themeKeys: Theme[] = ["dark", "light", "system"];
-  const themeLabels: Record<Theme, string> = {
+  const themeKeys: ThemePreference[] = ["dark", "light", "system"];
+  const themeLabels: Record<ThemePreference, string> = {
     dark: LL.settings_themeDark(),
     light: LL.settings_themeLight(),
     system: LL.settings_themeSystem(),

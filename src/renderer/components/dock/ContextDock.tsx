@@ -12,6 +12,8 @@ import {
   DOCK_MAX_WIDTH,
   DOCK_MIN_WIDTH,
   type DockMode,
+  resolveFullscreenDockLeft,
+  resolveFullscreenDockTop,
 } from "../layout/layout-geometry";
 import { SearchPanel } from "./SearchPanel";
 import { TrashPanel } from "./TrashPanel";
@@ -32,6 +34,8 @@ export const ContextDock = ({
   onClose,
   onWidthChange,
   onCommitWidth,
+  railWidth,
+  railCollapsed,
   filePath,
   url,
   subagentSel,
@@ -48,6 +52,8 @@ export const ContextDock = ({
   onClose: () => void;
   onWidthChange: (w: number) => void;
   onCommitWidth: (w: number) => void;
+  railWidth: number;
+  railCollapsed: boolean;
   filePath: string | null;
   url: string | null;
   /** 钻入面板:当前查看的子 agent(批次 + 子任务)。null → 不显示 subagent 标签。 */
@@ -123,17 +129,27 @@ export const ContextDock = ({
   );
 
   return (
-    // 打开时从右滑入 + 淡入,统一 200ms 节奏(fullscreen 让开顶部 28px 系统标题栏)
+    // 打开时从右滑入 + 淡入,统一 200ms 节奏;fullscreen 覆盖到窗口顶部。
     <aside
       className={cn(
         "animate-in fade-in-0 slide-in-from-right-2 duration-200",
         isFullscreen
-          ? "fixed top-7 right-0 bottom-0 left-0 z-50 border-l border-border bg-surface"
+          ? "fixed right-0 bottom-0 z-50 border-l border-border bg-surface"
           : mode === "overlay"
             ? "absolute top-0 right-0 z-40 h-full border-l border-border bg-surface shadow-2xl"
             : "relative h-full shrink-0 border-l border-border bg-surface",
       )}
-      style={isFullscreen ? undefined : { width }}
+      style={
+        isFullscreen
+          ? {
+              top: resolveFullscreenDockTop(),
+              left: resolveFullscreenDockLeft({
+                railWidth,
+                railCollapsed,
+              }),
+            }
+          : { width }
+      }
     >
       {/* 全屏铺满窗口时调宽无意义,隐藏分隔条。 */}
       {!isFullscreen && (

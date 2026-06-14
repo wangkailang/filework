@@ -18,4 +18,5 @@ export const getToolLabels = (
   webFetchRendered: LL.toolName_webFetchRendered(),
   webScrape: LL.toolName_webScrape(),
   youtubeTranscript: LL.toolName_youtubeTranscript(),
+  spawnSubagent: LL.toolName_spawnSubagent(),
 });

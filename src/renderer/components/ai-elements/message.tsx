@@ -118,11 +118,111 @@ function RoutedAnchor({
   );
 }
 
+type MarkdownElementProps<T extends keyof React.JSX.IntrinsicElements> =
+  ComponentProps<T> & { node?: unknown };
+
+function ChatTable({
+  children,
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"table">) {
+  return (
+    <div
+      data-chat-table-scroll="true"
+      className="my-2.5 max-w-full overflow-x-auto"
+    >
+      <table
+        {...props}
+        data-chat-table="true"
+        className={cn(
+          "w-full min-w-max border-collapse text-left text-[13px] leading-relaxed",
+          className,
+        )}
+      >
+        {children}
+      </table>
+    </div>
+  );
+}
+
+function ChatTableHead({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"thead">) {
+  return (
+    <thead {...props} className={cn("border-border/70 border-b", className)} />
+  );
+}
+
+function ChatTableBody({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"tbody">) {
+  return (
+    <tbody
+      {...props}
+      className={cn("[&>tr:last-child>td]:border-b-0", className)}
+    />
+  );
+}
+
+function ChatTableRow({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"tr">) {
+  return <tr {...props} className={cn(className)} />;
+}
+
+function ChatTableHeaderCell({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"th">) {
+  return (
+    <th
+      {...props}
+      className={cn(
+        "whitespace-nowrap px-0 py-1.5 pr-8 text-left font-semibold text-foreground align-bottom last:pr-0",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatTableCell({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"td">) {
+  return (
+    <td
+      {...props}
+      className={cn(
+        "border-border/45 border-b px-0 py-2 pr-8 text-foreground/90 align-top last:pr-0",
+        className,
+      )}
+    />
+  );
+}
+
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => {
     // Built per-render so each <a> can call useLinkRouter (a hook).
     const components = useMemo<ComponentProps<typeof Streamdown>["components"]>(
-      () => ({ code: MarkdownCodeBlock, a: RoutedAnchor }),
+      () => ({
+        code: MarkdownCodeBlock,
+        a: RoutedAnchor,
+        table: ChatTable,
+        thead: ChatTableHead,
+        tbody: ChatTableBody,
+        tr: ChatTableRow,
+        th: ChatTableHeaderCell,
+        td: ChatTableCell,
+      }),
       [],
     );
     return (

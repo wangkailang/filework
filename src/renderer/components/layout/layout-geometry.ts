@@ -4,6 +4,7 @@
 export const RAIL_MIN_WIDTH = 180;
 export const RAIL_MAX_WIDTH = 480;
 export const RAIL_DEFAULT_WIDTH = 256;
+export const RAIL_META_BADGE_MIN_WIDTH = 224;
 
 export const DOCK_MIN_WIDTH = 280;
 export const DOCK_MAX_WIDTH = 720;
@@ -38,3 +39,19 @@ export const resolveDockMode = (args: {
   const remainingForChat = args.windowWidth - rail - args.dockWidth;
   return remainingForChat < MIN_CHAT_WIDTH ? "overlay" : "split";
 };
+
+/** 全屏 Dock 不应盖住展开中的左侧栏;折叠时铺满到窗口左边。 */
+export const resolveFullscreenDockLeft = (args: {
+  railWidth: number;
+  railCollapsed: boolean;
+}): number => (args.railCollapsed ? 0 : args.railWidth);
+
+/** 全屏 Dock 必须从窗口顶部开始,避免露出底层聊天或工具栏。 */
+export const resolveFullscreenDockTop = (): number => 0;
+
+/** 左栏头部第二行空间有限:窄栏优先保留分支和 diff,隐藏来源徽标。 */
+export const resolveRailMetaLayout = (
+  railWidth: number,
+): { showKindBadge: boolean } => ({
+  showKindBadge: railWidth >= RAIL_META_BADGE_MIN_WIDTH,
+});
