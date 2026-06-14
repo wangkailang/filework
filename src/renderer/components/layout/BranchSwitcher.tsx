@@ -2,6 +2,7 @@ import { Check, ChevronDown, GitBranch, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 import type { WorkspaceRef } from "../../types/workspace-ref";
 
 /**
@@ -20,6 +21,8 @@ interface BranchSwitcherProps {
   currentBranch: string | null;
   /** Called after a successful checkout. Receives the new branch name. */
   onSwitched: (newBranch: string) => void;
+  className?: string;
+  buttonClassName?: string;
 }
 
 interface BranchOption {
@@ -31,6 +34,8 @@ export const BranchSwitcher = ({
   workspaceRef,
   currentBranch,
   onSwitched,
+  className,
+  buttonClassName,
 }: BranchSwitcherProps) => {
   const { LL } = useI18nContext();
   const [open, setOpen] = useState(false);
@@ -149,12 +154,15 @@ export const BranchSwitcher = ({
   if (currentBranch === null) return null;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={cn("relative", className)}>
       <button
         type="button"
         onClick={handleToggle}
         disabled={switching}
-        className="flex max-w-[160px] items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className={cn(
+          "flex max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          buttonClassName,
+        )}
         title={`Current branch: ${currentBranch}`}
       >
         <span className="size-1.5 shrink-0 rounded-full bg-status-success" />
@@ -163,7 +171,7 @@ export const BranchSwitcher = ({
         ) : (
           <GitBranch className="w-3 h-3 shrink-0" />
         )}
-        <span className="truncate">{currentBranch}</span>
+        <span className="min-w-0 truncate">{currentBranch}</span>
         <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
       </button>
 

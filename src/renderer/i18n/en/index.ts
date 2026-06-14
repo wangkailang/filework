@@ -207,6 +207,7 @@ const en: BaseTranslation = {
   toolName_webFetchRendered: "Fetch (Rendered)",
   toolName_webScrape: "Scrape Page",
   toolName_youtubeTranscript: "YouTube Transcript",
+  toolName_spawnSubagent: "Start Subagents",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0:number} lines",
@@ -221,6 +222,18 @@ const en: BaseTranslation = {
   tool_stderr: "stderr",
   tool_show_full: "Show full content",
   tool_hide_full: "Hide",
+
+  // Tool approval
+  approval_batch_title_single: "Approve {0:string}?",
+  approval_batch_title_multiple: "Approve {0:number} {1:string} calls?",
+  approval_batch_approve_all: "Approve all {0:number}",
+  approval_batch_always_allow: "Always allow {0:string}",
+  approval_batch_reject_all: "Reject all",
+  approval_batch_accepted_multiple: "Approved {0:number} operations",
+  approval_batch_rejected_multiple: "Rejected {0:number} operations",
+  approval_batch_more: "… {0:number} more",
+  approval_spawnSubagent_summary:
+    "{0:number} subagents · concurrency {1:number}",
 
   // Approval-card preview (codex-style change preview)
   preview_card_title_write: "Will write file",

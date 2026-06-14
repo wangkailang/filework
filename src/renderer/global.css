@@ -4,59 +4,62 @@
 @source "../../../node_modules/streamdown/dist/*.js";
 
 /* ════════════════════════════════════════════════════════════════
-   Instrument(仪表盘/工作台)设计系统 —— 暗色为默认
+   Monokai 工作台设计系统 —— 暗色为默认,浅色为同调变体
    规范见 content/spec/design-system.md
    ════════════════════════════════════════════════════════════════ */
 @theme {
-  /* 冷石墨灰阶:近黑带一点蓝,金属感 */
-  --color-background: #0a0b0e;
-  --color-foreground: #e7eaef;
+  /* Monokai classic: ink, chalk, acid green, hot pink, amber, cyan */
+  --color-background: #272822;
+  --color-foreground: #f8f8f2;
 
   /* 表面分层 */
-  --color-surface: #101319; /* 面板:rail / dock */
-  --color-surface-sunken: #07080b; /* 内凹输入,比面板更暗 */
-  --color-card: #151921;
-  --color-card-foreground: #e7eaef;
-  --color-popover: #151921;
-  --color-popover-foreground: #e7eaef;
-  --color-secondary: #1b2029;
-  --color-secondary-foreground: #e7eaef;
-  --color-muted: #181c23;
-  --color-muted-foreground: #98a0ac;
-  --color-accent: #1b2029; /* hover / 选中底 */
-  --color-accent-foreground: #e7eaef;
+  --color-surface: #2f302a; /* 面板:rail / dock */
+  --color-surface-sunken: #1f201b; /* 内凹输入,比面板更暗 */
+  --color-card: #33342d;
+  --color-card-foreground: #f8f8f2;
+  --color-popover: #33342d;
+  --color-popover-foreground: #f8f8f2;
+  --color-secondary: #3b3c34;
+  --color-secondary-foreground: #f8f8f2;
+  --color-muted: #3a3b33;
+  --color-muted-foreground: #c9c4b5;
+  --color-accent: #414238; /* hover / 选中底 */
+  --color-accent-foreground: #f8f8f2;
 
-  /* 信号主色:instrument 紫(电光紫,HUD 读数感) */
+  /* 信号主色:沿用默认电光紫,Monokai 绿保留给成功/文档语义 */
   --color-primary: #a78bfa;
-  --color-primary-foreground: #1a1033; /* 紫底上用深色字 */
+  --color-primary-foreground: #1a1033;
   --color-primary-bright: #c4b5fd;
 
   /* 边框三档(发丝边为精密感的关键) */
-  --color-border: #21262f;
-  --color-border-strong: #2c333e;
-  --color-border-faint: #181c23;
-  --color-input: #21262f;
+  --color-border: #4a4b40;
+  --color-border-strong: #5c5d50;
+  --color-border-faint: #35362f;
+  --color-input: #4a4b40;
   --color-ring: #a78bfa;
+  --color-scrollbar-track: transparent;
+  --color-scrollbar-thumb: #6a6b60;
+  --color-scrollbar-thumb-hover: #818276;
 
-  --color-destructive: #f06a76;
+  --color-destructive: #f92672;
   --color-destructive-foreground: #ffffff;
 
   /* ★ 状态系统:Agent 状态语义全局统一 */
-  --color-status-idle: #6b7480;
-  --color-status-running: #a78bfa;
-  --color-status-await: #f5b133;
-  --color-status-await-foreground: #1a1407;
-  --color-status-success: #3fcf8e;
-  --color-status-error: #f06a76;
+  --color-status-idle: #8f8b7e;
+  --color-status-running: #a6e22e;
+  --color-status-await: #fd971f;
+  --color-status-await-foreground: #1f201b;
+  --color-status-success: #a6e22e;
+  --color-status-error: #f92672;
 
-  /* 文件类型色(冷调化) */
-  --color-file-folder: #f0b144;
-  --color-file-code: #5b9cff;
-  --color-file-doc: #3fcf8e;
-  --color-file-image: #e879c9;
-  --color-file-data: #f5995b;
-  --color-ai-thinking: #a78bfa;
-  --color-ai-success: #3fcf8e;
+  /* 文件类型色(Monokai 语义色) */
+  --color-file-folder: #fd971f;
+  --color-file-code: #66d9ef;
+  --color-file-doc: #a6e22e;
+  --color-file-image: #ae81ff;
+  --color-file-data: #e6db74;
+  --color-ai-thinking: #66d9ef;
+  --color-ai-success: #a6e22e;
 
   /* 圆角:收紧到精密档 */
   --radius-xs: 3px;
@@ -133,6 +136,32 @@ body {
   overflow: hidden;
 }
 
+/* Native scrollbars:thin rounded thumb, themed for Monokai dark/light. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+}
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+}
+*::-webkit-scrollbar-thumb {
+  min-height: 48px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--color-scrollbar-thumb);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* 内凹输入(recessed)的触感:内阴影 + 发丝内描边 */
 .surface-sunken {
   background: var(--color-surface-sunken);
@@ -140,7 +169,7 @@ body {
     inset 0 1px 3px rgba(0, 0, 0, 0.5),
     inset 0 0 0 1px var(--color-border);
 }
-/* 聚焦时内描边转主色(青) */
+/* 聚焦时内描边转主色 */
 .surface-sunken:focus-within {
   box-shadow:
     inset 0 1px 3px rgba(0, 0, 0, 0.5),
@@ -152,49 +181,57 @@ body {
     inset 0 0 0 1px var(--color-border);
 }
 
-/* ─── Light theme(Instrument 浅色:暖中性纸 + 加深的青/状态色保对比) ─── */
+/* ─── Light theme(Monokai 浅色:暖纸底 + 加深语义色保对比) ─── */
 .light {
-  --color-background: #f8f8f6;
-  --color-foreground: #16181d;
+  --color-background: #fbfaf3;
+  --color-foreground: #272822;
 
-  --color-surface: #f1f1ef;
-  --color-surface-sunken: #ffffff;
-  --color-card: #ffffff;
-  --color-card-foreground: #16181d;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #16181d;
-  --color-secondary: #ecedeb;
-  --color-secondary-foreground: #16181d;
-  --color-muted: #eeeeec;
-  --color-muted-foreground: #5b626c;
-  --color-accent: #ecedf0;
-  --color-accent-foreground: #16181d;
+  --color-surface: #f0eddf;
+  --color-surface-sunken: #fffdf6;
+  --color-card: #fffdf6;
+  --color-card-foreground: #272822;
+  --color-popover: #fffdf6;
+  --color-popover-foreground: #272822;
+  --color-secondary: #e7e3d3;
+  --color-secondary-foreground: #272822;
+  --color-muted: #ede9dc;
+  --color-muted-foreground: #6b675d;
+  --color-accent: #e2ead1;
+  --color-accent-foreground: #272822;
 
   --color-primary: #7c3aed;
   --color-primary-foreground: #ffffff;
   --color-primary-bright: #8b5cf6;
 
-  --color-border: #e2e2df;
-  --color-border-strong: #d2d2ce;
-  --color-border-faint: #ececea;
-  --color-input: #e2e2df;
+  --color-border: #d8d1bb;
+  --color-border-strong: #c1b99f;
+  --color-border-faint: #ebe5d5;
+  --color-input: #d8d1bb;
   --color-ring: #7c3aed;
+  --color-scrollbar-track: transparent;
+  --color-scrollbar-thumb: #b9b09a;
+  --color-scrollbar-thumb-hover: #9f967f;
 
-  --color-destructive: #d64550;
+  --color-destructive: #c2185b;
   --color-destructive-foreground: #ffffff;
 
-  --color-status-idle: #8a909a;
-  --color-status-running: #7c3aed;
-  --color-status-await: #c98a1a;
+  --color-status-idle: #837d6f;
+  --color-status-running: #557d00;
+  --color-status-await: #a65f00;
   --color-status-await-foreground: #ffffff;
-  --color-status-success: #1f9d62;
-  --color-status-error: #d64550;
+  --color-status-success: #267a3e;
+  --color-status-error: #c2185b;
 
-  --color-ai-thinking: #7c3aed;
-  --color-ai-success: #1f9d62;
+  --color-file-folder: #a65f00;
+  --color-file-code: #007a8a;
+  --color-file-doc: #557d00;
+  --color-file-image: #7b4acb;
+  --color-file-data: #8a6f00;
+  --color-ai-thinking: #007a8a;
+  --color-ai-success: #267a3e;
 }
 
-/* sonner toast —— 跟随 Instrument token,自动适配明暗;错误/成功仅描边着色 */
+/* sonner toast —— 跟随 Monokai token,自动适配明暗;错误/成功仅描边着色 */
 [data-sonner-toaster] {
   --normal-bg: var(--color-popover);
   --normal-text: var(--color-popover-foreground);
@@ -203,6 +240,9 @@ body {
 [data-sonner-toast] {
   font-size: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.light [data-sonner-toast] {
+  box-shadow: 0 12px 30px rgba(80, 70, 40, 0.16);
 }
 [data-sonner-toast][data-type="error"] {
   --normal-border: var(--color-status-error);

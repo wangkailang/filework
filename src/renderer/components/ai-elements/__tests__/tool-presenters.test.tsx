@@ -87,3 +87,42 @@ describe("writeFile presenter", () => {
     );
   });
 });
+
+describe("webSearch presenter", () => {
+  it("renders multiple search results as clickable list items", () => {
+    const output = toolPresenters.webSearch.output?.(
+      {
+        answer: null,
+        results: [
+          {
+            title: "Zustand vs Redux Toolkit",
+            url: "https://example.com/zustand-redux",
+            snippet: "A comparison of React state managers.",
+            score: 0.9,
+          },
+          {
+            title: "Jotai state guide",
+            url: "https://example.com/jotai",
+            snippet: "Atomic state for React.",
+            score: 0.8,
+          },
+        ],
+      },
+      { query: "react state managers" },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-search",
+      },
+    );
+
+    const html = renderToStaticMarkup(output);
+
+    expect(html).toContain("<ol");
+    expect(html).toContain("<li");
+    expect(html).toContain('href="https://example.com/zustand-redux"');
+    expect(html).toContain('href="https://example.com/jotai"');
+    expect(html).toContain("Zustand vs Redux Toolkit");
+    expect(html).toContain("A comparison of React state managers.");
+  });
+});

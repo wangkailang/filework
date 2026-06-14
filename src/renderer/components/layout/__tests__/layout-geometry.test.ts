@@ -5,9 +5,13 @@ import {
   DOCK_DEFAULT_WIDTH,
   DOCK_MAX_WIDTH,
   DOCK_MIN_WIDTH,
+  RAIL_DEFAULT_WIDTH,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
   resolveDockMode,
+  resolveFullscreenDockLeft,
+  resolveFullscreenDockTop,
+  resolveRailMetaLayout,
 } from "../layout-geometry";
 
 describe("clampRailWidth", () => {
@@ -61,5 +65,41 @@ describe("resolveDockMode", () => {
         dockWidth: 420,
       }),
     ).toBe("split");
+  });
+});
+
+describe("resolveFullscreenDockLeft", () => {
+  it("左栏展开时全屏 Dock 让出左栏宽度", () => {
+    expect(
+      resolveFullscreenDockLeft({
+        railWidth: 308,
+        railCollapsed: false,
+      }),
+    ).toBe(308);
+  });
+
+  it("左栏折叠时全屏 Dock 不留左侧空白", () => {
+    expect(
+      resolveFullscreenDockLeft({
+        railWidth: 308,
+        railCollapsed: true,
+      }),
+    ).toBe(0);
+  });
+});
+
+describe("resolveFullscreenDockTop", () => {
+  it("全屏 Dock 从窗口顶部开始,不露出底层内容", () => {
+    expect(resolveFullscreenDockTop()).toBe(0);
+  });
+});
+
+describe("resolveRailMetaLayout", () => {
+  it("最窄左栏隐藏来源徽标,给分支 chip 留出空间", () => {
+    expect(resolveRailMetaLayout(RAIL_MIN_WIDTH).showKindBadge).toBe(false);
+  });
+
+  it("默认宽度左栏保留来源徽标", () => {
+    expect(resolveRailMetaLayout(RAIL_DEFAULT_WIDTH).showKindBadge).toBe(true);
   });
 });

@@ -190,6 +190,7 @@ const zhCN: Translation = {
   toolName_webFetchRendered: "渲染抓取",
   toolName_webScrape: "抓取内容",
   toolName_youtubeTranscript: "视频字幕",
+  toolName_spawnSubagent: "启动子任务",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",
@@ -204,6 +205,17 @@ const zhCN: Translation = {
   tool_stderr: "错误输出",
   tool_show_full: "查看完整内容",
   tool_hide_full: "收起",
+
+  // Tool approval
+  approval_batch_title_single: "批准{0}？",
+  approval_batch_title_multiple: "批准 {0} 个{1}？",
+  approval_batch_approve_all: "批准全部 {0} 个",
+  approval_batch_always_allow: "始终允许{0}",
+  approval_batch_reject_all: "全部拒绝",
+  approval_batch_accepted_multiple: "已批准 {0} 个操作",
+  approval_batch_rejected_multiple: "已拒绝 {0} 个操作",
+  approval_batch_more: "…还有 {0} 个",
+  approval_spawnSubagent_summary: "{0} 个子任务 · 并发 {1}",
 
   // Approval-card preview (codex-style change preview)
   preview_card_title_write: "将写入文件",

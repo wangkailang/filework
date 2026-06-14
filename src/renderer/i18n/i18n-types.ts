@@ -651,6 +651,10 @@ type RootTranslation = {
 	 */
 	toolName_youtubeTranscript: string
 	/**
+	 * S​t​a​r​t​ ​S​u​b​a​g​e​n​t​s
+	 */
+	toolName_spawnSubagent: string
+	/**
 	 * {​0​}​ ​l​i​n​e​s
 	 * @param {number} 0
 	 */
@@ -705,6 +709,52 @@ type RootTranslation = {
 	 * H​i​d​e
 	 */
 	tool_hide_full: string
+	/**
+	 * A​p​p​r​o​v​e​ ​{​0​}​?
+	 * @param {string} 0
+	 */
+	approval_batch_title_single: RequiredParams<'0'>
+	/**
+	 * A​p​p​r​o​v​e​ ​{​0​}​ ​{​1​}​ ​c​a​l​l​s​?
+	 * @param {number} 0
+	 * @param {string} 1
+	 */
+	approval_batch_title_multiple: RequiredParams<'0' | '1'>
+	/**
+	 * A​p​p​r​o​v​e​ ​a​l​l​ ​{​0​}
+	 * @param {number} 0
+	 */
+	approval_batch_approve_all: RequiredParams<'0'>
+	/**
+	 * A​l​w​a​y​s​ ​a​l​l​o​w​ ​{​0​}
+	 * @param {string} 0
+	 */
+	approval_batch_always_allow: RequiredParams<'0'>
+	/**
+	 * R​e​j​e​c​t​ ​a​l​l
+	 */
+	approval_batch_reject_all: string
+	/**
+	 * A​p​p​r​o​v​e​d​ ​{​0​}​ ​o​p​e​r​a​t​i​o​n​s
+	 * @param {number} 0
+	 */
+	approval_batch_accepted_multiple: RequiredParams<'0'>
+	/**
+	 * R​e​j​e​c​t​e​d​ ​{​0​}​ ​o​p​e​r​a​t​i​o​n​s
+	 * @param {number} 0
+	 */
+	approval_batch_rejected_multiple: RequiredParams<'0'>
+	/**
+	 * …​ ​{​0​}​ ​m​o​r​e
+	 * @param {number} 0
+	 */
+	approval_batch_more: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​s​u​b​a​g​e​n​t​s​ ​·​ ​c​o​n​c​u​r​r​e​n​c​y​ ​{​1​}
+	 * @param {number} 0
+	 * @param {number} 1
+	 */
+	approval_spawnSubagent_summary: RequiredParams<'0' | '1'>
 	/**
 	 * W​i​l​l​ ​w​r​i​t​e​ ​f​i​l​e
 	 */
@@ -2128,6 +2178,10 @@ export type TranslationFunctions = {
 	 */
 	toolName_youtubeTranscript: () => LocalizedString
 	/**
+	 * Start Subagents
+	 */
+	toolName_spawnSubagent: () => LocalizedString
+	/**
 	 * {0} lines
 	 */
 	tool_summary_lines: (arg0: number) => LocalizedString
@@ -2175,6 +2229,42 @@ export type TranslationFunctions = {
 	 * Hide
 	 */
 	tool_hide_full: () => LocalizedString
+	/**
+	 * Approve {0}?
+	 */
+	approval_batch_title_single: (arg0: string) => LocalizedString
+	/**
+	 * Approve {0} {1} calls?
+	 */
+	approval_batch_title_multiple: (arg0: number, arg1: string) => LocalizedString
+	/**
+	 * Approve all {0}
+	 */
+	approval_batch_approve_all: (arg0: number) => LocalizedString
+	/**
+	 * Always allow {0}
+	 */
+	approval_batch_always_allow: (arg0: string) => LocalizedString
+	/**
+	 * Reject all
+	 */
+	approval_batch_reject_all: () => LocalizedString
+	/**
+	 * Approved {0} operations
+	 */
+	approval_batch_accepted_multiple: (arg0: number) => LocalizedString
+	/**
+	 * Rejected {0} operations
+	 */
+	approval_batch_rejected_multiple: (arg0: number) => LocalizedString
+	/**
+	 * … {0} more
+	 */
+	approval_batch_more: (arg0: number) => LocalizedString
+	/**
+	 * {0} subagents · concurrency {1}
+	 */
+	approval_spawnSubagent_summary: (arg0: number, arg1: number) => LocalizedString
 	/**
 	 * Will write file
 	 */

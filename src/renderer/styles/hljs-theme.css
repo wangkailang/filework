@@ -1,4 +1,4 @@
-/* highlight.js token colors — GitHub Light / Dark
+/* highlight.js token colors — Monokai Light / Dark
  * Imported by main.tsx after global.css.
  * Light = default; .dark on <html> activates dark overrides.
  */
@@ -10,7 +10,7 @@
 
 .hljs-comment,
 .hljs-quote {
-  color: #6e7781;
+  color: #75715e;
   font-style: italic;
 }
 
@@ -20,13 +20,13 @@
 .hljs-section,
 .hljs-link,
 .hljs-doctag {
-  color: #cf222e;
+  color: #c2185b;
 }
 
 .hljs-title,
 .hljs-title.function_,
 .hljs-function .hljs-title {
-  color: #8250df;
+  color: #557d00;
 }
 
 .hljs-string,
@@ -35,14 +35,14 @@
 .hljs-bullet,
 .hljs-addition,
 .hljs-regexp {
-  color: #0a3069;
+  color: #7a6500;
 }
 
 .hljs-number,
 .hljs-meta,
 .hljs-built_in,
 .hljs-builtin-name {
-  color: #0550ae;
+  color: #007a8a;
 }
 
 .hljs-variable,
@@ -51,7 +51,7 @@
 .hljs-name,
 .hljs-selector-id,
 .hljs-selector-class {
-  color: #116329;
+  color: #7b4acb;
 }
 
 .hljs-params {
@@ -61,16 +61,16 @@
 .hljs-type,
 .hljs-class .hljs-title,
 .hljs-title.class_ {
-  color: #953800;
+  color: #a65f00;
 }
 
 .hljs-deletion {
-  color: #82071e;
-  background: #ffebe9;
+  color: #c2185b;
+  background: #fbe4ec;
 }
 
 .hljs-meta .hljs-string {
-  color: #0a3069;
+  color: #7a6500;
 }
 
 .hljs-emphasis {
@@ -80,10 +80,10 @@
   font-weight: 700;
 }
 
-/* === Dark mode (GitHub Dark) === */
+/* === Dark mode (Monokai Classic) === */
 html.dark .hljs-comment,
 html.dark .hljs-quote {
-  color: #8b949e;
+  color: #75715e;
 }
 html.dark .hljs-keyword,
 html.dark .hljs-selector-tag,
@@ -91,12 +91,12 @@ html.dark .hljs-literal,
 html.dark .hljs-section,
 html.dark .hljs-link,
 html.dark .hljs-doctag {
-  color: #ff7b72;
+  color: #f92672;
 }
 html.dark .hljs-title,
 html.dark .hljs-title.function_,
 html.dark .hljs-function .hljs-title {
-  color: #d2a8ff;
+  color: #a6e22e;
 }
 html.dark .hljs-string,
 html.dark .hljs-attr,
@@ -104,13 +104,13 @@ html.dark .hljs-symbol,
 html.dark .hljs-bullet,
 html.dark .hljs-addition,
 html.dark .hljs-regexp {
-  color: #a5d6ff;
+  color: #e6db74;
 }
 html.dark .hljs-number,
 html.dark .hljs-meta,
 html.dark .hljs-built_in,
 html.dark .hljs-builtin-name {
-  color: #79c0ff;
+  color: #ae81ff;
 }
 html.dark .hljs-variable,
 html.dark .hljs-template-variable,
@@ -118,14 +118,14 @@ html.dark .hljs-tag,
 html.dark .hljs-name,
 html.dark .hljs-selector-id,
 html.dark .hljs-selector-class {
-  color: #7ee787;
+  color: #f92672;
 }
 html.dark .hljs-type,
 html.dark .hljs-class .hljs-title,
 html.dark .hljs-title.class_ {
-  color: #ffa657;
+  color: #66d9ef;
 }
 html.dark .hljs-deletion {
-  color: #ffdcd7;
-  background: #67060c;
+  color: #f92672;
+  background: #3b141f;
 }
