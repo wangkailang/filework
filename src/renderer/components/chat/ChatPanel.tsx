@@ -36,6 +36,7 @@ import {
   MessageActions,
   MessageContent,
   MessageResponse,
+  MessageSkillText,
 } from "../ai-elements/message";
 import { PlanViewer } from "../ai-elements/plan-viewer";
 import type { ComposerAttachment } from "../ai-elements/prompt-input";
@@ -44,8 +45,8 @@ import {
   PromptInputAttachButton,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputRichEditor,
   PromptInputSubmit,
-  PromptInputTextarea,
 } from "../ai-elements/prompt-input";
 import {
   Tool,
@@ -69,7 +70,6 @@ import { MentionMenu } from "./MentionMenu";
 import { ModelSelector } from "./ModelSelector";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { SkillApprovalDialog } from "./SkillApprovalDialog";
-import { SkillMenu } from "./SkillMenu";
 import { SubagentCard } from "./SubagentCard";
 import { TurnSummaryCard } from "./TurnSummaryCard";
 import type {
@@ -483,7 +483,7 @@ export const ChatPanel = ({
     return result;
   };
 
-  const onPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const onPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
     const items = e.clipboardData?.items;
     if (!items || items.length === 0) return;
     const blobs: Array<{ blob: Blob; name?: string }> = [];
@@ -496,10 +496,10 @@ export const ChatPanel = ({
       if (f) blobs.push({ blob: f, name: f.name || undefined });
     }
     if (blobs.length === 0) return;
-    // Consumed paste — stop the textarea from receiving binary garbage as text.
+    // Consumed paste — stop the editor from receiving binary garbage as text.
     e.preventDefault();
     // `preventDefault` has already fired, so any silent rejection past
-    // this point leaves the textarea blank with no user feedback —
+    // this point leaves the editor blank with no user feedback —
     // funnel errors into chat.setLastError instead of dropping them.
     try {
       const results = await Promise.all(
@@ -1209,11 +1209,9 @@ export const ChatPanel = ({
                             {userAttachments.length > 0 && (
                               <AttachmentList attachments={userAttachments} />
                             )}
-                            {/* 用户消息按纯文本渲染:保留换行与行内空格
-                                (默认 HTML 会折叠),但去掉空行。 */}
-                            <div className="whitespace-pre-wrap break-words">
-                              {collapseBlankLines(msg.content)}
-                            </div>
+                            <MessageSkillText
+                              text={collapseBlankLines(msg.content)}
+                            />
                           </>
                         )}
                       </MessageContent>
@@ -1376,18 +1374,14 @@ export const ChatPanel = ({
                 onRemove={handleRemoveAttachment}
               />
               <div className="relative">
-                <SkillMenu
-                  input={chat.input}
-                  onSelect={(cmd) => chat.setInput(cmd)}
-                />
                 <MentionMenu
                   input={chat.input}
                   workspaceRoot={workspacePath}
                   onReplace={(v) => chat.setInput(v)}
                 />
-                <PromptInputTextarea
+                <PromptInputRichEditor
                   value={chat.input}
-                  onChange={(e) => chat.setInput(e.target.value)}
+                  onValueChange={chat.setInput}
                   onPaste={onPaste}
                   placeholder={LL.chat_inputPlaceholder()}
                 />

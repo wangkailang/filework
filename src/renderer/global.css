@@ -181,6 +181,101 @@ body {
     inset 0 0 0 1px var(--color-border);
 }
 
+/* Tiptap composer: ProseMirror owns the editable surface inside PromptInput. */
+.prompt-input-rich-editor__content {
+  min-height: 4rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.prompt-input-rich-editor__content p {
+  margin: 0;
+}
+
+.prompt-input-rich-editor__content > * + * {
+  margin-top: 0.5rem;
+}
+
+.prompt-input-rich-editor__content .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-muted-foreground);
+  pointer-events: none;
+}
+
+.prompt-skill-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  max-width: 100%;
+  margin-inline: 1px 3px;
+  padding: 0.1rem 0.46rem 0.1rem 0.36rem;
+  border: 1px solid
+    color-mix(in oklab, var(--color-primary) 58%, var(--color-border));
+  border-radius: calc(var(--radius-sm) + 2px);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-primary) 18%, var(--color-popover)),
+      color-mix(in oklab, var(--color-primary) 10%, var(--color-popover))
+    ),
+    var(--color-popover);
+  color: color-mix(
+    in oklab,
+    var(--color-primary-bright) 86%,
+    var(--color-foreground)
+  );
+  font-family: var(--font-sans);
+  font-size: 0.88em;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.36;
+  box-shadow:
+    0 1px 2px color-mix(in oklab, var(--color-primary) 18%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 14%, transparent);
+  white-space: nowrap;
+  vertical-align: 0.05em;
+}
+
+.prompt-skill-mention__name {
+  min-width: 0;
+  max-width: min(18rem, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.prompt-skill-mention::before {
+  content: "";
+  display: inline-block;
+  width: 0.72em;
+  height: 0.72em;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background:
+    linear-gradient(currentColor 0 0) left top / 42% 42% no-repeat,
+    linear-gradient(currentColor 0 0) right top / 42% 42% no-repeat,
+    linear-gradient(currentColor 0 0) left bottom / 42% 42% no-repeat,
+    linear-gradient(currentColor 0 0) right bottom / 42% 42% no-repeat;
+  opacity: 0.82;
+}
+
+.light .prompt-skill-mention {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-primary) 12%, var(--color-popover)),
+      color-mix(in oklab, var(--color-primary) 6%, var(--color-popover))
+    ),
+    var(--color-popover);
+  color: var(--color-primary);
+}
+
 /* ─── Light theme(Monokai 浅色:暖纸底 + 加深语义色保对比) ─── */
 .light {
   --color-background: #fbfaf3;

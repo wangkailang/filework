@@ -22,4 +22,21 @@ describe("global primary theme", () => {
     expect(globalCss).toContain("--color-primary-bright: #8b5cf6;");
     expect(globalCss).toContain("--color-ring: #7c3aed;");
   });
+
+  it("uses the purple primary token for inserted skill chips", () => {
+    const skillMentionRule =
+      globalCss.match(/\.prompt-skill-mention \{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+    expect(skillMentionRule).toContain("var(--color-primary)");
+    expect(skillMentionRule).not.toContain("background: var(--color-accent)");
+  });
+
+  it("adds a compact generic icon to inserted skill chips", () => {
+    const skillMentionIconRule =
+      globalCss.match(/\.prompt-skill-mention::before \{([\s\S]*?)\n\}/)?.[1] ??
+      "";
+
+    expect(skillMentionIconRule).toContain('content: ""');
+    expect(skillMentionIconRule).toContain("currentColor");
+  });
 });

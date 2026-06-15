@@ -48,6 +48,80 @@ export const MessageContent = ({
   </div>
 );
 
+type SkillTextPart =
+  | { id: string; key: string; text: string; type: "skill" }
+  | { key: string; text: string; type: "text" };
+
+const leadingSkillPattern = /^\/([A-Za-z0-9][A-Za-z0-9._:-]*)(?=\s|$)/;
+
+export const splitLeadingSkillMentions = (text: string): SkillTextPart[] => {
+  const parts: SkillTextPart[] = [];
+  let index = 0;
+
+  while (index < text.length) {
+    const skillMatch = leadingSkillPattern.exec(text.slice(index));
+    if (!skillMatch) break;
+
+    const skillStart = index;
+    parts.push({
+      id: skillMatch[1],
+      key: `skill-${skillStart}-${skillMatch[0]}`,
+      text: skillMatch[0],
+      type: "skill",
+    });
+    index += skillMatch[0].length;
+
+    const whitespaceMatch = /^\s+/.exec(text.slice(index));
+    if (!whitespaceMatch) continue;
+
+    const whitespaceStart = index;
+    index += whitespaceMatch[0].length;
+    if (/[\r\n]/.test(whitespaceMatch[0])) {
+      parts.push({
+        key: `text-${whitespaceStart}`,
+        text: whitespaceMatch[0],
+        type: "text",
+      });
+    }
+  }
+
+  if (parts.length === 0) return [{ key: "text-0", text, type: "text" }];
+  if (index < text.length)
+    parts.push({ key: `text-${index}`, text: text.slice(index), type: "text" });
+  return parts;
+};
+
+export type MessageSkillTextProps = {
+  className?: string;
+  text: string;
+};
+
+export const MessageSkillText = ({
+  className,
+  text,
+}: MessageSkillTextProps) => {
+  const parts = useMemo(() => splitLeadingSkillMentions(text), [text]);
+
+  return (
+    <div className={cn("whitespace-pre-wrap break-words", className)}>
+      {parts.map((part) =>
+        part.type === "skill" ? (
+          <span
+            className="prompt-skill-mention"
+            data-skill-id={part.id}
+            data-skill-mention=""
+            key={part.key}
+          >
+            {part.text}
+          </span>
+        ) : (
+          <span key={part.key}>{part.text}</span>
+        ),
+      )}
+    </div>
+  );
+};
+
 export type MessageActionsProps = ComponentProps<"div">;
 
 export const MessageActions = ({
