@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MessageResponse } from "../message";
+import { MessageResponse, MessageSkillText } from "../message";
 
 describe("MessageResponse", () => {
   it("renders markdown tables with compact chat table styling", () => {
@@ -18,5 +18,38 @@ describe("MessageResponse", () => {
     expect(html).toContain("border-b");
     expect(html).toContain("last:pr-0");
     expect(html).not.toContain("rounded-lg border");
+  });
+});
+
+describe("MessageSkillText", () => {
+  it("renders leading slash skills as lightweight chips", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="/pdf-processor /algorithmic-art summarize this" />,
+    );
+
+    expect(html).toContain('data-skill-mention=""');
+    expect(html).toContain('data-skill-id="pdf-processor"');
+    expect(html).toContain('data-skill-id="algorithmic-art"');
+    expect(html).toContain("/pdf-processor");
+    expect(html).toContain("/algorithmic-art");
+    expect(html).toContain("summarize this");
+  });
+
+  it("does not chip slash text inside ordinary prose", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="please use /pdf-processor" />,
+    );
+
+    expect(html).not.toContain("data-skill-mention");
+    expect(html).toContain("please use /pdf-processor");
+  });
+
+  it("does not chip leading filesystem paths", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="/Users/kailang/project" />,
+    );
+
+    expect(html).not.toContain("data-skill-mention");
+    expect(html).toContain("/Users/kailang/project");
   });
 });
