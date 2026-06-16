@@ -4,6 +4,7 @@ import {
   MessageActionFrame,
   MessageActions,
   MessageResponse,
+  MessageSkillText,
   messageActionsHoverClass,
 } from "../message";
 
@@ -40,5 +41,38 @@ describe("MessageResponse", () => {
     expect(html).toContain("absolute");
     expect(html).toContain("top-full");
     expect(html).toContain("group-hover/message-actions:opacity-100");
+  });
+});
+
+describe("MessageSkillText", () => {
+  it("renders leading slash skills as lightweight chips", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="/pdf-processor /algorithmic-art summarize this" />,
+    );
+
+    expect(html).toContain('data-skill-mention=""');
+    expect(html).toContain('data-skill-id="pdf-processor"');
+    expect(html).toContain('data-skill-id="algorithmic-art"');
+    expect(html).toContain("/pdf-processor");
+    expect(html).toContain("/algorithmic-art");
+    expect(html).toContain("summarize this");
+  });
+
+  it("does not chip slash text inside ordinary prose", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="please use /pdf-processor" />,
+    );
+
+    expect(html).not.toContain("data-skill-mention");
+    expect(html).toContain("please use /pdf-processor");
+  });
+
+  it("does not chip leading filesystem paths", () => {
+    const html = renderToStaticMarkup(
+      <MessageSkillText text="/Users/kailang/project" />,
+    );
+
+    expect(html).not.toContain("data-skill-mention");
+    expect(html).toContain("/Users/kailang/project");
   });
 });
