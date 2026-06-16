@@ -85,7 +85,7 @@ export const splitLeadingSkillMentions = (text: string): SkillTextPart[] => {
     parts.push({
       id: skillMatch[1],
       key: `skill-${skillStart}-${skillMatch[0]}`,
-      text: skillMatch[0],
+      text: skillMatch[1],
       type: "skill",
     });
     index += skillMatch[0].length;

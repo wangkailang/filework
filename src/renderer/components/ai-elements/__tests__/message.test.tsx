@@ -45,7 +45,7 @@ describe("MessageResponse", () => {
 });
 
 describe("MessageSkillText", () => {
-  it("renders leading slash skills as lightweight chips", () => {
+  it("renders leading slash skills as lightweight chips without command slashes", () => {
     const html = renderToStaticMarkup(
       <MessageSkillText text="/pdf-processor /algorithmic-art summarize this" />,
     );
@@ -53,8 +53,10 @@ describe("MessageSkillText", () => {
     expect(html).toContain('data-skill-mention=""');
     expect(html).toContain('data-skill-id="pdf-processor"');
     expect(html).toContain('data-skill-id="algorithmic-art"');
-    expect(html).toContain("/pdf-processor");
-    expect(html).toContain("/algorithmic-art");
+    expect(html).toContain(">pdf-processor</span>");
+    expect(html).toContain(">algorithmic-art</span>");
+    expect(html).not.toContain(">/pdf-processor</span>");
+    expect(html).not.toContain(">/algorithmic-art</span>");
     expect(html).toContain("summarize this");
   });
 
