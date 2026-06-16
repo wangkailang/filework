@@ -1,6 +1,7 @@
 import { type MutableRefObject, useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { PlanStepView, PlanView } from "../ai-elements/plan-viewer";
+import { beginPlanExecution } from "./plan-progress";
 import type { ChatMessage, MessagePart, PlanMessagePart } from "./types";
 
 interface PlanFlowDeps {
@@ -228,7 +229,10 @@ export function usePlanFlow({
           const newParts = [...msg.parts];
           newParts[idx] = {
             type: "plan",
-            plan: { ...part.plan, status },
+            plan:
+              status === "executing"
+                ? beginPlanExecution(part.plan)
+                : { ...part.plan, status },
           };
           updated[i] = { ...msg, parts: newParts };
           break;

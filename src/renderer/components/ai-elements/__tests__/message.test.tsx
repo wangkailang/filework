@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MessageResponse } from "../message";
+import {
+  MessageActionFrame,
+  MessageActions,
+  MessageResponse,
+  messageActionsHoverClass,
+} from "../message";
 
 describe("MessageResponse", () => {
   it("renders markdown tables with compact chat table styling", () => {
@@ -18,5 +23,22 @@ describe("MessageResponse", () => {
     expect(html).toContain("border-b");
     expect(html).toContain("last:pr-0");
     expect(html).not.toContain("rounded-lg border");
+  });
+
+  it("scopes message action hover to the message frame without adding an action row", () => {
+    const html = renderToStaticMarkup(
+      <MessageActionFrame from="user">
+        <div>message bubble</div>
+        <MessageActions className={messageActionsHoverClass}>
+          <button type="button">copy</button>
+        </MessageActions>
+      </MessageActionFrame>,
+    );
+
+    expect(html).toContain("group/message-actions");
+    expect(html).toContain("w-fit");
+    expect(html).toContain("absolute");
+    expect(html).toContain("top-full");
+    expect(html).toContain("group-hover/message-actions:opacity-100");
   });
 });

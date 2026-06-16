@@ -26,6 +26,25 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   />
 );
 
+export type MessageActionFrameProps = HTMLAttributes<HTMLDivElement> & {
+  from: "user" | "assistant";
+};
+
+export const MessageActionFrame = ({
+  className,
+  from,
+  ...props
+}: MessageActionFrameProps) => (
+  <div
+    className={cn(
+      "group/message-actions relative flex max-w-[95%] flex-col",
+      from === "user" ? "ml-auto w-fit items-end" : "w-full",
+      className,
+    )}
+    {...props}
+  />
+);
+
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
 
 export const MessageContent = ({
@@ -59,6 +78,9 @@ export const MessageActions = ({
     {children}
   </div>
 );
+
+export const messageActionsHoverClass =
+  "pointer-events-none absolute top-full right-0 mt-1 opacity-0 transition-opacity group-hover/message-actions:pointer-events-auto group-hover/message-actions:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100";
 
 export type MessageActionProps = HTMLAttributes<HTMLButtonElement> & {
   label?: string;

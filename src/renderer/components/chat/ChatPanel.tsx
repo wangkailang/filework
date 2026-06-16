@@ -33,9 +33,11 @@ import {
 import {
   Message,
   MessageAction,
+  MessageActionFrame,
   MessageActions,
   MessageContent,
   MessageResponse,
+  messageActionsHoverClass,
 } from "../ai-elements/message";
 import { PlanViewer } from "../ai-elements/plan-viewer";
 import type { ComposerAttachment } from "../ai-elements/prompt-input";
@@ -1199,13 +1201,11 @@ export const ChatPanel = ({
                         | undefined) ?? [])
                     : [];
                 return (
-                  <div key={msg.id} className="group animate-rise">
-                    <Message from={msg.role}>
-                      <MessageContent>
-                        {msg.role === "assistant" ? (
-                          renderAssistantParts(msg.parts ?? migrateToParts(msg))
-                        ) : (
-                          <>
+                  <div key={msg.id} className="animate-rise">
+                    {msg.role === "user" ? (
+                      <MessageActionFrame from="user">
+                        <Message from="user" className="w-fit max-w-full">
+                          <MessageContent>
                             {userAttachments.length > 0 && (
                               <AttachmentList attachments={userAttachments} />
                             )}
@@ -1214,33 +1214,44 @@ export const ChatPanel = ({
                             <div className="whitespace-pre-wrap break-words">
                               {collapseBlankLines(msg.content)}
                             </div>
-                          </>
+                          </MessageContent>
+                        </Message>
+                        {!chat.isLoading && (
+                          <MessageActions
+                            className={`${messageActionsHoverClass} justify-end`}
+                          >
+                            <CopyMessageAction content={msg.content} />
+                            <MessageAction
+                              onClick={() => chat.handleForkSession(msg.id)}
+                              label={LL.chat_forkHere()}
+                            >
+                              <GitBranch className="size-3" />
+                            </MessageAction>
+                          </MessageActions>
                         )}
-                      </MessageContent>
-                    </Message>
-                    {msg.role === "user" && !chat.isLoading && (
-                      <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                        <CopyMessageAction content={msg.content} />
-                        <MessageAction
-                          onClick={() => chat.handleForkSession(msg.id)}
-                          label={LL.chat_forkHere()}
-                        >
-                          <GitBranch className="size-3" />
-                        </MessageAction>
-                      </MessageActions>
+                      </MessageActionFrame>
+                    ) : (
+                      <div className="group">
+                        <Message from="assistant">
+                          <MessageContent>
+                            {renderAssistantParts(
+                              msg.parts ?? migrateToParts(msg),
+                            )}
+                          </MessageContent>
+                        </Message>
+                        {msg.content.trim().length > 0 && (
+                          <MessageActions
+                            className={
+                              index === chat.messages.length - 1
+                                ? undefined
+                                : "opacity-0 group-hover:opacity-100 transition-opacity"
+                            }
+                          >
+                            <CopyMessageAction content={msg.content} />
+                          </MessageActions>
+                        )}
+                      </div>
                     )}
-                    {msg.role === "assistant" &&
-                      msg.content.trim().length > 0 && (
-                        <MessageActions
-                          className={
-                            index === chat.messages.length - 1
-                              ? undefined
-                              : "opacity-0 group-hover:opacity-100 transition-opacity"
-                          }
-                        >
-                          <CopyMessageAction content={msg.content} />
-                        </MessageActions>
-                      )}
                   </div>
                 );
               })}
