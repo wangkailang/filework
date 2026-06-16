@@ -141,12 +141,33 @@ export const DockMenu = ({
                       : "text-foreground hover:bg-accent",
                 )}
               >
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <Icon className="size-3.5 shrink-0" />
-                  {item.label}
+                  <span className="truncate">{item.label}</span>
                 </span>
-                <span className="font-mono text-[10px] text-muted-foreground/60">
-                  {item.shortcut}
+                <span
+                  data-dock-shortcut={item.tab}
+                  className={cn(
+                    "ml-auto flex shrink-0 items-center justify-end gap-0.5 font-mono leading-none tracking-normal tabular-nums",
+                    !item.on && "opacity-45",
+                  )}
+                >
+                  {Array.from(item.shortcut).map((key, index, keys) => (
+                    <kbd
+                      key={`${item.tab}-${key}`}
+                      className={cn(
+                        "inline-flex size-[18px] items-center justify-center rounded-[4px] border border-border/55 bg-muted/35 text-[10px] text-muted-foreground shadow-[0_1px_0_rgba(0,0,0,0.04)]",
+                        active &&
+                          "border-primary/35 bg-primary/10 text-primary",
+                        index === keys.length - 1 &&
+                          (active
+                            ? "font-semibold text-primary"
+                            : "font-semibold text-foreground/80"),
+                      )}
+                    >
+                      {key}
+                    </kbd>
+                  ))}
                 </span>
               </button>
             );

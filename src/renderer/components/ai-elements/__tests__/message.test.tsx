@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MessageResponse, MessageSkillText } from "../message";
+import {
+  MessageActionFrame,
+  MessageActions,
+  MessageResponse,
+  MessageSkillText,
+  messageActionsHoverClass,
+} from "../message";
 
 describe("MessageResponse", () => {
   it("renders markdown tables with compact chat table styling", () => {
@@ -19,10 +25,27 @@ describe("MessageResponse", () => {
     expect(html).toContain("last:pr-0");
     expect(html).not.toContain("rounded-lg border");
   });
+
+  it("scopes message action hover to the message frame without adding an action row", () => {
+    const html = renderToStaticMarkup(
+      <MessageActionFrame from="user">
+        <div>message bubble</div>
+        <MessageActions className={messageActionsHoverClass}>
+          <button type="button">copy</button>
+        </MessageActions>
+      </MessageActionFrame>,
+    );
+
+    expect(html).toContain("group/message-actions");
+    expect(html).toContain("w-fit");
+    expect(html).toContain("absolute");
+    expect(html).toContain("top-full");
+    expect(html).toContain("group-hover/message-actions:opacity-100");
+  });
 });
 
 describe("MessageSkillText", () => {
-  it("renders leading slash skills as lightweight chips", () => {
+  it("renders leading slash skills as lightweight chips without command slashes", () => {
     const html = renderToStaticMarkup(
       <MessageSkillText text="/pdf-processor /algorithmic-art summarize this" />,
     );
@@ -30,8 +53,10 @@ describe("MessageSkillText", () => {
     expect(html).toContain('data-skill-mention=""');
     expect(html).toContain('data-skill-id="pdf-processor"');
     expect(html).toContain('data-skill-id="algorithmic-art"');
-    expect(html).toContain("/pdf-processor");
-    expect(html).toContain("/algorithmic-art");
+    expect(html).toContain(">pdf-processor</span>");
+    expect(html).toContain(">algorithmic-art</span>");
+    expect(html).not.toContain(">/pdf-processor</span>");
+    expect(html).not.toContain(">/algorithmic-art</span>");
     expect(html).toContain("summarize this");
   });
 

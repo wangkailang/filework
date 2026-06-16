@@ -55,19 +55,36 @@ interface PromptInputContextValue {
 
 const PromptInputContext = createContext<PromptInputContextValue | null>(null);
 
-const readEditorPlainText = (editor: {
+type EditorTextLeafNode = {
+  attrs?: Record<string, unknown>;
+  type: { name: string };
+};
+
+const readEditorLeafText = (leafNode: EditorTextLeafNode): string => {
+  if (leafNode.type.name !== "skillMention") return "";
+  const id = leafNode.attrs?.id;
+  return typeof id === "string" && id.trim() ? `/${id.trim()}` : "";
+};
+
+export const readEditorPlainText = (editor: {
   state: {
     doc: {
       content: { size: number };
       textBetween: (
         from: number,
         to: number,
-        blockSeparator?: string,
-        leafText?: string,
+        blockSeparator?: string | null,
+        leafText?: string | null | ((leafNode: EditorTextLeafNode) => string),
       ) => string;
     };
   };
-}) => editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n");
+}) =>
+  editor.state.doc.textBetween(
+    0,
+    editor.state.doc.content.size,
+    "\n",
+    readEditorLeafText,
+  );
 
 const SkillMention = TiptapNode.create({
   name: "skillMention",

@@ -214,7 +214,7 @@ export const LeftRail = ({
             </button>
           </div>
           {workspaceRef && branchForChip && (
-            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden pl-6">
+            <div className="flex min-w-0 items-center gap-1.5 pl-6">
               <BranchSwitcher
                 workspaceRef={workspaceRef}
                 currentBranch={branchForChip}

@@ -1,6 +1,17 @@
-// 右侧统一停靠面板:预览 / Diff / Web 三标签共用一个容器,可拖分隔条调宽。
+// 右侧统一停靠面板:预览 / 搜索 / 回收站 / Diff / Web / 子 agent 共用一个容器,可拖分隔条调宽。
 // 由父级(App)通过 mode 决定分栏(参与 flex 布局)还是浮层(absolute 覆盖)。
-import { Maximize2, Minimize2, X } from "lucide-react";
+import {
+  Bot,
+  FileText,
+  GitCompareArrows,
+  Globe,
+  type LucideIcon,
+  Maximize2,
+  Minimize2,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
@@ -114,19 +125,32 @@ export const ContextDock = ({
     [onWidthChange, onCommitWidth],
   );
 
-  const tabBtn = (t: DockTab, label: string) => (
-    <button
-      type="button"
-      onClick={() => onTabChange(t)}
-      className={`rounded-t-md px-3 py-1.5 font-mono text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 ${
-        effectiveTab === t
-          ? "bg-card text-foreground shadow-[inset_0_-2px_0_var(--color-primary)]"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const tabBtn = (t: DockTab, label: string, Icon: LucideIcon) => {
+    const selected = effectiveTab === t;
+    return (
+      <button
+        type="button"
+        onClick={() => onTabChange(t)}
+        data-dock-tab={t}
+        aria-current={selected ? "page" : undefined}
+        className={cn(
+          "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          selected
+            ? "bg-card text-primary shadow-sm ring-1 ring-border/70"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <Icon
+          data-dock-tab-icon={t}
+          className={cn(
+            "size-3.5 shrink-0",
+            selected ? "text-primary" : "text-muted-foreground",
+          )}
+        />
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  };
 
   return (
     // 打开时从右滑入 + 淡入,统一 200ms 节奏;fullscreen 覆盖到窗口顶部。
@@ -165,18 +189,19 @@ export const ContextDock = ({
           className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/30 focus:bg-primary/40 focus:outline-none"
         />
       )}
-      <div className="titlebar-no-drag flex h-9 items-center gap-1 border-b border-border px-2">
-        {tabBtn("preview", LL.dock_preview())}
-        {tabBtn("search", LL.dock_search())}
-        {tabBtn("trash", LL.dock_trash())}
-        {isGitRepo && tabBtn("diff", LL.dock_diff())}
-        {tabBtn("web", LL.dock_web())}
-        {subagentSel && tabBtn("subagent", LL.dock_subagent())}
-        <div className="flex-1" />
+      <div className="titlebar-no-drag flex h-10 items-center gap-1 border-b border-border bg-muted/20 px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tabBtn("preview", LL.dock_preview(), FileText)}
+          {tabBtn("search", LL.dock_search(), Search)}
+          {tabBtn("trash", LL.dock_trash(), Trash2)}
+          {isGitRepo && tabBtn("diff", LL.dock_diff(), GitCompareArrows)}
+          {tabBtn("web", LL.dock_web(), Globe)}
+          {subagentSel && tabBtn("subagent", LL.dock_subagent(), Bot)}
+        </div>
         <button
           type="button"
           onClick={() => setIsFullscreen((v) => !v)}
-          className="rounded p-1 hover:bg-accent"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           aria-label={
             isFullscreen ? LL.preview_exitFullscreen() : LL.preview_fullscreen()
           }
@@ -186,23 +211,23 @@ export const ContextDock = ({
           }
         >
           {isFullscreen ? (
-            <Minimize2 className="size-3.5 text-muted-foreground" />
+            <Minimize2 className="size-3.5" />
           ) : (
-            <Maximize2 className="size-3.5 text-muted-foreground" />
+            <Maximize2 className="size-3.5" />
           )}
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 hover:bg-accent"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           aria-label={LL.session_close()}
         >
-          <X className="size-3.5 text-muted-foreground" />
+          <X className="size-3.5" />
         </button>
       </div>
-      {/* 三个标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
+      {/* 各标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
           webview / 文件预览,保留页面、滚动、缩放等状态。 */}
-      <div className="h-[calc(100%-2.25rem)] overflow-hidden">
+      <div className="h-[calc(100%-2.5rem)] overflow-hidden">
         <div className={cn("h-full", effectiveTab !== "preview" && "hidden")}>
           {filePath ? (
             <FilePreviewPanel filePath={filePath} />

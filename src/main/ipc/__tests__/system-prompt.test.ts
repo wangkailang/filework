@@ -108,11 +108,67 @@ describe("buildAgentSystemPrompt", () => {
   it("default prompt includes the Karpathy operating principles + deterministic-computation rule", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toContain("Operating Principles");
+    expect(prompt).toContain("Agent Identity");
     expect(prompt).toContain("Think Before Acting");
     expect(prompt).toContain("Simplicity First");
+    expect(prompt).toContain("Privacy and Safety Boundaries");
+    expect(prompt).toContain("Tone and Output Style");
     expect(prompt).toContain("Deterministic Computation");
     expect(prompt).toContain("Surgical Changes");
     expect(prompt).toContain("Goal-Driven Execution");
+  });
+
+  it("default prompt defines Workspace Agent identity without inheriting vendor/model claims", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("Workspace Agent");
+    expect(prompt).toContain("local-first");
+    expect(prompt).not.toMatch(/Claude Fable|Mythos|Anthropic's products/);
+  });
+
+  it("default prompt prioritizes user-provided artifacts and current verification", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/artifact|URL|file/i);
+    expect(prompt).toMatch(/primary source/i);
+    expect(prompt).toMatch(/current|recent|latest/i);
+  });
+
+  it("default prompt includes privacy and safety boundaries for local workspace work", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/Never log or transmit file contents/i);
+    expect(prompt).toMatch(/API keys|secrets|credentials/i);
+    expect(prompt).toMatch(/medical|legal|financial/i);
+  });
+
+  it("default prompt treats external content as data, not instructions", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("External Content Boundary");
+    expect(prompt).toMatch(/untrusted data/i);
+    expect(prompt).toMatch(/ignore.*system prompt|bypass.*approval/i);
+  });
+
+  it("default prompt includes compact tool choice and mistake-handling guidance", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("Tool Choice");
+    expect(prompt).toMatch(/structured parser|database query/i);
+    expect(prompt).toMatch(/Acknowledge mistakes briefly/i);
+  });
+
+  it("default prompt respects explicit stop/completion cues", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/stop|pause|leave it there/i);
+    expect(prompt).toMatch(/do not keep asking/i);
+  });
+
+  it("default prompt keeps formatting and tone concise", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/same language/i);
+    expect(prompt).toMatch(/minimal formatting/i);
+    expect(prompt).toMatch(/one question/i);
+  });
+
+  it("default prompt remains compact after supplemental policy additions", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt.length).toBeLessThan(8500);
   });
 
   it("deterministic-computation rule names a code-execution path and forbids in-prose math", () => {
