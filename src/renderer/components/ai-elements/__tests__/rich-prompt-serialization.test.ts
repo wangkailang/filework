@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readEditorPlainText } from "../prompt-input";
 import { promptDocToText, textToPromptDoc } from "../rich-prompt-serialization";
 
 describe("rich prompt serialization", () => {
@@ -45,5 +46,23 @@ describe("rich prompt serialization", () => {
         ],
       }),
     ).toBe("/pdf summarize this");
+  });
+
+  it("reads selected skill chips from the editor as slash commands", () => {
+    const skillLeaf = {
+      attrs: { id: "canvas-design" },
+      type: { name: "skillMention" },
+    };
+    const text = readEditorPlainText({
+      state: {
+        doc: {
+          content: { size: 1 },
+          textBetween: (_from, _to, _blockSeparator, leafText) =>
+            `${typeof leafText === "function" ? leafText(skillLeaf) : ""} 创建端午节划龙舟海报`,
+        },
+      },
+    });
+
+    expect(text).toBe("/canvas-design 创建端午节划龙舟海报");
   });
 });
