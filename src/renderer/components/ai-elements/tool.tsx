@@ -52,7 +52,7 @@ export const Tool = ({
           // 收起态:无边框密集单行,几乎不占视觉空间
           // 展开态:才显示边框 + 背景,凸显出当前查看的调用
           "rounded-md text-sm overflow-hidden transition-colors",
-          isOpen && "border border-border-strong bg-card",
+          isOpen && "border border-border/45 bg-muted/10",
           className,
         )}
         {...props}
@@ -86,19 +86,19 @@ interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
 const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   "input-streaming": {
     icon: <CircleDashed className="size-3.5 animate-pulse" />,
-    color: "text-muted-foreground",
+    color: "text-muted-foreground/75",
   },
   "input-available": {
     icon: <Loader2 className="size-3.5 animate-spin" />,
-    color: "text-status-running",
+    color: "text-status-running/75",
   },
   "output-available": {
     icon: <CheckCircle2 className="size-3.5" />,
-    color: "text-status-success",
+    color: "text-status-success/70",
   },
   "output-error": {
     icon: <XCircle className="size-3.5" />,
-    color: "text-status-error",
+    color: "text-status-error/70",
   },
 };
 
@@ -133,9 +133,9 @@ export const ToolHeader = ({
     <>
       {collapsible ? (
         open ? (
-          <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
+          <ChevronDown className="size-3.5 text-muted-foreground/65 shrink-0" />
         ) : (
-          <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
+          <ChevronRight className="size-3.5 text-muted-foreground/65 shrink-0" />
         )
       ) : (
         // 静态行:占位等宽,保持与可展开行的左边缘对齐。
@@ -154,16 +154,16 @@ export const ToolHeader = ({
           className={cn("flex items-center gap-1.5 shrink-0", config.color)}
         >
           {config.icon}
-          <span className="text-xs font-medium">{stateLabel}</span>
+          <span className="text-xs font-normal">{stateLabel}</span>
         </span>
       )}
       {!dense && (
-        <span className="text-xs text-muted-foreground font-mono shrink-0">
+        <span className="text-xs text-muted-foreground/75 font-mono shrink-0">
           {label}
         </span>
       )}
       {summary != null && (
-        <span className="text-xs text-muted-foreground/80 font-mono truncate min-w-0 flex-1">
+        <span className="text-xs text-muted-foreground/70 font-mono truncate min-w-0 flex-1">
           {summary}
         </span>
       )}
@@ -173,7 +173,7 @@ export const ToolHeader = ({
   // 外层行承载 hover 背景与行尾动作;触发器只覆盖 chevron+摘要区,动作按钮
   // 作为同级兄弟挂在触发器之外 —— 否则会形成 <button> 套 <button>。
   return (
-    <div className="group flex items-center min-w-0 rounded-md hover:bg-muted/50 transition-colors">
+    <div className="group flex items-center min-w-0 rounded-md hover:bg-muted/25 transition-colors">
       {collapsible ? (
         // 触发器须 flex-1 + min-w-0,内部 summary 才拿得到收缩边界、truncate 生效。
         <CollapsibleTrigger
@@ -220,7 +220,7 @@ export const ToolContent = ({
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
   <CollapsibleContent
-    className={cn("border-t border-border", className)}
+    className={cn("border-t border-border/35", className)}
     {...props}
   >
     {children}
@@ -244,13 +244,13 @@ export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
 
   return (
     <div
-      className={cn("px-3 py-2 border-b border-border", className)}
+      className={cn("px-3 py-2 border-b border-border/35", className)}
       {...props}
     >
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/65 mb-1">
         {LL.tool_params()}
       </div>
-      <pre className="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-all max-h-40 overflow-auto">
+      <pre className="text-xs font-mono text-muted-foreground/90 whitespace-pre-wrap break-all max-h-40 overflow-auto">
         {formatted}
       </pre>
     </div>
@@ -277,15 +277,15 @@ export const ToolOutput = ({
 
   return (
     <div className={cn("px-3 py-2", className)} {...props}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/65 mb-1">
         {errorText ? LL.tool_errorLabel() : LL.tool_result()}
       </div>
       {errorText ? (
-        <pre className="text-xs font-mono text-status-error whitespace-pre-wrap break-all">
+        <pre className="text-xs font-mono text-status-error/80 whitespace-pre-wrap break-all">
           {errorText}
         </pre>
       ) : (
-        <div className="text-xs text-foreground/80 max-h-60 overflow-auto">
+        <div className="text-xs text-muted-foreground/95 max-h-60 overflow-auto">
           {typeof output === "string" ? (
             <pre className="font-mono whitespace-pre-wrap break-all">
               {output}

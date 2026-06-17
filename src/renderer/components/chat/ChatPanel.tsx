@@ -617,7 +617,7 @@ export const ChatPanel = ({
                 作为参数 JSON 再次铺出来。 */}
             {presenter ? customInput : <ToolInput input={inv.args} />}
             {inv.approval && (
-              <div className="px-3 py-2 border-b border-border">
+              <div className="px-3 py-2 border-b border-border/35">
                 <Confirmation state={inv.approval.state}>
                   {inv.approval.state === "approval-requested" &&
                     renderApprovalRequest({
@@ -700,7 +700,7 @@ export const ChatPanel = ({
           summary={summary}
         />
         <ToolContent>
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/35">
             {items.map((p) => {
               if (p.type === "reasoning") {
                 groupReasoningIdx++;

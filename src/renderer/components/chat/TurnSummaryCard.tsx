@@ -35,11 +35,11 @@ function FileRow({ file }: { file: TurnSummaryFile }) {
     <button
       type="button"
       onClick={() => openFile(file.path)}
-      className="group flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left text-xs transition-colors hover:bg-accent/60"
+      className="group flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left text-xs transition-colors hover:bg-muted/25"
       title={file.path}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-      <span className="truncate text-foreground/80 underline decoration-transparent underline-offset-2 transition-colors group-hover:text-primary group-hover:decoration-primary/50">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground" />
+      <span className="truncate text-foreground/65 underline decoration-transparent underline-offset-2 transition-colors group-hover:text-foreground/80 group-hover:decoration-muted-foreground/40">
         {shortPath(file.path)}
       </span>
       {file.writeCount > 1 && (
@@ -49,13 +49,13 @@ function FileRow({ file }: { file: TurnSummaryFile }) {
       )}
       <span className="ml-auto shrink-0 font-mono">
         {file.op === "delete" ? (
-          <span className="text-red-400">已删除</span>
+          <span className="text-status-error/70">已删除</span>
         ) : file.unknownStat ? (
-          <span className="text-muted-foreground">已改动</span>
+          <span className="text-muted-foreground/75">已改动</span>
         ) : (
           <>
-            <span className="text-emerald-500">+{file.added}</span>{" "}
-            <span className="text-red-400">-{file.removed}</span>
+            <span className="text-status-success/75">+{file.added}</span>{" "}
+            <span className="text-status-error/70">-{file.removed}</span>
           </>
         )}
       </span>
@@ -69,16 +69,16 @@ function CommandRow({ cmd }: { cmd: TurnSummaryCommand }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1 text-xs">
       {interrupted ? (
-        <span className="h-3.5 w-3.5 shrink-0 text-center text-muted-foreground">
+        <span className="h-3.5 w-3.5 shrink-0 text-center text-muted-foreground/70">
           –
         </span>
       ) : ok ? (
-        <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        <Check className="h-3.5 w-3.5 shrink-0 text-status-success/70" />
       ) : (
-        <X className="h-3.5 w-3.5 shrink-0 text-red-400" />
+        <X className="h-3.5 w-3.5 shrink-0 text-status-error/70" />
       )}
       <span
-        className="truncate font-mono text-foreground/80"
+        className="truncate font-mono text-foreground/65"
         title={cmd.command}
       >
         {cmd.command}
@@ -86,21 +86,21 @@ function CommandRow({ cmd }: { cmd: TurnSummaryCommand }) {
       <span className="ml-auto shrink-0 font-mono text-[11px]">
         {cmd.testStats ? (
           <>
-            <span className="text-emerald-500">
+            <span className="text-status-success/75">
               {cmd.testStats.passed} 通过
             </span>
             {cmd.testStats.failed > 0 && (
-              <span className="ml-1 text-red-400">
+              <span className="ml-1 text-status-error/70">
                 {cmd.testStats.failed} 失败
               </span>
             )}
           </>
         ) : interrupted ? (
-          <span className="text-muted-foreground">已中断</span>
+          <span className="text-muted-foreground/75">已中断</span>
         ) : ok ? (
-          <span className="text-muted-foreground">exit 0</span>
+          <span className="text-muted-foreground/75">exit 0</span>
         ) : (
-          <span className="text-red-400">exit {cmd.exitCode}</span>
+          <span className="text-status-error/70">exit {cmd.exitCode}</span>
         )}
       </span>
     </div>
@@ -125,29 +125,29 @@ export function TurnSummaryCard({ part }: { part: TurnSummaryPart }) {
   }
 
   return (
-    <div className="my-1 overflow-hidden rounded-md border border-border bg-background/40">
+    <div className="my-1 overflow-hidden rounded-md border border-border/35 bg-muted/10">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium hover:bg-accent/30"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-normal hover:bg-muted/25"
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/65" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/65" />
         )}
-        <span className="text-foreground/80">本回合交付</span>
-        <span className="text-muted-foreground">
+        <span className="text-foreground/65">本回合交付</span>
+        <span className="text-muted-foreground/75">
           · {headerBits.join(" · ")}
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-border py-0.5">
+        <div className="border-t border-border/35 py-0.5">
           {files.map((f) => (
             <FileRow key={`${f.op}-${f.path}`} file={f} />
           ))}
           {files.length > 0 && commands.length > 0 && (
-            <div className="my-0.5 border-t border-border/60" />
+            <div className="my-0.5 border-t border-border/35" />
           )}
           {commands.map((c, i) => (
             <CommandRow

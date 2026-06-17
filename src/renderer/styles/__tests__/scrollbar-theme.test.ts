@@ -23,11 +23,21 @@ describe("global primary theme", () => {
     expect(globalCss).toContain("--color-ring: #7c3aed;");
   });
 
-  it("uses the purple primary token for inserted skill chips", () => {
+  it("keeps inserted skill chips visually subdued", () => {
     const skillMentionRule =
       globalCss.match(/\.prompt-skill-mention \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const lightSkillMentionRule =
+      globalCss.match(/\.light \.prompt-skill-mention \{([\s\S]*?)\n\}/)?.[1] ??
+      "";
 
     expect(skillMentionRule).toContain("var(--color-primary)");
+    expect(skillMentionRule).toContain("var(--color-muted)");
+    expect(skillMentionRule).toContain("var(--color-muted-foreground)");
+    expect(skillMentionRule).not.toContain(
+      "0 1px 2px color-mix(in oklab, var(--color-primary)",
+    );
+    expect(lightSkillMentionRule).toContain("var(--color-muted)");
+    expect(lightSkillMentionRule).not.toContain("color: var(--color-primary)");
     expect(skillMentionRule).not.toContain("background: var(--color-accent)");
   });
 
