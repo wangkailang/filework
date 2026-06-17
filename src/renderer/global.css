@@ -215,19 +215,19 @@ body {
   margin-inline: 1px 3px;
   padding: 0.1rem 0.46rem 0.1rem 0.36rem;
   border: 1px solid
-    color-mix(in oklab, var(--color-primary) 58%, var(--color-border));
+    color-mix(in oklab, var(--color-primary) 22%, var(--color-border));
   border-radius: calc(var(--radius-sm) + 2px);
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--color-primary) 18%, var(--color-popover)),
-      color-mix(in oklab, var(--color-primary) 10%, var(--color-popover))
+      color-mix(in oklab, var(--color-primary) 5%, var(--color-muted)),
+      color-mix(in oklab, var(--color-primary) 2%, var(--color-muted))
     ),
-    var(--color-popover);
+    var(--color-muted);
   color: color-mix(
     in oklab,
-    var(--color-primary-bright) 86%,
-    var(--color-foreground)
+    var(--color-primary-bright) 38%,
+    var(--color-muted-foreground)
   );
   font-family: var(--font-sans);
   font-size: 0.88em;
@@ -235,8 +235,9 @@ body {
   letter-spacing: 0;
   line-height: 1.36;
   box-shadow:
-    0 1px 2px color-mix(in oklab, var(--color-primary) 18%, transparent),
-    inset 0 0 0 1px color-mix(in oklab, var(--color-primary) 14%, transparent);
+    0 1px 1px color-mix(in oklab, var(--color-background) 32%, transparent),
+    inset 0 0 0 1px
+    color-mix(in oklab, var(--color-border-faint) 72%, transparent);
   white-space: nowrap;
   vertical-align: 0.05em;
 }
@@ -247,7 +248,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .prompt-skill-mention::before {
@@ -262,18 +263,22 @@ body {
     linear-gradient(currentColor 0 0) right top / 42% 42% no-repeat,
     linear-gradient(currentColor 0 0) left bottom / 42% 42% no-repeat,
     linear-gradient(currentColor 0 0) right bottom / 42% 42% no-repeat;
-  opacity: 0.82;
+  opacity: 0.58;
 }
 
 .light .prompt-skill-mention {
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--color-primary) 12%, var(--color-popover)),
-      color-mix(in oklab, var(--color-primary) 6%, var(--color-popover))
+      color-mix(in oklab, var(--color-primary) 4%, var(--color-muted)),
+      color-mix(in oklab, var(--color-primary) 2%, var(--color-muted))
     ),
-    var(--color-popover);
-  color: var(--color-primary);
+    var(--color-muted);
+  color: color-mix(
+    in oklab,
+    var(--color-primary) 42%,
+    var(--color-muted-foreground)
+  );
 }
 
 /* ─── Light theme(Monokai 浅色:暖纸底 + 加深语义色保对比) ─── */

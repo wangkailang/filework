@@ -11,10 +11,63 @@ const LL = {
     `${n} removed lines unavailable`,
   preview_written_snapshot_label: () => "Written content snapshot",
   tool_diff_label: () => "Diff",
+  tool_summary_exitCode: (n: number) => `exit ${n}`,
   tool_summary_new_file: () => "new file",
 } as unknown as TranslationFunctions;
 
+describe("runCommand presenter", () => {
+  it("keeps command summaries lower contrast than assistant prose", () => {
+    const summary = toolPresenters.runCommand.summary?.(
+      { command: "python3 dragon-boat-poster.py" },
+      { exitCode: 1 },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-command",
+      },
+    );
+
+    const html = renderToStaticMarkup(summary);
+
+    expect(html).toContain("text-foreground/65");
+    expect(html).toContain("text-status-error/70");
+    expect(html).not.toContain("text-foreground/80");
+    expect(html).not.toContain("text-red-400");
+  });
+});
+
 describe("writeFile presenter", () => {
+  it("uses subdued diff stat colors in the folded summary", () => {
+    const summary = toolPresenters.writeFile.summary?.(
+      {
+        path: "dragon-boat-poster.py",
+        content: "print('poster')\n",
+      },
+      {
+        success: true,
+        diffStat: {
+          added: 3,
+          removed: 1,
+          isNew: false,
+          isBinary: false,
+          truncated: false,
+        },
+      },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-write-summary",
+      },
+    );
+
+    const html = renderToStaticMarkup(summary);
+
+    expect(html).toContain("text-status-success/75");
+    expect(html).toContain("text-status-error/70");
+    expect(html).not.toContain("text-emerald-500");
+    expect(html).not.toContain("text-red-400");
+  });
+
   it("keeps the written snapshot when historical diff hunks are missing", () => {
     const output = toolPresenters.writeFile.output?.(
       {

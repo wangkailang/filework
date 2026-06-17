@@ -14,6 +14,10 @@ import { DiffHunkView } from "./preview/DiffHunkView";
 const MAX_OUTPUT_LINES = 30;
 const MAX_LIST_ENTRIES = 50;
 const MAX_COMMAND_SHORT = 60;
+const TOOL_SUMMARY_TEXT = "text-foreground/65";
+const TOOL_MUTED_TEXT = "text-muted-foreground/75";
+const TOOL_SUCCESS_TEXT = "text-status-success/75";
+const TOOL_ERROR_TEXT = "text-status-error/70";
 
 export interface PresenterCtx {
   LL: TranslationFunctions;
@@ -121,20 +125,20 @@ const runCommandPresenter: ToolPresenter = {
         : null;
     return (
       <>
-        <span className="text-foreground/80">$ {cmdShort}</span>
+        <span className={TOOL_SUMMARY_TEXT}>$ {cmdShort}</span>
         {shellId && (
-          <span className="ml-2 font-mono text-muted-foreground">
+          <span className={cn("ml-2 font-mono", TOOL_MUTED_TEXT)}>
             {shellId}
           </span>
         )}
         {shellId && shellStatus === "running" && (
-          <span className="ml-1 text-blue-400">⏵ running</span>
+          <span className="ml-1 text-status-running/70">⏵ running</span>
         )}
         {exit !== null && (
           <span
             className={cn(
               "ml-2",
-              exit === 0 ? "text-muted-foreground" : "text-red-400",
+              exit === 0 ? TOOL_MUTED_TEXT : TOOL_ERROR_TEXT,
             )}
           >
             {LL.tool_summary_exitCode(exit)}
@@ -149,8 +153,8 @@ const runCommandPresenter: ToolPresenter = {
     if (!cmd) return null;
     const bg = a?.runInBackground === true;
     return (
-      <div className="px-3 py-2 border-b border-border">
-        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+      <div className="px-3 py-2 border-b border-border/35">
+        <pre className="text-xs font-mono text-muted-foreground/95 whitespace-pre-wrap break-all">
           $ {cmd}
           {bg && (
             <span className="text-muted-foreground"> {"  "}(background)</span>
@@ -171,7 +175,7 @@ const runCommandPresenter: ToolPresenter = {
     return (
       <div className="px-3 py-2 text-xs space-y-2">
         {shellId && shellStatus === "running" && (
-          <div className="text-[10px] uppercase tracking-wider text-blue-400">
+          <div className="text-[10px] uppercase tracking-wider text-status-running/70">
             initial snapshot — use readShellOutput({shellId}) for more
           </div>
         )}
@@ -190,7 +194,7 @@ const runCommandPresenter: ToolPresenter = {
           <div
             className={cn(
               "font-mono",
-              exit === 0 ? "text-muted-foreground" : "text-red-400",
+              exit === 0 ? TOOL_MUTED_TEXT : TOOL_ERROR_TEXT,
             )}
           >
             {LL.tool_summary_exitCode(exit)}
@@ -213,19 +217,19 @@ const readShellOutputPresenter: ToolPresenter = {
         : 0;
     return (
       <>
-        <span className="font-mono text-foreground/80">{shellId}</span>
+        <span className={cn("font-mono", TOOL_SUMMARY_TEXT)}>{shellId}</span>
         {status && (
           <span
             className={cn(
               "ml-2",
-              status === "running" ? "text-blue-400" : "text-muted-foreground",
+              status === "running" ? "text-status-running/70" : TOOL_MUTED_TEXT,
             )}
           >
             {status}
           </span>
         )}
         {stdoutLen > 0 && (
-          <span className="ml-2 text-muted-foreground">
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>
             +{stdoutLen} {LL.tool_stdout().toLowerCase()}
           </span>
         )}
@@ -236,7 +240,9 @@ const readShellOutputPresenter: ToolPresenter = {
     const r = asRecord(result);
     if (!r) return null;
     if (typeof r.error === "string") {
-      return <div className="px-3 py-2 text-xs text-red-400">{r.error}</div>;
+      return (
+        <div className="px-3 py-2 text-xs text-status-error/80">{r.error}</div>
+      );
     }
     const stdout = typeof r.stdout === "string" ? r.stdout : "";
     const stderr = typeof r.stderr === "string" ? r.stderr : "";
@@ -251,7 +257,7 @@ const readShellOutputPresenter: ToolPresenter = {
     return (
       <div className="px-3 py-2 text-xs space-y-2">
         {truncated && (
-          <div className="text-[10px] text-amber-400">
+          <div className="text-[10px] text-status-await/75">
             buffer rolled — some intermediate output was dropped
           </div>
         )}
@@ -284,8 +290,8 @@ const killShellPresenter: ToolPresenter = {
     else if (r) label = "already exited";
     return (
       <>
-        <span className="font-mono text-foreground/80">{shellId}</span>
-        <span className="ml-2 text-muted-foreground">{label}</span>
+        <span className={cn("font-mono", TOOL_SUMMARY_TEXT)}>{shellId}</span>
+        <span className={cn("ml-2", TOOL_MUTED_TEXT)}>{label}</span>
       </>
     );
   },
@@ -306,13 +312,13 @@ function CommandStream({
   const link = useLinkRouter();
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/65 mb-1">
         {label}
       </div>
       <pre
         className={cn(
-          "font-mono whitespace-pre-wrap break-all max-h-60 overflow-auto",
-          tone === "error" && "text-red-400",
+          "font-mono text-muted-foreground/95 whitespace-pre-wrap break-all max-h-60 overflow-auto",
+          tone === "error" && "text-status-error/80",
         )}
       >
         {renderWithLinks(shown, link)}
@@ -390,7 +396,7 @@ function renderWithLinks(
         onClick={link.onClick}
         onAuxClick={link.onAuxClick}
         rel="noopener noreferrer"
-        className="underline text-primary hover:opacity-80"
+        className="underline text-primary/80 hover:text-primary"
       >
         {href}
       </a>,
@@ -413,11 +419,11 @@ const readFilePresenter: ToolPresenter = {
     const lines = typeof result === "string" ? countLines(result) : 0;
     return (
       <>
-        <span className="text-foreground/80" title={p}>
+        <span className={TOOL_SUMMARY_TEXT} title={p}>
           {displayPath(p, workspacePath)}
         </span>
         {state === "output-available" && lines > 0 && (
-          <span className="ml-2 text-muted-foreground">
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>
             {LL.tool_summary_lines(lines)}
           </span>
         )}
@@ -433,7 +439,7 @@ const readFilePresenter: ToolPresenter = {
     if (typeof result !== "string" || !result) return null;
     return (
       <div className="px-3 py-2 text-xs">
-        <pre className="max-h-80 overflow-auto font-mono whitespace-pre-wrap break-all">
+        <pre className="max-h-80 overflow-auto font-mono text-muted-foreground/95 whitespace-pre-wrap break-all">
           {result}
         </pre>
       </div>
@@ -467,11 +473,11 @@ const listDirectoryPresenter: ToolPresenter = {
     const files = entries.length - dirs;
     return (
       <>
-        <span className="text-foreground/80" title={p}>
+        <span className={TOOL_SUMMARY_TEXT} title={p}>
           {displayPath(p, workspacePath)}
         </span>
         {state === "output-available" && entries.length > 0 && (
-          <span className="ml-2 text-muted-foreground">
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>
             {LL.tool_summary_dirs_files(dirs, files)}
           </span>
         )}
@@ -483,8 +489,8 @@ const listDirectoryPresenter: ToolPresenter = {
     const p = typeof a?.path === "string" ? a.path : "";
     if (!p) return null;
     return (
-      <div className="px-3 py-2 border-b border-border">
-        <pre className="text-xs font-mono text-muted-foreground break-all">
+      <div className="px-3 py-2 border-b border-border/35">
+        <pre className="text-xs font-mono text-muted-foreground/85 break-all">
           {p}
         </pre>
       </div>
@@ -504,7 +510,10 @@ const listDirectoryPresenter: ToolPresenter = {
             return (
               <li
                 key={key}
-                className={cn("truncate", e?.isDirectory && "text-blue-500")}
+                className={cn(
+                  "truncate",
+                  e?.isDirectory && "text-muted-foreground/85",
+                )}
               >
                 {e?.isDirectory ? "📁 " : "📄 "}
                 {label}
@@ -513,7 +522,7 @@ const listDirectoryPresenter: ToolPresenter = {
           })}
         </ul>
         {remaining > 0 && (
-          <div className="mt-1 text-muted-foreground italic">
+          <div className="mt-1 text-muted-foreground/75 italic">
             {LL.tool_summary_more(remaining)}
           </div>
         )}
@@ -697,7 +706,7 @@ const writeFilePresenter: ToolPresenter = {
     const p = typeof a?.path === "string" ? a.path : "";
     return (
       <>
-        <span className="text-foreground/80" title={p}>
+        <span className={TOOL_SUMMARY_TEXT} title={p}>
           {displayPath(p, workspacePath)}
         </span>
         <WriteSummary
@@ -798,8 +807,8 @@ function WriteSummary({
   if (added == null || removed == null) return null;
   return (
     <span className="ml-2 font-mono">
-      <span className="text-emerald-500">+{added}</span>{" "}
-      <span className="text-red-400">-{removed}</span>
+      <span className={TOOL_SUCCESS_TEXT}>+{added}</span>{" "}
+      <span className={TOOL_ERROR_TEXT}>-{removed}</span>
     </span>
   );
 }
@@ -834,7 +843,7 @@ function WriteDiff({
   // 异步算 diff 尚未就绪(有前镜像可比对的编辑场景):等一拍。
   if (!stat && !cold && !ready) {
     return (
-      <div className="px-3 py-2 text-xs text-muted-foreground italic">…</div>
+      <div className="px-3 py-2 text-xs text-muted-foreground/75 italic">…</div>
     );
   }
   // isNew 以工具权威 diffStat 为准(执行前对前镜像算好),其次快照 —— 绝不靠
@@ -861,12 +870,14 @@ function WriteDiff({
     <div className="px-3 py-2 text-xs">
       {/* +N -M 已在外层头部那行展示;body 直接放 hunks,不再额外加"差异"标题。 */}
       {isNew && (
-        <div className="mb-1 text-[10px] tracking-normal text-emerald-500">
+        <div
+          className={cn("mb-1 text-[10px] tracking-normal", TOOL_SUCCESS_TEXT)}
+        >
           {LL.tool_summary_new_file()}
         </div>
       )}
       {statOnlyHunks && (
-        <div className="mb-1 text-[11px] text-muted-foreground">
+        <div className="mb-1 text-[11px] text-muted-foreground/75">
           {LL.preview_diff_details_unavailable()}
         </div>
       )}
@@ -884,7 +895,7 @@ function WriteDiff({
       ) : (
         // 编辑 + 无任何 diff 来源:老实展示该次写入的内容本身,不谎称新建、
         // 不伪造全增。完整 +/- 统计在头部那行。
-        <div className="overflow-x-auto font-mono text-[11px] leading-5 opacity-80">
+        <div className="overflow-x-auto font-mono text-[11px] leading-5 opacity-75">
           <DiffHunkView
             collapseContext={false}
             hunk={{
@@ -897,12 +908,12 @@ function WriteDiff({
       )}
       {statOnlyHunks && content.length > 0 && (
         <div className="mt-2">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground/65">
             {LL.preview_written_snapshot_label()}
           </div>
           <pre
             data-written-snapshot="true"
-            className="max-h-80 overflow-auto rounded-md border border-border bg-background/40 p-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-all"
+            className="max-h-80 overflow-auto rounded-md border border-border/35 bg-muted/10 p-2 font-mono text-[11px] leading-5 text-muted-foreground/95 whitespace-pre-wrap break-all"
           >
             {content}
           </pre>
@@ -1023,7 +1034,7 @@ function WebSearchResultList({ items }: { items: WebSearchResultItem[] }) {
         return (
           <li
             key={item.url || `${title}-${i}`}
-            className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-1.5 border-border/70 border-t py-1.5 first:border-t-0"
+            className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-1.5 border-border/40 border-t py-1.5 first:border-t-0"
           >
             <span className="pt-0.5 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
               {i + 1}
@@ -1035,12 +1046,12 @@ function WebSearchResultList({ items }: { items: WebSearchResultItem[] }) {
                   onClick={link.onClick}
                   onAuxClick={link.onAuxClick}
                   rel="noopener noreferrer"
-                  className="block truncate font-medium text-foreground/90 hover:text-primary hover:underline"
+                  className="block truncate font-medium text-foreground/75 hover:text-primary/85 hover:underline"
                 >
                   {title}
                 </a>
               ) : (
-                <div className="truncate font-medium text-foreground/90">
+                <div className="truncate font-medium text-foreground/75">
                   {title}
                 </div>
               )}
@@ -1050,13 +1061,13 @@ function WebSearchResultList({ items }: { items: WebSearchResultItem[] }) {
                   onClick={link.onClick}
                   onAuxClick={link.onAuxClick}
                   rel="noopener noreferrer"
-                  className="mt-0.5 block truncate text-muted-foreground hover:text-primary hover:underline"
+                  className="mt-0.5 block truncate text-muted-foreground/75 hover:text-primary/85 hover:underline"
                 >
                   {urlText}
                 </a>
               )}
               {item.snippet && (
-                <div className="mt-0.5 line-clamp-2 text-foreground/65 leading-snug">
+                <div className="mt-0.5 line-clamp-2 text-muted-foreground/85 leading-snug">
                   {item.snippet}
                 </div>
               )}
@@ -1073,13 +1084,13 @@ const webSearchPresenter: ToolPresenter = {
   summary: (args) => {
     const q = searchQuery(args);
     if (!q) return null;
-    return <span className="text-foreground/80">{q}</span>;
+    return <span className={TOOL_SUMMARY_TEXT}>{q}</span>;
   },
   // 折叠分组:列出每次调用的查询词,而不是"5 个 webSearch"。
   groupSummary: (argsList) => {
     const queries = argsList.map(searchQuery).filter(Boolean);
     if (!queries.length) return null;
-    return <span className="text-foreground/80">{queries.join("、")}</span>;
+    return <span className={TOOL_SUMMARY_TEXT}>{queries.join("、")}</span>;
   },
   // 展开输出:排序后的结果(标题 + url)。
   output: (result) => {
@@ -1099,9 +1110,9 @@ const moveFilePresenter: ToolPresenter = {
     const dst = typeof a?.destination === "string" ? a.destination : "";
     if (!src && !dst) return null;
     return (
-      <span className="text-foreground/80" title={`${src} → ${dst}`}>
+      <span className={TOOL_SUMMARY_TEXT} title={`${src} → ${dst}`}>
         {displayPath(src, workspacePath)}{" "}
-        <span className="text-muted-foreground">→</span>{" "}
+        <span className={TOOL_MUTED_TEXT}>→</span>{" "}
         {displayPath(dst, workspacePath)}
       </span>
     );
@@ -1117,7 +1128,7 @@ function pathOnlySummary(
   const a = asRecord(args);
   const p = typeof a?.path === "string" ? a.path : "";
   return p ? (
-    <span className="text-foreground/80" title={p}>
+    <span className={TOOL_SUMMARY_TEXT} title={p}>
       {displayPath(p, ctx.workspacePath)}
     </span>
   ) : null;
@@ -1135,11 +1146,11 @@ const directoryStatsPresenter: ToolPresenter = {
     const dirs = typeof r?.totalDirs === "number" ? r.totalDirs : null;
     return (
       <>
-        <span className="text-foreground/80" title={p}>
+        <span className={TOOL_SUMMARY_TEXT} title={p}>
           {displayPath(p, workspacePath)}
         </span>
         {state === "output-available" && files !== null && dirs !== null && (
-          <span className="ml-2 text-muted-foreground">
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>
             {LL.tool_summary_dirs_files(dirs, files)}
           </span>
         )}
@@ -1167,13 +1178,13 @@ const urlGroupSummary = (argsList: unknown[]): ReactNode | null => {
     .filter(Boolean)
     .map((u) => shortUrl(u, 40));
   if (!urls.length) return null;
-  return <span className="text-foreground/80">{urls.join("、")}</span>;
+  return <span className={TOOL_SUMMARY_TEXT}>{urls.join("、")}</span>;
 };
 
 const urlPresenter: ToolPresenter = {
   summary: (args) => {
     const u = urlArg(args);
-    return u ? <span className="text-foreground/80">{shortUrl(u)}</span> : null;
+    return u ? <span className={TOOL_SUMMARY_TEXT}>{shortUrl(u)}</span> : null;
   },
   groupSummary: urlGroupSummary,
 };
@@ -1185,9 +1196,9 @@ const webFetchPresenter: ToolPresenter = {
     const a = asRecord(args);
     const q = typeof a?.query === "string" ? a.query : "";
     return (
-      <span className="text-foreground/80">
+      <span className={TOOL_SUMMARY_TEXT}>
         {shortUrl(u)}
-        {q && <span className="ml-2 text-muted-foreground">🔍 {q}</span>}
+        {q && <span className={cn("ml-2", TOOL_MUTED_TEXT)}>🔍 {q}</span>}
       </span>
     );
   },

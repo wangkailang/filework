@@ -26,7 +26,7 @@ describe("MessageResponse", () => {
     expect(html).not.toContain("rounded-lg border");
   });
 
-  it("scopes message action hover to the message frame without adding an action row", () => {
+  it("expands message action hover through the message frame without adding an action row", () => {
     const html = renderToStaticMarkup(
       <MessageActionFrame from="user">
         <div>message bubble</div>
@@ -37,9 +37,16 @@ describe("MessageResponse", () => {
     );
 
     expect(html).toContain("group/message-actions");
+    expect(html).toContain("after:absolute");
+    expect(html).toContain("after:top-full");
+    expect(html).toContain("after:h-8");
+    expect(html).toContain("after:min-w-16");
     expect(html).toContain("w-fit");
     expect(html).toContain("absolute");
     expect(html).toContain("top-full");
+    expect(html).toContain("mt-1");
+    expect(html).toContain("z-10");
+    expect(html).not.toContain("pt-1");
     expect(html).toContain("group-hover/message-actions:opacity-100");
   });
 });

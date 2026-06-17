@@ -88,7 +88,7 @@ function DiffLine({
         data-diff-marker="@@"
         className={cn(
           DIFF_LINE_GRID_CLASS,
-          "border-l-2 border-primary/45 bg-primary/10 text-primary-bright",
+          "border-l-2 border-primary/25 bg-primary/5 text-primary-bright/80",
         )}
       >
         <span
@@ -128,10 +128,10 @@ function DiffLine({
       data-diff-marker={marker}
       className={cn(
         DIFF_LINE_GRID_CLASS,
-        "border-l-2 text-foreground",
-        kind === "added" && "border-status-success/45 bg-status-success/10",
-        kind === "removed" && "border-status-error/45 bg-status-error/10",
-        kind === "context" && "border-transparent bg-background/30",
+        "border-l-2 text-foreground/85",
+        kind === "added" && "border-status-success/25 bg-status-success/5",
+        kind === "removed" && "border-status-error/25 bg-status-error/5",
+        kind === "context" && "border-transparent bg-muted/10",
       )}
     >
       <span
@@ -150,8 +150,8 @@ function DiffLine({
         className={cn(
           markerClassName(kind),
           stickyColumnClassName(2),
-          kind === "added" && "text-status-success",
-          kind === "removed" && "text-status-error",
+          kind === "added" && "text-status-success/75",
+          kind === "removed" && "text-status-error/75",
           kind === "context" && "text-muted-foreground/55",
         )}
         aria-hidden="true"
@@ -170,7 +170,7 @@ function OmittedLine({ hidden }: { hidden: number }) {
       data-diff-marker="…"
       className={cn(
         DIFF_LINE_GRID_CLASS,
-        "border-l-2 border-muted-foreground/25 bg-muted/40 text-muted-foreground italic",
+        "border-l-2 border-muted-foreground/20 bg-muted/25 text-muted-foreground/75 italic",
       )}
     >
       <span
@@ -205,11 +205,11 @@ function stickyColumnClassName(column: 0 | 1 | 2) {
 function markerClassName(kind: PreviewDiffHunk["kind"] | "hunk" | "omitted") {
   return cn(
     "select-none border-r px-1 text-center",
-    kind === "added" && "border-status-success/20 bg-status-success/10",
-    kind === "removed" && "border-status-error/20 bg-status-error/10",
-    kind === "context" && "border-border/70 bg-background",
-    kind === "hunk" && "border-primary/20 bg-primary/10",
-    kind === "omitted" && "border-muted-foreground/10 bg-muted/40",
+    kind === "added" && "border-status-success/15 bg-status-success/5",
+    kind === "removed" && "border-status-error/15 bg-status-error/5",
+    kind === "context" && "border-border/40 bg-muted/10",
+    kind === "hunk" && "border-primary/15 bg-primary/5",
+    kind === "omitted" && "border-muted-foreground/10 bg-muted/25",
   );
 }
 
@@ -217,13 +217,13 @@ function gutterClassName(kind: PreviewDiffHunk["kind"] | "hunk" | "omitted") {
   return cn(
     "select-none border-r px-2 text-right text-[10px]",
     kind === "added" &&
-      "border-status-success/20 bg-status-success/15 text-status-success/75",
+      "border-status-success/15 bg-status-success/5 text-status-success/65",
     kind === "removed" &&
-      "border-status-error/20 bg-status-error/15 text-status-error/75",
+      "border-status-error/15 bg-status-error/5 text-status-error/65",
     kind === "context" &&
-      "border-border/70 bg-muted/25 text-muted-foreground/45",
-    kind === "hunk" && "border-primary/20 bg-primary/15 text-primary-bright/70",
+      "border-border/40 bg-muted/10 text-muted-foreground/40",
+    kind === "hunk" && "border-primary/15 bg-primary/5 text-primary-bright/60",
     kind === "omitted" &&
-      "border-muted-foreground/10 bg-muted/50 text-muted-foreground/55",
+      "border-muted-foreground/10 bg-muted/25 text-muted-foreground/55",
   );
 }
