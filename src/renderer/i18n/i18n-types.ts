@@ -345,6 +345,281 @@ type RootTranslation = {
 	 */
 	llmConfig_cancel: string
 	/**
+	 * M​C​P​ ​S​e​r​v​e​r​s
+	 */
+	mcpConfig_title: string
+	/**
+	 * C​o​n​n​e​c​t​ ​t​o​o​l​s​ ​f​r​o​m​ ​M​C​P​-​c​o​m​p​a​t​i​b​l​e​ ​s​e​r​v​e​r​s​ ​(​f​i​l​e​s​y​s​t​e​m​,​ ​G​i​t​H​u​b​,​ ​.​.​.​)​.
+	 */
+	mcpConfig_description: string
+	/**
+	 * I​m​p​o​r​t​ ​J​S​O​N
+	 */
+	mcpConfig_importJson: string
+	/**
+	 * A​d​d​ ​S​e​r​v​e​r
+	 */
+	mcpConfig_add: string
+	/**
+	 * L​o​a​d​i​n​g​.​.​.
+	 */
+	mcpConfig_loading: string
+	/**
+	 * N​o​ ​M​C​P​ ​s​e​r​v​e​r​s​ ​c​o​n​f​i​g​u​r​e​d​.​ ​A​d​d​ ​o​n​e​ ​o​r​ ​i​m​p​o​r​t​ ​a​ ​J​S​O​N​ ​c​o​n​f​i​g​ ​f​r​o​m​ ​C​l​a​u​d​e​ ​D​e​s​k​t​o​p​ ​/​ ​C​u​r​s​o​r​.
+	 */
+	mcpConfig_empty: string
+	/**
+	 * N​a​m​e​ ​i​s​ ​r​e​q​u​i​r​e​d
+	 */
+	mcpConfig_nameRequired: string
+	/**
+	 * C​o​m​m​a​n​d​ ​i​s​ ​r​e​q​u​i​r​e​d​ ​f​o​r​ ​s​t​d​i​o​ ​s​e​r​v​e​r​s
+	 */
+	mcpConfig_commandRequired: string
+	/**
+	 * U​R​L​ ​i​s​ ​r​e​q​u​i​r​e​d​ ​f​o​r​ ​H​T​T​P​ ​s​e​r​v​e​r​s
+	 */
+	mcpConfig_urlRequired: string
+	/**
+	 * D​e​l​e​t​e​ ​M​C​P​ ​s​e​r​v​e​r​ ​"​{​n​a​m​e​}​"​?
+	 * @param {string} name
+	 */
+	mcpConfig_deleteConfirm: RequiredParams<'name'>
+	/**
+	 * C​o​n​n​e​c​t​e​d​ ​·​ ​{​c​o​u​n​t​}​ ​t​o​o​l​s
+	 * @param {number} count
+	 */
+	mcpConfig_statusConnected: RequiredParams<'count'>
+	/**
+	 * C​o​n​n​e​c​t​i​n​g​.​.​.
+	 */
+	mcpConfig_statusConnecting: string
+	/**
+	 * E​r​r​o​r​:​ ​{​m​e​s​s​a​g​e​}
+	 * @param {string} message
+	 */
+	mcpConfig_statusError: RequiredParams<'message'>
+	/**
+	 * D​i​s​c​o​n​n​e​c​t​e​d
+	 */
+	mcpConfig_statusDisconnected: string
+	/**
+	 * (​n​o​ ​c​o​m​m​a​n​d​)
+	 */
+	mcpConfig_noCommand: string
+	/**
+	 * (​n​o​ ​u​r​l​)
+	 */
+	mcpConfig_noUrl: string
+	/**
+	 * {​c​o​u​n​t​}​ ​t​o​o​l​s
+	 * @param {number} count
+	 */
+	mcpConfig_toolsCount: RequiredParams<'count'>
+	/**
+	 * T​r​u​s​t​e​d
+	 */
+	mcpConfig_trusted: string
+	/**
+	 * E​n​a​b​l​e​d
+	 */
+	mcpConfig_enabled: string
+	/**
+	 * R​e​c​o​n​n​e​c​t
+	 */
+	mcpConfig_reconnect: string
+	/**
+	 * A​u​t​h​o​r​i​z​e
+	 */
+	mcpConfig_authorize: string
+	/**
+	 * C​l​e​a​r​ ​a​u​t​h​o​r​i​z​a​t​i​o​n
+	 */
+	mcpConfig_clearAuthorization: string
+	/**
+	 * C​l​e​a​r​ ​O​A​u​t​h​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​f​o​r​ ​M​C​P​ ​s​e​r​v​e​r​ ​"​{​n​a​m​e​}​"​?
+	 * @param {string} name
+	 */
+	mcpConfig_clearAuthorizationConfirm: RequiredParams<'name'>
+	/**
+	 * A​u​t​h​o​r​i​z​a​t​i​o​n​ ​r​e​q​u​i​r​e​d
+	 */
+	mcpConfig_authStatusNeedsAuth: string
+	/**
+	 * A​u​t​h​o​r​i​z​i​n​g​.​.​.
+	 */
+	mcpConfig_authStatusAuthorizing: string
+	/**
+	 * c​o​d​e​:​ ​{​c​o​d​e​}
+	 * @param {string} code
+	 */
+	mcpConfig_authErrorCode: RequiredParams<'code'>
+	/**
+	 * E​d​i​t
+	 */
+	mcpConfig_edit: string
+	/**
+	 * D​e​l​e​t​e
+	 */
+	mcpConfig_delete: string
+	/**
+	 * N​o​ ​t​o​o​l​s​ ​e​x​p​o​s​e​d​ ​b​y​ ​t​h​i​s​ ​s​e​r​v​e​r​.
+	 */
+	mcpConfig_noTools: string
+	/**
+	 * E​d​i​t​ ​M​C​P​ ​S​e​r​v​e​r
+	 */
+	mcpConfig_editTitle: string
+	/**
+	 * A​d​d​ ​M​C​P​ ​S​e​r​v​e​r
+	 */
+	mcpConfig_addTitle: string
+	/**
+	 * C​l​o​s​e
+	 */
+	mcpConfig_close: string
+	/**
+	 * N​a​m​e
+	 */
+	mcpConfig_name: string
+	/**
+	 * T​r​a​n​s​p​o​r​t
+	 */
+	mcpConfig_transport: string
+	/**
+	 * C​o​m​m​a​n​d
+	 */
+	mcpConfig_command: string
+	/**
+	 * A​r​g​s
+	 */
+	mcpConfig_args: string
+	/**
+	 * E​n​v​ ​(​K​E​Y​=​V​A​L​ ​p​e​r​ ​l​i​n​e​,​ ​s​u​p​p​o​r​t​s​ ​e​n​v​i​r​o​n​m​e​n​t​ ​r​e​f​e​r​e​n​c​e​s​)
+	 */
+	mcpConfig_env: string
+	/**
+	 * c​w​d​ ​(​o​p​t​i​o​n​a​l​)
+	 */
+	mcpConfig_cwd: string
+	/**
+	 * U​R​L
+	 */
+	mcpConfig_url: string
+	/**
+	 * A​u​t​h
+	 */
+	mcpConfig_auth: string
+	/**
+	 * A​u​t​o
+	 */
+	mcpConfig_authAuto: string
+	/**
+	 * N​o​n​e
+	 */
+	mcpConfig_authNone: string
+	/**
+	 * O​A​u​t​h
+	 */
+	mcpConfig_authOAuth: string
+	/**
+	 * H​e​a​d​e​r​s​ ​(​N​a​m​e​:​ ​v​a​l​u​e​ ​p​e​r​ ​l​i​n​e​)
+	 */
+	mcpConfig_headers: string
+	/**
+	 * A​d​v​a​n​c​e​d​ ​O​A​u​t​h​ ​f​a​l​l​b​a​c​k
+	 */
+	mcpConfig_oauthAdvanced: string
+	/**
+	 * O​A​u​t​h​ ​s​c​o​p​e​s​ ​(​o​p​t​i​o​n​a​l​)
+	 */
+	mcpConfig_oauthScopes: string
+	/**
+	 * O​A​u​t​h​ ​c​l​i​e​n​t​ ​I​D​ ​(​o​p​t​i​o​n​a​l​)
+	 */
+	mcpConfig_oauthClientId: string
+	/**
+	 * O​A​u​t​h​ ​c​l​i​e​n​t​ ​s​e​c​r​e​t​ ​(​o​p​t​i​o​n​a​l​)
+	 */
+	mcpConfig_oauthClientSecret: string
+	/**
+	 * L​e​a​v​e​ ​b​l​a​n​k​ ​t​o​ ​k​e​e​p​ ​e​x​i​s​t​i​n​g
+	 */
+	mcpConfig_keepExistingSecret: string
+	/**
+	 * T​r​u​s​t​e​d​ ​(​s​k​i​p​ ​p​e​r​-​c​a​l​l​ ​a​p​p​r​o​v​a​l​)
+	 */
+	mcpConfig_trustedHint: string
+	/**
+	 * C​a​n​c​e​l
+	 */
+	mcpConfig_cancel: string
+	/**
+	 * S​a​v​e
+	 */
+	mcpConfig_save: string
+	/**
+	 * I​m​p​o​r​t​ ​M​C​P​ ​s​e​r​v​e​r​s​ ​f​r​o​m​ ​J​S​O​N
+	 */
+	mcpConfig_importTitle: string
+	/**
+	 * P​a​s​t​e​ ​a​ ​C​l​a​u​d​e​ ​D​e​s​k​t​o​p​ ​/​ ​C​u​r​s​o​r​ ​/​ ​V​S​ ​C​o​d​e​ ​c​o​n​f​i​g​,​ ​o​r​ ​a​ ​b​a​r​e​ ​o​b​j​e​c​t​ ​k​e​y​e​d​ ​b​y​ ​s​e​r​v​e​r​ ​n​a​m​e​.
+	 */
+	mcpConfig_importDescription: string
+	/**
+	 * A​d​d​e​d​ ​{​c​o​u​n​t​}​ ​s​e​r​v​e​r​(​s​)
+	 * @param {number} count
+	 */
+	mcpConfig_importAdded: RequiredParams<'count'>
+	/**
+	 * C​l​o​s​e
+	 */
+	mcpConfig_importClose: string
+	/**
+	 * I​m​p​o​r​t
+	 */
+	mcpConfig_import: string
+	/**
+	 * I​m​p​o​r​t​i​n​g​.​.​.
+	 */
+	mcpConfig_importing: string
+	/**
+	 * O​A​u​t​h​ ​s​e​t​t​i​n​g​s
+	 */
+	mcpConfig_oauthSettings: string
+	/**
+	 * M​C​P​ ​O​A​u​t​h​ ​S​e​t​t​i​n​g​s
+	 */
+	mcpConfig_oauthSettingsTitle: string
+	/**
+	 * C​r​e​d​e​n​t​i​a​l​ ​s​t​o​r​a​g​e
+	 */
+	mcpConfig_oauthCredentialsStore: string
+	/**
+	 * A​u​t​o​ ​(​p​r​e​f​e​r​ ​k​e​y​c​h​a​i​n​)
+	 */
+	mcpConfig_oauthStoreAuto: string
+	/**
+	 * K​e​y​c​h​a​i​n
+	 */
+	mcpConfig_oauthStoreKeychain: string
+	/**
+	 * L​o​c​a​l​ ​d​a​t​a​b​a​s​e
+	 */
+	mcpConfig_oauthStoreDatabase: string
+	/**
+	 * C​a​l​l​b​a​c​k​ ​h​o​s​t
+	 */
+	mcpConfig_oauthCallbackHost: string
+	/**
+	 * C​a​l​l​b​a​c​k​ ​p​o​r​t​ ​(​0​ ​=​ ​a​u​t​o​m​a​t​i​c​)
+	 */
+	mcpConfig_oauthCallbackPort: string
+	/**
+	 * C​a​l​l​b​a​c​k​ ​p​a​t​h
+	 */
+	mcpConfig_oauthCallbackPath: string
+	/**
 	 * R​e​c​e​n​t​l​y​ ​O​p​e​n​e​d
 	 */
 	welcome_recentlyOpened: string
@@ -1873,6 +2148,274 @@ export type TranslationFunctions = {
 	 * Cancel
 	 */
 	llmConfig_cancel: () => LocalizedString
+	/**
+	 * MCP Servers
+	 */
+	mcpConfig_title: () => LocalizedString
+	/**
+	 * Connect tools from MCP-compatible servers (filesystem, GitHub, ...).
+	 */
+	mcpConfig_description: () => LocalizedString
+	/**
+	 * Import JSON
+	 */
+	mcpConfig_importJson: () => LocalizedString
+	/**
+	 * Add Server
+	 */
+	mcpConfig_add: () => LocalizedString
+	/**
+	 * Loading...
+	 */
+	mcpConfig_loading: () => LocalizedString
+	/**
+	 * No MCP servers configured. Add one or import a JSON config from Claude Desktop / Cursor.
+	 */
+	mcpConfig_empty: () => LocalizedString
+	/**
+	 * Name is required
+	 */
+	mcpConfig_nameRequired: () => LocalizedString
+	/**
+	 * Command is required for stdio servers
+	 */
+	mcpConfig_commandRequired: () => LocalizedString
+	/**
+	 * URL is required for HTTP servers
+	 */
+	mcpConfig_urlRequired: () => LocalizedString
+	/**
+	 * Delete MCP server "{name}"?
+	 */
+	mcpConfig_deleteConfirm: (arg: { name: string }) => LocalizedString
+	/**
+	 * Connected · {count} tools
+	 */
+	mcpConfig_statusConnected: (arg: { count: number }) => LocalizedString
+	/**
+	 * Connecting...
+	 */
+	mcpConfig_statusConnecting: () => LocalizedString
+	/**
+	 * Error: {message}
+	 */
+	mcpConfig_statusError: (arg: { message: string }) => LocalizedString
+	/**
+	 * Disconnected
+	 */
+	mcpConfig_statusDisconnected: () => LocalizedString
+	/**
+	 * (no command)
+	 */
+	mcpConfig_noCommand: () => LocalizedString
+	/**
+	 * (no url)
+	 */
+	mcpConfig_noUrl: () => LocalizedString
+	/**
+	 * {count} tools
+	 */
+	mcpConfig_toolsCount: (arg: { count: number }) => LocalizedString
+	/**
+	 * Trusted
+	 */
+	mcpConfig_trusted: () => LocalizedString
+	/**
+	 * Enabled
+	 */
+	mcpConfig_enabled: () => LocalizedString
+	/**
+	 * Reconnect
+	 */
+	mcpConfig_reconnect: () => LocalizedString
+	/**
+	 * Authorize
+	 */
+	mcpConfig_authorize: () => LocalizedString
+	/**
+	 * Clear authorization
+	 */
+	mcpConfig_clearAuthorization: () => LocalizedString
+	/**
+	 * Clear OAuth authorization for MCP server "{name}"?
+	 */
+	mcpConfig_clearAuthorizationConfirm: (arg: { name: string }) => LocalizedString
+	/**
+	 * Authorization required
+	 */
+	mcpConfig_authStatusNeedsAuth: () => LocalizedString
+	/**
+	 * Authorizing...
+	 */
+	mcpConfig_authStatusAuthorizing: () => LocalizedString
+	/**
+	 * code: {code}
+	 */
+	mcpConfig_authErrorCode: (arg: { code: string }) => LocalizedString
+	/**
+	 * Edit
+	 */
+	mcpConfig_edit: () => LocalizedString
+	/**
+	 * Delete
+	 */
+	mcpConfig_delete: () => LocalizedString
+	/**
+	 * No tools exposed by this server.
+	 */
+	mcpConfig_noTools: () => LocalizedString
+	/**
+	 * Edit MCP Server
+	 */
+	mcpConfig_editTitle: () => LocalizedString
+	/**
+	 * Add MCP Server
+	 */
+	mcpConfig_addTitle: () => LocalizedString
+	/**
+	 * Close
+	 */
+	mcpConfig_close: () => LocalizedString
+	/**
+	 * Name
+	 */
+	mcpConfig_name: () => LocalizedString
+	/**
+	 * Transport
+	 */
+	mcpConfig_transport: () => LocalizedString
+	/**
+	 * Command
+	 */
+	mcpConfig_command: () => LocalizedString
+	/**
+	 * Args
+	 */
+	mcpConfig_args: () => LocalizedString
+	/**
+	 * Env (KEY=VAL per line, supports environment references)
+	 */
+	mcpConfig_env: () => LocalizedString
+	/**
+	 * cwd (optional)
+	 */
+	mcpConfig_cwd: () => LocalizedString
+	/**
+	 * URL
+	 */
+	mcpConfig_url: () => LocalizedString
+	/**
+	 * Auth
+	 */
+	mcpConfig_auth: () => LocalizedString
+	/**
+	 * Auto
+	 */
+	mcpConfig_authAuto: () => LocalizedString
+	/**
+	 * None
+	 */
+	mcpConfig_authNone: () => LocalizedString
+	/**
+	 * OAuth
+	 */
+	mcpConfig_authOAuth: () => LocalizedString
+	/**
+	 * Headers (Name: value per line)
+	 */
+	mcpConfig_headers: () => LocalizedString
+	/**
+	 * Advanced OAuth fallback
+	 */
+	mcpConfig_oauthAdvanced: () => LocalizedString
+	/**
+	 * OAuth scopes (optional)
+	 */
+	mcpConfig_oauthScopes: () => LocalizedString
+	/**
+	 * OAuth client ID (optional)
+	 */
+	mcpConfig_oauthClientId: () => LocalizedString
+	/**
+	 * OAuth client secret (optional)
+	 */
+	mcpConfig_oauthClientSecret: () => LocalizedString
+	/**
+	 * Leave blank to keep existing
+	 */
+	mcpConfig_keepExistingSecret: () => LocalizedString
+	/**
+	 * Trusted (skip per-call approval)
+	 */
+	mcpConfig_trustedHint: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	mcpConfig_cancel: () => LocalizedString
+	/**
+	 * Save
+	 */
+	mcpConfig_save: () => LocalizedString
+	/**
+	 * Import MCP servers from JSON
+	 */
+	mcpConfig_importTitle: () => LocalizedString
+	/**
+	 * Paste a Claude Desktop / Cursor / VS Code config, or a bare object keyed by server name.
+	 */
+	mcpConfig_importDescription: () => LocalizedString
+	/**
+	 * Added {count} server(s)
+	 */
+	mcpConfig_importAdded: (arg: { count: number }) => LocalizedString
+	/**
+	 * Close
+	 */
+	mcpConfig_importClose: () => LocalizedString
+	/**
+	 * Import
+	 */
+	mcpConfig_import: () => LocalizedString
+	/**
+	 * Importing...
+	 */
+	mcpConfig_importing: () => LocalizedString
+	/**
+	 * OAuth settings
+	 */
+	mcpConfig_oauthSettings: () => LocalizedString
+	/**
+	 * MCP OAuth Settings
+	 */
+	mcpConfig_oauthSettingsTitle: () => LocalizedString
+	/**
+	 * Credential storage
+	 */
+	mcpConfig_oauthCredentialsStore: () => LocalizedString
+	/**
+	 * Auto (prefer keychain)
+	 */
+	mcpConfig_oauthStoreAuto: () => LocalizedString
+	/**
+	 * Keychain
+	 */
+	mcpConfig_oauthStoreKeychain: () => LocalizedString
+	/**
+	 * Local database
+	 */
+	mcpConfig_oauthStoreDatabase: () => LocalizedString
+	/**
+	 * Callback host
+	 */
+	mcpConfig_oauthCallbackHost: () => LocalizedString
+	/**
+	 * Callback port (0 = automatic)
+	 */
+	mcpConfig_oauthCallbackPort: () => LocalizedString
+	/**
+	 * Callback path
+	 */
+	mcpConfig_oauthCallbackPath: () => LocalizedString
 	/**
 	 * Recently Opened
 	 */

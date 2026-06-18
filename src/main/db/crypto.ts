@@ -4,7 +4,7 @@ import {
   pbkdf2Sync,
   randomBytes,
 } from "node:crypto";
-import { app } from "electron";
+import { app, safeStorage } from "electron";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -12,6 +12,7 @@ const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 const PBKDF2_ITERATIONS = 100_000;
 const FIXED_SALT = "filework-llm-config-salt-v1";
+const KEYCHAIN_PREFIX = "keychain:v1:";
 
 let derivedKey: Buffer | null = null;
 
@@ -67,4 +68,35 @@ export function decrypt(encrypted: string): string {
   plaintext += decipher.final("utf8");
 
   return plaintext;
+}
+
+export function isKeychainEncryptionAvailable(): boolean {
+  try {
+    return Boolean(safeStorage?.isEncryptionAvailable?.());
+  } catch {
+    return false;
+  }
+}
+
+export function isKeychainEncryptedValue(encrypted: string): boolean {
+  return encrypted.startsWith(KEYCHAIN_PREFIX);
+}
+
+export function encryptWithKeychain(plaintext: string): string {
+  if (!isKeychainEncryptionAvailable()) {
+    throw new Error("Keychain encryption is not available");
+  }
+  const encrypted = safeStorage.encryptString(plaintext);
+  return `${KEYCHAIN_PREFIX}${encrypted.toString("base64")}`;
+}
+
+export function decryptWithKeychain(encrypted: string): string {
+  if (!isKeychainEncryptedValue(encrypted)) {
+    throw new Error("Value is not keychain-encrypted");
+  }
+  if (!isKeychainEncryptionAvailable()) {
+    throw new Error("Keychain encryption is not available");
+  }
+  const encoded = encrypted.slice(KEYCHAIN_PREFIX.length);
+  return safeStorage.decryptString(Buffer.from(encoded, "base64"));
 }
