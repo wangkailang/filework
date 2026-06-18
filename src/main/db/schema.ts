@@ -161,6 +161,33 @@ export const automations = sqliteTable("automations", {
 });
 
 /**
+ * 自动化每一次执行的持久化记录。自动化定义可以被编辑或删除,run 行保留
+ * 执行时的标题/prompt/workspace 快照,供 Triage 与历史回溯使用。
+ */
+export const automationRuns = sqliteTable("automation_runs", {
+  id: text("id").primaryKey(),
+  automationId: text("automation_id").notNull(),
+  automationTitle: text("automation_title").notNull(),
+  trigger: text("trigger", { enum: ["manual", "scheduled"] }).notNull(),
+  status: text("status", {
+    enum: ["queued", "running", "succeeded", "failed", "canceled"],
+  }).notNull(),
+  prompt: text("prompt").notNull(),
+  workspacePaths: text("workspace_paths"),
+  threadId: text("thread_id"),
+  modelId: text("model_id"),
+  output: text("output"),
+  errorMessage: text("error_message"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  startedAt: text("started_at"),
+  completedAt: text("completed_at"),
+});
+
+/**
  * 用户配置的 MCP(Model Context Protocol)服务器。每一行描述一个由主进程
  * 启动或连接的服务器,使其工具可供 agent loop 使用。`env`/`headers` 中的
  * 敏感值应使用 `${env:VAR}` 占位符 —— 运行时展开见 `src/main/mcp/manager.ts`

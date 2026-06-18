@@ -7,10 +7,11 @@ import {
   type AutomationType,
   createAutomation,
   deleteAutomation,
+  listAutomationRuns,
   listAutomations,
-  triggerAutomation,
   updateAutomation,
 } from "../db";
+import { triggerAutomationNow } from "./automation-service";
 
 type AutomationCreatePayload = {
   title: string;
@@ -48,6 +49,9 @@ const normalizeCreatePayload = (
   if (!payload.scheduleKind) throw new Error("scheduleKind is required");
   if (!payload.scheduleValue?.trim())
     throw new Error("scheduleValue is required");
+  const workspacePaths = payload.workspacePaths
+    ?.map((path) => path.trim())
+    .filter(Boolean);
 
   return {
     ...payload,
@@ -55,10 +59,7 @@ const normalizeCreatePayload = (
     prompt: payload.prompt.trim(),
     scheduleValue: payload.scheduleValue.trim(),
     threadId: trimOrNull(payload.threadId),
-    workspacePaths: payload.workspacePaths?.map((p) => p.trim()).filter(Boolean)
-      .length
-      ? payload.workspacePaths.map((p) => p.trim()).filter(Boolean)
-      : null,
+    workspacePaths: workspacePaths?.length ? workspacePaths : null,
     runMode: payload.runMode ?? null,
     modelId: trimOrNull(payload.modelId),
     reasoningEffort: trimOrNull(payload.reasoningEffort),
@@ -95,6 +96,10 @@ export const registerAutomationsHandlers = () => {
     listAutomations(filter as Parameters<typeof listAutomations>[0]),
   );
 
+  ipcMain.handle("automations:listRuns", async (_event, filter?: unknown) =>
+    listAutomationRuns(filter as Parameters<typeof listAutomationRuns>[0]),
+  );
+
   ipcMain.handle(
     "automations:create",
     async (_event, payload: AutomationCreatePayload) =>
@@ -113,7 +118,7 @@ export const registerAutomationsHandlers = () => {
     "automations:trigger",
     async (_event, payload: { id: string }) => {
       if (!payload?.id?.trim()) throw new Error("id is required");
-      return triggerAutomation(payload.id.trim());
+      return triggerAutomationNow(payload.id.trim());
     },
   );
 

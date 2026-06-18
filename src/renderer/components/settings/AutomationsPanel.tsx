@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CalendarClock,
+  FileText,
   Loader2,
   Pencil,
   Play,
@@ -18,6 +19,8 @@ import {
 
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales, TranslationFunctions } from "../../i18n/i18n-types";
+import { formatTokens } from "../../utils/format";
+import { MessageResponse } from "../ai-elements/message";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +31,7 @@ import {
 type AutomationType = "thread" | "standalone" | "project";
 type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
 type AutomationRunMode = "local" | "worktree";
+type AutomationView = "tasks" | "triage";
 
 export interface AutomationRecord {
   id: string;
@@ -48,6 +52,27 @@ export interface AutomationRecord {
   updatedAt: string;
 }
 
+export interface AutomationRunRecord {
+  id: string;
+  automationId: string;
+  automationTitle: string;
+  trigger: "manual" | "scheduled";
+  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  prompt: string;
+  workspacePaths: string[] | null;
+  threadId: string | null;
+  modelId: string | null;
+  output: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 interface AutomationDraft {
   id?: string;
   title: string;
@@ -64,6 +89,8 @@ interface AutomationDraft {
 
 interface AutomationsPanelProps {
   initialAutomations?: AutomationRecord[];
+  initialRuns?: AutomationRunRecord[];
+  initialView?: AutomationView;
   onTriggerAutomation?: (automation: AutomationRecord) => Promise<void> | void;
   onAfterTriggerAutomation?: () => void;
   runningAutomationId?: string | null;
@@ -176,6 +203,34 @@ const automationStatus = (
         bodyClass: "text-muted-foreground/70",
         toggleClass: "text-primary hover:bg-primary/10 hover:text-primary",
       };
+
+const automationRunStatusLabels = (
+  LL: TranslationFunctions,
+): Record<AutomationRunRecord["status"], string> => ({
+  canceled: LL.automations_runStatusCanceled(),
+  failed: LL.automations_runStatusFailed(),
+  queued: LL.automations_runStatusQueued(),
+  running: LL.automations_runStatusRunning(),
+  succeeded: LL.automations_runStatusSucceeded(),
+});
+
+const automationRunStatusClass = (
+  status: AutomationRunRecord["status"],
+): string => {
+  if (status === "succeeded") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "failed") {
+    return "border-destructive/20 bg-destructive/10 text-destructive";
+  }
+  if (status === "running" || status === "queued") {
+    return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+  return "border-border bg-muted text-muted-foreground";
+};
+
+const isActiveAutomationRun = (run: AutomationRunRecord): boolean =>
+  run.status === "queued" || run.status === "running";
 
 interface AutomationFormDialogProps {
   draft: AutomationDraft;
@@ -551,8 +606,141 @@ export const AutomationDeleteDialog = ({
   );
 };
 
+export const AutomationRunDetailDialogContent = ({
+  run,
+  TitleComponent = "h2",
+  DescriptionComponent = "p",
+}: {
+  run: AutomationRunRecord;
+  TitleComponent?: ElementType;
+  DescriptionComponent?: ElementType;
+}) => {
+  const { LL, locale } = useI18nContext();
+  const runStatusLabels = automationRunStatusLabels(LL);
+  const startedAt = formatDateTime(run.startedAt, locale);
+  const completedAt = formatDateTime(run.completedAt, locale);
+  const workspacePaths = run.workspacePaths?.join("\n") ?? "-";
+  const tokenParts = [
+    run.inputTokens !== null
+      ? LL.automations_tokenInput({ value: formatTokens(run.inputTokens) })
+      : null,
+    run.outputTokens !== null
+      ? LL.automations_tokenOutput({ value: formatTokens(run.outputTokens) })
+      : null,
+    run.totalTokens !== null
+      ? LL.automations_tokenTotal({ value: formatTokens(run.totalTokens) })
+      : null,
+  ].filter(Boolean);
+
+  return (
+    <>
+      <div className="border-b border-border px-5 py-4 pr-12">
+        <TitleComponent className="text-sm font-medium text-foreground">
+          {LL.automations_runDetailTitle()}
+        </TitleComponent>
+        <DescriptionComponent className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {run.automationTitle}
+        </DescriptionComponent>
+      </div>
+      <div
+        className="max-h-[calc(100vh-160px)] space-y-5 overflow-y-auto px-6 py-5"
+        data-automation-run-detail-layout="expanded"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
+          >
+            {runStatusLabels[run.status]}
+          </span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {run.trigger === "manual"
+              ? LL.automations_triggerManual()
+              : LL.automations_triggerScheduled()}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
+          <div>
+            <div className="text-muted-foreground">
+              {LL.automations_runStartedLabel()}
+            </div>
+            <div className="mt-1 text-foreground">{startedAt ?? "-"}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">
+              {LL.automations_runCompletedLabel()}
+            </div>
+            <div className="mt-1 text-foreground">{completedAt ?? "-"}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">
+              {LL.automations_runDetailTokens()}
+            </div>
+            <div className="mt-1 text-foreground">
+              {tokenParts.length ? tokenParts.join(" · ") : "-"}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">ID</div>
+            <div className="mt-1 truncate font-mono text-[11px] text-foreground">
+              {run.id}
+            </div>
+          </div>
+        </div>
+
+        <section>
+          <h4 className="mb-1 text-xs font-medium text-muted-foreground">
+            {LL.automations_runDetailWorkspace()}
+          </h4>
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
+            {workspacePaths}
+          </pre>
+        </section>
+
+        <section>
+          <h4 className="mb-1 text-xs font-medium text-muted-foreground">
+            {LL.automations_runDetailPrompt()}
+          </h4>
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
+            {run.prompt}
+          </pre>
+        </section>
+
+        {run.errorMessage && (
+          <section>
+            <h4 className="mb-1 text-xs font-medium text-destructive">
+              {LL.automations_runDetailError()}
+            </h4>
+            <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+              {run.errorMessage}
+            </pre>
+          </section>
+        )}
+
+        {run.output && (
+          <section>
+            <h4 className="mb-1 text-xs font-medium text-muted-foreground">
+              {LL.automations_runDetailOutput()}
+            </h4>
+            <div
+              className="min-h-48 max-h-[min(62vh,560px)] overflow-auto rounded-md border border-border bg-background p-4 text-sm text-foreground"
+              data-automation-run-output-markdown="true"
+            >
+              <MessageResponse className="text-sm leading-relaxed [&_pre]:text-xs">
+                {run.output}
+              </MessageResponse>
+            </div>
+          </section>
+        )}
+      </div>
+    </>
+  );
+};
+
 export const AutomationsPanel = ({
   initialAutomations,
+  initialRuns,
+  initialView = "tasks",
   onTriggerAutomation,
   onAfterTriggerAutomation,
   runningAutomationId,
@@ -562,6 +750,7 @@ export const AutomationsPanel = ({
   const [automations, setAutomations] = useState<AutomationRecord[]>(
     initialAutomations ?? [],
   );
+  const [runs, setRuns] = useState<AutomationRunRecord[]>(initialRuns ?? []);
   const [loading, setLoading] = useState(initialAutomations === undefined);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<AutomationDraft | null>(null);
@@ -570,13 +759,21 @@ export const AutomationsPanel = ({
   const [pendingDelete, setPendingDelete] = useState<AutomationRecord | null>(
     null,
   );
+  const [view, setView] = useState<AutomationView>(initialView);
+  const [selectedRun, setSelectedRun] = useState<AutomationRunRecord | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const items = await window.filework.automations.list();
+      const [items, recentRuns] = await Promise.all([
+        window.filework.automations.list(),
+        window.filework.automations.listRuns({ limit: 20 }),
+      ]);
       setAutomations(items);
+      setRuns(recentRuns);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -587,6 +784,14 @@ export const AutomationsPanel = ({
   useEffect(() => {
     if (initialAutomations !== undefined) return;
     void refresh();
+  }, [initialAutomations, refresh]);
+
+  useEffect(() => {
+    if (initialAutomations !== undefined) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
   }, [initialAutomations, refresh]);
 
   const openCreate = () => setDraft(EMPTY_DRAFT);
@@ -684,7 +889,12 @@ export const AutomationsPanel = ({
   };
 
   const labels = typeLabels(LL);
+  const scheduleLabels = scheduleKindLabels(LL);
   const runModes = runModeLabels(LL);
+  const runStatusLabels = automationRunStatusLabels(LL);
+  const activeRunAutomationIds = new Set(
+    runs.filter(isActiveAutomationRun).map((run) => run.automationId),
+  );
   const isRail = variant === "rail";
   const formDialog = draft ? (
     <AutomationFormDialog
@@ -697,6 +907,244 @@ export const AutomationsPanel = ({
       onSubmit={handleSave}
     />
   ) : null;
+  const runDetailDialog = (
+    <Dialog
+      open={selectedRun !== null}
+      onOpenChange={(open) => {
+        if (!open) setSelectedRun(null);
+      }}
+    >
+      {selectedRun && (
+        <DialogContent
+          className="flex! max-h-[calc(100vh-48px)]! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[840px]! max-w-[calc(100vw-48px)]!"
+          data-automation-run-detail-size="wide"
+        >
+          <AutomationRunDetailDialogContent
+            run={selectedRun}
+            TitleComponent={DialogTitle}
+            DescriptionComponent={DialogDescription}
+          />
+        </DialogContent>
+      )}
+    </Dialog>
+  );
+  const triageSection = (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {LL.automations_triageTitle()}
+        </h4>
+        {runs.some(isActiveAutomationRun) && (
+          <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            {LL.automations_runStatusRunning()}
+          </span>
+        )}
+      </div>
+      {runs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          {LL.automations_runsEmpty()}
+        </div>
+      ) : (
+        <div
+          data-automation-triage-list="true"
+          className="overflow-hidden rounded-lg border border-border"
+        >
+          {runs.slice(0, 8).map((run) => {
+            const startedAt = formatDateTime(run.startedAt, locale);
+            const completedAt = formatDateTime(run.completedAt, locale);
+            const summary = run.errorMessage ?? run.output ?? run.prompt;
+            return (
+              <button
+                type="button"
+                key={run.id}
+                data-automation-run-status={run.status}
+                onClick={() => setSelectedRun(run)}
+                className="block w-full border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/60 not-last:border-b"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
+                  >
+                    {runStatusLabels[run.status]}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                    {run.automationTitle}
+                  </span>
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {run.trigger === "manual"
+                      ? LL.automations_triggerManual()
+                      : LL.automations_triggerScheduled()}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <FileText className="h-2.5 w-2.5" />
+                    {LL.automations_viewDetails()}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                  {startedAt && (
+                    <span>
+                      {LL.automations_runStarted({ value: startedAt })}
+                    </span>
+                  )}
+                  {completedAt && (
+                    <span>
+                      {LL.automations_runCompleted({ value: completedAt })}
+                    </span>
+                  )}
+                  {run.totalTokens !== null && (
+                    <span>
+                      {LL.automations_tokenTotal({
+                        value: formatTokens(run.totalTokens),
+                      })}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                  {summary}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+  const taskListSection = loading ? (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      {LL.automations_loading()}
+    </div>
+  ) : automations.length === 0 ? (
+    <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+      {LL.automations_empty()}
+    </div>
+  ) : (
+    <div className="overflow-hidden rounded-lg border border-border">
+      {automations.map((automation) => {
+        const lastRun = formatDateTime(automation.lastRunAt, locale);
+        const nextRun = formatDateTime(automation.nextRunAt, locale);
+        const isRunning =
+          runningAutomationId === automation.id ||
+          triggeringId === automation.id ||
+          activeRunAutomationIds.has(automation.id);
+        const status = automationStatus(automation, LL);
+        return (
+          <div
+            key={automation.id}
+            data-automation-running={isRunning ? "true" : undefined}
+            data-automation-enabled={automation.enabled ? "true" : "false"}
+            className={`flex items-center gap-3 border-border px-3 py-3 transition-colors not-last:border-b ${status.rowClass}`}
+          >
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${status.iconClass}`}
+            >
+              <CalendarClock className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1.5 text-sm">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${status.dotClass}`}
+                />
+                <span className={`truncate font-medium ${status.titleClass}`}>
+                  {automation.title}
+                </span>
+                <span
+                  className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${status.pillClass}`}
+                >
+                  {status.label}
+                </span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  {labels[automation.type]}
+                </span>
+                {isRunning && (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    {LL.task_running()}
+                  </span>
+                )}
+              </div>
+              <div
+                className={`mt-0.5 line-clamp-1 text-xs ${status.bodyClass}`}
+              >
+                {automation.prompt}
+              </div>
+              <div
+                className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${status.bodyClass}`}
+              >
+                <span>
+                  {scheduleLabels[automation.scheduleKind]} ·{" "}
+                  {automation.scheduleValue}
+                </span>
+                {automation.type === "project" && automation.runMode && (
+                  <span>{runModes[automation.runMode]}</span>
+                )}
+                {lastRun && (
+                  <span>{LL.automations_lastRun({ value: lastRun })}</span>
+                )}
+                <span>
+                  {nextRun
+                    ? LL.automations_nextRun({ value: nextRun })
+                    : LL.automations_notScheduled()}
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleTrigger(automation)}
+                disabled={isRunning}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                title={isRunning ? LL.task_running() : LL.automations_trigger()}
+                aria-label={LL.automations_trigger()}
+              >
+                {isRunning ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggle(automation)}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${status.toggleClass}`}
+                title={
+                  automation.enabled
+                    ? LL.automations_disable()
+                    : LL.automations_enable()
+                }
+                aria-label={
+                  automation.enabled
+                    ? LL.automations_disable()
+                    : LL.automations_enable()
+                }
+              >
+                <Power className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => openEdit(automation)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                title={LL.automations_edit()}
+                aria-label={LL.automations_edit()}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingDelete(automation)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10"
+                title={LL.automations_delete()}
+                aria-label={LL.automations_delete()}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   if (isRail) {
     const enabledCount = automations.filter(
@@ -756,7 +1204,8 @@ export const AutomationsPanel = ({
               const nextRun = formatDateTime(automation.nextRunAt, locale);
               const isRunning =
                 runningAutomationId === automation.id ||
-                triggeringId === automation.id;
+                triggeringId === automation.id ||
+                activeRunAutomationIds.has(automation.id);
               const status = automationStatus(automation, LL);
               return (
                 <div
@@ -796,7 +1245,8 @@ export const AutomationsPanel = ({
                       <div
                         className={`mt-0.5 truncate text-[11px] ${status.bodyClass}`}
                       >
-                        {automation.scheduleKind} · {automation.scheduleValue}
+                        {scheduleLabels[automation.scheduleKind]} ·{" "}
+                        {automation.scheduleValue}
                       </div>
                       {lastRun && (
                         <div
@@ -884,7 +1334,7 @@ export const AutomationsPanel = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div data-automation-view={view} className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">
@@ -894,14 +1344,42 @@ export const AutomationsPanel = ({
             {LL.automations_description()}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {LL.automations_add()}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {view === "tasks" && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {LL.automations_add()}
+            </button>
+          )}
+          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => setView("tasks")}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                view === "tasks"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {LL.automations_showTasks()}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("triage")}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                view === "triage"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {LL.automations_showTriage()}
+            </button>
+          </div>
+        </div>
       </div>
 
       {error && (
@@ -913,145 +1391,10 @@ export const AutomationsPanel = ({
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {LL.automations_loading()}
-        </div>
-      ) : automations.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-          {LL.automations_empty()}
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          {automations.map((automation) => {
-            const lastRun = formatDateTime(automation.lastRunAt, locale);
-            const nextRun = formatDateTime(automation.nextRunAt, locale);
-            const isRunning =
-              runningAutomationId === automation.id ||
-              triggeringId === automation.id;
-            const status = automationStatus(automation, LL);
-            return (
-              <div
-                key={automation.id}
-                data-automation-running={isRunning ? "true" : undefined}
-                data-automation-enabled={automation.enabled ? "true" : "false"}
-                className={`flex items-center gap-3 border-border px-3 py-3 transition-colors not-last:border-b ${status.rowClass}`}
-              >
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${status.iconClass}`}
-                >
-                  <CalendarClock className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-1.5 text-sm">
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${status.dotClass}`}
-                    />
-                    <span
-                      className={`truncate font-medium ${status.titleClass}`}
-                    >
-                      {automation.title}
-                    </span>
-                    <span
-                      className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${status.pillClass}`}
-                    >
-                      {status.label}
-                    </span>
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                      {labels[automation.type]}
-                    </span>
-                    {isRunning && (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300">
-                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        {LL.task_running()}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className={`mt-0.5 line-clamp-1 text-xs ${status.bodyClass}`}
-                  >
-                    {automation.prompt}
-                  </div>
-                  <div
-                    className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${status.bodyClass}`}
-                  >
-                    <span>
-                      {automation.scheduleKind} · {automation.scheduleValue}
-                    </span>
-                    {automation.type === "project" && automation.runMode && (
-                      <span>{runModes[automation.runMode]}</span>
-                    )}
-                    {lastRun && (
-                      <span>{LL.automations_lastRun({ value: lastRun })}</span>
-                    )}
-                    <span>
-                      {nextRun
-                        ? LL.automations_nextRun({ value: nextRun })
-                        : LL.automations_notScheduled()}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleTrigger(automation)}
-                    disabled={isRunning}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                    title={
-                      isRunning ? LL.task_running() : LL.automations_trigger()
-                    }
-                    aria-label={LL.automations_trigger()}
-                  >
-                    {isRunning ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Play className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggle(automation)}
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${status.toggleClass}`}
-                    title={
-                      automation.enabled
-                        ? LL.automations_disable()
-                        : LL.automations_enable()
-                    }
-                    aria-label={
-                      automation.enabled
-                        ? LL.automations_disable()
-                        : LL.automations_enable()
-                    }
-                  >
-                    <Power className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(automation)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                    title={LL.automations_edit()}
-                    aria-label={LL.automations_edit()}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingDelete(automation)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10"
-                    title={LL.automations_delete()}
-                    aria-label={LL.automations_delete()}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {view === "tasks" ? taskListSection : triageSection}
 
       {formDialog}
+      {runDetailDialog}
       <AutomationDeleteDialog
         automation={pendingDelete}
         onCancel={() => setPendingDelete(null)}

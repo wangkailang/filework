@@ -27,12 +27,45 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_prompt: () => "Prompt",
       automations_runModeLocal: () => "本地项目",
       automations_runModeWorktree: () => "隔离 worktree",
+      automations_runCompleted: ({ value }: { value: string }) =>
+        `完成 ${value}`,
+      automations_runStarted: ({ value }: { value: string }) => `开始 ${value}`,
+      automations_runCompletedLabel: () => "完成时间",
+      automations_runStartedLabel: () => "开始时间",
+      automations_runsEmpty: () => "暂无运行记录。",
+      automations_runStatusCanceled: () => "已取消",
+      automations_runStatusFailed: () => "失败",
+      automations_runStatusQueued: () => "排队中",
+      automations_runStatusRunning: () => "运行中",
+      automations_runStatusSucceeded: () => "成功",
+      automations_runDetailTitle: () => "运行详情",
+      automations_runDetailPrompt: () => "Prompt",
+      automations_runDetailOutput: () => "输出",
+      automations_runDetailError: () => "错误",
+      automations_runDetailWorkspace: () => "工作区",
+      automations_runDetailTokens: () => "Token 用量",
+      automations_showTasks: () => "任务列表",
+      automations_showTriage: () => "运行诊断",
+      automations_scheduleCron: () => "Cron",
+      automations_scheduleDaily: () => "每天",
+      automations_scheduleInterval: () => "间隔",
+      automations_scheduleWeekly: () => "每周",
+      automations_tokenInput: ({ value }: { value: string }) =>
+        `输入 ${value} tokens`,
+      automations_tokenOutput: ({ value }: { value: string }) =>
+        `输出 ${value} tokens`,
+      automations_tokenTotal: ({ value }: { value: string }) =>
+        `总计 ${value} tokens`,
+      automations_viewDetails: () => "查看详情",
       automations_save: () => "保存",
       automations_schedule: () => "计划",
       automations_statusDisabled: () => "已停用",
       automations_statusEnabled: () => "已启用",
       automations_trigger: () => "手动触发",
+      automations_triggerManual: () => "手动",
+      automations_triggerScheduled: () => "计划",
       automations_triggering: () => "触发中",
+      automations_triageTitle: () => "运行诊断",
       automations_title: () => "自动化",
       automations_typeProject: () => "项目",
       automations_typeStandalone: () => "独立",
@@ -45,6 +78,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
 import {
   AutomationDeleteDialogContent,
   type AutomationRecord,
+  AutomationRunDetailDialogContent,
   AutomationsPanel,
 } from "../AutomationsPanel";
 
@@ -70,6 +104,27 @@ const automationRecord = (
   ...overrides,
 });
 
+const automationRunRecord = () => ({
+  id: "run-1",
+  automationId: "auto-1",
+  automationTitle: "Daily repo check",
+  trigger: "scheduled" as const,
+  status: "failed" as const,
+  prompt: "Check CI and summarize failures.",
+  workspacePaths: ["/workspace"],
+  threadId: null,
+  modelId: null,
+  output: null,
+  errorMessage: "Command failed",
+  inputTokens: null,
+  outputTokens: null,
+  totalTokens: null,
+  createdAt: "2026-06-18T01:00:00.000Z",
+  updatedAt: "2026-06-18T01:02:00.000Z",
+  startedAt: "2026-06-18T01:00:10.000Z",
+  completedAt: "2026-06-18T01:02:00.000Z",
+});
+
 describe("AutomationsPanel", () => {
   it("renders localized panel chrome while loading", () => {
     const html = renderToStaticMarkup(<AutomationsPanel />);
@@ -87,7 +142,8 @@ describe("AutomationsPanel", () => {
 
     expect(html).toContain("Daily repo check");
     expect(html).toContain("项目");
-    expect(html).toContain("daily · 09:00");
+    expect(html).toContain("每天 · 09:00");
+    expect(html).not.toContain("daily · 09:00");
     expect(html).toContain("隔离 worktree");
     expect(html).toContain("下次运行");
     expect(html).toContain("手动触发");
@@ -121,6 +177,8 @@ describe("AutomationsPanel", () => {
     expect(html).toContain('data-automation-rail="true"');
     expect(html).toContain("自动化");
     expect(html).toContain("Daily repo check");
+    expect(html).toContain("每天 · 09:00");
+    expect(html).not.toContain("daily · 09:00");
     expect(html).toContain("手动触发");
     expect(html).not.toContain("管理由 Agent 创建的定时任务、提醒和项目监控。");
   });
@@ -136,6 +194,102 @@ describe("AutomationsPanel", () => {
     expect(html).toContain("Daily repo check");
     expect(html).toContain("执行中");
     expect(html).toContain('disabled=""');
+  });
+
+  it("marks an automation as running when it has an active run", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        initialAutomations={[automationRecord()]}
+        initialRuns={[
+          {
+            ...automationRunRecord(),
+            status: "running",
+            errorMessage: null,
+            completedAt: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Daily repo check");
+    expect(html).toContain("执行中");
+    expect(html).toContain('disabled=""');
+  });
+
+  it("renders recent automation runs for triage", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        initialView="triage"
+        initialAutomations={[automationRecord()]}
+        initialRuns={[{ ...automationRunRecord(), totalTokens: 4200 }]}
+      />,
+    );
+
+    expect(html).toContain("运行诊断");
+    expect(html).toContain("失败");
+    expect(html).toContain("计划");
+    expect(html).toContain("总计 4.2K tokens");
+    expect(html).toContain("Command failed");
+  });
+
+  it("keeps automation tasks and triage in separate full-panel views", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        initialAutomations={[automationRecord()]}
+        initialRuns={[automationRunRecord()]}
+      />,
+    );
+
+    expect(html).toContain('data-automation-view="tasks"');
+    expect(html).toContain("任务列表");
+    expect(html).toContain("运行诊断");
+    expect(html).toContain("Daily repo check");
+    expect(html).toContain("手动触发");
+    expect(html).not.toContain('data-automation-triage-list="true"');
+    expect(html).not.toContain('data-automation-run-status="failed"');
+    expect(html).not.toContain("Command failed");
+  });
+
+  it("places the create action before the task and triage switcher", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel initialAutomations={[automationRecord()]} />,
+    );
+
+    expect(html.indexOf("新建自动化")).toBeLessThan(html.indexOf("任务列表"));
+  });
+
+  it("renders run detail content for triage drill-in", () => {
+    const output = "## Changed files\n\n- **Changed files summary**";
+    const html = renderToStaticMarkup(
+      <AutomationRunDetailDialogContent
+        run={{
+          ...automationRunRecord(),
+          output,
+          inputTokens: 1200,
+          outputTokens: 3400,
+          totalTokens: 4600,
+        }}
+      />,
+    );
+
+    expect(html).toContain("运行详情");
+    expect(html).toContain("Daily repo check");
+    expect(html).toContain("失败");
+    expect(html).toContain("错误");
+    expect(html).toContain("Command failed");
+    expect(html).toContain("输出");
+    expect(html).toContain("Changed files summary");
+    expect(html).toContain('data-automation-run-detail-layout="expanded"');
+    expect(html).toContain('data-automation-run-output-markdown="true"');
+    expect(html).not.toContain("**Changed files summary**");
+    expect(html).toContain("工作区");
+    expect(html).toContain("/workspace");
+    expect(html).toContain("Token 用量");
+    expect(html).toContain("输入 1.2K tokens");
+    expect(html).toContain("输出 3.4K tokens");
+    expect(html).toContain("总计 4.6K tokens");
+    expect(html).not.toContain("in 1,200");
+    expect(html).not.toContain("out 3,400");
   });
 
   it("renders enabled and disabled automations with distinct status treatments", () => {

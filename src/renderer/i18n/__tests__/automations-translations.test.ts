@@ -19,6 +19,11 @@ describe("automation translations", () => {
     expect(enMessages.automations_deleteConfirmTitle).toBe(
       "Delete automation?",
     );
+    expect(enMessages.automations_showTriage).toBe("Triage");
+    expect(enMessages.automations_triageTitle).toBe("Triage");
+    expect(enMessages.automations_tokenTotal).toBe(
+      "Total {value:string} tokens",
+    );
 
     expect(zhMessages.settings_automations).toBe("自动化");
     expect(zhMessages.automations_add).toBe("新建自动化");
@@ -26,6 +31,11 @@ describe("automation translations", () => {
     expect(zhMessages.automations_trigger).toBe("手动触发");
     expect(zhMessages.automations_statusDisabled).toBe("已停用");
     expect(zhMessages.automations_deleteConfirmTitle).toBe("删除自动化？");
+    expect(zhMessages.automations_showTriage).toBe("运行诊断");
+    expect(zhMessages.automations_triageTitle).toBe("运行诊断");
+    expect(zhMessages.automations_tokenInput).toBe("输入 {value} tokens");
+    expect(zhMessages.automations_tokenOutput).toBe("输出 {value} tokens");
+    expect(zhMessages.automations_tokenTotal).toBe("总计 {value} tokens");
 
     expect(jaMessages.settings_automations).toBe("自動化");
     expect(jaMessages.automations_add).toBe("自動化を作成");
@@ -35,5 +45,8 @@ describe("automation translations", () => {
     expect(jaMessages.automations_deleteConfirmTitle).toBe(
       "自動化を削除しますか?",
     );
+    expect(jaMessages.automations_showTriage).toBe("実行診断");
+    expect(jaMessages.automations_triageTitle).toBe("実行診断");
+    expect(jaMessages.automations_tokenTotal).toBe("合計 {value} tokens");
   });
 });

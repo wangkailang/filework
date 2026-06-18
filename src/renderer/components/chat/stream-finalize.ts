@@ -99,9 +99,11 @@ export const finalizePartsForSettledTask = (
         .filter((result): result is { delivered: boolean; denied: boolean } =>
           Boolean(result),
         );
+      const allEntriesDelivered =
+        matchingResults.length === batch.entries.length &&
+        matchingResults.every((result) => result.delivered);
       const nextState: ApprovalState =
-        matchingResults.some((result) => result.denied) ||
-        !matchingResults.some((result) => result.delivered)
+        matchingResults.some((result) => result.denied) || !allEntriesDelivered
           ? "approval-rejected"
           : "approval-accepted";
       return { ...batch, state: nextState };

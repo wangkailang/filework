@@ -88,7 +88,7 @@ export const buildAutomationUpdateTool = ({
     "Choose type='thread' for heartbeat-style wakeups that should preserve this conversation's context; if threadId is omitted, the current thread/session id is used.",
     "Choose type='standalone' or type='project' when each run should be independent or span one or more projects.",
     "Use durable prompts: say what to do each run, how to decide whether there are findings, and when to stop or ask the user for input.",
-    "Schedules: interval values look like '15m', '1h', or '2d'; daily values use 'HH:mm'; weekly values use '<weekday> HH:mm'; cron values are stored verbatim.",
+    "Schedules: interval values look like '15m', '1h', or '2d'; daily values use 'HH:mm'; weekly values use '<weekday> HH:mm'; cron values use five-field cron syntax.",
     "For Git repositories, runMode='worktree' isolates automation changes; runMode='local' works directly in the project.",
   ].join(" "),
   safety: "destructive",

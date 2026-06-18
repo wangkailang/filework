@@ -555,6 +555,111 @@ type RootTranslation = {
 	 */
 	automations_triggering: string
 	/**
+	 * T​a​s​k​s
+	 */
+	automations_showTasks: string
+	/**
+	 * T​r​i​a​g​e
+	 */
+	automations_showTriage: string
+	/**
+	 * T​r​i​a​g​e
+	 */
+	automations_triageTitle: string
+	/**
+	 * V​i​e​w​ ​d​e​t​a​i​l​s
+	 */
+	automations_viewDetails: string
+	/**
+	 * R​u​n​ ​d​e​t​a​i​l​s
+	 */
+	automations_runDetailTitle: string
+	/**
+	 * P​r​o​m​p​t
+	 */
+	automations_runDetailPrompt: string
+	/**
+	 * O​u​t​p​u​t
+	 */
+	automations_runDetailOutput: string
+	/**
+	 * E​r​r​o​r
+	 */
+	automations_runDetailError: string
+	/**
+	 * W​o​r​k​s​p​a​c​e
+	 */
+	automations_runDetailWorkspace: string
+	/**
+	 * T​o​k​e​n​ ​u​s​a​g​e
+	 */
+	automations_runDetailTokens: string
+	/**
+	 * I​n​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenInput: RequiredParams<'value'>
+	/**
+	 * O​u​t​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenOutput: RequiredParams<'value'>
+	/**
+	 * T​o​t​a​l​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenTotal: RequiredParams<'value'>
+	/**
+	 * N​o​ ​r​u​n​s​ ​y​e​t​.
+	 */
+	automations_runsEmpty: string
+	/**
+	 * Q​u​e​u​e​d
+	 */
+	automations_runStatusQueued: string
+	/**
+	 * R​u​n​n​i​n​g
+	 */
+	automations_runStatusRunning: string
+	/**
+	 * S​u​c​c​e​e​d​e​d
+	 */
+	automations_runStatusSucceeded: string
+	/**
+	 * F​a​i​l​e​d
+	 */
+	automations_runStatusFailed: string
+	/**
+	 * C​a​n​c​e​l​e​d
+	 */
+	automations_runStatusCanceled: string
+	/**
+	 * M​a​n​u​a​l
+	 */
+	automations_triggerManual: string
+	/**
+	 * S​c​h​e​d​u​l​e​d
+	 */
+	automations_triggerScheduled: string
+	/**
+	 * S​t​a​r​t​e​d​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runStarted: RequiredParams<'value'>
+	/**
+	 * C​o​m​p​l​e​t​e​d​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runCompleted: RequiredParams<'value'>
+	/**
+	 * S​t​a​r​t​e​d
+	 */
+	automations_runStartedLabel: string
+	/**
+	 * C​o​m​p​l​e​t​e​d
+	 */
+	automations_runCompletedLabel: string
+	/**
 	 * N​o​ ​a​u​t​o​m​a​t​i​o​n​s​ ​y​e​t​.
 	 */
 	automations_empty: string
@@ -2676,6 +2781,106 @@ export type TranslationFunctions = {
 	 * Running
 	 */
 	automations_triggering: () => LocalizedString
+	/**
+	 * Tasks
+	 */
+	automations_showTasks: () => LocalizedString
+	/**
+	 * Triage
+	 */
+	automations_showTriage: () => LocalizedString
+	/**
+	 * Triage
+	 */
+	automations_triageTitle: () => LocalizedString
+	/**
+	 * View details
+	 */
+	automations_viewDetails: () => LocalizedString
+	/**
+	 * Run details
+	 */
+	automations_runDetailTitle: () => LocalizedString
+	/**
+	 * Prompt
+	 */
+	automations_runDetailPrompt: () => LocalizedString
+	/**
+	 * Output
+	 */
+	automations_runDetailOutput: () => LocalizedString
+	/**
+	 * Error
+	 */
+	automations_runDetailError: () => LocalizedString
+	/**
+	 * Workspace
+	 */
+	automations_runDetailWorkspace: () => LocalizedString
+	/**
+	 * Token usage
+	 */
+	automations_runDetailTokens: () => LocalizedString
+	/**
+	 * Input {value} tokens
+	 */
+	automations_tokenInput: (arg: { value: string }) => LocalizedString
+	/**
+	 * Output {value} tokens
+	 */
+	automations_tokenOutput: (arg: { value: string }) => LocalizedString
+	/**
+	 * Total {value} tokens
+	 */
+	automations_tokenTotal: (arg: { value: string }) => LocalizedString
+	/**
+	 * No runs yet.
+	 */
+	automations_runsEmpty: () => LocalizedString
+	/**
+	 * Queued
+	 */
+	automations_runStatusQueued: () => LocalizedString
+	/**
+	 * Running
+	 */
+	automations_runStatusRunning: () => LocalizedString
+	/**
+	 * Succeeded
+	 */
+	automations_runStatusSucceeded: () => LocalizedString
+	/**
+	 * Failed
+	 */
+	automations_runStatusFailed: () => LocalizedString
+	/**
+	 * Canceled
+	 */
+	automations_runStatusCanceled: () => LocalizedString
+	/**
+	 * Manual
+	 */
+	automations_triggerManual: () => LocalizedString
+	/**
+	 * Scheduled
+	 */
+	automations_triggerScheduled: () => LocalizedString
+	/**
+	 * Started {value}
+	 */
+	automations_runStarted: (arg: { value: string }) => LocalizedString
+	/**
+	 * Completed {value}
+	 */
+	automations_runCompleted: (arg: { value: string }) => LocalizedString
+	/**
+	 * Started
+	 */
+	automations_runStartedLabel: () => LocalizedString
+	/**
+	 * Completed
+	 */
+	automations_runCompletedLabel: () => LocalizedString
 	/**
 	 * No automations yet.
 	 */

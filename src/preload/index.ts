@@ -35,6 +35,27 @@ type AutomationRecord = {
   updatedAt: string;
 };
 
+type AutomationRunRecord = {
+  id: string;
+  automationId: string;
+  automationTitle: string;
+  trigger: "manual" | "scheduled";
+  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  prompt: string;
+  workspacePaths: string[] | null;
+  threadId: string | null;
+  modelId: string | null;
+  output: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
 type AutomationCreatePayload = {
   title: string;
   prompt: string;
@@ -918,6 +939,12 @@ const api = {
       threadId?: string;
     }): Promise<AutomationRecord[]> =>
       ipcRenderer.invoke("automations:list", filter),
+    listRuns: (filter?: {
+      automationId?: string;
+      status?: AutomationRunRecord["status"];
+      limit?: number;
+    }): Promise<AutomationRunRecord[]> =>
+      ipcRenderer.invoke("automations:listRuns", filter),
     create: (payload: AutomationCreatePayload): Promise<AutomationRecord> =>
       ipcRenderer.invoke("automations:create", payload),
     update: (
@@ -927,7 +954,7 @@ const api = {
       >,
     ): Promise<AutomationRecord> =>
       ipcRenderer.invoke("automations:update", { id, updates }),
-    trigger: (id: string): Promise<AutomationRecord> =>
+    trigger: (id: string): Promise<AutomationRunRecord> =>
       ipcRenderer.invoke("automations:trigger", { id }),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("automations:delete", { id }),

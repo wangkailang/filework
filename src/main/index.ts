@@ -33,6 +33,10 @@ import { getSetting, initDatabase } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
+import {
+  startAutomationScheduler,
+  stopAutomationScheduler,
+} from "./ipc/automation-service";
 import { registerAutomationsHandlers } from "./ipc/automations-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import {
@@ -361,6 +365,7 @@ app.whenReady().then(async () => {
   registerTaskTraceHandlers();
   registerToolWhitelistHandlers();
   registerCredentialsHandlers();
+  startAutomationScheduler();
 
   // MCP —— 加载持久化的服务器配置,注册 IPC,并在后台打开每个已启用的
   // 服务器。连接失败按服务器隔离(manager 会将其切到 error 状态),
@@ -527,6 +532,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopAutomationScheduler();
   stopAllHeadWatchers();
   killAllShells();
   // 断开 MCP 服务器连接 —— stdio transport 会派生子进程,否则会在

@@ -38,6 +38,46 @@ describe("finalizePartsForSettledTask", () => {
     });
   });
 
+  it("does not accept a batch approval until every requested tool call produced a result", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "batch-approval",
+        batchId: "batch-1",
+        toolName: "automation_update",
+        entries: [
+          {
+            toolCallId: "call-1",
+            args: { operation: "create" },
+            description: "automation_update",
+          },
+          {
+            toolCallId: "call-2",
+            args: { operation: "create" },
+            description: "automation_update",
+          },
+        ],
+        state: "approval-requested",
+      },
+      {
+        type: "tool",
+        toolCallId: "call-1",
+        toolName: "automation_update",
+        args: { operation: "create" },
+        result: { id: "auto-1" },
+        state: "output-available",
+      },
+    ];
+
+    const finalized = finalizePartsForSettledTask(parts, {
+      status: "completed",
+    });
+
+    expect(finalized[0]).toMatchObject({
+      type: "batch-approval",
+      state: "approval-rejected",
+    });
+  });
+
   it("completes an executing plan and skips steps that never received progress updates", () => {
     const parts: MessagePart[] = [
       {

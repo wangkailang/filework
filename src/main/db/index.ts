@@ -136,6 +136,28 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_run ON automations(enabled, next_run_at);
     CREATE INDEX IF NOT EXISTS idx_automations_thread ON automations(thread_id);
+    CREATE TABLE IF NOT EXISTS automation_runs (
+      id TEXT PRIMARY KEY,
+      automation_id TEXT NOT NULL,
+      automation_title TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
+      status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','canceled')),
+      prompt TEXT NOT NULL,
+      workspace_paths TEXT,
+      thread_id TEXT,
+      model_id TEXT,
+      output TEXT,
+      error_message TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      total_tokens INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
@@ -347,31 +369,6 @@ export const initDatabase = async () => {
     );
   `);
 
-  // 迁移:自动化定义表。旧库没有该表时创建;索引用于后续后台 runner
-  // 快速扫描 enabled + due 的自动化。
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS automations (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('thread','standalone','project')),
-      schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('interval','daily','weekly','cron')),
-      schedule_value TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      thread_id TEXT,
-      workspace_paths TEXT,
-      run_mode TEXT CHECK(run_mode IN ('local','worktree')),
-      model_id TEXT,
-      reasoning_effort TEXT,
-      last_run_at TEXT,
-      next_run_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_run ON automations(enabled, next_run_at);
-    CREATE INDEX IF NOT EXISTS idx_automations_thread ON automations(thread_id);
-  `);
-
   // M3 PR 2:删除旧版聊天表。M3 PR 1+ 上的现有用户已经
   // 迁移到 ~/.filework/sessions/ 的 JSONL 存储。
   // 幂等:表不存在时为空操作(全新安装)。
@@ -563,6 +560,13 @@ interface RecentWorkspace {
 export type AutomationType = "thread" | "standalone" | "project";
 export type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
 export type AutomationRunMode = "local" | "worktree";
+export type AutomationRunTrigger = "manual" | "scheduled";
+export type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled";
 
 export interface AutomationRecord {
   id: string;
@@ -581,6 +585,27 @@ export interface AutomationRecord {
   nextRunAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AutomationRunRecord {
+  id: string;
+  automationId: string;
+  automationTitle: string;
+  trigger: AutomationRunTrigger;
+  status: AutomationRunStatus;
+  prompt: string;
+  workspacePaths: string[] | null;
+  threadId: string | null;
+  modelId: string | null;
+  output: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 export type CredentialTestStatus = "unknown" | "ok" | "error";
@@ -810,6 +835,141 @@ const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
   return { hour, minute };
 };
 
+const CRON_MONTH_NAMES: Record<string, number> = {
+  apr: 4,
+  aug: 8,
+  dec: 12,
+  feb: 2,
+  jan: 1,
+  jul: 7,
+  jun: 6,
+  mar: 3,
+  may: 5,
+  nov: 11,
+  oct: 10,
+  sep: 9,
+};
+
+const CRON_WEEKDAY_NAMES: Record<string, number> = {
+  fri: 5,
+  mon: 1,
+  sat: 6,
+  sun: 0,
+  thu: 4,
+  tue: 2,
+  wed: 3,
+};
+
+const parseCronNumber = (
+  value: string,
+  min: number,
+  max: number,
+  aliases?: Record<string, number>,
+): number | null => {
+  const normalized = value.trim().toLowerCase();
+  const aliased = aliases?.[normalized];
+  const parsed = aliased ?? Number(normalized);
+  if (!Number.isInteger(parsed)) return null;
+  if (max === 6 && parsed === 7) return 0;
+  if (parsed < min || parsed > max) return null;
+  return parsed;
+};
+
+const parseCronField = (
+  field: string,
+  min: number,
+  max: number,
+  aliases?: Record<string, number>,
+): Set<number> | null => {
+  const values = new Set<number>();
+
+  for (const rawPart of field.split(",")) {
+    const part = rawPart.trim();
+    if (!part) return null;
+
+    const [rangePart, stepPart] = part.split("/");
+    const step = stepPart === undefined ? 1 : Number(stepPart);
+    if (!Number.isInteger(step) || step <= 0) return null;
+
+    let start: number;
+    let end: number;
+
+    if (rangePart === "*" || rangePart === "?") {
+      start = min;
+      end = max;
+    } else if (rangePart.includes("-")) {
+      const [rawStart, rawEnd] = rangePart.split("-");
+      const parsedStart = parseCronNumber(rawStart, min, max, aliases);
+      const parsedEnd = parseCronNumber(rawEnd, min, max, aliases);
+      if (parsedStart === null || parsedEnd === null || parsedStart > parsedEnd)
+        return null;
+      start = parsedStart;
+      end = parsedEnd;
+    } else {
+      const parsed = parseCronNumber(rangePart, min, max, aliases);
+      if (parsed === null) return null;
+      start = parsed;
+      end = parsed;
+    }
+
+    for (let value = start; value <= end; value += step) {
+      values.add(value);
+    }
+  }
+
+  return values;
+};
+
+const isCronWildcard = (field: string): boolean => {
+  const value = field.trim();
+  return value === "*" || value === "?";
+};
+
+const computeCronNextRunAt = (value: string, now: Date): string | null => {
+  const parts = value.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+
+  const [minuteField, hourField, dayField, monthField, weekdayField] = parts;
+  const minutes = parseCronField(minuteField, 0, 59);
+  const hours = parseCronField(hourField, 0, 23);
+  const days = parseCronField(dayField, 1, 31);
+  const months = parseCronField(monthField, 1, 12, CRON_MONTH_NAMES);
+  const weekdays = parseCronField(weekdayField, 0, 6, CRON_WEEKDAY_NAMES);
+  if (!minutes || !hours || !days || !months || !weekdays) return null;
+
+  const dayWildcard = isCronWildcard(dayField);
+  const weekdayWildcard = isCronWildcard(weekdayField);
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+  next.setMinutes(next.getMinutes() + 1);
+
+  for (let i = 0; i < 366 * 24 * 60; i += 1) {
+    const dayMatches = days.has(next.getDate());
+    const weekdayMatches = weekdays.has(next.getDay());
+    const calendarDayMatches =
+      dayWildcard && weekdayWildcard
+        ? true
+        : dayWildcard
+          ? weekdayMatches
+          : weekdayWildcard
+            ? dayMatches
+            : dayMatches || weekdayMatches;
+
+    if (
+      minutes.has(next.getMinutes()) &&
+      hours.has(next.getHours()) &&
+      months.has(next.getMonth() + 1) &&
+      calendarDayMatches
+    ) {
+      return next.toISOString();
+    }
+
+    next.setMinutes(next.getMinutes() + 1);
+  }
+
+  return null;
+};
+
 export const computeAutomationNextRunAt = (
   scheduleKind: AutomationScheduleKind,
   scheduleValue: string,
@@ -822,8 +982,13 @@ export const computeAutomationNextRunAt = (
     const match = value.match(
       /^(\d+)\s*(m|min|minute|minutes|h|hour|hours|d|day|days)$/i,
     );
-    if (!match) return null;
+    if (!match) {
+      throw new Error(`Invalid interval schedule value: ${scheduleValue}`);
+    }
     const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Invalid interval schedule value: ${scheduleValue}`);
+    }
     const unit = match[2].toLowerCase();
     const multiplier = unit.startsWith("m")
       ? 60_000
@@ -858,9 +1023,7 @@ export const computeAutomationNextRunAt = (
     return next.toISOString();
   }
 
-  // Cron expressions are stored verbatim; the scheduler integration can use a
-  // dedicated cron parser without changing the persisted contract.
-  return null;
+  return computeCronNextRunAt(value, now);
 };
 
 const mapAutomationRow = (
@@ -1047,6 +1210,221 @@ export const triggerAutomation = (
   const updated = getAutomation(id);
   if (!updated) throw new Error(`Automation not found after trigger: ${id}`);
   return updated;
+};
+
+// ============================================================================
+// 自动化执行记录
+// ============================================================================
+
+const ACTIVE_AUTOMATION_RUN_STATUSES: AutomationRunStatus[] = [
+  "queued",
+  "running",
+];
+
+const mapAutomationRunRow = (
+  row: typeof schema.automationRuns.$inferSelect,
+): AutomationRunRecord => ({
+  id: row.id,
+  automationId: row.automationId,
+  automationTitle: row.automationTitle,
+  trigger: row.trigger,
+  status: row.status,
+  prompt: row.prompt,
+  workspacePaths: row.workspacePaths
+    ? (JSON.parse(row.workspacePaths) as string[])
+    : null,
+  threadId: row.threadId ?? null,
+  modelId: row.modelId ?? null,
+  output: row.output ?? null,
+  errorMessage: row.errorMessage ?? null,
+  inputTokens: row.inputTokens ?? null,
+  outputTokens: row.outputTokens ?? null,
+  totalTokens: row.totalTokens ?? null,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  startedAt: row.startedAt ?? null,
+  completedAt: row.completedAt ?? null,
+});
+
+export const listAutomationRuns = (filter?: {
+  automationId?: string;
+  status?: AutomationRunStatus;
+  limit?: number;
+}): AutomationRunRecord[] => {
+  let rows = db.select().from(schema.automationRuns).all();
+  if (filter?.automationId) {
+    rows = rows.filter((row) => row.automationId === filter.automationId);
+  }
+  if (filter?.status) {
+    rows = rows.filter((row) => row.status === filter.status);
+  }
+  const sorted = rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const limited =
+    typeof filter?.limit === "number" && filter.limit > 0
+      ? sorted.slice(0, filter.limit)
+      : sorted;
+  return limited.map(mapAutomationRunRow);
+};
+
+export const getAutomationRun = (id: string): AutomationRunRecord | null => {
+  const row = db
+    .select()
+    .from(schema.automationRuns)
+    .where(eq(schema.automationRuns.id, id))
+    .get();
+  return row ? mapAutomationRunRow(row) : null;
+};
+
+export const getActiveAutomationRun = (
+  automationId: string,
+): AutomationRunRecord | null => {
+  const run = listAutomationRuns({ automationId }).find((row) =>
+    ACTIVE_AUTOMATION_RUN_STATUSES.includes(row.status),
+  );
+  return run ?? null;
+};
+
+export const queueAutomationRun = (
+  automationId: string,
+  input: { trigger: AutomationRunTrigger; now?: Date },
+): AutomationRunRecord => {
+  const existingActive = getActiveAutomationRun(automationId);
+  if (existingActive) return existingActive;
+
+  const automation = getAutomation(automationId);
+  if (!automation) throw new Error(`Automation not found: ${automationId}`);
+
+  const id = crypto.randomUUID();
+  const now = (input.now ?? new Date()).toISOString();
+  db.insert(schema.automationRuns)
+    .values({
+      id,
+      automationId,
+      automationTitle: automation.title,
+      trigger: input.trigger,
+      status: "queued",
+      prompt: automation.prompt,
+      workspacePaths: automation.workspacePaths
+        ? JSON.stringify(automation.workspacePaths)
+        : null,
+      threadId: automation.threadId,
+      modelId: automation.modelId,
+      output: null,
+      errorMessage: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      createdAt: now,
+      updatedAt: now,
+      startedAt: null,
+      completedAt: null,
+    })
+    .run();
+
+  const queued = getAutomationRun(id);
+  if (!queued) throw new Error(`Automation run not found after queue: ${id}`);
+  return queued;
+};
+
+export const startAutomationRun = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "running",
+      startedAt: existing.startedAt ?? now,
+      updatedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+
+  const automation = getAutomation(existing.automationId);
+  if (automation) {
+    db.update(schema.automations)
+      .set({
+        lastRunAt: now,
+        nextRunAt: automation.enabled
+          ? computeAutomationNextRunAt(
+              automation.scheduleKind,
+              automation.scheduleValue,
+              new Date(now),
+            )
+          : null,
+        updatedAt: now,
+      })
+      .where(eq(schema.automations.id, automation.id))
+      .run();
+  }
+
+  const started = getAutomationRun(id);
+  if (!started) throw new Error(`Automation run not found after start: ${id}`);
+  return started;
+};
+
+export const finishAutomationRun = (
+  id: string,
+  input: {
+    status: Extract<AutomationRunStatus, "succeeded" | "failed" | "canceled">;
+    output?: string | null;
+    errorMessage?: string | null;
+    usage?: {
+      inputTokens?: number | null;
+      outputTokens?: number | null;
+      totalTokens?: number | null;
+    };
+    now?: Date;
+  },
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: input.status,
+      output: input.output ?? null,
+      errorMessage: input.errorMessage ?? null,
+      inputTokens: input.usage?.inputTokens ?? null,
+      outputTokens: input.usage?.outputTokens ?? null,
+      totalTokens: input.usage?.totalTokens ?? null,
+      updatedAt: now,
+      completedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+
+  const finished = getAutomationRun(id);
+  if (!finished)
+    throw new Error(`Automation run not found after finish: ${id}`);
+  return finished;
+};
+
+export const recoverInterruptedAutomationRuns = (
+  now: Date = new Date(),
+): AutomationRunRecord[] => {
+  const interrupted = listAutomationRuns().filter((run) =>
+    ACTIVE_AUTOMATION_RUN_STATUSES.includes(run.status),
+  );
+  return interrupted.map((run) =>
+    finishAutomationRun(run.id, {
+      status: "failed",
+      errorMessage: "Automation run interrupted before completion.",
+      now,
+    }),
+  );
+};
+
+export const listDueAutomations = (now = new Date()): AutomationRecord[] => {
+  const nowIso = now.toISOString();
+  return listAutomations({ enabled: true }).filter((automation) => {
+    if (!automation.nextRunAt || automation.nextRunAt > nowIso) return false;
+    return !getActiveAutomationRun(automation.id);
+  });
 };
 
 // ============================================================================

@@ -35,6 +35,26 @@ const dbState = {
     createdAt: string;
     updatedAt: string;
   }>,
+  runs: [] as Array<{
+    id: string;
+    automationId: string;
+    automationTitle: string;
+    trigger: "manual" | "scheduled";
+    status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+    prompt: string;
+    workspacePaths: string[] | null;
+    threadId: string | null;
+    modelId: string | null;
+    output: string | null;
+    errorMessage: string | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    createdAt: string;
+    updatedAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  }>,
 };
 
 vi.mock("../../db", () => ({
@@ -63,13 +83,7 @@ vi.mock("../../db", () => ({
     return dbState.automations.length !== before;
   }),
   listAutomations: vi.fn(() => dbState.automations),
-  triggerAutomation: vi.fn((id: string) => {
-    const row = dbState.automations.find((a) => a.id === id);
-    if (!row) throw new Error(`Automation not found: ${id}`);
-    row.lastRunAt = "2026-06-18T03:00:00.000Z";
-    row.nextRunAt = "2026-06-18T04:00:00.000Z";
-    return row;
-  }),
+  listAutomationRuns: vi.fn(() => dbState.runs),
   updateAutomation: vi.fn((id, updates) => {
     const row = dbState.automations.find((a) => a.id === id);
     if (!row) throw new Error(`Automation not found: ${id}`);
@@ -80,12 +94,42 @@ vi.mock("../../db", () => ({
   }),
 }));
 
+vi.mock("../automation-service", () => ({
+  triggerAutomationNow: vi.fn((id: string) => {
+    const automation = dbState.automations.find((a) => a.id === id);
+    if (!automation) throw new Error(`Automation not found: ${id}`);
+    const run = {
+      id: `run-${dbState.runs.length + 1}`,
+      automationId: id,
+      automationTitle: automation.title,
+      trigger: "manual" as const,
+      status: "queued" as const,
+      prompt: automation.prompt,
+      workspacePaths: automation.workspacePaths,
+      threadId: automation.threadId,
+      modelId: automation.modelId,
+      output: null,
+      errorMessage: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      createdAt: "2026-06-18T03:00:00.000Z",
+      updatedAt: "2026-06-18T03:00:00.000Z",
+      startedAt: null,
+      completedAt: null,
+    };
+    dbState.runs.push(run);
+    return run;
+  }),
+}));
+
 import { registerAutomationsHandlers } from "../automations-handlers";
 
 describe("automations handlers", () => {
   beforeEach(() => {
     handlers.clear();
     dbState.automations.length = 0;
+    dbState.runs.length = 0;
     registerAutomationsHandlers();
   });
 
@@ -94,6 +138,7 @@ describe("automations handlers", () => {
     expect(handlers.has("automations:create")).toBe(true);
     expect(handlers.has("automations:update")).toBe(true);
     expect(handlers.has("automations:trigger")).toBe(true);
+    expect(handlers.has("automations:listRuns")).toBe(true);
     expect(handlers.has("automations:delete")).toBe(true);
   });
 
@@ -122,6 +167,28 @@ describe("automations handlers", () => {
     await expect(list(null, undefined)).resolves.toHaveLength(1);
   });
 
+  it("normalizes workspace paths when creating automation definitions", async () => {
+    const create = handlers.get("automations:create");
+    if (!create) throw new Error("automation create handler missing");
+
+    await expect(
+      create(null, {
+        title: "  Daily repo check  ",
+        prompt: "  Check CI and summarize failures.  ",
+        type: "project",
+        scheduleKind: "daily",
+        scheduleValue: "  09:00  ",
+        workspacePaths: ["  /workspace  ", "", "   "],
+        runMode: "worktree",
+      }),
+    ).resolves.toMatchObject({
+      title: "Daily repo check",
+      prompt: "Check CI and summarize failures.",
+      scheduleValue: "09:00",
+      workspacePaths: ["/workspace"],
+    });
+  });
+
   it("updates enabled state and deletes automation definitions", async () => {
     const create = handlers.get("automations:create");
     const update = handlers.get("automations:update");
@@ -144,10 +211,12 @@ describe("automations handlers", () => {
     expect(dbState.automations).toHaveLength(0);
   });
 
-  it("marks an automation as manually triggered", async () => {
+  it("queues an automation run when manually triggered", async () => {
     const create = handlers.get("automations:create");
     const trigger = handlers.get("automations:trigger");
-    if (!create || !trigger) throw new Error("automation handlers missing");
+    const listRuns = handlers.get("automations:listRuns");
+    if (!create || !trigger || !listRuns)
+      throw new Error("automation handlers missing");
 
     const created = (await create(null, {
       title: "Manual check",
@@ -158,9 +227,52 @@ describe("automations handlers", () => {
     })) as { id: string };
 
     await expect(trigger(null, { id: created.id })).resolves.toMatchObject({
-      id: created.id,
-      lastRunAt: "2026-06-18T03:00:00.000Z",
-      nextRunAt: "2026-06-18T04:00:00.000Z",
+      automationId: created.id,
+      trigger: "manual",
+      status: "queued",
     });
+    await expect(listRuns(null, { automationId: created.id })).resolves.toEqual(
+      [
+        expect.objectContaining({
+          automationId: created.id,
+          status: "queued",
+        }),
+      ],
+    );
+  });
+
+  it("lists recent automation runs for triage", async () => {
+    dbState.runs.push({
+      id: "run-1",
+      automationId: "auto-1",
+      automationTitle: "Daily repo check",
+      trigger: "scheduled",
+      status: "failed",
+      prompt: "Check repo",
+      workspacePaths: ["/workspace"],
+      threadId: null,
+      modelId: null,
+      output: null,
+      errorMessage: "Command failed",
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      createdAt: "2026-06-18T03:00:00.000Z",
+      updatedAt: "2026-06-18T03:01:00.000Z",
+      startedAt: "2026-06-18T03:00:05.000Z",
+      completedAt: "2026-06-18T03:01:00.000Z",
+    });
+
+    const listRuns = handlers.get("automations:listRuns");
+    if (!listRuns) throw new Error("automation runs handler missing");
+
+    await expect(listRuns(null, { limit: 10 })).resolves.toMatchObject([
+      {
+        id: "run-1",
+        automationTitle: "Daily repo check",
+        status: "failed",
+        errorMessage: "Command failed",
+      },
+    ]);
   });
 });
