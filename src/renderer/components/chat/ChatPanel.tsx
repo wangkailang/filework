@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
+import { cn } from "../../lib/utils";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -60,6 +61,9 @@ import {
 import { getToolLabels } from "../ai-elements/tool-labels";
 import { toolPresenters } from "../ai-elements/tool-presenters";
 import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { type AgentState, AgentTelemetry } from "./AgentTelemetry";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
@@ -252,14 +256,10 @@ const RecoveryButton = ({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border hover:bg-accent transition-colors"
-    >
-      <Icon className="w-3 h-3" />
+    <Button type="button" onClick={handleClick} variant="outline" size="xs">
+      <Icon data-icon="inline-start" />
       {recoveryLabels[action]}
-    </button>
+    </Button>
   );
 };
 
@@ -276,22 +276,21 @@ const ErrorBanner = ({
   chat: ReturnType<typeof useChatSessionContext>;
   className?: string;
 }) => (
-  <div
-    className={`rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 ${className ?? ""}`}
+  <Alert
+    variant="destructive"
+    className={cn("border-destructive/30 bg-destructive/5", className)}
   >
-    <div className="flex items-start gap-2">
-      <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-destructive font-medium">{label}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>
-        <div className="flex items-center gap-2 mt-2">
-          {actions.map((action) => (
-            <RecoveryButton key={action} action={action} chat={chat} />
-          ))}
-        </div>
-      </div>
+    <AlertTriangle />
+    <AlertTitle>{label}</AlertTitle>
+    <AlertDescription className="text-muted-foreground">
+      {hint}
+    </AlertDescription>
+    <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
+      {actions.map((action) => (
+        <RecoveryButton key={action} action={action} chat={chat} />
+      ))}
     </div>
-  </div>
+  </Alert>
 );
 
 /**
@@ -326,37 +325,34 @@ const ClarificationCard = ({
   };
 
   return (
-    <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 my-1">
-      <div className="flex items-start gap-2">
-        <HelpCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+    <Alert className="my-1 border-primary/30 bg-primary/5">
+      <HelpCircle />
+      <div className="col-start-2 flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-primary">
+          <AlertTitle className="text-primary text-xs">
             {LL.clarification_title()}
-          </div>
+          </AlertTitle>
           <div className="text-sm text-foreground mt-0.5">{part.question}</div>
           {hasOptions && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {part.options?.map((opt) => {
                 const selected = picked === opt;
                 return (
-                  <button
+                  <Button
                     key={opt}
                     type="button"
                     disabled={isAnswered}
+                    variant={selected ? "default" : "outline"}
+                    size="xs"
                     onClick={() => {
                       setLocalPick(opt);
                       void onPick(opt);
                     }}
-                    className={
-                      selected
-                        ? "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-primary bg-primary/15 text-primary cursor-default"
-                        : isAnswered
-                          ? "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border text-muted-foreground opacity-60 cursor-default"
-                          : "inline-flex items-center px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent hover:text-foreground transition-colors"
-                    }
+                    className="h-auto min-h-6 whitespace-normal"
+                    aria-pressed={selected}
                   >
                     {opt}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -379,14 +375,14 @@ const ClarificationCard = ({
                 placeholder="输入回复…"
                 className="flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <button
+              <Button
                 type="button"
                 onClick={submitFreeText}
                 disabled={!freeText.trim()}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                size="sm"
               >
                 发送
-              </button>
+              </Button>
             </div>
           )}
           {!hasOptions && isAnswered && (
@@ -396,7 +392,7 @@ const ClarificationCard = ({
           )}
         </div>
       </div>
-    </div>
+    </Alert>
   );
 };
 
@@ -1178,16 +1174,17 @@ export const ChatPanel = ({
               title={LL.chat_emptyTitle()}
               description={LL.chat_emptyDescription()}
             >
-              <div className="grid grid-cols-2 gap-2 max-w-lg w-full">
+              <div className="grid w-full max-w-lg grid-cols-2 gap-2">
                 {suggestions.map((suggestion) => (
-                  <button
+                  <Button
                     key={suggestion}
                     type="button"
+                    variant="outline"
                     onClick={() => chat.setInput(suggestion)}
-                    className="text-left text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                    className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-muted-foreground"
                   >
                     {suggestion}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </ConversationEmptyState>
@@ -1301,13 +1298,13 @@ export const ChatPanel = ({
               })()}
               {chat.activeSkill && chat.isLoading && (
                 <div className="flex items-center gap-1.5 px-4 py-1">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
-                    <Sparkles className="w-3 h-3" />
+                  <Badge variant="secondary" className="text-primary">
+                    <Sparkles data-icon="inline-start" />
                     {chat.activeSkill.skillName}
                     <span className="text-muted-foreground">
                       ({chat.activeSkill.source})
                     </span>
-                  </span>
+                  </Badge>
                 </div>
               )}
 
@@ -1404,15 +1401,17 @@ export const ChatPanel = ({
                   onClick={handlePickFiles}
                   disabled={chat.isLoading}
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() => setMemoryOpen(true)}
                   aria-label="工作目录记忆"
                   title="工作目录记忆"
-                  className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
                 >
-                  <Brain className="size-4" />
-                </button>
+                  <Brain />
+                </Button>
                 <ModelSelector
                   selectedConfigId={chat.selectedLlmConfigId}
                   onSelect={chat.setSelectedLlmConfigId}

@@ -6,6 +6,7 @@ import type {
 } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
 import {
   getBatchApprovalTitle,
   getBatchToolLabel,
@@ -139,25 +140,20 @@ export const ConfirmationAction = ({
   className,
   ...props
 }: ConfirmationActionProps) => (
-  <button
+  <Button
     type="button"
     disabled={disabled}
+    variant={variant}
+    size="xs"
     className={cn(
-      "inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium transition-all active:scale-[0.98]",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-      "disabled:pointer-events-none disabled:opacity-50",
       variant === "default" &&
         "bg-status-await text-status-await-foreground hover:bg-status-await/90",
-      variant === "outline" &&
-        "border border-border bg-transparent hover:bg-accent hover:text-foreground",
-      variant === "destructive" &&
-        "bg-destructive text-destructive-foreground hover:bg-destructive/90",
       className,
     )}
     {...props}
   >
     {children}
-  </button>
+  </Button>
 );
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { TooltipProvider } from "./components/ui/tooltip";
 import "./global.css";
 import "./styles/hljs-theme.css";
 import { startThemeSync } from "./lib/theme";
@@ -10,7 +11,9 @@ if (root) {
   startThemeSync();
   createRoot(root).render(
     <StrictMode>
-      <App />
+      <TooltipProvider>
+        <App />
+      </TooltipProvider>
     </StrictMode>,
   );
 }
