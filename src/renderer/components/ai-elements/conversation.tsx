@@ -11,6 +11,15 @@ import {
 } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
 
 // ---------------------------------------------------------------------------
 // Context
@@ -167,20 +176,17 @@ export const ConversationEmptyState = ({
   className,
   ...props
 }: ConversationEmptyStateProps) => (
-  <div
-    className={cn(
-      "flex h-full flex-col items-center justify-center gap-4 text-center",
-      className,
-    )}
+  <Empty
+    className={cn("h-full rounded-none border-none bg-transparent", className)}
     {...props}
   >
-    {icon && <div className="text-muted-foreground">{icon}</div>}
-    {title && <h2 className="text-lg font-medium text-foreground">{title}</h2>}
-    {description && (
-      <p className="text-sm text-muted-foreground">{description}</p>
-    )}
-    {children}
-  </div>
+    <EmptyHeader>
+      {icon && <EmptyMedia variant="icon">{icon}</EmptyMedia>}
+      {title && <EmptyTitle className="text-lg">{title}</EmptyTitle>}
+      {description && <EmptyDescription>{description}</EmptyDescription>}
+    </EmptyHeader>
+    {children && <EmptyContent>{children}</EmptyContent>}
+  </Empty>
 );
 
 // ---------------------------------------------------------------------------
@@ -200,22 +206,22 @@ export const ConversationScrollButton = ({
   if (isAtBottom) return null;
 
   return (
-    <button
+    <Button
       type="button"
       onClick={scrollToBottom}
+      variant="outline"
+      size="sm"
       className={cn(
         "absolute bottom-20 left-1/2 -translate-x-1/2 z-10",
-        "flex items-center gap-1.5 rounded-full border border-border bg-background/90 backdrop-blur-sm",
-        "px-3 py-1.5 text-xs text-muted-foreground shadow-md",
-        "hover:bg-accent hover:text-foreground transition-colors",
+        "rounded-full bg-background/90 text-muted-foreground shadow-md backdrop-blur-sm",
         className,
       )}
       aria-label={LL.conv_scrollToBottom()}
       {...props}
     >
-      <ArrowDown className="size-3" />
+      <ArrowDown data-icon="inline-start" />
       <span>{LL.conv_newMessages()}</span>
-    </button>
+    </Button>
   );
 };
 
@@ -279,21 +285,20 @@ export const ConversationDownload = ({
   if (messages.length === 0) return null;
 
   return (
-    <button
+    <Button
       type="button"
       onClick={handleDownload}
+      variant="outline"
+      size="icon-sm"
       className={cn(
         "absolute top-2 right-2 z-10",
-        "flex items-center gap-1.5 rounded-md border border-border bg-background/80 backdrop-blur-sm",
-        "px-2 py-1 text-xs text-muted-foreground",
-        "hover:bg-accent hover:text-foreground transition-colors",
-        "opacity-0 group-hover:opacity-100",
+        "bg-background/80 text-muted-foreground opacity-0 backdrop-blur-sm group-hover:opacity-100",
         className,
       )}
       aria-label={LL.conv_download()}
       {...props}
     >
-      <Download className="size-3" />
-    </button>
+      <Download />
+    </Button>
   );
 };

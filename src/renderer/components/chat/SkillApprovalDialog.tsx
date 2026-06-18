@@ -1,5 +1,14 @@
 import { ShieldAlert } from "lucide-react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 
 export interface SkillApprovalData {
   skillId: string;
@@ -20,16 +29,20 @@ export const SkillApprovalDialog = ({
   const { LL } = useI18nContext();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in-0 duration-150">
-      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-lg animate-in fade-in-0 zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <ShieldAlert className="size-4 text-amber-500 shrink-0" />
-          <h2 className="text-sm font-medium">{LL.skillApproval_title()}</h2>
-        </div>
+    <Dialog open>
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldAlert className="size-4 shrink-0 text-status-await" />
+            {LL.skillApproval_title()}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {LL.skillApproval_name()}
+            {data.skillId}
+          </DialogDescription>
+        </DialogHeader>
 
-        {/* Body */}
-        <div className="px-4 py-3 space-y-3 text-sm">
+        <div className="flex flex-col gap-3 text-sm">
           <div>
             <span className="text-muted-foreground">
               {LL.skillApproval_name()}
@@ -54,7 +67,7 @@ export const SkillApprovalDialog = ({
                 {data.commands.map((cmd) => (
                   <li
                     key={cmd}
-                    className="font-mono text-xs bg-muted rounded px-2 py-1 break-all"
+                    className="rounded bg-muted px-2 py-1 font-mono text-xs break-all"
                   >
                     {cmd}
                   </li>
@@ -72,7 +85,7 @@ export const SkillApprovalDialog = ({
                 {data.hooks.map((hook) => (
                   <li
                     key={hook}
-                    className="font-mono text-xs bg-muted rounded px-2 py-1 break-all"
+                    className="rounded bg-muted px-2 py-1 font-mono text-xs break-all"
                   >
                     {hook}
                   </li>
@@ -82,24 +95,20 @@ export const SkillApprovalDialog = ({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-          <button
+        <DialogFooter>
+          <Button
             type="button"
             onClick={() => onRespond(false)}
-            className="inline-flex items-center justify-center rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-medium hover:bg-accent hover:text-foreground transition-colors"
+            variant="outline"
+            size="sm"
           >
             {LL.skillApproval_reject()}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRespond(true)}
-            className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
-          >
+          </Button>
+          <Button type="button" onClick={() => onRespond(true)} size="sm">
             {LL.skillApproval_approve()}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

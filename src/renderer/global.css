@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @source "../../../node_modules/streamdown/dist/*.js";
 
@@ -66,6 +67,10 @@
   --radius-sm: 5px;
   --radius-md: 7px;
   --radius-lg: 9px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 14px;
+  --radius-4xl: 16px;
 
   /* 字体:mono 为共同主角(路径/工具/分支/数字/状态/代码) */
   --font-sans:
