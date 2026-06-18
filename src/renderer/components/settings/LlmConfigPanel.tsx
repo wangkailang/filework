@@ -1,6 +1,7 @@
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { type LlmConfig, LlmConfigEditModal } from "./LlmConfigEditModal";
 
 export const LlmConfigPanel = () => {
@@ -9,6 +10,8 @@ export const LlmConfigPanel = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<LlmConfig | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const loadConfigs = useCallback(async () => {
     const result = await window.filework.llmConfig.list();
@@ -30,13 +33,22 @@ export const LlmConfigPanel = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const result = (await window.filework.llmConfig.delete(id)) as {
-      error?: string;
-      success?: boolean;
-    };
-    if (result.error) alert(result.error);
-    setDeleteConfirmId(null);
-    loadConfigs();
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const result = (await window.filework.llmConfig.delete(id)) as {
+        error?: string;
+        success?: boolean;
+      };
+      if (result.error) {
+        setDeleteError(result.error);
+        return;
+      }
+      setDeleteConfirmId(null);
+      loadConfigs();
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   return (
@@ -87,7 +99,10 @@ export const LlmConfigPanel = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setDeleteConfirmId(c.id)}
+                onClick={() => {
+                  setDeleteConfirmId(c.id);
+                  setDeleteError(null);
+                }}
                 className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
                 title={LL.llmConfig_delete()}
               >
@@ -98,36 +113,30 @@ export const LlmConfigPanel = () => {
         ))}
       </div>
 
-      {/* Delete confirmation */}
-      {deleteConfirmId && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-          <p className="mb-2 text-sm text-foreground">
-            {LL.llmConfig_deleteConfirm()}
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => handleDelete(deleteConfirmId)}
-              className="rounded-lg bg-destructive px-3 py-1 text-xs text-white hover:opacity-90"
-            >
-              {LL.llmConfig_delete()}
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeleteConfirmId(null)}
-              className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground border border-border hover:bg-accent"
-            >
-              {LL.llmConfig_cancel()}
-            </button>
-          </div>
-        </div>
-      )}
-
       <LlmConfigEditModal
         open={modalOpen}
         editing={editing}
         onClose={() => setModalOpen(false)}
         onSaved={loadConfigs}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirmId !== null}
+        title={LL.llmConfig_deleteConfirm()}
+        description={deleteError ?? undefined}
+        confirmLabel={LL.llmConfig_delete()}
+        cancelLabel={LL.llmConfig_cancel()}
+        destructive
+        busy={deleteBusy}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmId(null);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={() => {
+          if (deleteConfirmId) void handleDelete(deleteConfirmId);
+        }}
       />
     </div>
   );

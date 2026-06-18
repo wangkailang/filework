@@ -26,6 +26,7 @@ import {
   resolveFullscreenDockLeft,
   resolveFullscreenDockTop,
 } from "../layout/layout-geometry";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { SearchPanel } from "./SearchPanel";
 import { TrashPanel } from "./TrashPanel";
 
@@ -125,30 +126,23 @@ export const ContextDock = ({
     [onWidthChange, onCommitWidth],
   );
 
-  const tabBtn = (t: DockTab, label: string, Icon: LucideIcon) => {
-    const selected = effectiveTab === t;
+  const tabTrigger = (t: DockTab, label: string, Icon: LucideIcon) => {
     return (
-      <button
-        type="button"
-        onClick={() => onTabChange(t)}
+      <TabsTrigger
+        value={t}
         data-dock-tab={t}
-        aria-current={selected ? "page" : undefined}
+        aria-current={effectiveTab === t ? "page" : undefined}
         className={cn(
-          "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-          selected
-            ? "bg-card text-primary shadow-sm ring-1 ring-border/70"
-            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          "h-8 min-w-max flex-none rounded-2xl border border-transparent px-3.5 text-[13px] font-medium text-muted-foreground shadow-none transition-[color,background-color,box-shadow,border-color] hover:bg-background/55 hover:text-foreground data-[state=active]:border-border/80 data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-[0_1px_2px_rgba(15,23,42,0.08)]",
         )}
       >
         <Icon
+          data-icon="inline-start"
           data-dock-tab-icon={t}
-          className={cn(
-            "size-3.5 shrink-0",
-            selected ? "text-primary" : "text-muted-foreground",
-          )}
+          className="size-4 shrink-0 text-current"
         />
         <span className="truncate">{label}</span>
-      </button>
+      </TabsTrigger>
     );
   };
 
@@ -189,101 +183,136 @@ export const ContextDock = ({
           className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/30 focus:bg-primary/40 focus:outline-none"
         />
       )}
-      <div className="titlebar-no-drag flex h-10 items-center gap-1 border-b border-border bg-muted/20 px-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {tabBtn("preview", LL.dock_preview(), FileText)}
-          {tabBtn("search", LL.dock_search(), Search)}
-          {tabBtn("trash", LL.dock_trash(), Trash2)}
-          {isGitRepo && tabBtn("diff", LL.dock_diff(), GitCompareArrows)}
-          {tabBtn("web", LL.dock_web(), Globe)}
-          {subagentSel && tabBtn("subagent", LL.dock_subagent(), Bot)}
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsFullscreen((v) => !v)}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={
-            isFullscreen ? LL.preview_exitFullscreen() : LL.preview_fullscreen()
-          }
-          aria-pressed={isFullscreen}
-          title={
-            isFullscreen ? LL.preview_exitFullscreen() : LL.preview_fullscreen()
-          }
-        >
-          {isFullscreen ? (
-            <Minimize2 className="size-3.5" />
-          ) : (
-            <Maximize2 className="size-3.5" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={LL.session_close()}
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-      {/* 各标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
-          webview / 文件预览,保留页面、滚动、缩放等状态。 */}
-      <div className="h-[calc(100%-2.5rem)] overflow-hidden">
-        <div className={cn("h-full", effectiveTab !== "preview" && "hidden")}>
-          {filePath ? (
-            <FilePreviewPanel filePath={filePath} />
-          ) : (
-            <div className="p-4 text-sm text-muted-foreground">
-              {LL.session_empty()}
-            </div>
-          )}
-        </div>
-        {/* 搜索 / 回收站:对所有工作区可用,常驻挂载,仅 CSS 隐藏。 */}
-        <div className={cn("h-full", effectiveTab !== "search" && "hidden")}>
-          <SearchPanel
-            workspaceRoot={workspaceRoot}
-            active={effectiveTab === "search"}
-          />
-        </div>
-        <div className={cn("h-full", effectiveTab !== "trash" && "hidden")}>
-          <TrashPanel
-            workspaceRoot={workspaceRoot}
-            active={effectiveTab === "trash"}
-          />
-        </div>
-        {/* 差异:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
-        {isGitRepo && (
-          <div className={cn("h-full", effectiveTab !== "diff" && "hidden")}>
-            <BranchDiffPanel
-              workspaceRoot={workspaceRoot}
-              currentBranch={currentBranch}
-              invalidator={diffInvalidator}
-            />
-          </div>
-        )}
-        {/* 网页:对所有工作区常驻挂载。无 URL 时 BrowserPanel 自行展示
-            起始页(地址栏可用);本地 HTML 预览经 local-file:// 加载。
-            key 按 local / web 切换:本地预览与真实浏览用隔离 partition,
-            scheme 变化时整组件重挂载,使 webview 以正确 partition 重建。 */}
-        <div className={cn("h-full", effectiveTab !== "web" && "hidden")}>
-          <BrowserPanel
-            key={(url ?? "").startsWith("local-file://") ? "local" : "web"}
-            url={url ?? ""}
-          />
-        </div>
-        {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,
-            随子 agent 流式实时更新)。 */}
-        {subagentSel && (
-          <div
-            className={cn("h-full", effectiveTab !== "subagent" && "hidden")}
+      <Tabs
+        value={effectiveTab}
+        onValueChange={(value) => onTabChange(value as DockTab)}
+        className="h-full gap-0!"
+      >
+        <div className="titlebar-no-drag flex h-10 items-center gap-1 border-b border-border bg-muted/20 px-2">
+          <TabsList
+            aria-label={LL.dock_menu()}
+            className="h-full min-w-0 flex-1 justify-start gap-1 overflow-x-auto rounded-none bg-transparent px-0 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            <SubagentTracePanel
-              batchId={subagentSel.batchId}
-              childTaskId={subagentSel.childTaskId}
-              onSelectChild={onSelectSubagentChild}
+            {tabTrigger("preview", LL.dock_preview(), FileText)}
+            {tabTrigger("search", LL.dock_search(), Search)}
+            {tabTrigger("trash", LL.dock_trash(), Trash2)}
+            {isGitRepo && tabTrigger("diff", LL.dock_diff(), GitCompareArrows)}
+            {tabTrigger("web", LL.dock_web(), Globe)}
+            {subagentSel && tabTrigger("subagent", LL.dock_subagent(), Bot)}
+          </TabsList>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={
+              isFullscreen
+                ? LL.preview_exitFullscreen()
+                : LL.preview_fullscreen()
+            }
+            aria-pressed={isFullscreen}
+            title={
+              isFullscreen
+                ? LL.preview_exitFullscreen()
+                : LL.preview_fullscreen()
+            }
+          >
+            {isFullscreen ? (
+              <Minimize2 className="size-3.5" />
+            ) : (
+              <Maximize2 className="size-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={LL.session_close()}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+        {/* 各标签内容常驻挂载,仅用 CSS 隐藏非活动标签:切换标签不再卸载
+            webview / 文件预览,保留页面、滚动、缩放等状态。 */}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <TabsContent
+            forceMount
+            value="preview"
+            className="h-full data-[state=inactive]:hidden"
+          >
+            {filePath ? (
+              <FilePreviewPanel filePath={filePath} />
+            ) : (
+              <div className="p-4 text-sm text-muted-foreground">
+                {LL.session_empty()}
+              </div>
+            )}
+          </TabsContent>
+          {/* 搜索 / 回收站:对所有工作区可用,常驻挂载,仅 CSS 隐藏。 */}
+          <TabsContent
+            forceMount
+            value="search"
+            className="h-full data-[state=inactive]:hidden"
+          >
+            <SearchPanel
+              workspaceRoot={workspaceRoot}
+              active={effectiveTab === "search"}
             />
-          </div>
-        )}
-      </div>
+          </TabsContent>
+          <TabsContent
+            forceMount
+            value="trash"
+            className="h-full data-[state=inactive]:hidden"
+          >
+            <TrashPanel
+              workspaceRoot={workspaceRoot}
+              active={effectiveTab === "trash"}
+            />
+          </TabsContent>
+          {/* 差异:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
+          {isGitRepo && (
+            <TabsContent
+              forceMount
+              value="diff"
+              className="h-full data-[state=inactive]:hidden"
+            >
+              <BranchDiffPanel
+                workspaceRoot={workspaceRoot}
+                currentBranch={currentBranch}
+                invalidator={diffInvalidator}
+              />
+            </TabsContent>
+          )}
+          {/* 网页:对所有工作区常驻挂载。无 URL 时 BrowserPanel 自行展示
+              起始页(地址栏可用);本地 HTML 预览经 local-file:// 加载。
+              key 按 local / web 切换:本地预览与真实浏览用隔离 partition,
+              scheme 变化时整组件重挂载,使 webview 以正确 partition 重建。 */}
+          <TabsContent
+            forceMount
+            value="web"
+            className="h-full data-[state=inactive]:hidden"
+          >
+            <BrowserPanel
+              key={(url ?? "").startsWith("local-file://") ? "local" : "web"}
+              url={url ?? ""}
+            />
+          </TabsContent>
+          {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,
+              随子 agent 流式实时更新)。 */}
+          {subagentSel && (
+            <TabsContent
+              forceMount
+              value="subagent"
+              className="h-full data-[state=inactive]:hidden"
+            >
+              <SubagentTracePanel
+                batchId={subagentSel.batchId}
+                childTaskId={subagentSel.childTaskId}
+                onSelectChild={onSelectSubagentChild}
+              />
+            </TabsContent>
+          )}
+        </div>
+      </Tabs>
     </aside>
   );
 };

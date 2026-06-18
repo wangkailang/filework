@@ -11,10 +11,53 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import type { DockTab } from "./ContextDock";
+
+export const DockShortcut = ({
+  active,
+  dimmed = false,
+  shortcut,
+  tab,
+}: {
+  active: boolean;
+  dimmed?: boolean;
+  shortcut: string;
+  tab: DockTab;
+}) => (
+  <DropdownMenuShortcut
+    data-dock-shortcut={tab}
+    className={cn(
+      "ml-auto flex shrink-0 items-center justify-end gap-0.5 font-mono leading-none tracking-normal tabular-nums",
+      dimmed && "opacity-45",
+    )}
+  >
+    {Array.from(shortcut).map((key, index, keys) => (
+      <kbd
+        key={`${tab}-${key}`}
+        className={cn(
+          "inline-flex size-[18px] items-center justify-center rounded-[4px] border border-border/55 bg-muted/35 text-[10px] text-muted-foreground shadow-[0_1px_0_rgba(0,0,0,0.04)]",
+          active && "border-primary/35 bg-primary/10 text-primary",
+          index === keys.length - 1 &&
+            (active
+              ? "font-semibold text-primary"
+              : "font-semibold text-foreground/80"),
+        )}
+      >
+        {key}
+      </kbd>
+    ))}
+  </DropdownMenuShortcut>
+);
 
 export const DockMenu = ({
   activeTab,
@@ -32,17 +75,6 @@ export const DockMenu = ({
 }) => {
   const { LL } = useI18nContext();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // 点击菜单外部关闭。
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
 
   // 快捷键提示与 App 中的全局监听保持一致(⇧⌘ + 首字母)。
   const items: {
@@ -97,83 +129,60 @@ export const DockMenu = ({
   ];
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={LL.dock_menu()}
-        title={LL.dock_menu()}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={cn(
-          "flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors",
-          dockOpen
-            ? "border-primary/40 bg-accent text-foreground"
-            : "border-border bg-muted/60 text-muted-foreground hover:border-primary/40 hover:text-foreground",
-        )}
-      >
-        <PanelRight className="size-3.5" />
-        <ChevronDown
-          className={cn("size-3 transition-transform", open && "rotate-180")}
-        />
-      </button>
-
-      {open && (
-        <div className="absolute top-full right-0 z-50 mt-1 w-52 rounded-lg border border-border bg-popover py-1 shadow-xl">
-          {items.map((item) => {
-            const active = dockOpen && activeTab === item.tab;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.tab}
-                type="button"
-                disabled={!item.on}
-                onClick={() => {
-                  onSelect(item.tab);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors",
-                  !item.on
-                    ? "cursor-not-allowed text-muted-foreground/40"
-                    : active
-                      ? "text-primary hover:bg-accent"
-                      : "text-foreground hover:bg-accent",
-                )}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <Icon className="size-3.5 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </span>
-                <span
-                  data-dock-shortcut={item.tab}
-                  className={cn(
-                    "ml-auto flex shrink-0 items-center justify-end gap-0.5 font-mono leading-none tracking-normal tabular-nums",
-                    !item.on && "opacity-45",
-                  )}
-                >
-                  {Array.from(item.shortcut).map((key, index, keys) => (
-                    <kbd
-                      key={`${item.tab}-${key}`}
-                      className={cn(
-                        "inline-flex size-[18px] items-center justify-center rounded-[4px] border border-border/55 bg-muted/35 text-[10px] text-muted-foreground shadow-[0_1px_0_rgba(0,0,0,0.04)]",
-                        active &&
-                          "border-primary/35 bg-primary/10 text-primary",
-                        index === keys.length - 1 &&
-                          (active
-                            ? "font-semibold text-primary"
-                            : "font-semibold text-foreground/80"),
-                      )}
-                    >
-                      {key}
-                    </kbd>
-                  ))}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={LL.dock_menu()}
+          title={LL.dock_menu()}
+          className={cn(
+            "flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors",
+            dockOpen
+              ? "border-primary/40 bg-accent text-foreground"
+              : "border-border bg-muted/60 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+          )}
+        >
+          <PanelRight className="size-3.5" />
+          <ChevronDown
+            className={cn("size-3 transition-transform", open && "rotate-180")}
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        {items.map((item) => {
+          const active = dockOpen && activeTab === item.tab;
+          const Icon = item.icon;
+          return (
+            <DropdownMenuItem
+              key={item.tab}
+              disabled={!item.on}
+              onClick={() => {
+                onSelect(item.tab);
+                setOpen(false);
+              }}
+              className={cn(
+                "gap-3 text-xs",
+                !item.on
+                  ? "cursor-not-allowed text-muted-foreground/40"
+                  : active
+                    ? "text-primary hover:bg-accent"
+                    : "text-foreground hover:bg-accent",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon className="size-3.5 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </span>
+              <DockShortcut
+                active={active}
+                dimmed={!item.on}
+                shortcut={item.shortcut}
+                tab={item.tab}
+              />
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };

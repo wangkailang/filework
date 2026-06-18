@@ -1,8 +1,10 @@
-import { ArrowLeft, Blocks, ExternalLink, Search, X } from "lucide-react";
+import { ArrowLeft, Blocks, ExternalLink, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
+import { ConfirmDialog } from "../ui/confirm-dialog";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 type SourceType = "built-in" | "project" | "personal" | "additional";
 type FilterType = "all" | SourceType | "market";
@@ -93,6 +95,8 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [pendingCommunityInstall, setPendingCommunityInstall] =
+    useState<MarketItem | null>(null);
   const isMarket = filter === "market";
 
   const refreshSkills = useCallback(async () => {
@@ -124,12 +128,8 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
     };
   }, [open, isMarket]);
 
-  // 安装市场 skill(community 需弹窗确认)
-  const handleInstall = useCallback(
+  const installMarketItem = useCallback(
     async (item: MarketItem) => {
-      if (item.level === "community") {
-        if (!window.confirm(LL.skillsModal_marketConfirmCommunity())) return;
-      }
       setInstallingId(item.id);
       const res = (await window.filework.marketInstall(item)) as {
         ok: boolean;
@@ -145,7 +145,19 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
         console.warn("[market] install failed:", res.error);
       }
     },
-    [LL, refreshSkills],
+    [refreshSkills],
+  );
+
+  // 安装市场 skill(community 需弹窗确认)
+  const handleInstall = useCallback(
+    (item: MarketItem) => {
+      if (item.level === "community") {
+        setPendingCommunityInstall(item);
+        return;
+      }
+      void installMarketItem(item);
+    },
+    [installMarketItem],
   );
 
   // 卸载市场 skill
@@ -232,19 +244,6 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
     };
   }, [selectedSkillId]);
 
-  // Escape to close
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (selectedSkillId) setSelectedSkillId(null);
-        else onClose();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose, selectedSkillId]);
-
   const filtered = skills.filter((s) => {
     if (filter !== "all" && s.source !== filter) return false;
     if (search) {
@@ -261,79 +260,94 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   // Collect available source types for filter tabs
   const availableSources = Array.from(new Set(skills.map((s) => s.source)));
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50 cursor-default animate-in fade-in-0 duration-150"
-        onClick={onClose}
-        aria-label="Close skills"
-      />
-      <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[80vh] flex flex-col animate-in fade-in-0 zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            {selectedSkillId && (
-              <button
-                type="button"
-                onClick={() => setSelectedSkillId(null)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mr-1"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-            )}
-            <Blocks className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-base font-medium text-foreground">
-              {selectedSkillId
-                ? (detail?.name ?? "...")
-                : LL.skillsModal_title()}
-            </h2>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) onClose();
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(event) => {
+            if (!selectedSkillId) return;
+            event.preventDefault();
+            setSelectedSkillId(null);
+          }}
+          className="flex! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-full! max-w-2xl! max-h-[80vh]!"
+        >
+          {/* Header */}
+          <div className="flex items-center border-b border-border px-6 py-4 pr-12 shrink-0">
+            <div className="flex items-center gap-2">
+              {selectedSkillId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedSkillId(null)}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mr-1"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              )}
+              <Blocks className="w-4 h-4 text-muted-foreground" />
+              <DialogTitle className="text-base font-medium text-foreground">
+                {selectedSkillId
+                  ? (detail?.name ?? "...")
+                  : LL.skillsModal_title()}
+              </DialogTitle>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {selectedSkillId ? (
-          <SkillDetailView
-            detail={detail}
-            loading={loading}
-            onToggle={handleSkillToggle}
-          />
-        ) : isMarket ? (
-          <MarketView
-            items={market}
-            loading={marketLoading}
-            error={marketError}
-            search={search}
-            onSearchChange={setSearch}
-            filter={filter}
-            onFilterChange={setFilter}
-            availableSources={availableSources}
-            installingId={installingId}
-            onInstall={handleInstall}
-            onUninstall={handleUninstall}
-          />
-        ) : (
-          <SkillListView
-            skills={filtered}
-            filter={filter}
-            onFilterChange={setFilter}
-            search={search}
-            onSearchChange={setSearch}
-            availableSources={availableSources}
-            onSelect={setSelectedSkillId}
-            onSkillToggle={handleSkillToggle}
-          />
-        )}
-      </div>
-    </div>
+          {selectedSkillId ? (
+            <SkillDetailView
+              detail={detail}
+              loading={loading}
+              onToggle={handleSkillToggle}
+            />
+          ) : isMarket ? (
+            <MarketView
+              items={market}
+              loading={marketLoading}
+              error={marketError}
+              search={search}
+              onSearchChange={setSearch}
+              filter={filter}
+              onFilterChange={setFilter}
+              availableSources={availableSources}
+              installingId={installingId}
+              onInstall={handleInstall}
+              onUninstall={handleUninstall}
+            />
+          ) : (
+            <SkillListView
+              skills={filtered}
+              filter={filter}
+              onFilterChange={setFilter}
+              search={search}
+              onSearchChange={setSearch}
+              availableSources={availableSources}
+              onSelect={setSelectedSkillId}
+              onSkillToggle={handleSkillToggle}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={pendingCommunityInstall !== null}
+        title={LL.skillsModal_marketConfirmCommunity()}
+        confirmLabel={LL.skillsModal_marketInstall()}
+        cancelLabel={LL.session_cancel()}
+        busy={installingId === pendingCommunityInstall?.id}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingCommunityInstall(null);
+        }}
+        onConfirm={async () => {
+          if (!pendingCommunityInstall) return;
+          await installMarketItem(pendingCommunityInstall);
+          setPendingCommunityInstall(null);
+        }}
+      />
+    </>
   );
 };
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import { Command, CommandEmpty, CommandItem, CommandList } from "../ui/command";
 
 /** `listSkills` IPC 调用返回的数据结构。 */
 interface SkillMenuItem {
@@ -134,40 +135,41 @@ export const SkillMenu = ({ input, onSelect }: SkillMenuProps) => {
       )}
       role="listbox"
     >
-      {filtered.length === 0 ? (
-        <div className="px-3 py-2 text-sm text-muted-foreground">
-          {skills.length === 0
-            ? LL.skill_loading()
-            : query
-              ? LL.skill_notFound(query)
-              : LL.skill_searchHint()}
-        </div>
-      ) : (
-        filtered.map((skill, i) => (
-          <button
-            key={skill.id}
-            type="button"
-            role="option"
-            aria-selected={i === selectedIndex}
-            className={cn(
-              "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-              i === selectedIndex
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground hover:bg-accent/50",
-            )}
-            onMouseEnter={() => setSelectedIndex(i)}
-            onClick={() => onSelect(`/${skill.id} `)}
-          >
-            <span className="font-medium">/{skill.id}</span>
-            <span className="truncate text-muted-foreground">
-              {skill.description}
-            </span>
-            <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              {skill.source}
-            </span>
-          </button>
-        ))
-      )}
+      <Command shouldFilter={false} className="rounded-none bg-transparent p-0">
+        <CommandList className="max-h-56 p-0">
+          <CommandEmpty className="px-3 py-2 text-left text-sm text-muted-foreground">
+            {skills.length === 0
+              ? LL.skill_loading()
+              : query
+                ? LL.skill_notFound(query)
+                : LL.skill_searchHint()}
+          </CommandEmpty>
+          {filtered.map((skill, i) => (
+            <CommandItem
+              key={skill.id}
+              role="option"
+              aria-selected={i === selectedIndex}
+              value={`${skill.id} ${skill.name} ${skill.description}`}
+              className={cn(
+                "gap-2 px-3 py-2 text-sm",
+                i === selectedIndex
+                  ? "bg-accent text-accent-foreground"
+                  : "text-foreground hover:bg-accent/50",
+              )}
+              onMouseEnter={() => setSelectedIndex(i)}
+              onSelect={() => onSelect(`/${skill.id} `)}
+            >
+              <span className="font-medium">/{skill.id}</span>
+              <span className="truncate text-muted-foreground">
+                {skill.description}
+              </span>
+              <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                {skill.source}
+              </span>
+            </CommandItem>
+          ))}
+        </CommandList>
+      </Command>
     </div>
   );
 };

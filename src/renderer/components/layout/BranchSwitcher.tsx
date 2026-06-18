@@ -1,9 +1,18 @@
 import { Check, ChevronDown, GitBranch, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import type { WorkspaceRef } from "../../types/workspace-ref";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 
 /**
  * BranchSwitcher — local-project style branch picker for github/gitlab
@@ -43,7 +52,6 @@ export const BranchSwitcher = ({
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const loadBranches = useCallback(async () => {
     setLoading(true);
@@ -76,36 +84,6 @@ export const BranchSwitcher = ({
       setLoading(false);
     }
   }, [workspaceRef]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const handleToggle = () => {
-    if (!open) {
-      setOpen(true);
-      if (!branches) void loadBranches();
-    } else {
-      setOpen(false);
-    }
-  };
 
   const handleSelect = async (branch: string) => {
     if (branch === currentBranch) {
@@ -154,69 +132,92 @@ export const BranchSwitcher = ({
   if (currentBranch === null) return null;
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
-      <button
-        type="button"
-        onClick={handleToggle}
-        disabled={switching}
-        className={cn(
-          "flex max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          buttonClassName,
-        )}
-        title={`Current branch: ${currentBranch}`}
-      >
-        <span className="size-1.5 shrink-0 rounded-full bg-status-success" />
-        {switching ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          <GitBranch className="w-3 h-3 shrink-0" />
-        )}
-        <span className="min-w-0 truncate">{currentBranch}</span>
-        <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 max-h-72 overflow-y-auto rounded-md border border-border bg-popover shadow-lg z-50">
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen && !branches && !loading) {
+          void loadBranches();
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={switching}
+          className={cn(
+            "flex max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            buttonClassName,
+            className,
+          )}
+          title={`Current branch: ${currentBranch}`}
+        >
+          <span className="size-1.5 shrink-0 rounded-full bg-status-success" />
+          {switching ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <GitBranch className="size-3 shrink-0" />
+          )}
+          <span className="min-w-0 truncate">{currentBranch}</span>
+          <ChevronDown
+            className={cn(
+              "size-3 shrink-0 opacity-60 transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 gap-0 p-0" sideOffset={6}>
+        <Command>
+          <CommandInput placeholder="Search branches..." />
           {error && (
-            <div className="px-3 py-2 text-xs text-destructive border-b border-border">
+            <div className="border-b border-border px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
           {loading && (
             <div className="flex items-center justify-center px-3 py-4 text-xs text-muted-foreground">
-              <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+              <Loader2 className="mr-1.5 size-3 animate-spin" />
               Loading branches…
             </div>
           )}
-          {!loading && branches && branches.length === 0 && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">
-              No branches found.
-            </div>
-          )}
-          {!loading &&
-            branches?.map((b) => (
-              <button
-                key={b.name}
-                type="button"
-                onClick={() => handleSelect(b.name)}
-                disabled={switching}
-                className="w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-accent text-left disabled:opacity-50"
-              >
-                <span className="truncate flex-1 font-mono">
-                  {b.name}
-                  {b.protected && (
-                    <span className="ml-1.5 text-[10px] text-muted-foreground">
-                      (protected)
+          {!loading && (
+            <CommandList className="max-h-72 p-1">
+              <CommandEmpty>
+                {branches?.length === 0
+                  ? "No branches found."
+                  : "No matching branches."}
+              </CommandEmpty>
+              <CommandGroup heading="Branches">
+                {branches?.map((branch) => (
+                  <CommandItem
+                    key={branch.name}
+                    disabled={switching}
+                    value={branch.name}
+                    className="gap-2 font-mono text-xs"
+                    onSelect={() => {
+                      void handleSelect(branch.name);
+                    }}
+                  >
+                    <GitBranch className="size-3.5 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {branch.name}
                     </span>
-                  )}
-                </span>
-                {b.name === currentBranch && (
-                  <Check className="w-3 h-3 shrink-0 ml-1.5" />
-                )}
-              </button>
-            ))}
-        </div>
-      )}
-    </div>
+                    {branch.protected && (
+                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                        protected
+                      </span>
+                    )}
+                    {branch.name === currentBranch && (
+                      <Check className="size-3.5 shrink-0 text-primary" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          )}
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 };

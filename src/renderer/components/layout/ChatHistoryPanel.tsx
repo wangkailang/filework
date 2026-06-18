@@ -11,11 +11,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
 import type { ChatSession } from "../chat/types";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 type BucketKey = "today" | "yesterday" | "week" | "month" | "earlier";
 
@@ -176,16 +177,6 @@ export const ChatHistoryPanel = ({
       ),
     });
   };
-
-  // 删除确认弹框开启时,Esc 关闭。
-  useEffect(() => {
-    if (!pendingDelete) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPendingDelete(null);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [pendingDelete]);
 
   return (
     <div className="flex h-full flex-col">
@@ -402,19 +393,18 @@ export const ChatHistoryPanel = ({
         </div>
       )}
 
-      {pendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default bg-black/50 animate-in fade-in-0 duration-150"
-            onClick={() => setPendingDelete(null)}
-            aria-label={LL.session_cancel()}
-          />
-          <div className="relative w-full max-w-sm rounded-lg border border-border bg-background shadow-lg animate-in fade-in-0 zoom-in-95 duration-150">
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        {pendingDelete && (
+          <DialogContent className="gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-lg w-full! max-w-sm!">
             <div className="border-b border-border px-4 py-3">
-              <h2 className="text-sm font-medium">
+              <DialogTitle className="pr-8 text-sm font-medium">
                 {LL.session_delete_confirm_title()}
-              </h2>
+              </DialogTitle>
             </div>
             <div className="space-y-2 px-4 py-3 text-sm">
               <p className="text-muted-foreground">
@@ -443,9 +433,9 @@ export const ChatHistoryPanel = ({
                 {LL.session_confirm()}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 };

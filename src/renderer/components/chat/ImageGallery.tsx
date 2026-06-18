@@ -1,5 +1,14 @@
 import { ChevronLeft, ChevronRight, Images, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { safeHostname } from "./helpers";
 import type { ImageGalleryPart } from "./types";
 
@@ -62,13 +71,12 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
   useEffect(() => {
     if (lightbox === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowRight") step(1);
+      if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [lightbox, close, step]);
+  }, [lightbox, step]);
 
   if (visible.length === 0) return null;
 
@@ -114,81 +122,96 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
         })}
       </div>
 
-      {activeImage && (
-        // 灯箱布局:用一个绝对定位的背景 <button> 处理
-        // 点击关闭,从而让内层内容保持为非交互的
-        // div(没有伪按钮的无障碍告警,也无需折腾 stopPropagation)。
-        // 内容通过 z-index 叠在背景之上。
-        <div className="fixed inset-0 z-50">
-          <button
-            type="button"
-            aria-label="关闭图集"
-            onClick={close}
-            className="absolute inset-0 bg-black/80"
-          />
-          <button
-            type="button"
-            aria-label="关闭"
-            onClick={close}
-            className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          {visible.length > 1 && (
-            <>
-              <button
+      <Dialog
+        open={activeImage != null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) close();
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="titlebar-no-drag inset-0! left-0! top-0! h-screen! w-screen! max-w-none! translate-x-0! translate-y-0! rounded-none! border-0! bg-black/90! p-0! text-white! shadow-none! ring-0!"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image gallery preview</DialogTitle>
+            <DialogDescription>
+              Preview images from the gallery in full size.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+            <DialogClose asChild>
+              <Button
                 type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="关闭"
+                className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              >
+                <X />
+              </Button>
+            </DialogClose>
+          </div>
+          {activeImage && visible.length > 1 && (
+            <>
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="ghost"
                 aria-label="上一张"
                 onClick={() => step(-1)}
-                className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+                className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
               >
-                <ChevronLeft className="h-6 w-6" />
-              </button>
-              <button
+                <ChevronLeft />
+              </Button>
+              <Button
                 type="button"
+                size="icon-lg"
+                variant="ghost"
                 aria-label="下一张"
                 onClick={() => step(1)}
-                className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+                className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
               >
-                <ChevronRight className="h-6 w-6" />
-              </button>
+                <ChevronRight />
+              </Button>
             </>
           )}
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-            <div className="pointer-events-auto flex max-h-full max-w-full flex-col items-center gap-3">
-              <img
-                src={activeImage.url}
-                alt={activeImage.description ?? ""}
-                referrerPolicy="no-referrer"
-                onError={() => {
-                  if (lightbox !== null) markFailed(lightbox);
-                  close();
-                }}
-                className="max-h-[80vh] max-w-[90vw] rounded object-contain"
-              />
-              {(activeImage.description || activeImage.sourceUrl) && (
-                <div className="max-w-[90vw] text-center text-xs text-white/80">
-                  {activeImage.description && (
-                    <div className="line-clamp-2">
-                      {activeImage.description}
-                    </div>
-                  )}
-                  {activeImage.sourceUrl && (
-                    <a
-                      href={activeImage.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="mt-1 inline-block underline opacity-80 hover:opacity-100"
-                    >
-                      {activeHost ?? activeImage.sourceUrl}
-                    </a>
-                  )}
-                </div>
-              )}
+          {activeImage && (
+            <div className="flex h-full w-full items-center justify-center p-4">
+              <div className="flex max-h-full max-w-full flex-col items-center gap-3">
+                <img
+                  src={activeImage.url}
+                  alt={activeImage.description ?? ""}
+                  referrerPolicy="no-referrer"
+                  onError={() => {
+                    if (lightbox !== null) markFailed(lightbox);
+                    close();
+                  }}
+                  className="max-h-[80vh] max-w-[90vw] rounded object-contain"
+                />
+                {(activeImage.description || activeImage.sourceUrl) && (
+                  <div className="max-w-[90vw] text-center text-xs text-white/80">
+                    {activeImage.description && (
+                      <div className="line-clamp-2">
+                        {activeImage.description}
+                      </div>
+                    )}
+                    {activeImage.sourceUrl && (
+                      <a
+                        href={activeImage.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="mt-1 inline-block underline opacity-80 hover:opacity-100"
+                      >
+                        {activeHost ?? activeImage.sourceUrl}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

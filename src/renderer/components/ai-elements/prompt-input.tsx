@@ -34,6 +34,7 @@ import {
   SKILL_MENTION_TEXT_MARKER,
   type SkillCommandItem,
 } from "../chat/skill-command";
+import { Command, CommandEmpty, CommandItem, CommandList } from "../ui/command";
 import { textToPromptDoc } from "./rich-prompt-serialization";
 
 // ============================================================================
@@ -570,73 +571,77 @@ export const PromptInputRichEditor = ({
           )}
           role="listbox"
         >
-          <div className="px-2 pb-1.5 pt-1 text-xs font-medium text-muted-foreground">
-            {LL.sidebar_skills()}
-          </div>
-          {filteredSkills.length === 0 ? (
-            <div className="px-2 py-2 text-sm text-muted-foreground">
-              {skills.length === 0
-                ? LL.skill_loading()
-                : slashRange.query
-                  ? LL.skill_notFound(slashRange.query)
-                  : LL.skill_searchHint()}
+          <Command
+            shouldFilter={false}
+            className="rounded-none bg-transparent p-0"
+          >
+            <div className="px-2 pb-1.5 pt-1 text-xs font-medium text-muted-foreground">
+              {LL.sidebar_skills()}
             </div>
-          ) : (
-            filteredSkills.map((skill, index) => {
-              const selected = index === selectedSkillIndex;
-              return (
-                <button
-                  key={skill.id}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  className={cn(
-                    "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                    selected
-                      ? "bg-primary/15 text-popover-foreground shadow-[inset_2px_0_0_var(--color-primary)] ring-1 ring-primary/25"
-                      : "text-popover-foreground hover:bg-muted/70",
-                  )}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setSelectedSkillIndex(index)}
-                  onClick={() => insertSkill(skill)}
-                >
-                  <span
+            <CommandList className="max-h-72 p-0">
+              <CommandEmpty className="px-2 py-2 text-left text-sm text-muted-foreground">
+                {skills.length === 0
+                  ? LL.skill_loading()
+                  : slashRange.query
+                    ? LL.skill_notFound(slashRange.query)
+                    : LL.skill_searchHint()}
+              </CommandEmpty>
+              {filteredSkills.map((skill, index) => {
+                const selected = index === selectedSkillIndex;
+                return (
+                  <CommandItem
+                    key={skill.id}
+                    role="option"
+                    aria-selected={selected}
+                    value={`${skill.id} ${skill.name} ${skill.description ?? ""}`}
                     className={cn(
-                      "inline-flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                      "min-w-0 gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                       selected
-                        ? "border-primary/45 bg-primary/15 text-primary-bright"
-                        : "border-border-faint bg-muted text-muted-foreground",
+                        ? "bg-primary/15 text-popover-foreground shadow-[inset_2px_0_0_var(--color-primary)] ring-1 ring-primary/25"
+                        : "text-popover-foreground hover:bg-muted/70",
                     )}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setSelectedSkillIndex(index)}
+                    onSelect={() => insertSkill(skill)}
                   >
-                    <Blocks className="size-3" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium">{skill.name}</span>
-                    {skill.description ? (
-                      <span
-                        className={cn(
-                          "ml-1.5",
-                          selected
-                            ? "text-popover-foreground/70"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {skill.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 text-xs",
-                      selected ? "text-primary" : "text-muted-foreground",
-                    )}
-                  >
-                    {skill.source}
-                  </span>
-                </button>
-              );
-            })
-          )}
+                    <span
+                      className={cn(
+                        "inline-flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                        selected
+                          ? "border-primary/45 bg-primary/15 text-primary-bright"
+                          : "border-border-faint bg-muted text-muted-foreground",
+                      )}
+                    >
+                      <Blocks className="size-3" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium">{skill.name}</span>
+                      {skill.description ? (
+                        <span
+                          className={cn(
+                            "ml-1.5",
+                            selected
+                              ? "text-popover-foreground/70"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {skill.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 text-xs",
+                        selected ? "text-primary" : "text-muted-foreground",
+                      )}
+                    >
+                      {skill.source}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandList>
+          </Command>
         </div>
       )}
       <EditorContent editor={editor} />
