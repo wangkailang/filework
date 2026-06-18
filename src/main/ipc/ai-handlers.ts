@@ -615,6 +615,7 @@ const handleTaskExecutionInner = async (
       parentSignal: controller.signal,
       llmConfigId: payload.llmConfigId,
       workspacePath: workspace.root,
+      currentThreadId: payload.sessionId,
       parentAllowedSkills,
     });
     const beforeToolCall = buildApprovalHook({

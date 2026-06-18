@@ -133,6 +133,34 @@ export const mediaJobs = sqliteTable("media_jobs", {
 });
 
 /**
+ * 用户让 Agent 创建的自动化定义。
+ *
+ * 现阶段它是 Codex-style automation 的持久化入口:Agent 可通过
+ * automation_update 工具创建、更新、禁用或列出定义。后台 runner/UI 可在
+ * 这个表上继续演进,不需要再改变 agent 工具契约。
+ */
+export const automations = sqliteTable("automations", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  prompt: text("prompt").notNull(),
+  type: text("type", { enum: ["thread", "standalone", "project"] }).notNull(),
+  scheduleKind: text("schedule_kind", {
+    enum: ["interval", "daily", "weekly", "cron"],
+  }).notNull(),
+  scheduleValue: text("schedule_value").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  threadId: text("thread_id"),
+  workspacePaths: text("workspace_paths"),
+  runMode: text("run_mode", { enum: ["local", "worktree"] }),
+  modelId: text("model_id"),
+  reasoningEffort: text("reasoning_effort"),
+  lastRunAt: text("last_run_at"),
+  nextRunAt: text("next_run_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
  * 用户配置的 MCP(Model Context Protocol)服务器。每一行描述一个由主进程
  * 启动或连接的服务器,使其工具可供 agent loop 使用。`env`/`headers` 中的
  * 敏感值应使用 `${env:VAR}` 占位符 —— 运行时展开见 `src/main/mcp/manager.ts`

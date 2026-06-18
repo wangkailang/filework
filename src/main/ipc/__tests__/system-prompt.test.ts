@@ -153,6 +153,14 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toMatch(/Acknowledge mistakes briefly/i);
   });
 
+  it("default prompt routes reminders and recurring follow-ups through automation_update", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toContain("automation_update");
+    expect(prompt).toMatch(/reminders|scheduled checks|recurring monitors/i);
+    expect(prompt).toMatch(/thread automations/i);
+    expect(prompt).toMatch(/standalone\/project automations/i);
+  });
+
   it("default prompt respects explicit stop/completion cues", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toMatch(/stop|pause|leave it there/i);

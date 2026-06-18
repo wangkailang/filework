@@ -3,16 +3,25 @@ import {
   CheckCircle2,
   KeyRound,
   Loader2,
+  Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import {
   CREDENTIAL_KIND_OPTIONS,
   type CredentialKind,
   credentialKindLabel,
 } from "../../../shared/credentials";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { Locales, TranslationFunctions } from "../../i18n/i18n-types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "../ui/dialog";
 
 interface CredentialSummary {
   id: string;
@@ -27,17 +36,34 @@ interface CredentialSummary {
   lastTestedHost: string | null;
 }
 
-const formatRelative = (iso: string | null): string => {
-  if (!iso) return "never";
+interface CredentialDraft {
+  kind: CredentialKind;
+  label: string;
+  token: string;
+}
+
+type DialogMode = "create" | "edit";
+
+const EMPTY_DRAFT: CredentialDraft = {
+  kind: "github_pat",
+  label: "",
+  token: "",
+};
+
+const formatRelative = (
+  iso: string | null,
+  LL: TranslationFunctions,
+): string => {
+  if (!iso) return LL.credentials_relativeNever();
   const ms = Date.now() - Date.parse(iso);
-  if (Number.isNaN(ms)) return "unknown";
+  if (Number.isNaN(ms)) return LL.credentials_relativeUnknown();
   const min = Math.floor(ms / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return LL.credentials_relativeJustNow();
+  if (min < 60) return LL.credentials_relativeMinutes({ count: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return LL.credentials_relativeHours({ count: hr });
   const days = Math.floor(hr / 24);
-  return `${days}d ago`;
+  return LL.credentials_relativeDays({ count: days });
 };
 
 const statusDotClass = (status: CredentialSummary["testStatus"]): string => {
@@ -46,12 +72,32 @@ const statusDotClass = (status: CredentialSummary["testStatus"]): string => {
   return "bg-muted-foreground/40";
 };
 
-const statusTooltip = (c: CredentialSummary): string => {
+const statusTooltip = (
+  c: CredentialSummary,
+  LL: TranslationFunctions,
+): string => {
   if (c.testStatus === "ok")
-    return `Healthy — tested ${formatRelative(c.lastTestedAt)}`;
+    return LL.credentials_testedHealthy({
+      when: formatRelative(c.lastTestedAt, LL),
+    });
   if (c.testStatus === "error")
-    return `Error: ${c.lastTestError ?? "unknown"} (tested ${formatRelative(c.lastTestedAt)})`;
-  return "Not tested yet";
+    return LL.credentials_testedError({
+      error: c.lastTestError ?? LL.credentials_relativeUnknown(),
+      when: formatRelative(c.lastTestedAt, LL),
+    });
+  return LL.credentials_notTested();
+};
+
+const formatDate = (iso: string, locale: Locales): string => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+      date,
+    );
+  } catch {
+    return date.toLocaleDateString();
+  }
 };
 
 type TestState =
@@ -60,14 +106,158 @@ type TestState =
   | { state: "ok"; login?: string }
   | { state: "error"; error: string };
 
+interface CredentialFormDialogProps {
+  mode: DialogMode;
+  draft: CredentialDraft;
+  saving: boolean;
+  onDraftChange: (draft: CredentialDraft) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}
+
+const CredentialFormDialog = ({
+  mode,
+  draft,
+  saving,
+  onDraftChange,
+  onClose,
+  onSubmit,
+}: CredentialFormDialogProps) => {
+  const { LL } = useI18nContext();
+  const isEdit = mode === "edit";
+  const tokenPlaceholder = isEdit
+    ? LL.credentials_keepExistingToken()
+    : (CREDENTIAL_KIND_OPTIONS.find((o) => o.value === draft.kind)
+        ?.placeholder ?? "");
+  const canSubmit =
+    Boolean(draft.label.trim()) && (isEdit || Boolean(draft.token.trim()));
+  const inputCls =
+    "w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus:border-primary focus:outline-none";
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSubmit || saving) return;
+    onSubmit();
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !saving) onClose();
+      }}
+    >
+      <DialogContent className="flex! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[460px]! max-w-[calc(100vw-32px)]!">
+        <div className="border-b border-border px-5 py-4 pr-12">
+          <DialogTitle className="text-sm font-medium text-foreground">
+            {isEdit ? LL.credentials_editTitle() : LL.credentials_createTitle()}
+          </DialogTitle>
+          <DialogDescription className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {isEdit
+              ? LL.credentials_keepExistingToken()
+              : LL.credentials_tokenHint()}
+          </DialogDescription>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-3 px-5 py-4">
+            <div>
+              <label
+                htmlFor="credential-kind"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                {LL.credentials_kind()}
+              </label>
+              <select
+                id="credential-kind"
+                value={draft.kind}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    kind: event.target.value as CredentialKind,
+                  })
+                }
+                className={inputCls}
+              >
+                {CREDENTIAL_KIND_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="credential-label"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                {LL.credentials_label()}
+              </label>
+              <input
+                id="credential-label"
+                type="text"
+                value={draft.label}
+                onChange={(event) =>
+                  onDraftChange({ ...draft, label: event.target.value })
+                }
+                placeholder={LL.credentials_labelPlaceholder()}
+                className={inputCls}
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="credential-token"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                {LL.credentials_token()}
+              </label>
+              <input
+                id="credential-token"
+                type="password"
+                value={draft.token}
+                onChange={(event) =>
+                  onDraftChange({ ...draft, token: event.target.value })
+                }
+                placeholder={tokenPlaceholder}
+                className={`${inputCls} font-mono`}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-border bg-muted/30 px-5 py-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-lg border border-border bg-background px-4 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+            >
+              {LL.credentials_cancel()}
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !canSubmit}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+              {LL.credentials_save()}
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 export const CredentialsPanel = () => {
+  const { LL, locale } = useI18nContext();
   const [list, setList] = useState<CredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newKind, setNewKind] = useState<CredentialKind>("github_pat");
-  const [newLabel, setNewLabel] = useState("");
-  const [newToken, setNewToken] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
+  const [editing, setEditing] = useState<CredentialSummary | null>(null);
+  const [draft, setDraft] = useState<CredentialDraft>(EMPTY_DRAFT);
+  const [saving, setSaving] = useState(false);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -87,25 +277,60 @@ export const CredentialsPanel = () => {
     refresh();
   }, [refresh]);
 
-  const handleCreate = async () => {
-    if (!newToken.trim() || !newLabel.trim()) return;
-    setCreating(true);
+  const resetDialog = () => {
+    setDialogMode(null);
+    setEditing(null);
+    setDraft(EMPTY_DRAFT);
+  };
+
+  const closeDialog = () => {
+    if (saving) return;
+    resetDialog();
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setDraft(EMPTY_DRAFT);
+    setDialogMode("create");
+  };
+
+  const openEdit = (credential: CredentialSummary) => {
+    setEditing(credential);
+    setDraft({
+      kind: credential.kind,
+      label: credential.label,
+      token: "",
+    });
+    setDialogMode("edit");
+  };
+
+  const handleSave = async () => {
+    if (!dialogMode) return;
+    const label = draft.label.trim();
+    const token = draft.token.trim();
+    if (!label || (dialogMode === "create" && !token)) return;
+    setSaving(true);
     setError(null);
     try {
-      await window.filework.credentials.create({
-        kind: newKind,
-        label: newLabel.trim(),
-        token: newToken.trim(),
-      });
-      setNewKind("github_pat");
-      setNewLabel("");
-      setNewToken("");
-      setShowAdd(false);
+      if (dialogMode === "edit" && editing) {
+        await window.filework.credentials.update(editing.id, {
+          kind: draft.kind,
+          label,
+          token: token || undefined,
+        });
+      } else {
+        await window.filework.credentials.create({
+          kind: draft.kind,
+          label,
+          token,
+        });
+      }
+      resetDialog();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   };
 
@@ -132,8 +357,12 @@ export const CredentialsPanel = () => {
         ...prev,
         [id]: res.ok
           ? { state: "ok", login: res.login }
-          : { state: "error", error: res.error ?? "Token invalid" },
+          : {
+              state: "error",
+              error: res.error ?? LL.credentials_tokenInvalid(),
+            },
       }));
+      await refresh();
     } catch (err) {
       setTests((prev) => ({
         ...prev,
@@ -148,23 +377,22 @@ export const CredentialsPanel = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold">Credentials</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            API keys / PATs for GitHub, GitLab, Tavily (web search), and
-            Firecrawl (web scrape). Encrypted at rest with the same key as your
-            LLM API keys.
+        <div className="min-w-0 pr-4">
+          <h3 className="text-sm font-semibold text-foreground">
+            {LL.credentials_title()}
+          </h3>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+            {LL.credentials_description()}
           </p>
         </div>
-        {!showAdd && (
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border hover:bg-accent"
-          >
-            <Plus className="w-3 h-3" /> Add token
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={openCreate}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {LL.credentials_addToken()}
+        </button>
       </div>
 
       {error && (
@@ -176,155 +404,123 @@ export const CredentialsPanel = () => {
         </div>
       )}
 
-      {showAdd && (
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <div>
-            <label
-              htmlFor="add-kind"
-              className="block text-xs font-medium mb-1"
-            >
-              Kind
-            </label>
-            <select
-              id="add-kind"
-              value={newKind}
-              onChange={(e) => setNewKind(e.target.value as CredentialKind)}
-              className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
-            >
-              {CREDENTIAL_KIND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="add-label"
-              className="block text-xs font-medium mb-1"
-            >
-              Label
-            </label>
-            <input
-              id="add-label"
-              type="text"
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="e.g. work account"
-              className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="add-token"
-              className="block text-xs font-medium mb-1"
-            >
-              Token
-            </label>
-            <input
-              id="add-token"
-              type="password"
-              value={newToken}
-              onChange={(e) => setNewToken(e.target.value)}
-              placeholder={
-                CREDENTIAL_KIND_OPTIONS.find((o) => o.value === newKind)
-                  ?.placeholder ?? ""
-              }
-              className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background font-mono"
-            />
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={creating || !newToken.trim() || !newLabel.trim()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-            >
-              {creating && <Loader2 className="w-3 h-3 animate-spin" />}
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowAdd(false);
-                setNewKind("github_pat");
-                setNewLabel("");
-                setNewToken("");
-              }}
-              className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          Loading…
+          {LL.credentials_loading()}
         </div>
       ) : list.length === 0 ? (
-        <div className="text-xs text-muted-foreground italic">
-          No tokens stored yet.
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+          {LL.credentials_empty()}
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="overflow-hidden rounded-lg border border-border">
           {list.map((c) => {
             const t = tests[c.id] ?? { state: "idle" };
             return (
               <div
                 key={c.id}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border"
+                className="flex items-center gap-3 border-border px-3 py-2.5 not-last:border-b"
               >
-                <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-1.5 text-sm">
                     <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass(c.testStatus)}`}
-                      title={statusTooltip(c)}
+                      className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(c.testStatus)}`}
+                      title={statusTooltip(c, LL)}
                     />
-                    <span className="truncate">{c.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1.5 py-0.5 rounded bg-muted shrink-0">
+                    <span className="truncate font-medium text-foreground">
+                      {c.label}
+                    </span>
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
                       {credentialKindLabel(c.kind)}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Added {new Date(c.createdAt).toLocaleDateString()}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <span>
+                      {LL.credentials_addedOn({
+                        date: formatDate(c.createdAt, locale),
+                      })}
+                    </span>
+                    {c.lastTestedHost && (
+                      <span>
+                        {LL.credentials_lastTestedHost({
+                          host: c.lastTestedHost,
+                        })}
+                      </span>
+                    )}
+                    {c.scopes && c.scopes.length > 0 && (
+                      <span>
+                        {LL.credentials_scopes({
+                          scopes: c.scopes.join(", "),
+                        })}
+                      </span>
+                    )}
                     {t.state === "ok" && t.login && (
-                      <span className="ml-2 inline-flex items-center gap-0.5 text-emerald-600">
-                        <CheckCircle2 className="w-3 h-3" /> {t.login}
+                      <span className="inline-flex items-center gap-0.5 text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {LL.credentials_connectedAs({ login: t.login })}
                       </span>
                     )}
                     {t.state === "error" && (
-                      <span className="ml-2 text-destructive">{t.error}</span>
+                      <span className="text-destructive">{t.error}</span>
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleTest(c.id)}
-                  disabled={t.state === "testing"}
-                  className="px-2 py-1 text-xs rounded-md border border-border hover:bg-accent"
-                >
-                  {t.state === "testing" ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    "Test"
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(c.id)}
-                  className="p-1.5 rounded-md hover:bg-destructive/10 text-destructive"
-                  title="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleTest(c.id)}
+                    disabled={t.state === "testing"}
+                    className="inline-flex h-7 items-center justify-center rounded-lg border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
+                    title={
+                      t.state === "testing"
+                        ? LL.credentials_testing()
+                        : LL.credentials_test()
+                    }
+                  >
+                    {t.state === "testing" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      LL.credentials_test()
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(c)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title={LL.credentials_edit()}
+                    aria-label={LL.credentials_edit()}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(c.id)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10"
+                    title={LL.credentials_delete()}
+                    aria-label={LL.credentials_delete()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {dialogMode && (
+        <CredentialFormDialog
+          mode={dialogMode}
+          draft={draft}
+          saving={saving}
+          onDraftChange={setDraft}
+          onClose={closeDialog}
+          onSubmit={handleSave}
+        />
       )}
     </div>
   );

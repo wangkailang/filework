@@ -58,6 +58,37 @@ vi.mock("../../db", () => ({
     });
     return { id, kind, label, scopes: scopes ?? null, createdAt };
   },
+  updateCredential: ({
+    id,
+    kind,
+    label,
+    token,
+    scopes,
+  }: {
+    id: string;
+    kind: "github_pat" | "gitlab_pat";
+    label: string;
+    token?: string;
+    scopes?: string[] | null;
+  }) => {
+    const row = dbState.credentials.find((c) => c.id === id);
+    if (!row) throw new Error(`Credential not found: ${id}`);
+    row.kind = kind;
+    row.label = label;
+    if (token) row.token = token;
+    if (scopes !== undefined) row.scopes = scopes;
+    return {
+      id,
+      kind,
+      label,
+      scopes: row.scopes,
+      createdAt: row.createdAt,
+      lastTestedAt: null,
+      testStatus: null,
+      lastTestError: null,
+      lastTestedHost: null,
+    };
+  },
   listCredentials: () => dbState.credentials.map(({ token: _t, ...c }) => c),
   getCredentialToken: (id: string) => {
     const row = dbState.credentials.find((c) => c.id === id);
@@ -135,6 +166,60 @@ describe("credentials handlers", () => {
     expect(dbState.credentials).toHaveLength(1);
     await del?.(null, { id: created.id });
     expect(dbState.credentials).toHaveLength(0);
+  });
+
+  it("updates credential metadata and token without returning the raw token", async () => {
+    const create = handlers.get("credentials:create");
+    const update = handlers.get("credentials:update");
+    if (!update) throw new Error("credentials:update not registered");
+
+    const created = (await create?.(null, {
+      kind: "github_pat",
+      label: "work",
+      token: "ghp_OLD",
+    })) as { id: string };
+
+    const updated = await update(null, {
+      id: created.id,
+      kind: "gitlab_pat",
+      label: "gitlab work",
+      token: "glpat-NEW",
+    });
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      kind: "gitlab_pat",
+      label: "gitlab work",
+    });
+    expect(JSON.stringify(updated)).not.toContain("glpat-NEW");
+    expect(dbState.credentials[0]).toMatchObject({
+      kind: "gitlab_pat",
+      label: "gitlab work",
+      token: "glpat-NEW",
+    });
+  });
+
+  it("keeps the existing token when edit payload omits token", async () => {
+    const create = handlers.get("credentials:create");
+    const update = handlers.get("credentials:update");
+    if (!update) throw new Error("credentials:update not registered");
+
+    const created = (await create?.(null, {
+      kind: "github_pat",
+      label: "work",
+      token: "ghp_KEEP",
+    })) as { id: string };
+
+    await update(null, {
+      id: created.id,
+      kind: "github_pat",
+      label: "renamed",
+    });
+
+    expect(dbState.credentials[0]).toMatchObject({
+      label: "renamed",
+      token: "ghp_KEEP",
+    });
   });
 
   it("test pings GitHub /user with the supplied token", async () => {

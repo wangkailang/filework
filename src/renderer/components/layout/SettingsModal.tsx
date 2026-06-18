@@ -98,7 +98,7 @@ export const SettingsModal = ({
   const tabs: { id: Tab; label: string; icon: typeof Settings }[] = [
     { id: "general", label: LL.settings_title(), icon: Settings },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
-    { id: "credentials", label: "Credentials", icon: KeyRound },
+    { id: "credentials", label: LL.settings_credentials(), icon: KeyRound },
     { id: "mcp", label: "MCP", icon: Plug },
     { id: "tool-whitelist", label: "工具白名单", icon: Shield },
     { id: "command-security", label: "命令执行安全", icon: Lock },

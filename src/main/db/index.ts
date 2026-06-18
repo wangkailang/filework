@@ -116,6 +116,26 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_media_jobs_session ON media_jobs(session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_jobs(status);
+    CREATE TABLE IF NOT EXISTS automations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('thread','standalone','project')),
+      schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('interval','daily','weekly','cron')),
+      schedule_value TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      thread_id TEXT,
+      workspace_paths TEXT,
+      run_mode TEXT CHECK(run_mode IN ('local','worktree')),
+      model_id TEXT,
+      reasoning_effort TEXT,
+      last_run_at TEXT,
+      next_run_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_run ON automations(enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_automations_thread ON automations(thread_id);
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
@@ -327,6 +347,31 @@ export const initDatabase = async () => {
     );
   `);
 
+  // 迁移:自动化定义表。旧库没有该表时创建;索引用于后续后台 runner
+  // 快速扫描 enabled + due 的自动化。
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS automations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('thread','standalone','project')),
+      schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('interval','daily','weekly','cron')),
+      schedule_value TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      thread_id TEXT,
+      workspace_paths TEXT,
+      run_mode TEXT CHECK(run_mode IN ('local','worktree')),
+      model_id TEXT,
+      reasoning_effort TEXT,
+      last_run_at TEXT,
+      next_run_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_run ON automations(enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_automations_thread ON automations(thread_id);
+  `);
+
   // M3 PR 2:删除旧版聊天表。M3 PR 1+ 上的现有用户已经
   // 迁移到 ~/.filework/sessions/ 的 JSONL 存储。
   // 幂等:表不存在时为空操作(全新安装)。
@@ -513,6 +558,29 @@ interface RecentWorkspace {
   kind: "local" | "github" | "gitlab";
   /** JSON 编码的 WorkspaceRef;旧版 local 行为 NULL。 */
   metadata: string | null;
+}
+
+export type AutomationType = "thread" | "standalone" | "project";
+export type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
+export type AutomationRunMode = "local" | "worktree";
+
+export interface AutomationRecord {
+  id: string;
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled: boolean;
+  threadId: string | null;
+  workspacePaths: string[] | null;
+  runMode: AutomationRunMode | null;
+  modelId: string | null;
+  reasoningEffort: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type CredentialTestStatus = "unknown" | "ok" | "error";
@@ -711,6 +779,277 @@ export const getTaskSummary = (taskId: string): TaskSummary | null => {
 };
 
 // ============================================================================
+// 自动化定义
+// ============================================================================
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
+};
+
+const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
+  const match = value.trim().match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!match) throw new Error(`Invalid time of day: ${value}`);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) {
+    throw new Error(`Invalid time of day: ${value}`);
+  }
+  return { hour, minute };
+};
+
+export const computeAutomationNextRunAt = (
+  scheduleKind: AutomationScheduleKind,
+  scheduleValue: string,
+  now: Date = new Date(),
+): string | null => {
+  const value = scheduleValue.trim();
+  if (!value) return null;
+
+  if (scheduleKind === "interval") {
+    const match = value.match(
+      /^(\d+)\s*(m|min|minute|minutes|h|hour|hours|d|day|days)$/i,
+    );
+    if (!match) return null;
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const multiplier = unit.startsWith("m")
+      ? 60_000
+      : unit.startsWith("h")
+        ? 60 * 60_000
+        : 24 * 60 * 60_000;
+    return new Date(now.getTime() + amount * multiplier).toISOString();
+  }
+
+  if (scheduleKind === "daily") {
+    const { hour, minute } = parseTimeOfDay(value);
+    const next = new Date(now);
+    next.setHours(hour, minute, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next.toISOString();
+  }
+
+  if (scheduleKind === "weekly") {
+    const weekdayMatch = value
+      .toLowerCase()
+      .match(
+        /\b(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\b/,
+      );
+    if (!weekdayMatch) return null;
+    const targetDay = WEEKDAY_INDEX[weekdayMatch[1]];
+    const { hour, minute } = parseTimeOfDay(value);
+    const next = new Date(now);
+    next.setHours(hour, minute, 0, 0);
+    const daysAhead = (targetDay - next.getDay() + 7) % 7;
+    next.setDate(next.getDate() + daysAhead);
+    if (next <= now) next.setDate(next.getDate() + 7);
+    return next.toISOString();
+  }
+
+  // Cron expressions are stored verbatim; the scheduler integration can use a
+  // dedicated cron parser without changing the persisted contract.
+  return null;
+};
+
+const mapAutomationRow = (
+  row: typeof schema.automations.$inferSelect,
+): AutomationRecord => ({
+  id: row.id,
+  title: row.title,
+  prompt: row.prompt,
+  type: row.type,
+  scheduleKind: row.scheduleKind,
+  scheduleValue: row.scheduleValue,
+  enabled: row.enabled,
+  threadId: row.threadId ?? null,
+  workspacePaths: row.workspacePaths
+    ? (JSON.parse(row.workspacePaths) as string[])
+    : null,
+  runMode: row.runMode ?? null,
+  modelId: row.modelId ?? null,
+  reasoningEffort: row.reasoningEffort ?? null,
+  lastRunAt: row.lastRunAt ?? null,
+  nextRunAt: row.nextRunAt ?? null,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+export const listAutomations = (filter?: {
+  enabled?: boolean;
+  type?: AutomationType;
+  threadId?: string;
+}): AutomationRecord[] => {
+  let rows = db.select().from(schema.automations).all();
+  if (filter?.enabled !== undefined) {
+    rows = rows.filter((row) => row.enabled === filter.enabled);
+  }
+  if (filter?.type) rows = rows.filter((row) => row.type === filter.type);
+  if (filter?.threadId) {
+    rows = rows.filter((row) => row.threadId === filter.threadId);
+  }
+  return rows
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    .map(mapAutomationRow);
+};
+
+export const getAutomation = (id: string): AutomationRecord | null => {
+  const row = db
+    .select()
+    .from(schema.automations)
+    .where(eq(schema.automations.id, id))
+    .get();
+  return row ? mapAutomationRow(row) : null;
+};
+
+export const createAutomation = (input: {
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled?: boolean;
+  threadId?: string | null;
+  workspacePaths?: string[] | null;
+  runMode?: AutomationRunMode | null;
+  modelId?: string | null;
+  reasoningEffort?: string | null;
+}): AutomationRecord => {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const nextRunAt =
+    input.enabled === false
+      ? null
+      : computeAutomationNextRunAt(input.scheduleKind, input.scheduleValue);
+  db.insert(schema.automations)
+    .values({
+      id,
+      title: input.title,
+      prompt: input.prompt,
+      type: input.type,
+      scheduleKind: input.scheduleKind,
+      scheduleValue: input.scheduleValue,
+      enabled: input.enabled ?? true,
+      threadId: input.threadId ?? null,
+      workspacePaths: input.workspacePaths
+        ? JSON.stringify(input.workspacePaths)
+        : null,
+      runMode: input.runMode ?? null,
+      modelId: input.modelId ?? null,
+      reasoningEffort: input.reasoningEffort ?? null,
+      lastRunAt: null,
+      nextRunAt,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  const created = getAutomation(id);
+  if (!created) throw new Error(`Automation not found after create: ${id}`);
+  return created;
+};
+
+export const updateAutomation = (
+  id: string,
+  updates: Partial<
+    Omit<AutomationRecord, "id" | "createdAt" | "updatedAt" | "nextRunAt">
+  >,
+): AutomationRecord => {
+  const existing = getAutomation(id);
+  if (!existing) throw new Error(`Automation not found: ${id}`);
+
+  const scheduleKind = updates.scheduleKind ?? existing.scheduleKind;
+  const scheduleValue = updates.scheduleValue ?? existing.scheduleValue;
+  const enabled = updates.enabled ?? existing.enabled;
+  const mapped: Record<string, unknown> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (updates.title !== undefined) mapped.title = updates.title;
+  if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
+  if (updates.type !== undefined) mapped.type = updates.type;
+  if (updates.scheduleKind !== undefined)
+    mapped.scheduleKind = updates.scheduleKind;
+  if (updates.scheduleValue !== undefined)
+    mapped.scheduleValue = updates.scheduleValue;
+  if (updates.enabled !== undefined) mapped.enabled = updates.enabled;
+  if (updates.threadId !== undefined) mapped.threadId = updates.threadId;
+  if (updates.workspacePaths !== undefined) {
+    mapped.workspacePaths = updates.workspacePaths
+      ? JSON.stringify(updates.workspacePaths)
+      : null;
+  }
+  if (updates.runMode !== undefined) mapped.runMode = updates.runMode;
+  if (updates.modelId !== undefined) mapped.modelId = updates.modelId;
+  if (updates.reasoningEffort !== undefined)
+    mapped.reasoningEffort = updates.reasoningEffort;
+  if (updates.lastRunAt !== undefined) mapped.lastRunAt = updates.lastRunAt;
+  if (
+    updates.enabled !== undefined ||
+    updates.scheduleKind !== undefined ||
+    updates.scheduleValue !== undefined
+  ) {
+    mapped.nextRunAt = enabled
+      ? computeAutomationNextRunAt(scheduleKind, scheduleValue)
+      : null;
+  }
+
+  db.update(schema.automations)
+    .set(mapped)
+    .where(eq(schema.automations.id, id))
+    .run();
+  const updated = getAutomation(id);
+  if (!updated) throw new Error(`Automation not found after update: ${id}`);
+  return updated;
+};
+
+export const deleteAutomation = (id: string): boolean => {
+  const existing = getAutomation(id);
+  if (!existing) return false;
+  db.delete(schema.automations).where(eq(schema.automations.id, id)).run();
+  return true;
+};
+
+export const triggerAutomation = (
+  id: string,
+  now = new Date(),
+): AutomationRecord => {
+  const existing = getAutomation(id);
+  if (!existing) throw new Error(`Automation not found: ${id}`);
+
+  const lastRunAt = now.toISOString();
+  const nextRunAt = existing.enabled
+    ? computeAutomationNextRunAt(
+        existing.scheduleKind,
+        existing.scheduleValue,
+        now,
+      )
+    : null;
+
+  db.update(schema.automations)
+    .set({
+      lastRunAt,
+      nextRunAt,
+      updatedAt: lastRunAt,
+    })
+    .where(eq(schema.automations.id, id))
+    .run();
+
+  const updated = getAutomation(id);
+  if (!updated) throw new Error(`Automation not found after trigger: ${id}`);
+  return updated;
+};
+
+// ============================================================================
 // 设置
 // ============================================================================
 
@@ -847,6 +1186,49 @@ export const getCredential = (id: string): Credential | null => {
     .where(eq(schema.credentials.id, id))
     .get();
   return row ? mapCredentialRow(row) : null;
+};
+
+export const updateCredential = (input: {
+  id: string;
+  kind: CredentialKind;
+  label: string;
+  token?: string;
+  scopes?: string[] | null;
+}): Credential => {
+  const existing = db
+    .select()
+    .from(schema.credentials)
+    .where(eq(schema.credentials.id, input.id))
+    .get();
+  if (!existing) throw new Error(`Credential not found: ${input.id}`);
+
+  const tokenChanged = input.token != null && input.token.length > 0;
+  const kindChanged = input.kind !== existing.kind;
+  const updates: Partial<typeof schema.credentials.$inferInsert> = {
+    kind: input.kind,
+    label: input.label,
+  };
+  if (tokenChanged) {
+    updates.encryptedToken = encrypt(input.token ?? "");
+  }
+  if (input.scopes !== undefined) {
+    updates.scopes = input.scopes ? JSON.stringify(input.scopes) : null;
+  }
+  if (tokenChanged || kindChanged) {
+    updates.lastTestedAt = null;
+    updates.testStatus = null;
+    updates.lastTestError = null;
+    updates.lastTestedHost = null;
+  }
+
+  db.update(schema.credentials)
+    .set(updates)
+    .where(eq(schema.credentials.id, input.id))
+    .run();
+
+  const updated = getCredential(input.id);
+  if (!updated) throw new Error(`Credential not found: ${input.id}`);
+  return updated;
 };
 
 /** 返回解密后的 token。凭据 id 未知时抛错。 */

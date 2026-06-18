@@ -12,6 +12,43 @@ type WorkspaceMemoryEntry = {
   updatedAt: string;
 };
 
+type AutomationType = "thread" | "standalone" | "project";
+type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
+type AutomationRunMode = "local" | "worktree";
+
+type AutomationRecord = {
+  id: string;
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled: boolean;
+  threadId: string | null;
+  workspacePaths: string[] | null;
+  runMode: AutomationRunMode | null;
+  modelId: string | null;
+  reasoningEffort: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AutomationCreatePayload = {
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled?: boolean;
+  threadId?: string | null;
+  workspacePaths?: string[] | null;
+  runMode?: AutomationRunMode | null;
+  modelId?: string | null;
+  reasoningEffort?: string | null;
+};
+
 /**
  * 通过 contextBridge 向渲染进程暴露安全的 IPC 方法。
  * 这是主进程与渲染进程之间的唯一桥梁。
@@ -873,6 +910,29 @@ const api = {
     ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:getAll"),
 
+  // 自动化
+  automations: {
+    list: (filter?: {
+      enabled?: boolean;
+      type?: AutomationType;
+      threadId?: string;
+    }): Promise<AutomationRecord[]> =>
+      ipcRenderer.invoke("automations:list", filter),
+    create: (payload: AutomationCreatePayload): Promise<AutomationRecord> =>
+      ipcRenderer.invoke("automations:create", payload),
+    update: (
+      id: string,
+      updates: Partial<
+        Omit<AutomationRecord, "id" | "createdAt" | "updatedAt" | "nextRunAt">
+      >,
+    ): Promise<AutomationRecord> =>
+      ipcRenderer.invoke("automations:update", { id, updates }),
+    trigger: (id: string): Promise<AutomationRecord> =>
+      ipcRenderer.invoke("automations:trigger", { id }),
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke("automations:delete", { id }),
+  },
+
   // 危险工具白名单(持久化,可在设置面板管理)
   toolWhitelist: {
     getState: (): Promise<{ tools: string[]; enabled: string[] }> =>
@@ -1145,6 +1205,15 @@ const api = {
       token: string;
       scopes?: string[];
     }) => ipcRenderer.invoke("credentials:create", payload),
+    update: (
+      id: string,
+      payload: {
+        kind: CredentialKind;
+        label: string;
+        token?: string;
+        scopes?: string[];
+      },
+    ) => ipcRenderer.invoke("credentials:update", { id, ...payload }),
     delete: (id: string) => ipcRenderer.invoke("credentials:delete", { id }),
     test: (payload: {
       id?: string;

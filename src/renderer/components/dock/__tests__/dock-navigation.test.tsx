@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
     LL: {
+      automations_title: () => "自动化",
       dock_diff: () => "差异",
       dock_menu: () => "打开停靠面板",
       dock_preview: () => "预览",
@@ -28,6 +29,10 @@ vi.mock("../../browser/BrowserPanel", () => ({
   BrowserPanel: () => <div data-browser-panel="true" />,
 }));
 
+vi.mock("../AutomationsDockPanel", () => ({
+  AutomationsDockPanel: () => <div data-automations-dock-panel="true" />,
+}));
+
 vi.mock("../../chat/SubagentTracePanel", () => ({
   SubagentTracePanel: () => <div data-subagent-trace-panel="true" />,
 }));
@@ -45,7 +50,7 @@ vi.mock("../TrashPanel", () => ({
 }));
 
 import { ContextDock } from "../ContextDock";
-import { DockShortcut } from "../DockMenu";
+import { buildDockMenuItems, DockShortcut } from "../DockMenu";
 
 const installDom = () => {
   const { document, window } = parseHTML(
@@ -108,6 +113,30 @@ describe("dock navigation chrome", () => {
     expect(keys[2]?.className).toContain("font-semibold");
   });
 
+  it("includes automations in the dock menu list", () => {
+    const items = buildDockMenuItems({
+      labels: {
+        automations: "自动化",
+        diff: "差异",
+        preview: "预览",
+        search: "搜索",
+        subagent: "子 agent",
+        trash: "回收站",
+        web: "网页",
+      },
+      hasSubagent: false,
+      isGitRepo: true,
+    });
+
+    expect(items.map((item) => item.tab)).toContain("automations");
+    expect(items.find((item) => item.tab === "automations")).toMatchObject({
+      label: "自动化",
+      on: true,
+      shortcut: "⇧⌘M",
+      tab: "automations",
+    });
+  });
+
   it("renders dock tabs with icons and compact pill styling", () => {
     const html = renderToStaticMarkup(
       <ContextDock
@@ -135,5 +164,32 @@ describe("dock navigation chrome", () => {
     expect(html).toContain('aria-current="page"');
     expect(html).toContain("rounded-md");
     expect(html).toContain("gap-1.5");
+  });
+
+  it("renders automations as a right-side dock panel", () => {
+    const html = renderToStaticMarkup(
+      <ContextDock
+        mode="split"
+        width={420}
+        activeTab="automations"
+        onTabChange={vi.fn()}
+        onClose={vi.fn()}
+        onWidthChange={vi.fn()}
+        onCommitWidth={vi.fn()}
+        railWidth={256}
+        railCollapsed={false}
+        filePath={null}
+        url={null}
+        subagentSel={null}
+        workspaceRoot="/tmp/workspace"
+        currentBranch="main"
+        diffInvalidator={0}
+        isGitRepo={true}
+      />,
+    );
+
+    expect(html).toContain('data-dock-tab="automations"');
+    expect(html).toContain("自动化");
+    expect(html).toContain('data-automations-dock-panel="true"');
   });
 });

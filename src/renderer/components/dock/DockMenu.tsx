@@ -2,6 +2,7 @@
 // 与 ContextDock 的标签等价,但即使停靠区关闭也能从这里打开;选中当前已开标签则收起。
 import {
   Bot,
+  CalendarClock,
   ChevronDown,
   FileText,
   GitCompareArrows,
@@ -22,6 +23,84 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import type { DockTab } from "./ContextDock";
+
+interface DockMenuLabels {
+  automations: string;
+  diff: string;
+  preview: string;
+  search: string;
+  subagent: string;
+  trash: string;
+  web: string;
+}
+
+interface DockMenuItem {
+  tab: DockTab;
+  label: string;
+  icon: LucideIcon;
+  shortcut: string;
+  on: boolean;
+}
+
+export const buildDockMenuItems = ({
+  labels,
+  hasSubagent,
+  isGitRepo,
+}: {
+  labels: DockMenuLabels;
+  hasSubagent: boolean;
+  isGitRepo: boolean;
+}): DockMenuItem[] => [
+  {
+    tab: "preview",
+    label: labels.preview,
+    icon: FileText,
+    shortcut: "⇧⌘P",
+    on: true,
+  },
+  {
+    tab: "search",
+    label: labels.search,
+    icon: Search,
+    shortcut: "⇧⌘F",
+    on: true,
+  },
+  {
+    tab: "trash",
+    label: labels.trash,
+    icon: Trash2,
+    shortcut: "⇧⌘T",
+    on: true,
+  },
+  {
+    tab: "automations",
+    label: labels.automations,
+    icon: CalendarClock,
+    shortcut: "⇧⌘M",
+    on: true,
+  },
+  {
+    tab: "subagent",
+    label: labels.subagent,
+    icon: Bot,
+    shortcut: "⇧⌘A",
+    on: hasSubagent,
+  },
+  {
+    tab: "diff",
+    label: labels.diff,
+    icon: GitCompareArrows,
+    shortcut: "⇧⌘D",
+    on: isGitRepo,
+  },
+  {
+    tab: "web",
+    label: labels.web,
+    icon: Globe,
+    shortcut: "⇧⌘W",
+    on: true,
+  },
+];
 
 export const DockShortcut = ({
   active,
@@ -77,56 +156,19 @@ export const DockMenu = ({
   const [open, setOpen] = useState(false);
 
   // 快捷键提示与 App 中的全局监听保持一致(⇧⌘ + 首字母)。
-  const items: {
-    tab: DockTab;
-    label: string;
-    icon: LucideIcon;
-    shortcut: string;
-    on: boolean;
-  }[] = [
-    {
-      tab: "preview",
-      label: LL.dock_preview(),
-      icon: FileText,
-      shortcut: "⇧⌘P",
-      on: true,
+  const items = buildDockMenuItems({
+    labels: {
+      automations: LL.automations_title(),
+      diff: LL.dock_diff(),
+      preview: LL.dock_preview(),
+      search: LL.dock_search(),
+      subagent: LL.dock_subagent(),
+      trash: LL.dock_trash(),
+      web: LL.dock_web(),
     },
-    {
-      tab: "search",
-      label: LL.dock_search(),
-      icon: Search,
-      shortcut: "⇧⌘F",
-      on: true,
-    },
-    {
-      tab: "trash",
-      label: LL.dock_trash(),
-      icon: Trash2,
-      shortcut: "⇧⌘T",
-      on: true,
-    },
-    {
-      tab: "subagent",
-      label: LL.dock_subagent(),
-      icon: Bot,
-      shortcut: "⇧⌘A",
-      on: hasSubagent,
-    },
-    {
-      tab: "diff",
-      label: LL.dock_diff(),
-      icon: GitCompareArrows,
-      shortcut: "⇧⌘D",
-      on: isGitRepo,
-    },
-    {
-      tab: "web",
-      label: LL.dock_web(),
-      icon: Globe,
-      shortcut: "⇧⌘W",
-      on: true,
-    },
-  ];
+    hasSubagent,
+    isGitRepo,
+  });
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -155,6 +197,7 @@ export const DockMenu = ({
           return (
             <DropdownMenuItem
               key={item.tab}
+              data-dock-menu-item={item.tab}
               disabled={!item.on}
               onClick={() => {
                 onSelect(item.tab);

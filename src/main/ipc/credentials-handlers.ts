@@ -17,6 +17,7 @@ import {
   getLatestCredentialToken,
   listCredentials,
   recordCredentialTest,
+  updateCredential,
 } from "../db";
 
 interface TestTokenResult {
@@ -106,6 +107,38 @@ export const registerCredentialsHandlers = () => {
     async (_event, payload: { id: string }) => {
       deleteCredential(payload.id);
       return true;
+    },
+  );
+
+  ipcMain.handle(
+    "credentials:update",
+    async (
+      _event,
+      payload: {
+        id: string;
+        kind: CredentialKind;
+        label: string;
+        token?: string;
+        scopes?: string[];
+      },
+    ) => {
+      if (!payload?.id || typeof payload.id !== "string") {
+        throw new Error("id is required");
+      }
+      if (!payload.label || typeof payload.label !== "string") {
+        throw new Error("label is required");
+      }
+      const token =
+        typeof payload.token === "string" && payload.token.trim()
+          ? payload.token.trim()
+          : undefined;
+      return updateCredential({
+        id: payload.id,
+        kind: payload.kind,
+        label: payload.label.trim(),
+        token,
+        scopes: payload.scopes ?? undefined,
+      });
     },
   );
 

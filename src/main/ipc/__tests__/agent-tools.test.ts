@@ -218,3 +218,31 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     expect(registry.has("spawnSubagent")).toBe(false);
   });
 });
+
+describe("automation_update tool — 注册入口", () => {
+  const sender = {
+    isDestroyed: () => false,
+    send: vi.fn(),
+  } as unknown as WebContents;
+
+  it("主工具集默认注册 automation_update", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "automation-main",
+      currentThreadId: "session-1",
+      workspacePath: "/ws",
+    });
+    expect(registry.has("automation_update")).toBe(true);
+  });
+
+  it("allowedTools 不含 automation_update 时不注册", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "automation-limited",
+      allowedTools: ["readFile"],
+      currentThreadId: "session-1",
+      workspacePath: "/ws",
+    });
+    expect(registry.has("automation_update")).toBe(false);
+  });
+});

@@ -33,6 +33,7 @@ import { getSetting, initDatabase } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
+import { registerAutomationsHandlers } from "./ipc/automations-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import {
   firecrawlCredentialResolver,
@@ -354,6 +355,7 @@ app.whenReady().then(async () => {
   registerWorkspaceHandlers();
   registerLocalGitHandlers();
   registerGitDiffHandlers();
+  registerAutomationsHandlers();
   registerChatHandlers(sessionStore);
   registerAttachmentHandlers();
   registerTaskTraceHandlers();

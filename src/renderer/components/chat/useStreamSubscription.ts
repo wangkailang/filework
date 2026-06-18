@@ -212,6 +212,7 @@ function extractArticleMetaFromToolResult(
 }
 
 import type { RunningTaskRoute } from "./session-run-state";
+import { finalizePartsForSettledTask } from "./stream-finalize";
 import type { RetryInfo, StreamErrorInfo, UsageInfo } from "./useChatSession";
 
 interface StreamSubscriptionDeps {
@@ -635,6 +636,7 @@ export function useStreamSubscription({
           connectionTimeoutRef.current = null;
         }
         const stoppedByUser = isAttachedTask && stopRequestedRef.current;
+        const settledStatus = stoppedByUser ? "cancelled" : "completed";
         if (isAttachedTask) {
           streamTaskIdRef.current = null;
           pendingStopRef.current = false;
@@ -646,29 +648,19 @@ export function useStreamSubscription({
           setIsStalled(false);
         }
 
-        if (stoppedByUser && assistantId && targetSessionId) {
+        if (assistantId && targetSessionId) {
           updateSessionMessages(targetSessionId, (prev) => {
             const idx = prev.findIndex((m) => m.id === assistantId);
             if (idx === -1) return prev;
             const updated = [...prev];
             const msg = updated[idx];
-            const normalizedParts = (msg.parts ?? []).map((part) => {
-              if (part.type !== "tool") return part;
-              if (
-                part.state === "output-available" ||
-                part.state === "output-error"
-              )
-                return part;
-              return {
-                ...part,
-                state: "output-available" as const,
-                result: part.result ?? {
-                  success: false,
-                  cancelled: true,
-                  reason: LL.chat_userStopped(),
-                },
-              };
-            });
+            const normalizedParts = finalizePartsForSettledTask(
+              msg.parts ?? [],
+              {
+                status: settledStatus,
+                cancelledReason: LL.chat_userStopped(),
+              },
+            );
             updated[idx] = {
               ...msg,
               parts: normalizedParts,
@@ -689,7 +681,10 @@ export function useStreamSubscription({
               if (idx === -1) return prev;
               const updated = [...prev];
               const msg = updated[idx];
-              const baseParts = msg.parts ?? [];
+              const baseParts = finalizePartsForSettledTask(msg.parts ?? [], {
+                status: settledStatus,
+                cancelledReason: LL.chat_userStopped(),
+              });
               // Machine-generated turn deliverable, aggregated from the (by now
               // normalized) tool parts and inserted just before the usage row.
               // Null for pure Q&A turns — nothing to append.
@@ -700,9 +695,13 @@ export function useStreamSubscription({
                   ? [{ type: "usage", ...usage } as UsagePart]
                   : []),
               ];
-              if (appended.length > 0) {
-                updated[idx] = { ...msg, parts: [...baseParts, ...appended] };
-              }
+              const nextParts =
+                appended.length > 0 ? [...baseParts, ...appended] : baseParts;
+              updated[idx] = {
+                ...msg,
+                parts: nextParts,
+                content: contentFromParts(nextParts),
+              };
               debouncedSave(updated, targetSessionId);
               return updated;
             });
@@ -711,8 +710,27 @@ export function useStreamSubscription({
           .catch(() => {
             if (assistantId && targetSessionId) {
               updateSessionMessages(targetSessionId, (prev) => {
-                debouncedSave(prev, targetSessionId);
-                return prev;
+                const idx = prev.findIndex((m) => m.id === assistantId);
+                if (idx === -1) {
+                  debouncedSave(prev, targetSessionId);
+                  return prev;
+                }
+                const updated = [...prev];
+                const msg = updated[idx];
+                const finalizedParts = finalizePartsForSettledTask(
+                  msg.parts ?? [],
+                  {
+                    status: settledStatus,
+                    cancelledReason: LL.chat_userStopped(),
+                  },
+                );
+                updated[idx] = {
+                  ...msg,
+                  parts: finalizedParts,
+                  content: contentFromParts(finalizedParts),
+                };
+                debouncedSave(updated, targetSessionId);
+                return updated;
               });
             }
             if (isAttachedTask) streamAssistantIdRef.current = null;

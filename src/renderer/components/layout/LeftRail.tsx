@@ -3,6 +3,7 @@
 // 复用原 Sidebar 的可拖宽 / 可折叠逻辑(宽度 clamp 走 layout-geometry)。
 import {
   Blocks,
+  CalendarClock,
   FolderOpen,
   GitCompareArrows,
   Github,
@@ -61,6 +62,8 @@ export const LeftRail = ({
   onToggleDiff,
   onBranchSwitched,
   onCloseWorkspace,
+  automationsOpen,
+  onOpenAutomations,
   onOpenSettings,
 }: {
   workspacePath: string;
@@ -82,6 +85,8 @@ export const LeftRail = ({
   onToggleDiff?: () => void;
   onBranchSwitched?: (b: string) => void;
   onCloseWorkspace: () => void;
+  automationsOpen: boolean;
+  onOpenAutomations: () => void;
   onOpenSettings: () => void;
 }) => {
   const { LL } = useI18nContext();
@@ -271,10 +276,32 @@ export const LeftRail = ({
             重挂载并重新列目录(取代旧 Sidebar 在 onSwitched 里的 refresh)。 */}
         <div className="min-h-0 flex-1">
           <div className={cn("h-full", railTab !== "chats" && "hidden")}>
-            <ChatHistoryPanel
-              currentBranch={branchForChip}
-              isGitRepo={isGitRepo}
-            />
+            <div className="flex h-full flex-col">
+              <div className="border-b border-border px-2 pb-2">
+                <button
+                  type="button"
+                  data-automation-launcher="true"
+                  onClick={onOpenAutomations}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs transition-colors",
+                    automationsOpen
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                  aria-pressed={automationsOpen}
+                  title={LL.automations_title()}
+                >
+                  <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{LL.automations_title()}</span>
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <ChatHistoryPanel
+                  currentBranch={branchForChip}
+                  isGitRepo={isGitRepo}
+                />
+              </div>
+            </div>
           </div>
           <div className={cn("h-full", railTab !== "files" && "hidden")}>
             <FileTreePanel

@@ -217,6 +217,7 @@ export const App = () => {
       p: "preview",
       f: "search",
       t: "trash",
+      m: "automations",
       d: "diff",
       w: "web",
       a: "subagent",
@@ -425,6 +426,7 @@ export const App = () => {
     }
   };
   const toggleDiff = () => openDockTab("diff");
+  const openAutomations = () => openDockTab("automations");
 
   if (isRestoring) {
     return (
@@ -503,6 +505,8 @@ export const App = () => {
                   onToggleDiff={toggleDiff}
                   onBranchSwitched={handleBranchSwitched}
                   onCloseWorkspace={() => setWorkspace(null)}
+                  automationsOpen={dockOpen && dockTab === "automations"}
+                  onOpenAutomations={openAutomations}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <main className="relative flex min-w-0 flex-1 overflow-hidden">
@@ -556,12 +560,12 @@ export const App = () => {
                 onSwitchWorkspace={() => setWorkspace(null)}
               />
             </BrowserRouterProvider>
+            <SettingsModal
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              onLocaleChange={setLocale}
+            />
           </ChatSessionProvider>
-          <SettingsModal
-            open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            onLocaleChange={setLocale}
-          />
         </div>
       )}
       <Toaster
