@@ -17,13 +17,16 @@ import {
   CheckCircle2,
   Clipboard,
   Cog,
+  KeyRound,
   Loader2,
+  LogOut,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 
 interface McpServerStatus {
   id: string;
@@ -32,7 +35,28 @@ interface McpServerStatus {
   toolCount: number;
   lastError: string | null;
   lastConnectedAt: string | null;
+  authStatus:
+    | "not_applicable"
+    | "unknown"
+    | "needs_auth"
+    | "authorizing"
+    | "authenticated"
+    | "expired"
+    | "error";
+  authMessage: string | null;
+  authErrorCode:
+    | "authorization_failed"
+    | "callback_error"
+    | "callback_listener_failed"
+    | "callback_timeout"
+    | "connection_failed"
+    | "state_mismatch"
+    | "token_exchange_failed"
+    | null;
+  authUrl: string | null;
 }
+
+type McpAuthType = "auto" | "none" | "oauth";
 
 interface McpServerRow {
   id: string;
@@ -44,6 +68,10 @@ interface McpServerRow {
   cwd: string | null;
   url: string | null;
   headers: Record<string, string>;
+  authType: McpAuthType;
+  oauthScopes: string[];
+  oauthClientId: string | null;
+  oauthClientSecretConfigured: boolean;
   enabled: boolean;
   trusted: boolean;
   createdAt: string;
@@ -61,6 +89,34 @@ interface FormState {
   cwd: string;
   url: string;
   headersText: string;
+  authType: McpAuthType;
+  oauthScopes: string;
+  oauthClientId: string;
+  oauthClientSecret: string;
+  trusted: boolean;
+}
+
+interface OAuthSettingsForm {
+  credentialsStore: "auto" | "database" | "keychain";
+  callbackHost: string;
+  callbackPort: string;
+  callbackPath: string;
+}
+
+interface McpServerPayload {
+  [key: string]: unknown;
+  name: string;
+  transport: "stdio" | "http";
+  command: string | null;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  url: string | null;
+  headers: Record<string, string>;
+  authType: McpAuthType;
+  oauthScopes: string[];
+  oauthClientId: string | null;
+  oauthClientSecret?: string | null;
   trusted: boolean;
 }
 
@@ -73,7 +129,18 @@ const emptyForm = (): FormState => ({
   cwd: "",
   url: "",
   headersText: "",
+  authType: "auto",
+  oauthScopes: "",
+  oauthClientId: "",
+  oauthClientSecret: "",
   trusted: false,
+});
+
+const defaultOAuthSettings = (): OAuthSettingsForm => ({
+  credentialsStore: "auto",
+  callbackHost: "127.0.0.1",
+  callbackPort: "0",
+  callbackPath: "/callback",
 });
 
 const formFromRow = (row: McpServerRow): FormState => ({
@@ -90,6 +157,10 @@ const formFromRow = (row: McpServerRow): FormState => ({
   headersText: Object.entries(row.headers)
     .map(([k, v]) => `${k}: ${v}`)
     .join("\n"),
+  authType: row.authType ?? (row.transport === "http" ? "auto" : "none"),
+  oauthScopes: row.oauthScopes.join(" "),
+  oauthClientId: row.oauthClientId ?? "",
+  oauthClientSecret: "",
   trusted: row.trusted,
 });
 
@@ -149,19 +220,44 @@ const parseArgs = (text: string): string[] => {
   return out;
 };
 
-const formToPayload = (form: FormState) => ({
-  name: form.name.trim(),
-  transport: form.transport,
-  command: form.transport === "stdio" ? form.command.trim() || null : null,
-  args: form.transport === "stdio" ? parseArgs(form.args) : [],
-  env: form.transport === "stdio" ? parseEnvLines(form.envText) : {},
-  cwd: form.transport === "stdio" ? form.cwd.trim() || null : null,
-  url: form.transport === "http" ? form.url.trim() || null : null,
-  headers: form.transport === "http" ? parseHeaderLines(form.headersText) : {},
-  trusted: form.trusted,
-});
+const formToPayload = (form: FormState) => {
+  const payload: McpServerPayload = {
+    name: form.name.trim(),
+    transport: form.transport,
+    command: form.transport === "stdio" ? form.command.trim() || null : null,
+    args: form.transport === "stdio" ? parseArgs(form.args) : [],
+    env: form.transport === "stdio" ? parseEnvLines(form.envText) : {},
+    cwd: form.transport === "stdio" ? form.cwd.trim() || null : null,
+    url: form.transport === "http" ? form.url.trim() || null : null,
+    headers:
+      form.transport === "http" ? parseHeaderLines(form.headersText) : {},
+    authType: form.transport === "http" ? form.authType : "none",
+    oauthScopes:
+      form.transport === "http" && form.authType !== "none"
+        ? parseArgs(form.oauthScopes)
+        : [],
+    oauthClientId:
+      form.transport === "http" && form.authType !== "none"
+        ? form.oauthClientId.trim() || null
+        : null,
+    trusted: form.trusted,
+  };
+  if (form.transport === "http" && form.authType !== "none") {
+    const secret = form.oauthClientSecret.trim();
+    if (secret) payload.oauthClientSecret = secret;
+  } else {
+    payload.oauthClientSecret = null;
+  }
+  return payload;
+};
+
+export const shouldShowClearAuthorization = (row: {
+  authType: McpAuthType;
+  status: Pick<McpServerStatus, "authStatus">;
+}) => row.authType !== "none" && row.status.authStatus === "authenticated";
 
 export const McpConfigPanel = () => {
+  const { LL } = useI18nContext();
   const [rows, setRows] = useState<McpServerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<FormState | null>(null);
@@ -172,6 +268,7 @@ export const McpConfigPanel = () => {
     added: number;
     errors: string[];
   } | null>(null);
+  const [oauthSettingsOpen, setOAuthSettingsOpen] = useState(false);
   const [expandedTools, setExpandedTools] = useState<string | null>(null);
   const [toolsCache, setToolsCache] = useState<
     Record<string, Array<{ name: string; description: string }>>
@@ -212,15 +309,15 @@ export const McpConfigPanel = () => {
   const handleSave = async (form: FormState) => {
     const payload = formToPayload(form);
     if (!payload.name) {
-      alert("Name is required");
+      alert(LL.mcpConfig_nameRequired());
       return;
     }
     if (payload.transport === "stdio" && !payload.command) {
-      alert("Command is required for stdio servers");
+      alert(LL.mcpConfig_commandRequired());
       return;
     }
     if (payload.transport === "http" && !payload.url) {
-      alert("URL is required for HTTP servers");
+      alert(LL.mcpConfig_urlRequired());
       return;
     }
     if (form.id) {
@@ -233,8 +330,14 @@ export const McpConfigPanel = () => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete MCP server "${name}"?`)) return;
+    if (!confirm(LL.mcpConfig_deleteConfirm({ name }))) return;
     await window.filework.mcp.deleteServer(id);
+    void refresh();
+  };
+
+  const handleClearAuthorization = async (id: string, name: string) => {
+    if (!confirm(LL.mcpConfig_clearAuthorizationConfirm({ name }))) return;
+    await window.filework.mcp.clearAuthorization(id);
     void refresh();
   };
 
@@ -281,11 +384,13 @@ export const McpConfigPanel = () => {
           setImportOpen(true);
           setImportResult(null);
         }}
+        onOAuthSettings={() => setOAuthSettingsOpen(true)}
       />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 size={14} className="animate-spin" /> Loading…
+          <Loader2 size={14} className="animate-spin" />{" "}
+          {LL.mcpConfig_loading()}
         </div>
       ) : rows.length === 0 ? (
         <EmptyState />
@@ -301,6 +406,12 @@ export const McpConfigPanel = () => {
               onEdit={() => setEditing(formFromRow(row))}
               onDelete={() => handleDelete(row.id, row.name)}
               onReconnect={() => window.filework.mcp.reconnect(row.id)}
+              onAuthorize={() =>
+                window.filework.mcp.authorize(row.id).then(() => refresh())
+              }
+              onClearAuthorization={() =>
+                handleClearAuthorization(row.id, row.name)
+              }
               onSetEnabled={(v) =>
                 window.filework.mcp.setEnabled(row.id, v).then(() => refresh())
               }
@@ -334,6 +445,10 @@ export const McpConfigPanel = () => {
           }}
         />
       )}
+
+      {oauthSettingsOpen && (
+        <OAuthSettingsModal onClose={() => setOAuthSettingsOpen(false)} />
+      )}
     </div>
   );
 };
@@ -341,43 +456,59 @@ export const McpConfigPanel = () => {
 const Header = ({
   onAdd,
   onImport,
+  onOAuthSettings,
 }: {
   onAdd: () => void;
   onImport: () => void;
-}) => (
-  <div className="flex items-center justify-between">
-    <div>
-      <h3 className="text-sm font-medium text-foreground">MCP Servers</h3>
-      <p className="text-xs text-muted-foreground">
-        Connect tools from MCP-compatible servers (filesystem, github, …).
-      </p>
+  onOAuthSettings: () => void;
+}) => {
+  const { LL } = useI18nContext();
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <h3 className="text-sm font-medium text-foreground">
+          {LL.mcpConfig_title()}
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {LL.mcpConfig_description()}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOAuthSettings}
+          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Cog size={12} /> {LL.mcpConfig_oauthSettings()}
+        </button>
+        <button
+          type="button"
+          onClick={onImport}
+          className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Clipboard size={12} /> {LL.mcpConfig_importJson()}
+        </button>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex items-center gap-1 text-xs text-primary hover:opacity-80"
+        >
+          <Plus size={14} /> {LL.mcpConfig_add()}
+        </button>
+      </div>
     </div>
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onImport}
-        className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <Clipboard size={12} /> Import JSON
-      </button>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="flex items-center gap-1 text-xs text-primary hover:opacity-80"
-      >
-        <Plus size={14} /> Add Server
-      </button>
-    </div>
-  </div>
-);
+  );
+};
 
-const EmptyState = () => (
-  <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-    <Cog size={20} className="mx-auto mb-2 opacity-50" />
-    No MCP servers configured. Add one or import a JSON config from Claude
-    Desktop / Cursor.
-  </div>
-);
+const EmptyState = () => {
+  const { LL } = useI18nContext();
+  return (
+    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+      <Cog size={20} className="mx-auto mb-2 opacity-50" />
+      {LL.mcpConfig_empty()}
+    </div>
+  );
+};
 
 const StatusDot = ({ status }: { status: McpServerStatus }) => {
   if (status.connecting) {
@@ -400,6 +531,8 @@ const ServerCard = ({
   onEdit,
   onDelete,
   onReconnect,
+  onAuthorize,
+  onClearAuthorization,
   onSetEnabled,
   onSetTrusted,
 }: {
@@ -410,16 +543,28 @@ const ServerCard = ({
   onEdit: () => void;
   onDelete: () => void;
   onReconnect: () => void;
+  onAuthorize: () => void;
+  onClearAuthorization: () => void;
   onSetEnabled: (v: boolean) => void;
   onSetTrusted: (v: boolean) => void;
 }) => {
+  const { LL } = useI18nContext();
   const tooltip = useMemo(() => {
+    if (row.status.authStatus === "needs_auth")
+      return LL.mcpConfig_authStatusNeedsAuth();
+    if (row.status.authStatus === "authorizing")
+      return LL.mcpConfig_authStatusAuthorizing();
     if (row.status.connected)
-      return `Connected · ${row.status.toolCount} tools`;
-    if (row.status.connecting) return "Connecting…";
-    if (row.status.lastError) return `Error: ${row.status.lastError}`;
-    return "Disconnected";
-  }, [row.status]);
+      return LL.mcpConfig_statusConnected({ count: row.status.toolCount });
+    if (row.status.connecting) return LL.mcpConfig_statusConnecting();
+    if (row.status.lastError)
+      return LL.mcpConfig_statusError({ message: row.status.lastError });
+    return LL.mcpConfig_statusDisconnected();
+  }, [LL, row.status]);
+  const canAuthorize = row.authType !== "none" && !row.status.connected;
+  const canClearAuthorization = shouldShowClearAuthorization(row);
+  const visibleError =
+    row.status.authMessage ?? row.status.lastError ?? undefined;
 
   return (
     <div className="rounded-lg border border-border bg-muted/40">
@@ -435,40 +580,63 @@ const ServerCard = ({
             <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
               {row.transport}
             </span>
+            {row.authType === "auto" && (
+              <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
+                {LL.mcpConfig_authAuto()}
+              </span>
+            )}
+            {row.authType === "oauth" && (
+              <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
+                {LL.mcpConfig_authOAuth()}
+              </span>
+            )}
             {row.status.connected && (
               <button
                 type="button"
                 onClick={onToggleTools}
                 className="text-[11px] text-muted-foreground hover:text-foreground"
               >
-                {row.status.toolCount} tools
+                {LL.mcpConfig_toolsCount({ count: row.status.toolCount })}
               </button>
             )}
           </div>
           <div className="truncate text-xs text-muted-foreground">
             {row.transport === "stdio"
-              ? `${row.command ?? "(no command)"}${row.args.length ? ` ${row.args.join(" ")}` : ""}`
-              : (row.url ?? "(no url)")}
+              ? `${row.command ?? LL.mcpConfig_noCommand()}${row.args.length ? ` ${row.args.join(" ")}` : ""}`
+              : (row.url ?? LL.mcpConfig_noUrl())}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Toggle
             checked={row.trusted}
-            label="Trusted"
+            label={LL.mcpConfig_trusted()}
             onChange={onSetTrusted}
           />
           <Toggle
             checked={row.enabled}
-            label="Enabled"
+            label={LL.mcpConfig_enabled()}
             onChange={onSetEnabled}
           />
-          <IconBtn title="Reconnect" onClick={onReconnect}>
+          <IconBtn title={LL.mcpConfig_reconnect()} onClick={onReconnect}>
             <RefreshCw size={13} />
           </IconBtn>
-          <IconBtn title="Edit" onClick={onEdit}>
+          {canAuthorize && (
+            <IconBtn title={LL.mcpConfig_authorize()} onClick={onAuthorize}>
+              <KeyRound size={13} />
+            </IconBtn>
+          )}
+          {canClearAuthorization && (
+            <IconBtn
+              title={LL.mcpConfig_clearAuthorization()}
+              onClick={onClearAuthorization}
+            >
+              <LogOut size={13} />
+            </IconBtn>
+          )}
+          <IconBtn title={LL.mcpConfig_edit()} onClick={onEdit}>
             <Pencil size={13} />
           </IconBtn>
-          <IconBtn title="Delete" danger onClick={onDelete}>
+          <IconBtn title={LL.mcpConfig_delete()} danger onClick={onDelete}>
             <Trash2 size={13} />
           </IconBtn>
         </div>
@@ -477,10 +645,12 @@ const ServerCard = ({
       {expanded && (
         <div className="border-t border-border px-3 py-2">
           {!tools ? (
-            <div className="text-xs text-muted-foreground">Loading…</div>
+            <div className="text-xs text-muted-foreground">
+              {LL.mcpConfig_loading()}
+            </div>
           ) : tools.length === 0 ? (
             <div className="text-xs text-muted-foreground">
-              No tools exposed by this server.
+              {LL.mcpConfig_noTools()}
             </div>
           ) : (
             <ul className="space-y-1">
@@ -499,11 +669,183 @@ const ServerCard = ({
         </div>
       )}
 
-      {row.status.lastError && !row.status.connected && (
-        <div className="border-t border-border px-3 py-1.5 text-[11px] text-destructive">
-          {row.status.lastError}
+      {visibleError && !row.status.connected && (
+        <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-1.5 text-[11px] text-destructive">
+          <span className="min-w-0 flex-1">
+            <span>{visibleError}</span>
+            {row.status.authErrorCode && (
+              <span className="ml-2 whitespace-nowrap text-destructive/70">
+                {LL.mcpConfig_authErrorCode({
+                  code: row.status.authErrorCode,
+                })}
+              </span>
+            )}
+          </span>
+          {canAuthorize && (
+            <button
+              type="button"
+              onClick={onAuthorize}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/15"
+            >
+              <KeyRound size={12} />
+              {LL.mcpConfig_authorize()}
+            </button>
+          )}
         </div>
       )}
+    </div>
+  );
+};
+
+const OAuthSettingsModal = ({ onClose }: { onClose: () => void }) => {
+  const { LL } = useI18nContext();
+  const [form, setForm] = useState<OAuthSettingsForm>(defaultOAuthSettings);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [credentialsStore, callbackHost, callbackPort, callbackPath] =
+        await Promise.all([
+          window.filework.getSetting("mcp.oauth.credentialsStore"),
+          window.filework.getSetting("mcp.oauth.callbackHost"),
+          window.filework.getSetting("mcp.oauth.callbackPort"),
+          window.filework.getSetting("mcp.oauth.callbackPath"),
+        ]);
+      if (cancelled) return;
+      setForm({
+        credentialsStore:
+          credentialsStore === "database" || credentialsStore === "keychain"
+            ? credentialsStore
+            : "auto",
+        callbackHost: callbackHost || "127.0.0.1",
+        callbackPort: callbackPort || "0",
+        callbackPath: callbackPath || "/callback",
+      });
+      setBusy(false);
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async () => {
+    await Promise.all([
+      window.filework.setSetting(
+        "mcp.oauth.credentialsStore",
+        form.credentialsStore,
+      ),
+      window.filework.setSetting("mcp.oauth.callbackHost", form.callbackHost),
+      window.filework.setSetting("mcp.oauth.callbackPort", form.callbackPort),
+      window.filework.setSetting("mcp.oauth.callbackPath", form.callbackPath),
+    ]);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-110 flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50 cursor-default"
+        onClick={onClose}
+        aria-label={LL.mcpConfig_close()}
+      />
+      <div className="relative w-[460px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
+        <h3 className="mb-3 text-sm font-medium text-foreground">
+          {LL.mcpConfig_oauthSettingsTitle()}
+        </h3>
+        {busy ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 size={13} className="animate-spin" />
+            {LL.mcpConfig_loading()}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Field label={LL.mcpConfig_oauthCredentialsStore()}>
+              <select
+                value={form.credentialsStore}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    credentialsStore: e.target
+                      .value as OAuthSettingsForm["credentialsStore"],
+                  })
+                }
+                className="mcp-input"
+              >
+                <option value="auto">{LL.mcpConfig_oauthStoreAuto()}</option>
+                <option value="keychain">
+                  {LL.mcpConfig_oauthStoreKeychain()}
+                </option>
+                <option value="database">
+                  {LL.mcpConfig_oauthStoreDatabase()}
+                </option>
+              </select>
+            </Field>
+            <Field label={LL.mcpConfig_oauthCallbackHost()}>
+              <input
+                value={form.callbackHost}
+                onChange={(e) =>
+                  setForm({ ...form, callbackHost: e.target.value })
+                }
+                className="mcp-input"
+                placeholder="127.0.0.1"
+              />
+            </Field>
+            <Field label={LL.mcpConfig_oauthCallbackPort()}>
+              <input
+                value={form.callbackPort}
+                onChange={(e) =>
+                  setForm({ ...form, callbackPort: e.target.value })
+                }
+                className="mcp-input"
+                inputMode="numeric"
+                placeholder="0"
+              />
+            </Field>
+            <Field label={LL.mcpConfig_oauthCallbackPath()}>
+              <input
+                value={form.callbackPath}
+                onChange={(e) =>
+                  setForm({ ...form, callbackPath: e.target.value })
+                }
+                className="mcp-input"
+                placeholder="/callback"
+              />
+            </Field>
+          </div>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {LL.mcpConfig_cancel()}
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={busy}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {LL.mcpConfig_save()}
+          </button>
+        </div>
+        <style>{`
+        .mcp-input {
+          width: 100%;
+          padding: 6px 8px;
+          font-size: 12px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: var(--background);
+          color: var(--foreground);
+        }
+        .mcp-input:focus { outline: 1px solid var(--primary); }
+      `}</style>
+      </div>
     </div>
   );
 };
@@ -561,131 +903,202 @@ const EditModal = ({
   onChange: (f: FormState) => void;
   onSave: () => void;
   onClose: () => void;
-}) => (
-  <div className="fixed inset-0 z-110 flex items-center justify-center">
-    <button
-      type="button"
-      className="absolute inset-0 bg-black/50 cursor-default"
-      onClick={onClose}
-      aria-label="Close"
-    />
-    <div className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
-      <h3 className="mb-3 text-sm font-medium text-foreground">
-        {form.id ? "Edit MCP Server" : "Add MCP Server"}
-      </h3>
-      <div className="space-y-3">
-        <Field label="Name">
-          <input
-            value={form.name}
-            onChange={(e) => onChange({ ...form, name: e.target.value })}
-            className="mcp-input"
-            placeholder="filesystem"
-          />
-        </Field>
-        <Field label="Transport">
-          <div className="flex gap-2">
-            {(["stdio", "http"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => onChange({ ...form, transport: t })}
-                className={`flex-1 rounded-md border px-3 py-1.5 text-xs ${
-                  form.transport === t
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </Field>
+}) => {
+  const { LL } = useI18nContext();
+  return (
+    <div className="fixed inset-0 z-110 flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50 cursor-default"
+        onClick={onClose}
+        aria-label={LL.mcpConfig_close()}
+      />
+      <div className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
+        <h3 className="mb-3 text-sm font-medium text-foreground">
+          {form.id ? LL.mcpConfig_editTitle() : LL.mcpConfig_addTitle()}
+        </h3>
+        <div className="space-y-3">
+          <Field label={LL.mcpConfig_name()}>
+            <input
+              value={form.name}
+              onChange={(e) => onChange({ ...form, name: e.target.value })}
+              className="mcp-input"
+              placeholder="filesystem"
+            />
+          </Field>
+          <Field label={LL.mcpConfig_transport()}>
+            <div className="flex gap-2">
+              {(["stdio", "http"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => onChange({ ...form, transport: t })}
+                  className={`flex-1 rounded-md border px-3 py-1.5 text-xs ${
+                    form.transport === t
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </Field>
 
-        {form.transport === "stdio" ? (
-          <>
-            <Field label="Command">
-              <input
-                value={form.command}
-                onChange={(e) => onChange({ ...form, command: e.target.value })}
-                className="mcp-input"
-                placeholder="npx"
-              />
-            </Field>
-            <Field label="Args">
-              <input
-                value={form.args}
-                onChange={(e) => onChange({ ...form, args: e.target.value })}
-                className="mcp-input"
-                placeholder="-y @modelcontextprotocol/server-filesystem /tmp"
-              />
-            </Field>
-            <Field label="Env (KEY=VAL per line, supports ${env:VAR})">
-              <textarea
-                value={form.envText}
-                onChange={(e) => onChange({ ...form, envText: e.target.value })}
-                className="mcp-input min-h-[64px] font-mono text-[11px]"
-                placeholder="API_KEY=${env:OPENAI_API_KEY}"
-              />
-            </Field>
-            <Field label="cwd (optional)">
-              <input
-                value={form.cwd}
-                onChange={(e) => onChange({ ...form, cwd: e.target.value })}
-                className="mcp-input"
-                placeholder="/path/to/dir"
-              />
-            </Field>
-          </>
-        ) : (
-          <>
-            <Field label="URL">
-              <input
-                value={form.url}
-                onChange={(e) => onChange({ ...form, url: e.target.value })}
-                className="mcp-input"
-                placeholder="https://example.com/mcp"
-              />
-            </Field>
-            <Field label="Headers (Name: value per line)">
-              <textarea
-                value={form.headersText}
-                onChange={(e) =>
-                  onChange({ ...form, headersText: e.target.value })
-                }
-                className="mcp-input min-h-[64px] font-mono text-[11px]"
-                placeholder="Authorization: Bearer ${env:MY_TOKEN}"
-              />
-            </Field>
-          </>
-        )}
+          {form.transport === "stdio" ? (
+            <>
+              <Field label={LL.mcpConfig_command()}>
+                <input
+                  value={form.command}
+                  onChange={(e) =>
+                    onChange({ ...form, command: e.target.value })
+                  }
+                  className="mcp-input"
+                  placeholder="npx"
+                />
+              </Field>
+              <Field label={LL.mcpConfig_args()}>
+                <input
+                  value={form.args}
+                  onChange={(e) => onChange({ ...form, args: e.target.value })}
+                  className="mcp-input"
+                  placeholder="-y @modelcontextprotocol/server-filesystem /tmp"
+                />
+              </Field>
+              <Field label={LL.mcpConfig_env()}>
+                <textarea
+                  value={form.envText}
+                  onChange={(e) =>
+                    onChange({ ...form, envText: e.target.value })
+                  }
+                  className="mcp-input min-h-[64px] font-mono text-[11px]"
+                  placeholder="API_KEY=${env:OPENAI_API_KEY}"
+                />
+              </Field>
+              <Field label={LL.mcpConfig_cwd()}>
+                <input
+                  value={form.cwd}
+                  onChange={(e) => onChange({ ...form, cwd: e.target.value })}
+                  className="mcp-input"
+                  placeholder="/path/to/dir"
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label={LL.mcpConfig_url()}>
+                <input
+                  value={form.url}
+                  onChange={(e) => onChange({ ...form, url: e.target.value })}
+                  className="mcp-input"
+                  placeholder="https://example.com/mcp"
+                />
+              </Field>
+              <Field label={LL.mcpConfig_auth()}>
+                <div className="flex gap-2">
+                  {(["auto", "none", "oauth"] as const).map((authType) => (
+                    <button
+                      key={authType}
+                      type="button"
+                      onClick={() => onChange({ ...form, authType })}
+                      className={`flex-1 rounded-md border px-3 py-1.5 text-xs ${
+                        form.authType === authType
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      {authType === "auto"
+                        ? LL.mcpConfig_authAuto()
+                        : authType === "oauth"
+                          ? LL.mcpConfig_authOAuth()
+                          : LL.mcpConfig_authNone()}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label={LL.mcpConfig_headers()}>
+                <textarea
+                  value={form.headersText}
+                  onChange={(e) =>
+                    onChange({ ...form, headersText: e.target.value })
+                  }
+                  className="mcp-input min-h-[64px] font-mono text-[11px]"
+                  placeholder="Authorization: Bearer ${env:MY_TOKEN}"
+                />
+              </Field>
+              {form.authType !== "none" && (
+                <details className="rounded-md border border-border px-3 py-2">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                    {LL.mcpConfig_oauthAdvanced()}
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <Field label={LL.mcpConfig_oauthScopes()}>
+                      <input
+                        value={form.oauthScopes}
+                        onChange={(e) =>
+                          onChange({ ...form, oauthScopes: e.target.value })
+                        }
+                        className="mcp-input"
+                        placeholder="gmail.readonly"
+                      />
+                    </Field>
+                    <Field label={LL.mcpConfig_oauthClientId()}>
+                      <input
+                        value={form.oauthClientId}
+                        onChange={(e) =>
+                          onChange({ ...form, oauthClientId: e.target.value })
+                        }
+                        className="mcp-input"
+                        placeholder="client-id"
+                      />
+                    </Field>
+                    <Field label={LL.mcpConfig_oauthClientSecret()}>
+                      <input
+                        value={form.oauthClientSecret}
+                        onChange={(e) =>
+                          onChange({
+                            ...form,
+                            oauthClientSecret: e.target.value,
+                          })
+                        }
+                        className="mcp-input"
+                        type="password"
+                        placeholder={LL.mcpConfig_keepExistingSecret()}
+                      />
+                    </Field>
+                  </div>
+                </details>
+              )}
+            </>
+          )}
 
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={form.trusted}
-            onChange={(e) => onChange({ ...form, trusted: e.target.checked })}
-            className="size-3 accent-primary"
-          />
-          Trusted (skip per-call approval)
-        </label>
-      </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onSave}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-        >
-          Save
-        </button>
-      </div>
-      <style>{`
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={form.trusted}
+              onChange={(e) => onChange({ ...form, trusted: e.target.checked })}
+              className="size-3 accent-primary"
+            />
+            {LL.mcpConfig_trustedHint()}
+          </label>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {LL.mcpConfig_cancel()}
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+          >
+            {LL.mcpConfig_save()}
+          </button>
+        </div>
+        <style>{`
         .mcp-input {
           width: 100%;
           padding: 6px 8px;
@@ -697,9 +1110,10 @@ const EditModal = ({
         }
         .mcp-input:focus { outline: 1px solid var(--primary); }
       `}</style>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ImportModal = ({
   text,
@@ -715,62 +1129,64 @@ const ImportModal = ({
   result: { added: number; errors: string[] } | null;
   onImport: () => void;
   onClose: () => void;
-}) => (
-  <div className="fixed inset-0 z-110 flex items-center justify-center">
-    <button
-      type="button"
-      className="absolute inset-0 bg-black/50 cursor-default"
-      onClick={onClose}
-      aria-label="Close"
-    />
-    <div className="relative w-[560px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
-      <h3 className="mb-2 text-sm font-medium text-foreground">
-        Import MCP servers from JSON
-      </h3>
-      <p className="mb-3 text-xs text-muted-foreground">
-        Paste a Claude Desktop / Cursor / VS Code config —{" "}
-        <code className="text-foreground">{`{ "mcpServers": { ... } }`}</code> —
-        or a bare object keyed by server name.
-      </p>
-      <textarea
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
-        rows={10}
-        className="w-full rounded-md border border-border bg-background p-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        placeholder='{ "mcpServers": { "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] } } }'
+}) => {
+  const { LL } = useI18nContext();
+  return (
+    <div className="fixed inset-0 z-110 flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50 cursor-default"
+        onClick={onClose}
+        aria-label={LL.mcpConfig_close()}
       />
-      {result && (
-        <div className="mt-2 space-y-1 text-xs">
-          <div className="text-emerald-500">
-            Added {result.added} server{result.added === 1 ? "" : "s"}
-          </div>
-          {result.errors.map((e) => (
-            <div key={e} className="text-destructive">
-              {e}
+      <div className="relative w-[560px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
+        <h3 className="mb-2 text-sm font-medium text-foreground">
+          {LL.mcpConfig_importTitle()}
+        </h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {LL.mcpConfig_importDescription()}{" "}
+          <code className="text-foreground">{`{ "mcpServers": { ... } }`}</code>
+        </p>
+        <textarea
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          rows={10}
+          className="w-full rounded-md border border-border bg-background p-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder='{ "mcpServers": { "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] } } }'
+        />
+        {result && (
+          <div className="mt-2 space-y-1 text-xs">
+            <div className="text-emerald-500">
+              {LL.mcpConfig_importAdded({ count: result.added })}
             </div>
-          ))}
+            {result.errors.map((e) => (
+              <div key={e} className="text-destructive">
+                {e}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {LL.mcpConfig_importClose()}
+          </button>
+          <button
+            type="button"
+            onClick={onImport}
+            disabled={busy || !text.trim()}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? LL.mcpConfig_importing() : LL.mcpConfig_import()}
+          </button>
         </div>
-      )}
-      <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          Close
-        </button>
-        <button
-          type="button"
-          onClick={onImport}
-          disabled={busy || !text.trim()}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? "Importing…" : "Import"}
-        </button>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Field = ({
   label,

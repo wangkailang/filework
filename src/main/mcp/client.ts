@@ -17,13 +17,43 @@ import type {
   Tool as McpToolDescriptor,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import {
+  createMcpOAuthProvider,
+  type McpOAuthSessionStore,
+} from "./oauth-provider";
 import type { McpServer } from "./types";
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
 
 export interface McpClientOptions {
   /** 每次成功刷新后,以最新的工具列表回调。 */
   onToolsChanged?: (tools: McpToolDescriptor[]) => void;
   /** 当传输层报告致命错误或远端关闭时通知。 */
   onTransportClose?: (err: Error | null) => void;
+  oauthSessionStore?: McpOAuthSessionStore;
+  openExternal?: (url: string) => void | Promise<void>;
+  connectTimeoutMs?: number;
+  oauthRedirectUrl?: string;
+}
+
+export class McpAuthorizationRequiredError extends Error {
+  constructor(serverName: string) {
+    super(`MCP server "${serverName}" requires OAuth authorization`);
+    this.name = "McpAuthorizationRequiredError";
+  }
+}
+
+export const shouldUseMcpOAuthProvider = (
+  config: Pick<McpServer, "transport" | "authType">,
+): boolean => config.transport === "http" && config.authType !== "none";
+
+class McpConnectionTimeoutError extends Error {
+  constructor(serverName: string, timeoutMs: number) {
+    super(
+      `MCP server "${serverName}" connection timed out after ${timeoutMs}ms`,
+    );
+    this.name = "McpConnectionTimeoutError";
+  }
 }
 
 export class McpClient {
@@ -61,7 +91,24 @@ export class McpClient {
       this.options.onTransportClose?.(err);
     };
 
-    await client.connect(transport);
+    const timeoutMs =
+      this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    try {
+      await withTimeout(
+        client.connect(transport),
+        timeoutMs,
+        new McpConnectionTimeoutError(this.config.name, timeoutMs),
+        () => closeTransport(transport),
+      );
+    } catch (err) {
+      if (
+        shouldUseMcpOAuthProvider(this.config) &&
+        this.options.oauthSessionStore?.get().authorizationUrl
+      ) {
+        throw new McpAuthorizationRequiredError(this.config.name);
+      }
+      throw err;
+    }
     this.client = client;
     await this.refreshTools();
   }
@@ -128,11 +175,58 @@ export class McpClient {
       );
     }
     const headers = expandEnvRecord(this.config.headers);
+    const authProvider =
+      shouldUseMcpOAuthProvider(this.config) && this.options.oauthSessionStore
+        ? createMcpOAuthProvider({
+            serverId: this.config.id,
+            serverName: this.config.name,
+            serverUrl: this.config.url,
+            redirectUrl:
+              this.options.oauthRedirectUrl ?? "http://127.0.0.1/callback",
+            scopes: this.config.oauthScopes,
+            oauthClientId: this.config.oauthClientId,
+            oauthClientSecret: this.config.oauthClientSecret,
+            sessionStore: this.options.oauthSessionStore,
+            interactive: false,
+            openExternal: this.options.openExternal ?? (() => undefined),
+          })
+        : undefined;
     return new StreamableHTTPClientTransport(new URL(this.config.url), {
+      authProvider,
       requestInit: { headers },
     });
   }
 }
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: Error,
+  onTimeout: () => void | Promise<void>,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          reject(timeoutError);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (timedOut) await onTimeout();
+  }
+};
+
+const closeTransport = (
+  transport: StdioClientTransport | StreamableHTTPClientTransport,
+): void => {
+  void (transport as { close?: () => Promise<void> | void }).close?.();
+};
 
 /**
  * 将 `${env:VAR}` 占位符替换为 `process.env` 中的值。

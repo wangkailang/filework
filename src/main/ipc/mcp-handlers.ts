@@ -14,7 +14,7 @@
 import { ipcMain } from "electron";
 
 import { mcpManager } from "../mcp/manager";
-import type { McpServer, McpServerInput, McpTransport } from "../mcp/types";
+import type { McpAuthType, McpServerInput, McpTransport } from "../mcp/types";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -34,6 +34,25 @@ const asStringRecord = (v: unknown): Record<string, string> => {
   return out;
 };
 
+const pickString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const oauthConfig = (rec: JsonRecord) => asRecord(rec.oauth) ?? {};
+
+const parseAuthType = (
+  rec: JsonRecord,
+  transport: McpTransport,
+): McpAuthType => {
+  if (transport !== "http") return "none";
+  const raw = rec.authType ?? rec.auth;
+  if (raw === "auto" || raw === "none" || raw === "oauth") return raw;
+  return "auto";
+};
+
 const sanitizeInput = (raw: unknown): McpServerInput => {
   const rec = asRecord(raw) ?? {};
   const name = typeof rec.name === "string" ? rec.name.trim() : "";
@@ -42,6 +61,7 @@ const sanitizeInput = (raw: unknown): McpServerInput => {
     rec.transport === "http" ? ("http" as const) : ("stdio" as const);
   const trusted = rec.trusted === true;
   const enabled = rec.enabled !== false;
+  const oauth = oauthConfig(rec);
   return {
     name,
     transport,
@@ -51,6 +71,18 @@ const sanitizeInput = (raw: unknown): McpServerInput => {
     cwd: typeof rec.cwd === "string" ? rec.cwd : null,
     url: typeof rec.url === "string" ? rec.url : null,
     headers: asStringRecord(rec.headers),
+    authType: parseAuthType(rec, transport),
+    oauthScopes: asStringArray(rec.oauthScopes ?? rec.scopes),
+    oauthClientId: pickString(
+      rec.oauthClientId,
+      oauth.client_id,
+      oauth.clientId,
+    ),
+    oauthClientSecret: pickString(
+      rec.oauthClientSecret,
+      oauth.client_secret,
+      oauth.clientSecret,
+    ),
     enabled,
     trusted,
   };
@@ -72,6 +104,7 @@ const parseImportJson = (raw: unknown): McpServerInput[] => {
     if (!entry) continue;
     const transport: McpTransport =
       typeof entry.url === "string" ? "http" : "stdio";
+    const oauth = oauthConfig(entry);
     out.push({
       name,
       transport,
@@ -81,6 +114,18 @@ const parseImportJson = (raw: unknown): McpServerInput[] => {
       cwd: typeof entry.cwd === "string" ? entry.cwd : null,
       url: typeof entry.url === "string" ? entry.url : null,
       headers: asStringRecord(entry.headers),
+      authType: parseAuthType(entry, transport),
+      oauthScopes: asStringArray(entry.oauthScopes ?? entry.scopes),
+      oauthClientId: pickString(
+        entry.oauthClientId,
+        oauth.client_id,
+        oauth.clientId,
+      ),
+      oauthClientSecret: pickString(
+        entry.oauthClientSecret,
+        oauth.client_secret,
+        oauth.clientSecret,
+      ),
       enabled: entry.enabled !== false,
       trusted: entry.trusted === true,
     });
@@ -88,18 +133,25 @@ const parseImportJson = (raw: unknown): McpServerInput[] => {
   return out;
 };
 
+const toPublicMcpServer = <T extends { oauthClientSecret?: string | null }>(
+  server: T,
+): Omit<T, "oauthClientSecret"> & { oauthClientSecretConfigured: boolean } => {
+  const { oauthClientSecret, ...rest } = server;
+  return {
+    ...rest,
+    oauthClientSecretConfigured: Boolean(oauthClientSecret),
+  };
+};
+
 export const registerMcpHandlers = (): void => {
   ipcMain.handle("mcp:listServers", async () =>
-    mcpManager.listServersWithStatus(),
+    mcpManager.listServersWithStatus().map(toPublicMcpServer),
   );
 
-  ipcMain.handle(
-    "mcp:addServer",
-    async (_event, payload: unknown): Promise<McpServer> => {
-      const input = sanitizeInput(payload);
-      return mcpManager.addServer(input);
-    },
-  );
+  ipcMain.handle("mcp:addServer", async (_event, payload: unknown) => {
+    const input = sanitizeInput(payload);
+    return toPublicMcpServer(await mcpManager.addServer(input));
+  });
 
   ipcMain.handle(
     "mcp:updateServer",
@@ -125,9 +177,38 @@ export const registerMcpHandlers = (): void => {
         partial.url = typeof updates.url === "string" ? updates.url : null;
       if ("headers" in updates)
         partial.headers = asStringRecord(updates.headers);
+      if ("authType" in updates || "auth" in updates) {
+        const transport =
+          updates.transport === "stdio" || updates.transport === "http"
+            ? updates.transport
+            : "http";
+        partial.authType = parseAuthType(updates, transport);
+      }
+      if ("oauthScopes" in updates || "scopes" in updates) {
+        partial.oauthScopes = asStringArray(
+          updates.oauthScopes ?? updates.scopes,
+        );
+      }
+      if ("oauthClientId" in updates || "oauth" in updates) {
+        const oauth = oauthConfig(updates);
+        partial.oauthClientId = pickString(
+          updates.oauthClientId,
+          oauth.client_id,
+          oauth.clientId,
+        );
+      }
+      if ("oauthClientSecret" in updates || "oauth" in updates) {
+        const oauth = oauthConfig(updates);
+        partial.oauthClientSecret = pickString(
+          updates.oauthClientSecret,
+          oauth.client_secret,
+          oauth.clientSecret,
+        );
+      }
       if ("enabled" in updates) partial.enabled = updates.enabled === true;
       if ("trusted" in updates) partial.trusted = updates.trusted === true;
-      return mcpManager.updateServer(payload.id, partial);
+      const updated = await mcpManager.updateServer(payload.id, partial);
+      return updated ? toPublicMcpServer(updated) : null;
     },
   );
 
@@ -163,6 +244,19 @@ export const registerMcpHandlers = (): void => {
     await mcpManager.reconnect(payload.id);
     return true;
   });
+
+  ipcMain.handle("mcp:authorize", async (_event, payload: { id: string }) => {
+    if (!payload?.id) throw new Error("id is required");
+    return mcpManager.authorizeServer(payload.id);
+  });
+
+  ipcMain.handle(
+    "mcp:clearAuthorization",
+    async (_event, payload: { id: string }) => {
+      if (!payload?.id) throw new Error("id is required");
+      return mcpManager.clearAuthorization(payload.id);
+    },
+  );
 
   ipcMain.handle("mcp:listTools", async (_event, payload: { id: string }) => {
     if (!payload?.id) return [];

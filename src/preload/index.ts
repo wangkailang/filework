@@ -1230,6 +1230,10 @@ const api = {
       cwd?: string | null;
       url?: string | null;
       headers?: Record<string, string>;
+      authType?: "auto" | "none" | "oauth";
+      oauthScopes?: string[];
+      oauthClientId?: string | null;
+      oauthClientSecret?: string | null;
       enabled?: boolean;
       trusted?: boolean;
     }) => ipcRenderer.invoke("mcp:addServer", payload),
@@ -1242,6 +1246,9 @@ const api = {
     setTrusted: (id: string, trusted: boolean) =>
       ipcRenderer.invoke("mcp:setTrusted", { id, trusted }),
     reconnect: (id: string) => ipcRenderer.invoke("mcp:reconnect", { id }),
+    authorize: (id: string) => ipcRenderer.invoke("mcp:authorize", { id }),
+    clearAuthorization: (id: string) =>
+      ipcRenderer.invoke("mcp:clearAuthorization", { id }),
     listTools: (id: string) => ipcRenderer.invoke("mcp:listTools", { id }),
     importJson: (json: string) =>
       ipcRenderer.invoke("mcp:importJson", { json }),
@@ -1254,6 +1261,10 @@ const api = {
       cwd?: string | null;
       url?: string | null;
       headers?: Record<string, string>;
+      authType?: "auto" | "none" | "oauth";
+      oauthScopes?: string[];
+      oauthClientId?: string | null;
+      oauthClientSecret?: string | null;
     }) => ipcRenderer.invoke("mcp:testConnection", payload),
     onStatusChanged: (
       handler: (payload: { id: string; status: unknown }) => void,

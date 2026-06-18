@@ -6,7 +6,14 @@ import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { app } from "electron";
 import type { CredentialKind } from "../../shared/credentials";
-import { decrypt, encrypt } from "./crypto";
+import {
+  decrypt,
+  decryptWithKeychain,
+  encrypt,
+  encryptWithKeychain,
+  isKeychainEncryptedValue,
+  isKeychainEncryptionAvailable,
+} from "./crypto";
 import * as schema from "./schema";
 
 export type { CredentialKind };
@@ -131,9 +138,18 @@ export const initDatabase = async () => {
       cwd TEXT,
       url TEXT,
       headers TEXT,
+      auth_type TEXT NOT NULL DEFAULT 'auto' CHECK(auth_type IN ('auto','none','oauth')),
+      oauth_scopes TEXT,
+      oauth_client_id TEXT,
+      oauth_client_secret TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       trusted INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mcp_oauth_sessions (
+      server_id TEXT PRIMARY KEY,
+      encrypted_session TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS skill_trust (
@@ -194,6 +210,84 @@ export const initDatabase = async () => {
       // 至少是可观测的。
       console.error(
         "[db] failed to widen credentials.kind CHECK; existing creds remain usable, new tavily/firecrawl kinds will fail:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  // 迁移:MCP HTTP OAuth 认证字段。SQLite 的 CREATE TABLE IF NOT
+  // EXISTS 不会补列,老库需要显式 ALTER。
+  const mcpColumns = sqlite.pragma("table_info(mcp_servers)") as {
+    name: string;
+  }[];
+  const hasMcpColumn = (name: string) =>
+    mcpColumns.some((c) => c.name === name);
+  if (!hasMcpColumn("auth_type")) {
+    sqlite.exec(
+      "ALTER TABLE mcp_servers ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'none' CHECK(auth_type IN ('auto','none','oauth'))",
+    );
+  }
+  if (!hasMcpColumn("oauth_scopes")) {
+    sqlite.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_scopes TEXT");
+  }
+  if (!hasMcpColumn("oauth_client_id")) {
+    sqlite.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
+  }
+  if (!hasMcpColumn("oauth_client_secret")) {
+    sqlite.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_secret TEXT");
+  }
+  const mcpServersSql = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='mcp_servers'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (mcpServersSql && !mcpServersSql.includes("'auto'")) {
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE mcp_servers_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            transport TEXT NOT NULL CHECK(transport IN ('stdio','http')),
+            command TEXT,
+            args TEXT,
+            env TEXT,
+            cwd TEXT,
+            url TEXT,
+            headers TEXT,
+            auth_type TEXT NOT NULL DEFAULT 'auto' CHECK(auth_type IN ('auto','none','oauth')),
+            oauth_scopes TEXT,
+            oauth_client_id TEXT,
+            oauth_client_secret TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            trusted INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO mcp_servers_new (
+            id, name, transport, command, args, env, cwd, url, headers,
+            auth_type, oauth_scopes, oauth_client_id, oauth_client_secret,
+            enabled, trusted, created_at, updated_at
+          )
+            SELECT
+              id, name, transport, command, args, env, cwd, url, headers,
+              CASE
+                WHEN auth_type IN ('none','oauth') THEN auth_type
+                ELSE 'none'
+              END,
+              oauth_scopes, oauth_client_id, oauth_client_secret,
+              enabled, trusted, created_at, updated_at
+            FROM mcp_servers;
+          DROP TABLE mcp_servers;
+          ALTER TABLE mcp_servers_new RENAME TO mcp_servers;
+        `);
+      })();
+      console.log("[db] widened mcp_servers.auth_type CHECK to include auto");
+    } catch (err) {
+      console.error(
+        "[db] failed to widen mcp_servers.auth_type CHECK; existing MCP servers remain usable, new auto auth rows will fail:",
         err instanceof Error ? err.message : err,
       );
     }
@@ -1187,6 +1281,18 @@ export const listMediaJobsBySession = (sessionId: string): MediaJob[] => {
 // ============================================================================
 
 export type McpTransport = "stdio" | "http";
+export type McpAuthType = "auto" | "none" | "oauth";
+
+export interface McpOAuthSession {
+  clientInformation?: unknown;
+  tokens?: unknown;
+  codeVerifier?: string;
+  discoveryState?: unknown;
+  authorizationState?: string;
+  authorizationUrl?: string;
+}
+
+export type McpOAuthSessionCredentialsStore = "database" | "keychain";
 
 export interface McpServer {
   id: string;
@@ -1198,6 +1304,10 @@ export interface McpServer {
   cwd: string | null;
   url: string | null;
   headers: Record<string, string>;
+  authType: McpAuthType;
+  oauthScopes: string[];
+  oauthClientId: string | null;
+  oauthClientSecret: string | null;
   enabled: boolean;
   trusted: boolean;
   createdAt: string;
@@ -1229,6 +1339,18 @@ const parseJsonRecord = (raw: string | null): Record<string, string> => {
   }
 };
 
+const parseMcpAuthType = (
+  transport: McpTransport,
+  value: string | null,
+): McpAuthType => {
+  if (transport === "stdio") return "none";
+  if (value === "auto" || value === "none" || value === "oauth") return value;
+  return "auto";
+};
+
+const defaultMcpAuthType = (transport: McpTransport): McpAuthType =>
+  transport === "http" ? "auto" : "none";
+
 const mapMcpRow = (row: typeof schema.mcpServers.$inferSelect): McpServer => ({
   id: row.id,
   name: row.name,
@@ -1239,6 +1361,12 @@ const mapMcpRow = (row: typeof schema.mcpServers.$inferSelect): McpServer => ({
   cwd: row.cwd,
   url: row.url,
   headers: parseJsonRecord(row.headers),
+  authType: parseMcpAuthType(row.transport, row.authType),
+  oauthScopes: parseJsonArray(row.oauthScopes),
+  oauthClientId: row.oauthClientId,
+  oauthClientSecret: row.oauthClientSecret
+    ? decrypt(row.oauthClientSecret)
+    : null,
   enabled: row.enabled,
   trusted: row.trusted,
   createdAt: row.createdAt,
@@ -1266,6 +1394,10 @@ export interface McpServerInput {
   cwd?: string | null;
   url?: string | null;
   headers?: Record<string, string>;
+  authType?: McpAuthType;
+  oauthScopes?: string[];
+  oauthClientId?: string | null;
+  oauthClientSecret?: string | null;
   enabled?: boolean;
   trusted?: boolean;
 }
@@ -1283,6 +1415,15 @@ export const createMcpServer = (input: McpServerInput): McpServer => {
     cwd: input.cwd ?? null,
     url: input.url ?? null,
     headers: input.headers ? JSON.stringify(input.headers) : null,
+    authType:
+      input.transport === "http"
+        ? (input.authType ?? defaultMcpAuthType(input.transport))
+        : "none",
+    oauthScopes: input.oauthScopes ? JSON.stringify(input.oauthScopes) : null,
+    oauthClientId: input.oauthClientId ?? null,
+    oauthClientSecret: input.oauthClientSecret
+      ? encrypt(input.oauthClientSecret)
+      : null,
     enabled: input.enabled ?? true,
     trusted: input.trusted ?? false,
     createdAt: now,
@@ -1306,6 +1447,17 @@ export const updateMcpServer = (
   if (updates.url !== undefined) mapped.url = updates.url;
   if (updates.headers !== undefined)
     mapped.headers = JSON.stringify(updates.headers);
+  if (updates.authType !== undefined) mapped.authType = updates.authType;
+  if (updates.transport === "stdio" && updates.authType === undefined)
+    mapped.authType = "none";
+  if (updates.oauthScopes !== undefined)
+    mapped.oauthScopes = JSON.stringify(updates.oauthScopes);
+  if (updates.oauthClientId !== undefined)
+    mapped.oauthClientId = updates.oauthClientId;
+  if (updates.oauthClientSecret !== undefined)
+    mapped.oauthClientSecret = updates.oauthClientSecret
+      ? encrypt(updates.oauthClientSecret)
+      : null;
   if (updates.enabled !== undefined) mapped.enabled = updates.enabled;
   if (updates.trusted !== undefined) mapped.trusted = updates.trusted;
   mapped.updatedAt = new Date().toISOString();
@@ -1316,7 +1468,61 @@ export const updateMcpServer = (
 };
 
 export const deleteMcpServer = (id: string): void => {
+  db.delete(schema.mcpOAuthSessions)
+    .where(eq(schema.mcpOAuthSessions.serverId, id))
+    .run();
   db.delete(schema.mcpServers).where(eq(schema.mcpServers.id, id)).run();
+};
+
+export const getMcpOAuthSession = (serverId: string): McpOAuthSession => {
+  const row = db
+    .select()
+    .from(schema.mcpOAuthSessions)
+    .where(eq(schema.mcpOAuthSessions.serverId, serverId))
+    .get();
+  if (!row) return {};
+  try {
+    const plaintext = isKeychainEncryptedValue(row.encryptedSession)
+      ? decryptWithKeychain(row.encryptedSession)
+      : decrypt(row.encryptedSession);
+    const parsed = JSON.parse(plaintext);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveMcpOAuthSession = (
+  serverId: string,
+  session: McpOAuthSession,
+  options: { credentialsStore?: McpOAuthSessionCredentialsStore } = {},
+): void => {
+  const now = new Date().toISOString();
+  const serialized = JSON.stringify(session);
+  const encryptSession = () =>
+    options.credentialsStore === "keychain" && isKeychainEncryptionAvailable()
+      ? encryptWithKeychain(serialized)
+      : encrypt(serialized);
+  db.insert(schema.mcpOAuthSessions)
+    .values({
+      serverId,
+      encryptedSession: encryptSession(),
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.mcpOAuthSessions.serverId,
+      set: {
+        encryptedSession: encryptSession(),
+        updatedAt: now,
+      },
+    })
+    .run();
+};
+
+export const deleteMcpOAuthSession = (serverId: string): void => {
+  db.delete(schema.mcpOAuthSessions)
+    .where(eq(schema.mcpOAuthSessions.serverId, serverId))
+    .run();
 };
 
 export type { FileOperation, RecentWorkspace, Task, Workspace };

@@ -153,6 +153,20 @@ export const mcpServers = sqliteTable("mcp_servers", {
   url: text("url"),
   /** JSON.stringify(Record<string,string>) —— 支持 `${env:VAR}`。 */
   headers: text("headers"),
+  /**
+   * HTTP MCP 认证方式。`auto` 先按 MCP 认证发现流程静默探测;
+   * `oauth` 走手动 OAuth 兜底;`none` 继续使用 headers / env
+   * 中的静态凭据。
+   */
+  authType: text("auth_type", { enum: ["auto", "none", "oauth"] })
+    .notNull()
+    .default("auto"),
+  /** JSON.stringify(string[]) —— OAuth 登录时请求的 fallback scopes。 */
+  oauthScopes: text("oauth_scopes"),
+  /** 预注册 OAuth client id;为空时使用服务端动态注册。 */
+  oauthClientId: text("oauth_client_id"),
+  /** 加密后的预注册 OAuth client secret。 */
+  oauthClientSecret: text("oauth_client_secret"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   /**
    * trusted=true 时,将该服务器的每个工具都视为 `safe` —— 绕过
@@ -161,6 +175,13 @@ export const mcpServers = sqliteTable("mcp_servers", {
    */
   trusted: integer("trusted", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** MCP OAuth 登录状态:动态 client、token、PKCE verifier、discovery cache。 */
+export const mcpOAuthSessions = sqliteTable("mcp_oauth_sessions", {
+  serverId: text("server_id").primaryKey(),
+  encryptedSession: text("encrypted_session").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 

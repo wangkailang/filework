@@ -8,10 +8,21 @@
  */
 
 export type {
+  McpAuthType,
+  McpOAuthSession,
   McpServer,
   McpServerInput,
   McpTransport,
 } from "../db";
+
+export type McpAuthErrorCode =
+  | "authorization_failed"
+  | "callback_error"
+  | "callback_listener_failed"
+  | "callback_timeout"
+  | "connection_failed"
+  | "state_mismatch"
+  | "token_exchange_failed";
 
 /** 供渲染进程状态 UI 使用的单个服务器运行时状态快照。 */
 export interface McpServerStatus {
@@ -21,6 +32,17 @@ export interface McpServerStatus {
   toolCount: number;
   lastError: string | null;
   lastConnectedAt: string | null;
+  authStatus:
+    | "not_applicable"
+    | "unknown"
+    | "needs_auth"
+    | "authorizing"
+    | "authenticated"
+    | "expired"
+    | "error";
+  authMessage: string | null;
+  authErrorCode: McpAuthErrorCode | null;
+  authUrl: string | null;
 }
 
 /** 暴露给渲染进程的单个 MCP 侧工具描述符。 */

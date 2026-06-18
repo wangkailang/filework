@@ -41,6 +41,14 @@ export const myTool = {
 };
 ```
 
+## MCP 认证
+
+MCP server 由主进程管理,连接成功后会暴露为 agent 工具。HTTP MCP
+认证支持自动 OAuth 发现、手动 OAuth 兜底和静态 headers;stdio MCP
+server 继续使用自身的环境变量凭据。
+
+实现流程、配置示例和验证清单见 [MCP 认证](./mcp-authentication.md)。
+
 ## Tech Stack
 
 **Frontend & UI:**
