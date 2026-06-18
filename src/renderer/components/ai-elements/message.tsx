@@ -154,7 +154,7 @@ export const MessageActions = ({
 );
 
 export const messageActionsHoverClass =
-  "pointer-events-none absolute top-full right-0 z-10 mt-1 opacity-0 transition-opacity group-hover/message-actions:pointer-events-auto group-hover/message-actions:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100";
+  "pointer-events-none absolute top-full right-0 z-20 -translate-y-1/2 rounded-lg border border-border/60 bg-background/95 p-0.5 shadow-sm opacity-0 transition-opacity group-hover/message-actions:pointer-events-auto group-hover/message-actions:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100";
 
 export type MessageActionProps = HTMLAttributes<HTMLButtonElement> & {
   label?: string;

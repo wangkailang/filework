@@ -14,7 +14,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import {
@@ -24,6 +24,12 @@ import {
 import { useBranchDiff } from "../branch-diff/useBranchDiff";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
 import { SkillsModal } from "../skills/SkillsModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { BranchSwitcher } from "./BranchSwitcher";
 import { ChatHistoryPanel } from "./ChatHistoryPanel";
 import { FileTreePanel } from "./FileTreePanel";
@@ -81,19 +87,8 @@ export const LeftRail = ({
   const { LL } = useI18nContext();
   const chat = useChatSessionLite();
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const widthRef = useRef(width);
   widthRef.current = width;
-
-  // 左下角设置菜单:Esc 关闭(与点击外部一致)
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
 
   // 分支 diff 摘要(用于 diff 开关上的 +/- 徽标)。便宜:hook 有缓存,
   // currentBranch 变化会 bust 缓存。
@@ -292,14 +287,27 @@ export const LeftRail = ({
 
         {/* 左下角 ⚙ 菜单(设置 / 技能)+ 折叠 */}
         <div className="relative flex items-center justify-between border-t border-border px-2 py-2">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex items-center gap-1.5 rounded px-1.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title={LL.topbar_settings()}
-          >
-            <Menu className="size-4" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title={LL.topbar_settings()}
+              >
+                <Menu className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top" className="w-40">
+              <DropdownMenuItem onClick={onOpenSettings}>
+                <Settings className="size-4" />
+                {LL.topbar_settings()}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSkillsOpen(true)}>
+                <Blocks className="size-4" />
+                {LL.sidebar_skills()}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             onClick={onToggleCollapsed}
@@ -308,40 +316,6 @@ export const LeftRail = ({
           >
             <PanelLeftClose className="size-3.5 text-muted-foreground" />
           </button>
-          {menuOpen && (
-            <>
-              <button
-                type="button"
-                aria-label={LL.session_close()}
-                onClick={() => setMenuOpen(false)}
-                className="fixed inset-0 z-30 cursor-default"
-              />
-              <div className="absolute bottom-full left-2 z-40 mb-1 w-40 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenSettings();
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-accent"
-                >
-                  <Settings className="size-4" />
-                  {LL.topbar_settings()}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setSkillsOpen(true);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-popover-foreground transition-colors hover:bg-accent"
-                >
-                  <Blocks className="size-4" />
-                  {LL.sidebar_skills()}
-                </button>
-              </div>
-            </>
-          )}
         </div>
 
         {/* biome-ignore lint/a11y/useSemanticElements: 竖向 resize 手柄用 div + ARIA 是分栏标准做法 */}

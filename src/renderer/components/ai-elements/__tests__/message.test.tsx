@@ -44,9 +44,11 @@ describe("MessageResponse", () => {
     expect(html).toContain("w-fit");
     expect(html).toContain("absolute");
     expect(html).toContain("top-full");
-    expect(html).toContain("mt-1");
-    expect(html).toContain("z-10");
-    expect(html).not.toContain("pt-1");
+    expect(html).toContain("-translate-y-1/2");
+    expect(html).toContain("rounded-lg");
+    expect(html).toContain("bg-background/95");
+    expect(html).toContain("shadow-sm");
+    expect(html).toContain("z-20");
     expect(html).toContain("group-hover/message-actions:opacity-100");
   });
 });

@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { ConfirmDialog } from "../ui/confirm-dialog";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 interface McpServerStatus {
   id: string;
@@ -261,6 +263,7 @@ export const McpConfigPanel = () => {
   const [rows, setRows] = useState<McpServerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<FormState | null>(null);
+  const [editingError, setEditingError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
@@ -273,6 +276,12 @@ export const McpConfigPanel = () => {
   const [toolsCache, setToolsCache] = useState<
     Record<string, Array<{ name: string; description: string }>>
   >({});
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    kind: "delete" | "clearAuthorization";
+    id: string;
+    message: string;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -309,15 +318,15 @@ export const McpConfigPanel = () => {
   const handleSave = async (form: FormState) => {
     const payload = formToPayload(form);
     if (!payload.name) {
-      alert(LL.mcpConfig_nameRequired());
+      setEditingError(LL.mcpConfig_nameRequired());
       return;
     }
     if (payload.transport === "stdio" && !payload.command) {
-      alert(LL.mcpConfig_commandRequired());
+      setEditingError(LL.mcpConfig_commandRequired());
       return;
     }
     if (payload.transport === "http" && !payload.url) {
-      alert(LL.mcpConfig_urlRequired());
+      setEditingError(LL.mcpConfig_urlRequired());
       return;
     }
     if (form.id) {
@@ -326,19 +335,40 @@ export const McpConfigPanel = () => {
       await window.filework.mcp.addServer(payload);
     }
     setEditing(null);
+    setEditingError(null);
     void refresh();
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(LL.mcpConfig_deleteConfirm({ name }))) return;
-    await window.filework.mcp.deleteServer(id);
-    void refresh();
+  const handleDelete = (id: string, name: string) => {
+    setPendingConfirm({
+      kind: "delete",
+      id,
+      message: LL.mcpConfig_deleteConfirm({ name }),
+    });
   };
 
-  const handleClearAuthorization = async (id: string, name: string) => {
-    if (!confirm(LL.mcpConfig_clearAuthorizationConfirm({ name }))) return;
-    await window.filework.mcp.clearAuthorization(id);
-    void refresh();
+  const handleClearAuthorization = (id: string, name: string) => {
+    setPendingConfirm({
+      kind: "clearAuthorization",
+      id,
+      message: LL.mcpConfig_clearAuthorizationConfirm({ name }),
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingConfirm) return;
+    setConfirmBusy(true);
+    try {
+      if (pendingConfirm.kind === "delete") {
+        await window.filework.mcp.deleteServer(pendingConfirm.id);
+      } else {
+        await window.filework.mcp.clearAuthorization(pendingConfirm.id);
+      }
+      setPendingConfirm(null);
+      void refresh();
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   const handleImport = async () => {
@@ -379,7 +409,10 @@ export const McpConfigPanel = () => {
   return (
     <div className="space-y-4">
       <Header
-        onAdd={() => setEditing(emptyForm())}
+        onAdd={() => {
+          setEditing(emptyForm());
+          setEditingError(null);
+        }}
         onImport={() => {
           setImportOpen(true);
           setImportResult(null);
@@ -403,7 +436,10 @@ export const McpConfigPanel = () => {
               expanded={expandedTools === row.id}
               tools={toolsCache[row.id]}
               onToggleTools={() => toggleExpand(row.id)}
-              onEdit={() => setEditing(formFromRow(row))}
+              onEdit={() => {
+                setEditing(formFromRow(row));
+                setEditingError(null);
+              }}
               onDelete={() => handleDelete(row.id, row.name)}
               onReconnect={() => window.filework.mcp.reconnect(row.id)}
               onAuthorize={() =>
@@ -426,9 +462,16 @@ export const McpConfigPanel = () => {
       {editing && (
         <EditModal
           form={editing}
-          onChange={setEditing}
+          error={editingError}
+          onChange={(next) => {
+            setEditing(next);
+            setEditingError(null);
+          }}
           onSave={() => handleSave(editing)}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            setEditingError(null);
+          }}
         />
       )}
 
@@ -449,6 +492,23 @@ export const McpConfigPanel = () => {
       {oauthSettingsOpen && (
         <OAuthSettingsModal onClose={() => setOAuthSettingsOpen(false)} />
       )}
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={pendingConfirm?.message ?? ""}
+        confirmLabel={
+          pendingConfirm?.kind === "delete"
+            ? LL.mcpConfig_delete()
+            : LL.mcpConfig_clearAuthorization()
+        }
+        cancelLabel={LL.mcpConfig_cancel()}
+        destructive={pendingConfirm?.kind === "delete"}
+        busy={confirmBusy}
+        onOpenChange={(open) => {
+          if (!open) setPendingConfirm(null);
+        }}
+        onConfirm={handleConfirmAction}
+      />
     </div>
   );
 };
@@ -744,17 +804,16 @@ const OAuthSettingsModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-110 flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
-        onClick={onClose}
-        aria-label={LL.mcpConfig_close()}
-      />
-      <div className="relative w-[460px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
-        <h3 className="mb-3 text-sm font-medium text-foreground">
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent className="gap-0! bg-background! p-5! text-foreground! shadow-2xl w-[460px]! max-w-[calc(100vw-32px)]!">
+        <DialogTitle className="mb-3 pr-8 text-sm font-medium text-foreground">
           {LL.mcpConfig_oauthSettingsTitle()}
-        </h3>
+        </DialogTitle>
         {busy ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 size={13} className="animate-spin" />
@@ -845,8 +904,8 @@ const OAuthSettingsModal = ({ onClose }: { onClose: () => void }) => {
         }
         .mcp-input:focus { outline: 1px solid var(--primary); }
       `}</style>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
@@ -895,28 +954,34 @@ const IconBtn = ({
 
 const EditModal = ({
   form,
+  error,
   onChange,
   onSave,
   onClose,
 }: {
   form: FormState;
+  error: string | null;
   onChange: (f: FormState) => void;
   onSave: () => void;
   onClose: () => void;
 }) => {
   const { LL } = useI18nContext();
   return (
-    <div className="fixed inset-0 z-110 flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
-        onClick={onClose}
-        aria-label={LL.mcpConfig_close()}
-      />
-      <div className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
-        <h3 className="mb-3 text-sm font-medium text-foreground">
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent className="gap-0! overflow-y-auto bg-background! p-5! text-foreground! shadow-2xl w-[480px]! max-w-[calc(100vw-32px)]! max-h-[calc(100vh-64px)]!">
+        <DialogTitle className="mb-3 pr-8 text-sm font-medium text-foreground">
           {form.id ? LL.mcpConfig_editTitle() : LL.mcpConfig_addTitle()}
-        </h3>
+        </DialogTitle>
+        {error && (
+          <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
         <div className="space-y-3">
           <Field label={LL.mcpConfig_name()}>
             <input
@@ -1110,8 +1175,8 @@ const EditModal = ({
         }
         .mcp-input:focus { outline: 1px solid var(--primary); }
       `}</style>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
@@ -1132,17 +1197,16 @@ const ImportModal = ({
 }) => {
   const { LL } = useI18nContext();
   return (
-    <div className="fixed inset-0 z-110 flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50 cursor-default"
-        onClick={onClose}
-        aria-label={LL.mcpConfig_close()}
-      />
-      <div className="relative w-[560px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-background p-5 shadow-2xl">
-        <h3 className="mb-2 text-sm font-medium text-foreground">
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent className="gap-0! bg-background! p-5! text-foreground! shadow-2xl w-[560px]! max-w-[calc(100vw-32px)]!">
+        <DialogTitle className="mb-2 pr-8 text-sm font-medium text-foreground">
           {LL.mcpConfig_importTitle()}
-        </h3>
+        </DialogTitle>
         <p className="mb-3 text-xs text-muted-foreground">
           {LL.mcpConfig_importDescription()}{" "}
           <code className="text-foreground">{`{ "mcpServers": { ... } }`}</code>
@@ -1183,8 +1247,8 @@ const ImportModal = ({
             {busy ? LL.mcpConfig_importing() : LL.mcpConfig_import()}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

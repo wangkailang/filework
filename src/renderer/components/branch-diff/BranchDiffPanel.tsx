@@ -1,4 +1,4 @@
-import { ChevronDown, GitBranch, PanelRight, RefreshCw } from "lucide-react";
+import { GitBranch, PanelRight, RefreshCw } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -8,6 +8,15 @@ import {
 } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { BranchDiffFileCard } from "./BranchDiffFileCard";
 import { BranchDiffFileTree } from "./BranchDiffFileTree";
 import { useBranchDiff } from "./useBranchDiff";
@@ -91,16 +100,16 @@ export function BranchDiffPanel({
   }, []);
   const [activePath, setActivePath] = useState<string | null>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const registerRef = useCallback((path: string, el: HTMLDivElement | null) => {
+  const registerRef = (path: string, el: HTMLDivElement | null) => {
     if (el) cardRefs.current.set(path, el);
     else cardRefs.current.delete(path);
-  }, []);
-  const handleSelectFile = useCallback((path: string) => {
+  };
+  const handleSelectFile = (path: string) => {
     setActivePath(path);
     cardRefs.current
       .get(path)
       ?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, []);
+  };
 
   const hasFiles = !!data && !data.notAvailable && data.files.length > 0;
 
@@ -198,68 +207,34 @@ function BaseBranchSelect({
   onChange: (branch: string) => void;
   label: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
   return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
         aria-label={label}
         title={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex max-w-[140px] items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        className="h-7 max-w-[140px] gap-1 rounded-md border-border bg-muted/60 px-2 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground"
       >
         <GitBranch className="size-3 shrink-0" />
-        <span className="truncate font-mono">{value}</span>
-        <ChevronDown
-          className={cn(
-            "size-3 shrink-0 transition-transform",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-
-      {open && (
-        <div className="absolute top-full right-0 z-50 mt-1 max-h-72 w-52 overflow-y-auto rounded-lg border border-border bg-popover py-1 shadow-xl">
-          <div className="px-3 pt-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-            {label}
-          </div>
+        <SelectValue aria-label={value}>
+          <span className="truncate font-mono">{value}</span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent align="end" className="max-h-72 w-52">
+        <SelectGroup>
+          <SelectLabel>{label}</SelectLabel>
           {branches.map((b) => (
-            <button
-              key={b}
-              type="button"
-              onClick={() => {
-                onChange(b);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs transition-colors hover:bg-accent",
-                b === value ? "text-primary" : "text-foreground",
-              )}
-            >
+            <SelectItem key={b} value={b} className="font-mono text-xs">
               <span className="truncate">{b}</span>
               {b === currentBranch && (
                 <span className="ml-auto shrink-0 rounded bg-muted px-1 py-0.5 font-sans text-[9px] text-muted-foreground">
                   HEAD
                 </span>
               )}
-            </button>
+            </SelectItem>
           ))}
-        </div>
-      )}
-    </div>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 

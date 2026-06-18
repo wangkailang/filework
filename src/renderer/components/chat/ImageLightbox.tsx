@@ -1,7 +1,14 @@
 import { FolderOpenIcon, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 
 interface ImageLightboxProps {
   src: string;
@@ -29,73 +36,64 @@ export const ImageLightbox = ({
   revealPath,
   onClose,
 }: ImageLightboxProps) => {
-  // 父组件以内联箭头函数传入 `onClose`,因此它的引用
-  // 每次渲染都会变化。让 keydown 监听器只挂载一次(空依赖),
-  // 并通过 ref 读取最新的处理函数,以避免反复添加/移除
-  // 监听器以及由此带来的短暂无监听器空档。
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Portal to body so a `position: fixed` ancestor with `transform`
-  // /`overflow-hidden` doesn't reanchor the lightbox or clip the close
-  // button. `titlebar-no-drag` is required because the App's top 48px
-  // is a `-webkit-app-region: drag` zone — without this, the close
-  // and reveal-in-Finder buttons (at top-4/right-4) get their clicks
-  // captured by Electron as window-drag instead of firing onClick.
-  return createPortal(
-    <div className="titlebar-no-drag fixed inset-0 z-50">
-      {/* Backdrop click target. `aria-hidden` + `tabIndex={-1}` keeps
-          screen readers from announcing a second "关闭" button (the
-          corner X covers that) and removes the invisible full-screen
-          element from the keyboard tab order. */}
-      <button
-        type="button"
-        aria-hidden="true"
-        tabIndex={-1}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/80"
-      />
-      <button
-        type="button"
-        aria-label="关闭"
-        onClick={onClose}
-        className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+  return (
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="titlebar-no-drag inset-0! left-0! top-0! h-screen! w-screen! max-w-none! translate-x-0! translate-y-0! rounded-none! border-0! bg-black/90! p-0! text-white! shadow-none! ring-0!"
       >
-        <X className="h-5 w-5" />
-      </button>
-      {revealPath && (
-        <button
-          type="button"
-          aria-label="在 Finder 中显示"
-          onClick={() => window.filework.showInFinder(revealPath)}
-          title="在 Finder 中显示"
-          className="absolute right-16 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-        >
-          <FolderOpenIcon className="h-5 w-5" />
-        </button>
-      )}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-        <div className="pointer-events-auto flex max-h-full max-w-full flex-col items-center gap-3">
-          <img
-            src={src}
-            alt={alt ?? ""}
-            className="max-h-[80vh] max-w-[90vw] rounded object-contain"
-          />
-          {caption && (
-            <div className="max-w-[90vw] text-center text-xs text-white/80">
-              {caption}
-            </div>
+        <DialogHeader className="sr-only">
+          <DialogTitle>Image preview</DialogTitle>
+          <DialogDescription>
+            Preview the selected image in full size.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          {revealPath && (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="在 Finder 中显示"
+              title="在 Finder 中显示"
+              onClick={() => window.filework.showInFinder(revealPath)}
+              className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <FolderOpenIcon />
+            </Button>
           )}
+          <DialogClose asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="关闭"
+              className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <X />
+            </Button>
+          </DialogClose>
         </div>
-      </div>
-    </div>,
-    document.body,
+        <div className="flex h-full w-full items-center justify-center p-4">
+          <div className="flex max-h-full max-w-full flex-col items-center gap-3">
+            <img
+              src={src}
+              alt={alt ?? ""}
+              className="max-h-[80vh] max-w-[90vw] rounded object-contain"
+            />
+            {caption && (
+              <div className="max-w-[90vw] text-center text-xs text-white/80">
+                {caption}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 };

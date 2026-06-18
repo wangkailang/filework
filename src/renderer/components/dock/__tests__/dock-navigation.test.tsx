@@ -1,6 +1,4 @@
 import { parseHTML } from "linkedom";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -47,9 +45,7 @@ vi.mock("../TrashPanel", () => ({
 }));
 
 import { ContextDock } from "../ContextDock";
-import { DockMenu } from "../DockMenu";
-
-const mountedRoots: Root[] = [];
+import { DockShortcut } from "../DockMenu";
 
 const installDom = () => {
   const { document, window } = parseHTML(
@@ -69,40 +65,22 @@ const installDom = () => {
 };
 
 afterEach(() => {
-  for (const root of mountedRoots.splice(0)) {
-    act(() => root.unmount());
-  }
   vi.unstubAllGlobals();
 });
 
 describe("dock navigation chrome", () => {
   it("renders shortcut hints as separated lightweight keycaps in the dock menu", () => {
     const document = installDom();
+    const html = renderToStaticMarkup(
+      <DockShortcut
+        active={true}
+        dimmed={false}
+        shortcut="⇧⌘P"
+        tab="preview"
+      />,
+    );
     const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    mountedRoots.push(root);
-
-    act(() => {
-      root.render(
-        <DockMenu
-          activeTab="preview"
-          dockOpen={true}
-          isGitRepo={true}
-          hasSubagent={false}
-          onSelect={vi.fn()}
-        />,
-      );
-    });
-
-    const trigger = container.querySelector(
-      'button[aria-haspopup="menu"]',
-    ) as HTMLButtonElement | null;
-    expect(trigger).toBeTruthy();
-
-    act(() => {
-      trigger?.click();
-    });
+    container.innerHTML = html;
 
     const previewShortcut = container.querySelector(
       '[data-dock-shortcut="preview"]',

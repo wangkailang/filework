@@ -2,6 +2,7 @@
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 
 interface TrashEntry {
   id: string;
@@ -36,6 +37,8 @@ export const TrashPanel = ({
   const [entries, setEntries] = useState<TrashEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [emptyAllOpen, setEmptyAllOpen] = useState(false);
+  const [emptyAllBusy, setEmptyAllBusy] = useState(false);
 
   const refresh = useCallback(() => {
     window.filework
@@ -76,9 +79,14 @@ export const TrashPanel = ({
   };
 
   const emptyAll = async () => {
-    if (!window.confirm(LL.trash_confirmEmptyAll())) return;
-    await window.filework.trashEmpty(workspaceRoot);
-    refresh();
+    setEmptyAllBusy(true);
+    try {
+      await window.filework.trashEmpty(workspaceRoot);
+      setEmptyAllOpen(false);
+      refresh();
+    } finally {
+      setEmptyAllBusy(false);
+    }
   };
 
   return (
@@ -86,7 +94,7 @@ export const TrashPanel = ({
       <div className="flex items-center justify-end border-border border-b p-2">
         <button
           type="button"
-          onClick={emptyAll}
+          onClick={() => setEmptyAllOpen(true)}
           disabled={entries.length === 0}
           className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -155,6 +163,17 @@ export const TrashPanel = ({
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={emptyAllOpen}
+        title={LL.trash_confirmEmptyAll()}
+        confirmLabel={LL.trash_emptyAll()}
+        cancelLabel={LL.session_cancel()}
+        destructive
+        busy={emptyAllBusy}
+        onOpenChange={setEmptyAllOpen}
+        onConfirm={emptyAll}
+      />
     </div>
   );
 };

@@ -11,7 +11,6 @@ import {
   Settings,
   Shield,
   Sun,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
@@ -31,6 +30,7 @@ import { MemoryDebugPanel } from "../settings/MemoryDebugPanel";
 import { TaskTracePanel } from "../settings/TaskTracePanel";
 import { ToolWhitelistPanel } from "../settings/ToolWhitelistPanel";
 import { UsagePanel } from "../settings/UsagePanel";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 type Tab =
   | "general"
@@ -88,16 +88,6 @@ export const SettingsModal = ({
     [onLocaleChange],
   );
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    if (open) window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const themeKeys: ThemePreference[] = ["dark", "light", "system"];
   const themeLabels: Record<ThemePreference, string> = {
     dark: LL.settings_themeDark(),
@@ -118,28 +108,19 @@ export const SettingsModal = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50 cursor-default animate-in fade-in-0 duration-150"
-        onClick={onClose}
-        aria-label="Close settings"
-      />
-
-      <div className="relative flex bg-background border border-border rounded-xl shadow-2xl overflow-hidden w-[calc(100vw-64px)] h-[calc(100vh-48px)] max-w-[1200px] max-h-[900px] animate-in fade-in-0 zoom-in-95 duration-150">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent className="flex! gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[calc(100vw-64px)]! h-[calc(100vh-48px)]! max-w-[1200px]! max-h-[900px]!">
         {/* Left sidebar tabs */}
         <div className="flex flex-col w-44 shrink-0 border-r border-border bg-muted/50 py-3">
-          <div className="flex items-center justify-between px-4 pb-3 border-b border-border mb-2">
-            <h2 className="text-sm font-medium text-foreground">
+          <div className="flex items-center px-4 pb-3 border-b border-border mb-2">
+            <DialogTitle className="text-sm font-medium text-foreground">
               {LL.settings_title()}
-            </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            </DialogTitle>
           </div>
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -162,7 +143,7 @@ export const SettingsModal = ({
         </div>
 
         {/* Right content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto py-5 pl-6 pr-14">
           {activeTab === "general" && (
             <div className="space-y-6">
               {/* Language */}
@@ -235,7 +216,7 @@ export const SettingsModal = ({
 
           {activeTab === "command-security" && <CommandSecurityPanel />}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

@@ -1,6 +1,6 @@
-import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 type Provider =
   | "openai"
@@ -107,20 +107,6 @@ export const LlmConfigEditModal = ({
     setErrors({});
   }, [open, editing]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormData, string>> = {};
     if (!form.name.trim()) e.name = LL.llmConfig_validationRequired();
@@ -178,26 +164,17 @@ export const LlmConfigEditModal = ({
           : "";
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/60 cursor-default"
-        onClick={onClose}
-        aria-label="Close edit modal"
-      />
-
-      <div className="relative flex flex-col w-[480px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-64px)] bg-background border border-border rounded-xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <DialogContent className="flex! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[480px]! max-w-[calc(100vw-32px)]! max-h-[calc(100vh-64px)]!">
+        <div className="flex items-center border-b border-border px-5 py-3 pr-12">
+          <DialogTitle className="text-sm font-medium text-foreground">
             {editing ? LL.llmConfig_edit() : LL.llmConfig_add()}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          </DialogTitle>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
@@ -357,7 +334,7 @@ export const LlmConfigEditModal = ({
             {LL.llmConfig_save()}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

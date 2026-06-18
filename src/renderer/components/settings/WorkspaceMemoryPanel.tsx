@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 
 type MemoryScope = "user" | "workspace";
 type MemoryCategory = "preference" | "project" | "convention" | "reference";
@@ -43,6 +44,10 @@ export const WorkspaceMemoryPanel = ({
   // 正在编辑的条目标识 `${scope}:${key}` 与草稿文本(null 表示无编辑中)。
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [pendingClear, setPendingClear] = useState<"workspace" | "user" | null>(
+    null,
+  );
+  const [clearBusy, setClearBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!workspacePath) {
@@ -66,23 +71,27 @@ export const WorkspaceMemoryPanel = ({
 
   const handleClear = async () => {
     if (!workspacePath) return;
-    if (
-      !window.confirm("清空该工作目录的机器记忆?(AGENTS.md 等人写文件不受影响)")
-    )
-      return;
-    await window.filework.workspaceMemory.clear(workspacePath);
-    await load();
+    setPendingClear("workspace");
   };
 
   const handleClearUser = async () => {
-    if (
-      !window.confirm(
-        "清空跨工作区的个人偏好记忆?(只影响所有工作区通用的偏好,项目记忆不受影响)",
-      )
-    )
-      return;
-    await window.filework.workspaceMemory.clearUser();
-    await load();
+    setPendingClear("user");
+  };
+
+  const handleConfirmClear = async () => {
+    if (!pendingClear || !workspacePath) return;
+    setClearBusy(true);
+    try {
+      if (pendingClear === "workspace") {
+        await window.filework.workspaceMemory.clear(workspacePath);
+      } else {
+        await window.filework.workspaceMemory.clearUser();
+      }
+      setPendingClear(null);
+      await load();
+    } finally {
+      setClearBusy(false);
+    }
   };
 
   const handleDelete = async (scope: MemoryScope, key: string) => {
@@ -310,6 +319,28 @@ export const WorkspaceMemoryPanel = ({
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={pendingClear !== null}
+        title={
+          pendingClear === "user"
+            ? "清空跨工作区的个人偏好记忆?"
+            : "清空该工作目录的机器记忆?"
+        }
+        description={
+          pendingClear === "user"
+            ? "只影响所有工作区通用的偏好,项目记忆不受影响。"
+            : "AGENTS.md 等人写文件不受影响。"
+        }
+        confirmLabel="清空"
+        cancelLabel="取消"
+        destructive
+        busy={clearBusy}
+        onOpenChange={(open) => {
+          if (!open) setPendingClear(null);
+        }}
+        onConfirm={handleConfirmClear}
+      />
     </div>
   );
 };

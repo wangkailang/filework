@@ -12,13 +12,22 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
-import { cn } from "../../lib/utils";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
 import type { DockTab } from "../dock/ContextDock";
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "../ui/command";
 
-interface Command {
+interface PaletteCommand {
   id: string;
   label: string;
   icon: LucideIcon;
@@ -41,10 +50,6 @@ export const CommandPalette = ({
   const { LL } = useI18nContext();
   const { handleNewChat } = useChatSessionLite();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [index, setIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
   // ⌘K / Ctrl+K 全局开关
   useEffect(() => {
@@ -62,20 +67,12 @@ export const CommandPalette = ({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 打开时清空查询、聚焦输入
-  useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setIndex(0);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [open]);
-
-  const commands = useMemo<Command[]>(() => {
+  const commands = useMemo<PaletteCommand[]>(() => {
     const wrap = (fn: () => void) => () => {
       setOpen(false);
       fn();
     };
-    const list: Command[] = [
+    const list: PaletteCommand[] = [
       {
         id: "new-chat",
         label: LL.session_newChat(),
@@ -147,92 +144,59 @@ export const CommandPalette = ({
     onSwitchWorkspace,
   ]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
-  }, [commands, query]);
-
-  // 命中数变化时夹紧选中索引
-  useEffect(() => {
-    setIndex((p) => (p >= filtered.length ? 0 : p));
-  }, [filtered.length]);
-
-  // 选中项滚动到可视区
-  useEffect(() => {
-    const el = listRef.current?.children[index] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: "nearest" });
-  }, [index]);
-
   if (!open) return null;
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setIndex((p) => (p + 1) % Math.max(filtered.length, 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setIndex((p) => (p <= 0 ? Math.max(filtered.length - 1, 0) : p - 1));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      filtered[index]?.run();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setOpen(false);
-    }
-  };
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: 遮罩点击关闭是弹层标准做法
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 pt-[15vh]"
-      onMouseDown={() => setOpen(false)}
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      title={LL.cmdk_placeholder()}
+      description={LL.cmdk_empty()}
+      className="border border-border bg-popover shadow-2xl"
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: 阻止冒泡到遮罩 */}
-      <div
-        className="w-full max-w-lg animate-in fade-in-0 zoom-in-95 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl duration-150"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-border-faint px-3">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={LL.cmdk_placeholder()}
-            className="w-full bg-transparent py-3 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </div>
-        <div ref={listRef} className="max-h-72 overflow-y-auto p-1">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-6 text-center font-mono text-xs text-muted-foreground">
-              {LL.cmdk_empty()}
-            </div>
-          ) : (
-            filtered.map((cmd, i) => {
+      <Command loop>
+        <CommandInput placeholder={LL.cmdk_placeholder()} />
+        <CommandList>
+          <CommandEmpty>{LL.cmdk_empty()}</CommandEmpty>
+          <CommandGroup>
+            {commands.map((cmd) => {
               const Icon = cmd.icon;
+              const shortcut =
+                cmd.id === "new-chat"
+                  ? "⌘N"
+                  : cmd.id === "preview"
+                    ? "⇧⌘P"
+                    : cmd.id === "search"
+                      ? "⇧⌘F"
+                      : cmd.id === "trash"
+                        ? "⇧⌘T"
+                        : cmd.id === "subagent"
+                          ? "⇧⌘A"
+                          : cmd.id === "diff"
+                            ? "⇧⌘D"
+                            : cmd.id === "web"
+                              ? "⇧⌘W"
+                              : cmd.id === "settings"
+                                ? "⌘,"
+                                : undefined;
               return (
-                <button
+                <CommandItem
                   key={cmd.id}
-                  type="button"
-                  onMouseEnter={() => setIndex(i)}
-                  onClick={cmd.run}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                    i === index
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground",
-                  )}
+                  value={cmd.label}
+                  onSelect={cmd.run}
+                  className="text-muted-foreground data-[selected=true]:text-foreground"
                 >
                   <Icon className="size-4 shrink-0" />
-                  {cmd.label}
-                </button>
+                  <span>{cmd.label}</span>
+                  {shortcut ? (
+                    <CommandShortcut>{shortcut}</CommandShortcut>
+                  ) : null}
+                </CommandItem>
               );
-            })
-          )}
-        </div>
-      </div>
-    </div>
+            })}
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    </CommandDialog>
   );
 };
