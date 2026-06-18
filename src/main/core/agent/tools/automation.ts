@@ -83,7 +83,7 @@ export const buildAutomationUpdateTool = ({
 > => ({
   name: "automation_update",
   description: [
-    "Create, update, delete, or list Codex-style automations for recurring background work.",
+    "Create, update, delete, or list automations for recurring background work.",
     "Use this whenever the user asks to create, view, update, delete, schedule, remind, monitor, or follow up later.",
     "Choose type='thread' for heartbeat-style wakeups that should preserve this conversation's context; if threadId is omitted, the current thread/session id is used.",
     "Choose type='standalone' or type='project' when each run should be independent or span one or more projects.",

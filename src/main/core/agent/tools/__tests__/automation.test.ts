@@ -36,6 +36,13 @@ describe("automation_update tool", () => {
     dbMock.listedFilter = undefined;
   });
 
+  it("describes automations without Codex-specific wording", () => {
+    const tool = buildAutomationUpdateTool();
+
+    expect(tool.description).toContain("automations");
+    expect(tool.description).not.toMatch(/Codex(?:-style)?/i);
+  });
+
   it("creates a thread automation bound to the current session by default", async () => {
     const tool = buildAutomationUpdateTool({
       currentThreadId: "session-1",

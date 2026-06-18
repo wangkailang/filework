@@ -135,7 +135,7 @@ export const mediaJobs = sqliteTable("media_jobs", {
 /**
  * 用户让 Agent 创建的自动化定义。
  *
- * 现阶段它是 Codex-style automation 的持久化入口:Agent 可通过
+ * 现阶段它是自动化定义的持久化入口:Agent 可通过
  * automation_update 工具创建、更新、禁用或列出定义。后台 runner/UI 可在
  * 这个表上继续演进,不需要再改变 agent 工具契约。
  */
