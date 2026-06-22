@@ -39,7 +39,7 @@ describe("github copilot device auth", () => {
     });
   });
 
-  it("exchanges the device code for a Copilot API token", async () => {
+  it("exchanges the device code for durable GitHub auth and a Copilot session token", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -49,6 +49,7 @@ describe("github copilot device auth", () => {
         new Response(
           JSON.stringify({
             token: "copilot-token",
+            expires_at: 1_782_115_200,
             endpoints: { api: "https://api.githubcopilot.com" },
           }),
         ),
@@ -62,6 +63,8 @@ describe("github copilot device auth", () => {
     expect(result).toEqual({
       apiToken: "copilot-token",
       baseUrl: "https://api.githubcopilot.com",
+      expiresAt: "2026-06-22T08:00:00.000Z",
+      githubAccessToken: "gho-test",
     });
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
@@ -70,6 +73,41 @@ describe("github copilot device auth", () => {
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
+      "https://api.github.com/copilot_internal/v2/token",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer gho-test",
+        }),
+      }),
+    );
+  });
+
+  it("refreshes a Copilot session token with the durable GitHub access token", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            token: "fresh-copilot-token",
+            expires_at: 1_782_115_800,
+            endpoints: { api: "https://api.individual.githubcopilot.com" },
+          }),
+        ),
+    );
+
+    const { exchangeGithubCopilotSessionToken } = await import(
+      "../github-copilot-auth"
+    );
+    const result = await exchangeGithubCopilotSessionToken(
+      { githubAccessToken: "gho-test" },
+      fetchImpl,
+    );
+
+    expect(result).toEqual({
+      apiToken: "fresh-copilot-token",
+      baseUrl: "https://api.individual.githubcopilot.com",
+      expiresAt: "2026-06-22T08:10:00.000Z",
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.github.com/copilot_internal/v2/token",
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -101,8 +139,30 @@ describe("github copilot device auth", () => {
     );
 
     expect(result).toEqual([
-      { value: "gpt-5.5", label: "GPT-5.5" },
-      { value: "claude-sonnet-4.6", label: "claude-sonnet-4.6" },
+      {
+        value: "gpt-5.5",
+        label: "GPT-5.5",
+        capabilities: {
+          preferredApi: "responses",
+          supportsReasoning: true,
+          supportsTools: true,
+          supportsVision: null,
+        },
+        contextWindow: null,
+        maxOutputTokens: null,
+      },
+      {
+        value: "claude-sonnet-4.6",
+        label: "claude-sonnet-4.6",
+        capabilities: {
+          preferredApi: "chat_completions",
+          supportsReasoning: null,
+          supportsTools: true,
+          supportsVision: null,
+        },
+        contextWindow: null,
+        maxOutputTokens: null,
+      },
     ]);
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.githubcopilot.com/models",

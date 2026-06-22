@@ -22,6 +22,14 @@ describe("testLlmConfigConnection", () => {
     const request = fetchImpl.mock.calls[0]?.[1] as RequestInit | undefined;
 
     expect(result.status).toBe("success");
+    expect(result.diagnostics).toMatchObject({
+      durationMs: expect.any(Number),
+      method: "POST",
+      model: "gpt-4o-mini",
+      provider: "custom",
+      statusCode: 200,
+      url: "https://gateway.example.com/v1/chat/completions",
+    });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://gateway.example.com/v1/chat/completions",
       expect.objectContaining({
@@ -58,9 +66,16 @@ describe("testLlmConfigConnection", () => {
       fetchImpl,
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "error",
       message: "HTTP 401: bad key",
+      diagnostics: {
+        method: "POST",
+        model: "gpt-4o-mini",
+        provider: "custom",
+        statusCode: 401,
+        url: "https://gateway.example.com/v1/chat/completions",
+      },
     });
   });
 

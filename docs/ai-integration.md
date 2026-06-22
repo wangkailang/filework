@@ -7,6 +7,14 @@
 - Anthropic (Claude 3.5 Sonnet, Claude 3 Haiku)
 - DeepSeek (DeepSeek Coder, DeepSeek Chat)
 - Ollama (local models via Ollama server)
+- MiniMax (chat/image/video configurations)
+- Xiaomi MiMo
+- OpenAI Compatible custom endpoints
+- GitHub Copilot
+
+Configuration flow, connection testing, model discovery, Copilot device
+authorization, and runtime selection rules are documented in
+[LLM Configuration and Usage](./llm-configuration.md).
 
 ## Message Flow
 

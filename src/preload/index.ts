@@ -1090,8 +1090,38 @@ const api = {
     }) => ipcRenderer.invoke("llm-config:copilot:complete", data),
     listGithubCopilotModels: (
       id: string,
-    ): Promise<Array<{ value: string; label: string }> | { error: string }> =>
-      ipcRenderer.invoke("llm-config:copilot:models", { id }),
+    ): Promise<
+      | Array<{
+          value: string;
+          label: string;
+          capabilities?: {
+            preferredApi?: "chat_completions" | "responses" | null;
+            supportsReasoning?: boolean | null;
+            supportsTools?: boolean | null;
+            supportsVision?: boolean | null;
+          };
+          contextWindow?: number | null;
+          maxOutputTokens?: number | null;
+        }>
+      | { error: string }
+    > => ipcRenderer.invoke("llm-config:copilot:models", { id }),
+    listModels: (
+      id: string,
+    ): Promise<
+      | Array<{
+          value: string;
+          label: string;
+          capabilities?: {
+            preferredApi?: "chat_completions" | "responses" | null;
+            supportsReasoning?: boolean | null;
+            supportsTools?: boolean | null;
+            supportsVision?: boolean | null;
+          };
+          contextWindow?: number | null;
+          maxOutputTokens?: number | null;
+        }>
+      | { error: string }
+    > => ipcRenderer.invoke("llm-config:models", { id }),
     disconnectGithubCopilot: (id: string) =>
       ipcRenderer.invoke("llm-config:copilot:disconnect", { id }),
     delete: (id: string) => ipcRenderer.invoke("llm-config:delete", { id }),

@@ -244,6 +244,8 @@ const ja: Translation = {
   llmConfig_lastTestedAt: "{when} にテスト",
   llmConfig_optional: "任意",
   llmConfig_refreshModels: "モデルを更新",
+  llmConfig_modelUnavailable:
+    "このモデルは最新のモデル一覧にありません。利用可能なモデルを選択するか、再更新してください。",
   llmConfig_apiPathInvalid:
     "APIパスは / で始まり、/chat/completions で終わる必要があります",
   llmConfig_deleteConfirm: "この設定を削除してもよろしいですか？",

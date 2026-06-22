@@ -5,8 +5,19 @@ import type { LlmConfig, LlmProvider } from "../db";
 export type LlmConnectionTestStatus = "success" | "error";
 
 export interface LlmConnectionTestResult {
+  diagnostics?: LlmConnectionDiagnostics;
   status: LlmConnectionTestStatus;
   message: string;
+}
+
+export interface LlmConnectionDiagnostics {
+  checkedAt: string;
+  durationMs: number;
+  method: "POST";
+  model: string;
+  provider: LlmProvider;
+  statusCode: number | null;
+  url: string;
 }
 
 type LlmConnectionConfig = Pick<
@@ -124,19 +135,34 @@ export async function testLlmConfigConnection(
 
   try {
     const request = buildConnectionRequest(config);
+    const startedAt = Date.now();
+    const checkedAt = new Date(startedAt).toISOString();
+    const baseDiagnostics = {
+      checkedAt,
+      method: "POST" as const,
+      model: config.model,
+      provider: config.provider,
+      url: request.url,
+    };
     const response = await fetchImpl(request.url, {
       method: "POST",
       headers: request.headers,
       body: JSON.stringify(request.body),
     });
+    const diagnostics: LlmConnectionDiagnostics = {
+      ...baseDiagnostics,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      statusCode: response.status,
+    };
 
     if (response.ok) {
-      return { status: "success", message: "Connection OK" };
+      return { status: "success", message: "Connection OK", diagnostics };
     }
 
     return {
       status: "error",
       message: readProviderErrorMessage(response.status, await response.text()),
+      diagnostics,
     };
   } catch (error) {
     return {

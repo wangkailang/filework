@@ -241,6 +241,8 @@ const zhCN: Translation = {
   llmConfig_lastTestedAt: "测试于 {when}",
   llmConfig_optional: "可选",
   llmConfig_refreshModels: "刷新模型",
+  llmConfig_modelUnavailable:
+    "当前模型不在最新模型列表中，请选择可用模型或重新刷新。",
   llmConfig_apiPathInvalid:
     "API Path 必须以 / 开头，并以 /chat/completions 结尾",
   llmConfig_deleteConfirm: "确定要删除此配置吗？",

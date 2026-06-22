@@ -27,6 +27,7 @@ interface AccessTokenResponse {
 
 interface CopilotTokenResponse {
   token?: string;
+  expires_at?: number;
   endpoints?: {
     api?: string;
   };
@@ -35,8 +36,18 @@ interface CopilotTokenResponse {
 }
 
 export interface GithubCopilotModelOption {
+  capabilities: GithubCopilotModelCapabilities;
+  contextWindow: number | null;
   value: string;
   label: string;
+  maxOutputTokens: number | null;
+}
+
+export interface GithubCopilotModelCapabilities {
+  preferredApi: "chat_completions" | "responses";
+  supportsReasoning: boolean | null;
+  supportsTools: boolean | null;
+  supportsVision: boolean | null;
 }
 
 export interface GithubCopilotDeviceFlowStart {
@@ -50,6 +61,22 @@ export interface GithubCopilotDeviceFlowStart {
 
 export interface GithubCopilotDeviceFlowComplete {
   apiToken: string;
+  baseUrl: string;
+  expiresAt: string | null;
+  githubAccessToken: string;
+}
+
+export interface GithubCopilotSessionToken {
+  apiToken: string;
+  baseUrl: string;
+  expiresAt: string | null;
+}
+
+export interface GithubCopilotAuthMetadata {
+  version: 1;
+  githubAccessToken: string;
+  copilotToken: string;
+  copilotTokenExpiresAt: string | null;
   baseUrl: string;
 }
 
@@ -82,6 +109,108 @@ function getCopilotBaseUrl(baseUrl?: string | null): string {
   );
 }
 
+function parseExpiresAt(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  const milliseconds = value > 10_000_000_000 ? value : value * 1000;
+  return new Date(milliseconds).toISOString();
+}
+
+function readFinitePositiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function readModelLimit(
+  rawModel: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const value = readFinitePositiveNumber(rawModel[key]);
+    if (value) return value;
+  }
+  const limit = rawModel.limit;
+  if (isRecord(limit)) {
+    for (const key of keys) {
+      const value = readFinitePositiveNumber(limit[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function inferGithubCopilotModelCapabilities(
+  modelId: string,
+): GithubCopilotModelCapabilities {
+  const lowerId = modelId.toLowerCase();
+  const isGpt5 = lowerId.startsWith("gpt-5");
+  const isMini = lowerId.includes("mini");
+  const isReasoningModel =
+    (isGpt5 && !isMini) || lowerId.startsWith("o1") || lowerId.startsWith("o3");
+
+  return {
+    preferredApi: isGpt5 && !isMini ? "responses" : "chat_completions",
+    supportsReasoning: isReasoningModel ? true : null,
+    supportsTools: true,
+    supportsVision:
+      lowerId.includes("vision") ||
+      lowerId.includes("gpt-4o") ||
+      lowerId.includes("gemini")
+        ? true
+        : null,
+  };
+}
+
+export function serializeGithubCopilotAuthMetadata(
+  metadata: GithubCopilotAuthMetadata,
+): string {
+  return JSON.stringify(metadata);
+}
+
+export function parseGithubCopilotAuthMetadata(
+  value: string | null | undefined,
+): GithubCopilotAuthMetadata | null {
+  if (!value?.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<GithubCopilotAuthMetadata>;
+    if (
+      parsed.version !== 1 ||
+      typeof parsed.githubAccessToken !== "string" ||
+      parsed.githubAccessToken.trim() === "" ||
+      typeof parsed.copilotToken !== "string" ||
+      parsed.copilotToken.trim() === "" ||
+      typeof parsed.baseUrl !== "string" ||
+      parsed.baseUrl.trim() === ""
+    ) {
+      return null;
+    }
+    return {
+      version: 1,
+      githubAccessToken: parsed.githubAccessToken,
+      copilotToken: parsed.copilotToken,
+      copilotTokenExpiresAt:
+        typeof parsed.copilotTokenExpiresAt === "string"
+          ? parsed.copilotTokenExpiresAt
+          : null,
+      baseUrl: parsed.baseUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function shouldRefreshGithubCopilotSessionToken(
+  metadata: Pick<GithubCopilotAuthMetadata, "copilotTokenExpiresAt">,
+  nowMs = Date.now(),
+): boolean {
+  if (!metadata.copilotTokenExpiresAt) return true;
+  const expiresAtMs = Date.parse(metadata.copilotTokenExpiresAt);
+  if (!Number.isFinite(expiresAtMs)) return true;
+  return expiresAtMs - nowMs <= 5 * 60 * 1000;
+}
+
 function parseGithubCopilotModels(body: unknown): GithubCopilotModelOption[] {
   const rawModels = Array.isArray(body)
     ? body
@@ -102,7 +231,16 @@ function parseGithubCopilotModels(body: unknown): GithubCopilotModelOption[] {
         ? rawModel.name.trim()
         : value;
     seen.add(value);
-    models.push({ value, label });
+    models.push({
+      value,
+      label,
+      capabilities: inferGithubCopilotModelCapabilities(value),
+      contextWindow: readModelLimit(rawModel, ["context", "context_window"]),
+      maxOutputTokens: readModelLimit(rawModel, [
+        "output",
+        "max_output_tokens",
+      ]),
+    });
   }
 
   return models;
@@ -170,11 +308,26 @@ export async function completeGithubCopilotDeviceFlow(
     throw authError("GitHub authorization is not complete yet");
   }
 
+  const sessionToken = await exchangeGithubCopilotSessionToken(
+    { githubAccessToken: tokenBody.access_token },
+    fetchImpl,
+  );
+
+  return {
+    ...sessionToken,
+    githubAccessToken: tokenBody.access_token,
+  };
+}
+
+export async function exchangeGithubCopilotSessionToken(
+  input: { githubAccessToken: string },
+  fetchImpl: FetchLike = defaultFetch(),
+): Promise<GithubCopilotSessionToken> {
   const copilotResponse = await fetchImpl(GITHUB_COPILOT_TOKEN_URL, {
     method: "GET",
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${tokenBody.access_token}`,
+      Authorization: `Bearer ${input.githubAccessToken}`,
       "Editor-Version": "filework/0.1.0",
       "User-Agent": "Filework",
     },
@@ -194,6 +347,7 @@ export async function completeGithubCopilotDeviceFlow(
   return {
     apiToken: copilotBody.token,
     baseUrl: copilotBody.endpoints?.api || "https://api.githubcopilot.com",
+    expiresAt: parseExpiresAt(copilotBody.expires_at),
   };
 }
 

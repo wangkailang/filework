@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatLlmModelOptionLabel,
+  getGithubCopilotAuthStepStates,
   getLlmProviderFieldPolicy,
+  getLlmSelectedModelAvailability,
   getVisibleLlmModelOptions,
   shouldShowGithubCopilotAuthFlow,
   shouldShowGithubCopilotDisconnect,
@@ -48,7 +51,55 @@ describe("getLlmProviderFieldPolicy", () => {
     ).toEqual([{ value: "legacy-id", label: "legacy-id" }, ...refreshedModels]);
     expect(
       getVisibleLlmModelOptions("custom", refreshedModels, "gpt-5.5"),
+    ).toEqual(refreshedModels);
+    expect(
+      getVisibleLlmModelOptions("openai", refreshedModels, "gpt-5.5"),
     ).toEqual([]);
+  });
+
+  it("adds compact capability hints to refreshed model labels", () => {
+    expect(
+      formatLlmModelOptionLabel({
+        value: "gpt-5.5",
+        label: "GPT-5.5",
+        capabilities: {
+          preferredApi: "responses",
+          supportsReasoning: true,
+          supportsTools: true,
+          supportsVision: null,
+        },
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      }),
+    ).toBe("GPT-5.5 · Responses · Reasoning · Tools · 200k ctx");
+  });
+
+  it("detects when refreshed model catalogs no longer include the selected model", () => {
+    const refreshedModels = [
+      { value: "gpt-5.5", label: "GPT-5.5" },
+      { value: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
+    ];
+
+    expect(
+      getLlmSelectedModelAvailability(
+        "github-copilot",
+        refreshedModels,
+        "legacy-id",
+      ),
+    ).toBe("unavailable");
+    expect(
+      getLlmSelectedModelAvailability(
+        "custom",
+        refreshedModels,
+        "claude-sonnet-4.6",
+      ),
+    ).toBe("available");
+    expect(getLlmSelectedModelAvailability("custom", [], "legacy-id")).toBe(
+      "unknown",
+    );
+    expect(
+      getLlmSelectedModelAvailability("openai", refreshedModels, "gpt-5.5"),
+    ).toBe("unknown");
   });
 
   it("shows reconnect auth flow after an existing Copilot config is disconnected", () => {
@@ -67,5 +118,20 @@ describe("getLlmProviderFieldPolicy", () => {
     expect(
       shouldShowGithubCopilotDisconnect("github-copilot", true, false),
     ).toBe(false);
+  });
+
+  it("marks Copilot auth steps according to device-code progress", () => {
+    expect(getGithubCopilotAuthStepStates(false)).toEqual([
+      "current",
+      "locked",
+      "locked",
+      "locked",
+    ]);
+    expect(getGithubCopilotAuthStepStates(true)).toEqual([
+      "done",
+      "current",
+      "current",
+      "current",
+    ]);
   });
 });

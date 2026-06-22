@@ -931,6 +931,10 @@ type RootTranslation = {
 	 */
 	llmConfig_refreshModels: string
 	/**
+	 * T​h​i​s​ ​m​o​d​e​l​ ​i​s​ ​n​o​t​ ​i​n​ ​t​h​e​ ​l​a​t​e​s​t​ ​p​r​o​v​i​d​e​r​ ​m​o​d​e​l​ ​l​i​s​t​.​ ​C​h​o​o​s​e​ ​a​n​ ​a​v​a​i​l​a​b​l​e​ ​m​o​d​e​l​ ​o​r​ ​r​e​f​r​e​s​h​ ​a​g​a​i​n​.
+	 */
+	llmConfig_modelUnavailable: string
+	/**
 	 * A​P​I​ ​P​a​t​h​ ​m​u​s​t​ ​s​t​a​r​t​ ​w​i​t​h​ ​/​ ​a​n​d​ ​e​n​d​ ​w​i​t​h​ ​/​c​h​a​t​/​c​o​m​p​l​e​t​i​o​n​s
 	 */
 	llmConfig_apiPathInvalid: string
@@ -3430,6 +3434,10 @@ export type TranslationFunctions = {
 	 * Refresh models
 	 */
 	llmConfig_refreshModels: () => LocalizedString
+	/**
+	 * This model is not in the latest provider model list. Choose an available model or refresh again.
+	 */
+	llmConfig_modelUnavailable: () => LocalizedString
 	/**
 	 * API Path must start with / and end with /chat/completions
 	 */

@@ -17,9 +17,16 @@ import type { LanguageModel } from "ai";
 export interface ProviderConfig {
   provider: string;
   apiKey: string;
+  resolveApiKey?: (options?: { forceRefresh?: boolean }) => Promise<string>;
   baseUrl?: string | null;
   apiPath?: string | null;
   model: string;
+  modelCapabilities?: {
+    preferredApi?: "chat_completions" | "responses" | null;
+    supportsReasoning?: boolean | null;
+    supportsTools?: boolean | null;
+    supportsVision?: boolean | null;
+  } | null;
 }
 
 export interface CacheMetrics {

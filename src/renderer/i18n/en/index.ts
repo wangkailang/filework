@@ -252,6 +252,8 @@ const en: BaseTranslation = {
   llmConfig_lastTestedAt: "Tested at {when:string}",
   llmConfig_optional: "optional",
   llmConfig_refreshModels: "Refresh models",
+  llmConfig_modelUnavailable:
+    "This model is not in the latest provider model list. Choose an available model or refresh again.",
   llmConfig_apiPathInvalid:
     "API Path must start with / and end with /chat/completions",
   llmConfig_deleteConfirm:

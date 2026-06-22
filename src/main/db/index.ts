@@ -92,6 +92,7 @@ export const initDatabase = async () => {
       name TEXT NOT NULL,
       provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi','github-copilot')),
       api_key TEXT,
+      auth_metadata TEXT,
       base_url TEXT,
       api_path TEXT,
       model TEXT NOT NULL,
@@ -104,6 +105,19 @@ export const initDatabase = async () => {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS llm_model_catalog (
+      id TEXT PRIMARY KEY,
+      config_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      capabilities TEXT NOT NULL,
+      context_window INTEGER,
+      max_output_tokens INTEGER,
+      fetched_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_model_catalog_config ON llm_model_catalog(config_id, model_id);
     CREATE TABLE IF NOT EXISTS media_jobs (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -581,6 +595,9 @@ export const initDatabase = async () => {
   if (!llmCols.some((c) => c.name === "last_check_message")) {
     sqlite.exec("ALTER TABLE llm_configs ADD COLUMN last_check_message TEXT");
   }
+  if (!llmCols.some((c) => c.name === "auth_metadata")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN auth_metadata TEXT");
+  }
   const llmConfigsSql = (
     sqlite
       .prepare(
@@ -597,6 +614,7 @@ export const initDatabase = async () => {
             name TEXT NOT NULL,
             provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax')),
             api_key TEXT,
+            auth_metadata TEXT,
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
@@ -609,8 +627,8 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
-            SELECT id, name, provider, api_key, base_url, api_path, model,
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -648,6 +666,7 @@ export const initDatabase = async () => {
             name TEXT NOT NULL,
             provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi')),
             api_key TEXT,
+            auth_metadata TEXT,
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
@@ -660,8 +679,8 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
-            SELECT id, name, provider, api_key, base_url, api_path, model,
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -697,6 +716,7 @@ export const initDatabase = async () => {
             name TEXT NOT NULL,
             provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi','github-copilot')),
             api_key TEXT,
+            auth_metadata TEXT,
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
@@ -709,8 +729,8 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
-            SELECT id, name, provider, api_key, base_url, api_path, model,
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -2265,6 +2285,14 @@ export type LlmProvider =
 
 export type LlmModality = "chat" | "image" | "video";
 export type LlmCheckStatus = "success" | "error";
+export type LlmModelPreferredApi = "chat_completions" | "responses";
+
+export interface LlmModelCapabilities {
+  preferredApi: LlmModelPreferredApi;
+  supportsReasoning: boolean | null;
+  supportsTools: boolean | null;
+  supportsVision: boolean | null;
+}
 
 export interface LlmConfig {
   id: string;
@@ -2281,8 +2309,31 @@ export interface LlmConfig {
   lastCheckedAt: string | null;
   lastCheckStatus: LlmCheckStatus | null;
   lastCheckMessage: string | null;
+  modelAvailable?: boolean | null;
+  modelCapabilities?: LlmModelCapabilities | null;
+  modelCatalogFetchedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LlmModelCatalogEntry {
+  configId: string;
+  modelId: string;
+  label: string;
+  capabilities: LlmModelCapabilities;
+  contextWindow: number | null;
+  maxOutputTokens: number | null;
+  fetchedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LlmModelCatalogInput {
+  modelId: string;
+  label: string;
+  capabilities: LlmModelCapabilities;
+  contextWindow: number | null;
+  maxOutputTokens: number | null;
 }
 
 // ============================================================================
@@ -2311,6 +2362,51 @@ function mapRowToLlmConfig(
   };
 }
 
+function mapRowToLlmModelCatalogEntry(
+  row: typeof schema.llmModelCatalog.$inferSelect,
+): LlmModelCatalogEntry {
+  return {
+    configId: row.configId,
+    modelId: row.modelId,
+    label: row.label,
+    capabilities: JSON.parse(row.capabilities) as LlmModelCapabilities,
+    contextWindow: row.contextWindow,
+    maxOutputTokens: row.maxOutputTokens,
+    fetchedAt: row.fetchedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+const readLlmModelCatalog = (configId: string): LlmModelCatalogEntry[] =>
+  db
+    .select()
+    .from(schema.llmModelCatalog)
+    .where(eq(schema.llmModelCatalog.configId, configId))
+    .all()
+    .map(mapRowToLlmModelCatalogEntry);
+
+function attachLlmModelCatalogMetadata(config: LlmConfig): LlmConfig {
+  const catalog = readLlmModelCatalog(config.id);
+  if (catalog.length === 0) {
+    return {
+      ...config,
+      modelAvailable: null,
+      modelCapabilities: null,
+      modelCatalogFetchedAt: null,
+    };
+  }
+
+  const matchedModel = catalog.find((entry) => entry.modelId === config.model);
+  return {
+    ...config,
+    modelAvailable: Boolean(matchedModel),
+    modelCapabilities: matchedModel?.capabilities ?? null,
+    modelCatalogFetchedAt:
+      matchedModel?.fetchedAt ?? catalog[0]?.fetchedAt ?? null,
+  };
+}
+
 export const createLlmConfig = (
   config: Omit<
     LlmConfig,
@@ -2325,6 +2421,7 @@ export const createLlmConfig = (
     | "lastCheckMessage"
   > & {
     apiPath?: string | null;
+    authMetadata?: string | null;
     enabled?: boolean;
     lastCheckedAt?: string | null;
     lastCheckStatus?: LlmCheckStatus | null;
@@ -2335,6 +2432,9 @@ export const createLlmConfig = (
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const encryptedApiKey = config.apiKey ? encrypt(config.apiKey) : null;
+  const encryptedAuthMetadata = config.authMetadata
+    ? encrypt(config.authMetadata)
+    : null;
 
   const modality: LlmModality = config.modality ?? "chat";
   db.insert(schema.llmConfigs)
@@ -2343,6 +2443,7 @@ export const createLlmConfig = (
       name: config.name,
       provider: config.provider,
       apiKey: encryptedApiKey,
+      authMetadata: encryptedAuthMetadata,
       baseUrl: config.baseUrl ?? null,
       apiPath: config.apiPath ?? null,
       model: config.model,
@@ -2373,6 +2474,9 @@ export const createLlmConfig = (
     lastCheckMessage: config.lastCheckMessage ?? null,
     createdAt: now,
     updatedAt: now,
+    modelAvailable: null,
+    modelCapabilities: null,
+    modelCatalogFetchedAt: null,
   };
 };
 
@@ -2382,7 +2486,7 @@ export const getLlmConfigs = (): LlmConfig[] =>
     .from(schema.llmConfigs)
     .orderBy(desc(schema.llmConfigs.updatedAt))
     .all()
-    .map(mapRowToLlmConfig);
+    .map((row) => attachLlmModelCatalogMetadata(mapRowToLlmConfig(row)));
 
 export const getLlmConfig = (id: string): LlmConfig | null => {
   const row = db
@@ -2390,18 +2494,60 @@ export const getLlmConfig = (id: string): LlmConfig | null => {
     .from(schema.llmConfigs)
     .where(eq(schema.llmConfigs.id, id))
     .get();
-  return row ? mapRowToLlmConfig(row) : null;
+  return row ? attachLlmModelCatalogMetadata(mapRowToLlmConfig(row)) : null;
+};
+
+export const getLlmModelCatalog = (configId: string): LlmModelCatalogEntry[] =>
+  readLlmModelCatalog(configId);
+
+export const replaceLlmModelCatalog = (
+  configId: string,
+  models: LlmModelCatalogInput[],
+  fetchedAt = new Date().toISOString(),
+): void => {
+  db.transaction((tx) => {
+    tx.delete(schema.llmModelCatalog)
+      .where(eq(schema.llmModelCatalog.configId, configId))
+      .run();
+
+    if (models.length === 0) return;
+
+    const now = new Date().toISOString();
+    tx.insert(schema.llmModelCatalog)
+      .values(
+        models.map((model) => ({
+          id: crypto.randomUUID(),
+          configId,
+          modelId: model.modelId,
+          label: model.label,
+          capabilities: JSON.stringify(model.capabilities),
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
+          fetchedAt,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      )
+      .run();
+  });
 };
 
 export const updateLlmConfig = (
   id: string,
-  updates: Partial<Omit<LlmConfig, "id" | "createdAt">>,
+  updates: Partial<Omit<LlmConfig, "id" | "createdAt">> & {
+    authMetadata?: string | null;
+  },
 ): void => {
   const mapped: Record<string, unknown> = {};
   if (updates.name !== undefined) mapped.name = updates.name;
   if (updates.provider !== undefined) mapped.provider = updates.provider;
   if (updates.apiKey !== undefined)
     mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
+  if (updates.authMetadata !== undefined) {
+    mapped.authMetadata = updates.authMetadata
+      ? encrypt(updates.authMetadata)
+      : null;
+  }
   if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
   if (updates.apiPath !== undefined) mapped.apiPath = updates.apiPath;
   if (updates.model !== undefined) mapped.model = updates.model;
@@ -2415,6 +2561,40 @@ export const updateLlmConfig = (
   if (updates.lastCheckMessage !== undefined)
     mapped.lastCheckMessage = updates.lastCheckMessage;
   mapped.updatedAt = new Date().toISOString();
+
+  db.update(schema.llmConfigs)
+    .set(mapped)
+    .where(eq(schema.llmConfigs.id, id))
+    .run();
+};
+
+export const getLlmConfigAuthMetadata = (id: string): string | null => {
+  const row = db
+    .select({ authMetadata: schema.llmConfigs.authMetadata })
+    .from(schema.llmConfigs)
+    .where(eq(schema.llmConfigs.id, id))
+    .get();
+  return row?.authMetadata ? decrypt(row.authMetadata) : null;
+};
+
+export const updateLlmConfigRuntimeAuth = (
+  id: string,
+  updates: {
+    apiKey?: string | null;
+    authMetadata?: string | null;
+    baseUrl?: string | null;
+  },
+): void => {
+  const mapped: Record<string, unknown> = {};
+  if (updates.apiKey !== undefined) {
+    mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
+  }
+  if (updates.authMetadata !== undefined) {
+    mapped.authMetadata = updates.authMetadata
+      ? encrypt(updates.authMetadata)
+      : null;
+  }
+  if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
 
   db.update(schema.llmConfigs)
     .set(mapped)
@@ -2450,7 +2630,7 @@ export const getDefaultLlmConfig = (): LlmConfig | null => {
       ),
     )
     .get();
-  return row ? mapRowToLlmConfig(row) : null;
+  return row ? attachLlmModelCatalogMetadata(mapRowToLlmConfig(row)) : null;
 };
 
 export const setDefaultLlmConfig = (id: string): void => {

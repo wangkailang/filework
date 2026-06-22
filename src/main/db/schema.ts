@@ -301,6 +301,7 @@ export const llmConfigs = sqliteTable("llm_configs", {
     ],
   }).notNull(),
   apiKey: text("api_key"),
+  authMetadata: text("auth_metadata"),
   baseUrl: text("base_url"),
   apiPath: text("api_path"),
   model: text("model").notNull(),
@@ -320,6 +321,19 @@ export const llmConfigs = sqliteTable("llm_configs", {
     enum: ["success", "error"],
   }),
   lastCheckMessage: text("last_check_message"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const llmModelCatalog = sqliteTable("llm_model_catalog", {
+  id: text("id").primaryKey(),
+  configId: text("config_id").notNull(),
+  modelId: text("model_id").notNull(),
+  label: text("label").notNull(),
+  capabilities: text("capabilities").notNull(),
+  contextWindow: integer("context_window"),
+  maxOutputTokens: integer("max_output_tokens"),
+  fetchedAt: text("fetched_at").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

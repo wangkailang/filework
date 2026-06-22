@@ -16,6 +16,26 @@ describe("getSelectableLlmConfigs", () => {
           lastCheckStatus: "success",
         },
         {
+          id: "legacy-success",
+          name: "Legacy successful model",
+          provider: "custom",
+          model: "legacy-model",
+          modality: "chat",
+          enabled: true,
+          lastCheckStatus: "success",
+          modelAvailable: null,
+        },
+        {
+          id: "model-unavailable",
+          name: "Unavailable model",
+          provider: "github-copilot",
+          model: "removed-model",
+          modality: "chat",
+          enabled: true,
+          lastCheckStatus: "success",
+          modelAvailable: false,
+        },
+        {
           id: "disabled",
           name: "Disabled model",
           provider: "custom",
@@ -43,6 +63,6 @@ describe("getSelectableLlmConfigs", () => {
           lastCheckStatus: null,
         },
       ]).map((config) => config.id),
-    ).toEqual(["enabled"]);
+    ).toEqual(["enabled", "legacy-success"]);
   });
 });

@@ -5,8 +5,9 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 export type Provider =
@@ -76,8 +77,46 @@ const MODALITIES: { value: Modality; label: string }[] = [
 ];
 
 export interface LlmModelOption {
+  capabilities?: {
+    preferredApi?: "chat_completions" | "responses" | null;
+    supportsReasoning?: boolean | null;
+    supportsTools?: boolean | null;
+    supportsVision?: boolean | null;
+  };
+  contextWindow?: number | null;
   value: string;
   label: string;
+  maxOutputTokens?: number | null;
+}
+
+function formatCompactTokenCount(value: number): string {
+  if (value >= 1000 && value % 1000 === 0) {
+    return `${value / 1000}k`;
+  }
+  if (value >= 1000) {
+    return `${Math.round(value / 1000)}k`;
+  }
+  return String(value);
+}
+
+export function formatLlmModelOptionLabel(option: LlmModelOption): string {
+  const hints: string[] = [];
+  if (option.capabilities?.preferredApi === "responses") {
+    hints.push("Responses");
+  }
+  if (option.capabilities?.supportsReasoning) {
+    hints.push("Reasoning");
+  }
+  if (option.capabilities?.supportsTools) {
+    hints.push("Tools");
+  }
+  if (option.capabilities?.supportsVision) {
+    hints.push("Vision");
+  }
+  if (option.contextWindow) {
+    hints.push(`${formatCompactTokenCount(option.contextWindow)} ctx`);
+  }
+  return [option.label, ...hints].join(" · ");
 }
 
 export function getVisibleLlmModelOptions(
@@ -85,13 +124,33 @@ export function getVisibleLlmModelOptions(
   refreshedOptions: LlmModelOption[],
   currentModel: string,
 ): LlmModelOption[] {
-  if (provider !== "github-copilot") return [];
+  if (provider !== "github-copilot" && provider !== "custom") return [];
   const currentValue = currentModel.trim();
   if (!currentValue) return refreshedOptions;
   if (refreshedOptions.some((option) => option.value === currentValue)) {
     return refreshedOptions;
   }
   return [{ value: currentValue, label: currentValue }, ...refreshedOptions];
+}
+
+export type LlmSelectedModelAvailability =
+  | "available"
+  | "unavailable"
+  | "unknown";
+
+export function getLlmSelectedModelAvailability(
+  provider: Provider,
+  refreshedOptions: LlmModelOption[],
+  currentModel: string,
+): LlmSelectedModelAvailability {
+  if (provider !== "github-copilot" && provider !== "custom") return "unknown";
+  if (refreshedOptions.length === 0) return "unknown";
+
+  const currentValue = currentModel.trim();
+  if (!currentValue) return "unknown";
+  return refreshedOptions.some((option) => option.value === currentValue)
+    ? "available"
+    : "unavailable";
 }
 
 export function shouldShowGithubCopilotAuthFlow(
@@ -108,6 +167,16 @@ export function shouldShowGithubCopilotDisconnect(
   isConnected: boolean,
 ): boolean {
   return provider === "github-copilot" && isEditing && isConnected;
+}
+
+export type GithubCopilotAuthStepState = "current" | "done" | "locked";
+
+export function getGithubCopilotAuthStepStates(
+  hasDeviceCode: boolean,
+): GithubCopilotAuthStepState[] {
+  return hasDeviceCode
+    ? ["done", "current", "current", "current"]
+    : ["current", "locked", "locked", "locked"];
 }
 
 export interface LlmProviderFieldPolicy {
@@ -184,6 +253,52 @@ interface GithubCopilotAuthStart {
   verificationUriComplete?: string;
 }
 
+const stepBadgeClass: Record<GithubCopilotAuthStepState, string> = {
+  current: "bg-primary text-primary-foreground",
+  done: "bg-emerald-500 text-white",
+  locked: "bg-muted text-muted-foreground ring-1 ring-border",
+};
+
+const GithubCopilotAuthStep = ({
+  action,
+  hint,
+  index,
+  state,
+  title,
+}: {
+  action?: ReactNode;
+  hint?: ReactNode;
+  index: number;
+  state: GithubCopilotAuthStepState;
+  title: ReactNode;
+}) => (
+  <div className="grid gap-2 py-1 sm:grid-cols-[1.75rem_minmax(0,1fr)_auto] sm:items-center">
+    <span
+      className={cn(
+        "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+        stepBadgeClass[state],
+      )}
+    >
+      {state === "done" ? <CheckCircle2 size={14} /> : index}
+    </span>
+    <div className="min-w-0">
+      <div className="text-sm font-medium leading-tight text-foreground">
+        {title}
+      </div>
+      {hint && (
+        <div className="mt-0.5 text-xs leading-snug text-muted-foreground">
+          {hint}
+        </div>
+      )}
+    </div>
+    {action && (
+      <div className="min-w-0 sm:justify-self-end sm:[grid-column:auto] [grid-column:2/-1]">
+        {action}
+      </div>
+    )}
+  </div>
+);
+
 interface LlmConfigEditModalProps {
   open: boolean;
   editing: LlmConfig | null;
@@ -211,36 +326,37 @@ export const LlmConfigEditModal = ({
   const [copilotConnected, setCopilotConnected] = useState(false);
   const [copilotCopied, setCopilotCopied] = useState(false);
   const [copilotError, setCopilotError] = useState<string | null>(null);
-  const [copilotModelOptions, setCopilotModelOptions] = useState<
+  const [refreshedModelOptions, setRefreshedModelOptions] = useState<
     LlmModelOption[]
   >([]);
-  const [copilotModelBusy, setCopilotModelBusy] = useState(false);
-  const [copilotModelError, setCopilotModelError] = useState<string | null>(
+  const [modelRefreshBusy, setModelRefreshBusy] = useState(false);
+  const [modelRefreshError, setModelRefreshError] = useState<string | null>(
     null,
   );
 
-  const loadGithubCopilotModels = useCallback(async (configId: string) => {
-    setCopilotModelBusy(true);
-    setCopilotModelError(null);
+  const loadLlmModels = useCallback(async (configId: string) => {
+    setModelRefreshBusy(true);
+    setModelRefreshError(null);
     try {
-      const result =
-        await window.filework.llmConfig.listGithubCopilotModels(configId);
+      const result = await window.filework.llmConfig.listModels(configId);
       if ("error" in result) {
-        setCopilotModelError(result.error);
+        setModelRefreshError(result.error);
         return;
       }
-      setCopilotModelOptions(result);
+      setRefreshedModelOptions(result);
       setForm((prev) =>
-        prev.provider === "github-copilot" && !prev.model.trim() && result[0]
+        (prev.provider === "github-copilot" || prev.provider === "custom") &&
+        !prev.model.trim() &&
+        result[0]
           ? { ...prev, model: result[0].value }
           : prev,
       );
     } catch (error) {
-      setCopilotModelError(
+      setModelRefreshError(
         error instanceof Error ? error.message : String(error),
       );
     } finally {
-      setCopilotModelBusy(false);
+      setModelRefreshBusy(false);
     }
   }, []);
 
@@ -268,20 +384,23 @@ export const LlmConfigEditModal = ({
     );
     setCopilotCopied(false);
     setCopilotError(null);
-    setCopilotModelOptions([]);
-    setCopilotModelBusy(false);
-    setCopilotModelError(null);
+    setRefreshedModelOptions([]);
+    setModelRefreshBusy(false);
+    setModelRefreshError(null);
   }, [open, editing]);
 
-  const editingCopilotId =
-    open && editing?.provider === "github-copilot" && copilotConnected
+  const editingDiscoverableModelConfigId =
+    open &&
+    editing &&
+    (editing.provider === "custom" ||
+      (editing.provider === "github-copilot" && copilotConnected))
       ? editing.id
       : null;
 
   useEffect(() => {
-    if (!editingCopilotId) return;
-    void loadGithubCopilotModels(editingCopilotId);
-  }, [editingCopilotId, loadGithubCopilotModels]);
+    if (!editingDiscoverableModelConfigId) return;
+    void loadLlmModels(editingDiscoverableModelConfigId);
+  }, [editingDiscoverableModelConfigId, loadLlmModels]);
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof FormData, string>> = {};
@@ -300,6 +419,15 @@ export const LlmConfigEditModal = ({
       ) {
         e.apiPath = LL.llmConfig_apiPathInvalid();
       }
+    }
+    if (
+      getLlmSelectedModelAvailability(
+        form.provider,
+        refreshedModelOptions,
+        form.model,
+      ) === "unavailable"
+    ) {
+      e.model = LL.llmConfig_modelUnavailable();
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -404,7 +532,7 @@ export const LlmConfigEditModal = ({
           configId: editing && !copilotConnected ? editing.id : undefined,
           model:
             selectedModel === GITHUB_COPILOT_DEFAULT_MODEL &&
-            copilotModelOptions.length === 0
+            refreshedModelOptions.length === 0
               ? undefined
               : selectedModel || undefined,
         },
@@ -424,7 +552,7 @@ export const LlmConfigEditModal = ({
     if (!editing) return;
     setCopilotBusy("disconnect");
     setCopilotError(null);
-    setCopilotModelError(null);
+    setModelRefreshError(null);
     try {
       const result = (await window.filework.llmConfig.disconnectGithubCopilot(
         editing.id,
@@ -436,7 +564,7 @@ export const LlmConfigEditModal = ({
       setCopilotConnected(false);
       setCopilotAuth(null);
       setCopilotCopied(false);
-      setCopilotModelOptions([]);
+      setRefreshedModelOptions([]);
       setForm((prev) => ({
         ...prev,
         apiKey: "",
@@ -467,7 +595,12 @@ export const LlmConfigEditModal = ({
     (form.provider === "github-copilot" ? GITHUB_COPILOT_DEFAULT_MODEL : "");
   const visibleModelOptions = getVisibleLlmModelOptions(
     form.provider,
-    copilotModelOptions,
+    refreshedModelOptions,
+    selectedModelValue,
+  );
+  const selectedModelAvailability = getLlmSelectedModelAvailability(
+    form.provider,
+    refreshedModelOptions,
     selectedModelValue,
   );
   const showCopilotAuthFlow = shouldShowGithubCopilotAuthFlow(
@@ -480,6 +613,9 @@ export const LlmConfigEditModal = ({
     Boolean(editing),
     copilotConnected,
   );
+  const copilotStepStates = getGithubCopilotAuthStepStates(
+    Boolean(copilotAuth),
+  );
 
   return (
     <Dialog
@@ -488,14 +624,14 @@ export const LlmConfigEditModal = ({
         if (!nextOpen) onClose();
       }}
     >
-      <DialogContent className="flex! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[480px]! max-w-[calc(100vw-32px)]! max-h-[calc(100vh-64px)]!">
+      <DialogContent className="flex! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[560px]! max-w-[calc(100vw-32px)]! max-h-[calc(100vh-48px)]!">
         <div className="flex items-center border-b border-border px-5 py-3 pr-12">
           <DialogTitle className="text-sm font-medium text-foreground">
             {editing ? LL.llmConfig_edit() : LL.llmConfig_add()}
           </DialogTitle>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-5 py-3.5 pb-5 space-y-2.5">
           <div>
             <label
               htmlFor={nameInputId}
@@ -546,9 +682,9 @@ export const LlmConfigEditModal = ({
                 setCopilotConnected(false);
                 setCopilotCopied(false);
                 setCopilotError(null);
-                setCopilotModelOptions([]);
-                setCopilotModelBusy(false);
-                setCopilotModelError(null);
+                setRefreshedModelOptions([]);
+                setModelRefreshBusy(false);
+                setModelRefreshError(null);
               }}
               className={inputCls}
             >
@@ -669,19 +805,19 @@ export const LlmConfigEditModal = ({
               >
                 {LL.llmConfig_model()}
               </label>
-              {form.provider === "github-copilot" &&
-                editing &&
-                copilotConnected && (
+              {(form.provider === "custom" ||
+                (form.provider === "github-copilot" && copilotConnected)) &&
+                editing && (
                   <button
                     type="button"
-                    onClick={() => void loadGithubCopilotModels(editing.id)}
-                    disabled={copilotModelBusy}
+                    onClick={() => void loadLlmModels(editing.id)}
+                    disabled={modelRefreshBusy}
                     title={LL.llmConfig_refreshModels()}
                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60"
                   >
                     <RefreshCw
                       size={12}
-                      className={copilotModelBusy ? "animate-spin" : undefined}
+                      className={modelRefreshBusy ? "animate-spin" : undefined}
                     />
                     {LL.llmConfig_refreshModels()}
                   </button>
@@ -696,7 +832,7 @@ export const LlmConfigEditModal = ({
               >
                 {visibleModelOptions.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {formatLlmModelOptionLabel(option)}
                   </option>
                 ))}
               </select>
@@ -709,7 +845,7 @@ export const LlmConfigEditModal = ({
               >
                 {visibleModelOptions.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {formatLlmModelOptionLabel(option)}
                   </option>
                 ))}
               </select>
@@ -724,11 +860,21 @@ export const LlmConfigEditModal = ({
             {errors.model && (
               <p className="mt-1 text-xs text-destructive">{errors.model}</p>
             )}
-            {form.provider === "github-copilot" && copilotModelError && (
-              <p className="mt-1 text-xs text-destructive">
-                {copilotModelError}
-              </p>
-            )}
+            {(form.provider === "github-copilot" ||
+              form.provider === "custom") &&
+              selectedModelAvailability === "unavailable" &&
+              !errors.model && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  {LL.llmConfig_modelUnavailable()}
+                </p>
+              )}
+            {(form.provider === "github-copilot" ||
+              form.provider === "custom") &&
+              modelRefreshError && (
+                <p className="mt-1 text-xs text-destructive">
+                  {modelRefreshError}
+                </p>
+              )}
           </div>
 
           <label
@@ -748,7 +894,7 @@ export const LlmConfigEditModal = ({
           </label>
 
           {showCopilotDisconnect && (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
+            <div className="space-y-2.5 rounded-lg border border-border bg-muted/30 p-3">
               <div>
                 <div className="text-sm font-medium text-foreground">
                   {LL.llmConfig_copilotConnectedTitle()}
@@ -775,54 +921,53 @@ export const LlmConfigEditModal = ({
           )}
 
           {showCopilotAuthFlow && (
-            <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
-              <div>
-                <div className="text-sm font-medium text-foreground">
-                  {LL.llmConfig_copilotTitle()}
+            <div className="space-y-2.5 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">
+                    {LL.llmConfig_copilotTitle()}
+                  </div>
+                  <div className="mt-1 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+                    {LL.llmConfig_copilotDescription()}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {LL.llmConfig_copilotDescription()}
+                <div className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground">
+                  {GITHUB_DEVICE_LOGIN_URL}
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    1
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground">
-                      {LL.llmConfig_copilotStepGetCode()}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {LL.llmConfig_copilotStepGetCodeHint()}
-                    </div>
+              <div className="space-y-1.5">
+                <GithubCopilotAuthStep
+                  index={1}
+                  state={copilotStepStates[0]}
+                  title={LL.llmConfig_copilotStepGetCode()}
+                  hint={LL.llmConfig_copilotStepGetCodeHint()}
+                  action={
                     <button
                       type="button"
                       onClick={() => void handleStartCopilotAuth()}
                       disabled={copilotBusy !== null}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
                     >
                       {copilotBusy === "start" && (
                         <Loader2 size={13} className="animate-spin" />
                       )}
                       {LL.llmConfig_copilotGetCode()}
                     </button>
-                  </div>
-                </div>
+                  }
+                />
 
-                <div className="flex items-start gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    2
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground">
-                      {LL.llmConfig_copilotStepCopyCode()}
-                    </div>
-                    <div className="mt-2 flex gap-2">
-                      <div className="min-h-9 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm font-semibold text-foreground">
-                        {copilotAuth?.userCode ||
-                          LL.llmConfig_copilotCodePlaceholder()}
+                <GithubCopilotAuthStep
+                  index={2}
+                  state={copilotStepStates[1]}
+                  title={LL.llmConfig_copilotStepCopyCode()}
+                  action={
+                    <div className="flex w-full min-w-0 gap-2 sm:w-[330px]">
+                      <div className="flex h-8 min-w-0 flex-1 items-center rounded-lg border border-border bg-background px-3 font-mono text-sm font-semibold text-foreground">
+                        <span className="truncate">
+                          {copilotAuth?.userCode ||
+                            LL.llmConfig_copilotCodePlaceholder()}
+                        </span>
                       </div>
                       <button
                         type="button"
@@ -831,7 +976,7 @@ export const LlmConfigEditModal = ({
                           void copyCopilotCode(copilotAuth.userCode)
                         }
                         disabled={!copilotAuth || copilotBusy !== null}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {copilotCopied ? (
                           <CheckCircle2 size={14} />
@@ -843,61 +988,46 @@ export const LlmConfigEditModal = ({
                           : LL.llmConfig_copilotCopy()}
                       </button>
                     </div>
-                  </div>
-                </div>
+                  }
+                />
 
-                <div className="flex items-start gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    3
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground">
-                      {LL.llmConfig_copilotStepOpenPage()}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {LL.llmConfig_copilotStepOpenPageHint()}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenCopilotAuth()}
-                        disabled={!copilotAuth || copilotBusy !== null}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <ExternalLink size={13} />
-                        {LL.llmConfig_copilotOpenPage()}
-                      </button>
-                      <span className="text-xs text-muted-foreground">
-                        {GITHUB_DEVICE_LOGIN_URL}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <GithubCopilotAuthStep
+                  index={3}
+                  state={copilotStepStates[2]}
+                  title={LL.llmConfig_copilotStepOpenPage()}
+                  hint={LL.llmConfig_copilotStepOpenPageHint()}
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenCopilotAuth()}
+                      disabled={!copilotAuth || copilotBusy !== null}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ExternalLink size={13} />
+                      {LL.llmConfig_copilotOpenPage()}
+                    </button>
+                  }
+                />
 
-                <div className="flex items-start gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    4
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-foreground">
-                      {LL.llmConfig_copilotStepComplete()}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {LL.llmConfig_copilotStepCompleteHint()}
-                    </div>
+                <GithubCopilotAuthStep
+                  index={4}
+                  state={copilotStepStates[3]}
+                  title={LL.llmConfig_copilotStepComplete()}
+                  hint={LL.llmConfig_copilotStepCompleteHint()}
+                  action={
                     <button
                       type="button"
                       onClick={() => void handleCompleteCopilotAuth()}
                       disabled={!copilotAuth || copilotBusy !== null}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {copilotBusy === "complete" && (
                         <Loader2 size={13} className="animate-spin" />
                       )}
                       {LL.llmConfig_copilotConnect()}
                     </button>
-                  </div>
-                </div>
+                  }
+                />
               </div>
 
               {copilotError && (

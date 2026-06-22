@@ -41,16 +41,21 @@ const dbMock = vi.hoisted(() => {
       state.orderedByUpdatedAtDesc = true;
       return query;
     }),
+    where: vi.fn(() => catalogQuery),
     all: vi.fn(() =>
       state.orderedByUpdatedAtDesc ? [...state.rows].reverse() : state.rows,
     ),
+  };
+
+  const catalogQuery = {
+    all: vi.fn(() => []),
   };
 
   const select = vi.fn(() => ({
     from: vi.fn(() => query),
   }));
 
-  return { query, select, state };
+  return { catalogQuery, query, select, state };
 });
 
 class FakeDatabase {
@@ -92,7 +97,9 @@ describe("LLM config ordering", () => {
   beforeEach(() => {
     userDataPath = mkdtempSync(join(tmpdir(), "filework-llm-config-"));
     dbMock.state.orderedByUpdatedAtDesc = false;
+    dbMock.catalogQuery.all.mockClear();
     dbMock.query.orderBy.mockClear();
+    dbMock.query.where.mockClear();
     dbMock.query.all.mockClear();
     dbMock.select.mockClear();
   });

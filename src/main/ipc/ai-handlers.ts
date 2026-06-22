@@ -48,8 +48,6 @@ import {
   addTask,
   deleteSkillTrust,
   finishAutomationRun,
-  getDefaultLlmConfig,
-  getLlmConfig,
   getSetting,
   listSkillTrust,
   type SkillTrustRow,
@@ -76,7 +74,10 @@ import {
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
 import { buildAgentToolRegistry } from "./agent-tools";
-import { getModelAndAdapterByConfigId } from "./ai-models";
+import {
+  getModelAndAdapterByConfigId,
+  selectAvailableChatLlmConfig,
+} from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
 import {
   abortControllers,
@@ -265,9 +266,9 @@ const handleTaskExecutionInner = async (
       },
     });
 
-    const llmConfig = payload.llmConfigId
-      ? getLlmConfig(payload.llmConfigId)
-      : getDefaultLlmConfig();
+    const llmSelection = selectAvailableChatLlmConfig(payload.llmConfigId);
+    const llmConfig = llmSelection.config;
+    const resolvedLlmConfigId = llmConfig.id;
 
     // Phase 1 守卫:只有 "chat" modality 走 agent 循环。图像/视频配置
     // 使用不同的 provider API(例如 MiniMax /v1/image_generation、
@@ -282,9 +283,8 @@ const handleTaskExecutionInner = async (
       );
     }
 
-    const { model, adapter } = getModelAndAdapterByConfigId(
-      payload.llmConfigId,
-    );
+    const { model, adapter } =
+      getModelAndAdapterByConfigId(resolvedLlmConfigId);
 
     emitTaskTraceEvent(sender, {
       taskId: id,
@@ -293,6 +293,8 @@ const handleTaskExecutionInner = async (
       detail: {
         provider: llmConfig?.provider ?? null,
         modelId: llmConfig?.model ?? null,
+        configId: resolvedLlmConfigId,
+        fallbackFromConfigId: llmSelection.fallbackFromConfigId,
       },
     });
 
@@ -511,7 +513,7 @@ const handleTaskExecutionInner = async (
           taskId: id,
           parentSignal: controller.signal,
           workspacePath: legacyWorkspacePath,
-          llmConfigId: payload.llmConfigId,
+          llmConfigId: resolvedLlmConfigId,
         });
         const deps: ExecutorDeps = { runSubagent };
 
@@ -642,7 +644,7 @@ const handleTaskExecutionInner = async (
       //(fork-skill-runner)不传 enableSubagent → 无法递归委派。
       enableSubagent: true,
       parentSignal: controller.signal,
-      llmConfigId: payload.llmConfigId,
+      llmConfigId: resolvedLlmConfigId,
       workspacePath: workspace.root,
       currentThreadId: payload.sessionId,
       parentAllowedSkills,

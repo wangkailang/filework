@@ -17,6 +17,44 @@ import {
 } from "./base";
 import { resolveOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
+type ResolveApiKey = NonNullable<ProviderConfig["resolveApiKey"]>;
+
+export function buildGithubCopilotFetch(
+  providerFetch: typeof globalThis.fetch,
+  resolveApiKey?: ResolveApiKey,
+): typeof globalThis.fetch {
+  const send = async (
+    input: RequestInfo | URL,
+    init: RequestInit | undefined,
+    options?: { forceRefresh?: boolean },
+  ) => {
+    const headers = new Headers(init?.headers);
+    headers.set("Editor-Version", "filework/0.1.0");
+    headers.set("User-Agent", "Filework");
+    headers.set("Copilot-Integration-Id", "vscode-chat");
+    const apiKey = resolveApiKey
+      ? options
+        ? await resolveApiKey(options)
+        : await resolveApiKey()
+      : null;
+    if (apiKey) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
+    }
+    return providerFetch(input, {
+      ...init,
+      headers,
+    });
+  };
+
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await send(input, init);
+    if (response.status !== 401 || !resolveApiKey) {
+      return response;
+    }
+    return send(input, init, { forceRefresh: true });
+  };
+}
+
 export class OpenAIAdapter implements ProviderAdapter {
   readonly name = "openai";
 
@@ -31,16 +69,10 @@ export class OpenAIAdapter implements ProviderAdapter {
     const providerFetch = getProviderFetch();
     const fetch: typeof globalThis.fetch | undefined =
       config.provider === "github-copilot"
-        ? (input: RequestInfo | URL, init?: RequestInit) => {
-            const headers = new Headers(init?.headers);
-            headers.set("Editor-Version", "filework/0.1.0");
-            headers.set("User-Agent", "Filework");
-            headers.set("Copilot-Integration-Id", "vscode-chat");
-            return (providerFetch ?? globalThis.fetch)(input, {
-              ...init,
-              headers,
-            });
-          }
+        ? buildGithubCopilotFetch(
+            providerFetch ?? globalThis.fetch,
+            config.resolveApiKey,
+          )
         : providerFetch;
     const openai = createOpenAI({
       apiKey: config.apiKey || "",
@@ -48,7 +80,13 @@ export class OpenAIAdapter implements ProviderAdapter {
       // 参见 provider-fetch.ts —— 启动时设置的、按 host 感知代理的 fetch。
       fetch,
     });
-    return isCustomEndpoint ? openai.chat(config.model) : openai(config.model);
+    const preferredApi = config.modelCapabilities?.preferredApi ?? null;
+    const useChatCompletions =
+      preferredApi === "chat_completions" ||
+      (isCustomEndpoint && preferredApi !== "responses");
+    return useChatCompletions
+      ? openai.chat(config.model)
+      : openai(config.model);
   }
 
   buildProviderOptions() {

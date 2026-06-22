@@ -20,11 +20,19 @@ interface LlmConfig {
   modality?: Modality;
   enabled?: boolean;
   lastCheckStatus?: "success" | "error" | null;
+  modelAvailable?: boolean | null;
+  modelCapabilities?: {
+    preferredApi: "chat_completions" | "responses";
+    supportsReasoning: boolean | null;
+    supportsTools: boolean | null;
+    supportsVision: boolean | null;
+  } | null;
 }
 
 export interface SelectableLlmConfig {
   enabled?: boolean;
   lastCheckStatus?: "success" | "error" | null;
+  modelAvailable?: boolean | null;
 }
 
 interface ModelSelectorProps {
@@ -40,7 +48,11 @@ const MODALITY_LABELS: Record<Modality, string> = {
 };
 
 export function isSelectableLlmConfig(config: SelectableLlmConfig): boolean {
-  return config.enabled !== false && config.lastCheckStatus === "success";
+  return (
+    config.enabled !== false &&
+    config.lastCheckStatus === "success" &&
+    config.modelAvailable !== false
+  );
 }
 
 export function getSelectableLlmConfigs<T extends SelectableLlmConfig>(
@@ -92,6 +104,17 @@ export const ModelSelector = ({
   const selectedModality = selected?.modality ?? "chat";
   const hasMultipleModalities = grouped.length > 1;
 
+  const getModelCapabilityHint = (config: LlmConfig): string | null => {
+    const capabilities = config.modelCapabilities;
+    if (!capabilities) return null;
+    const parts: string[] = [];
+    if (capabilities.preferredApi === "responses") parts.push("Responses");
+    if (capabilities.supportsReasoning) parts.push("Reasoning");
+    if (capabilities.supportsTools) parts.push("Tools");
+    if (capabilities.supportsVision) parts.push("Vision");
+    return parts.length > 0 ? parts.join(" · ") : null;
+  };
+
   return (
     <Select
       value={selected?.id}
@@ -132,6 +155,9 @@ export const ModelSelector = ({
                     <div className="truncate">{c.name}</div>
                     <div className="truncate text-muted-foreground">
                       {c.provider} · {c.model}
+                      {getModelCapabilityHint(c)
+                        ? ` · ${getModelCapabilityHint(c)}`
+                        : ""}
                     </div>
                   </div>
                 </div>
