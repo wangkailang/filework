@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { automationRuns } from "../schema";
+import { automationRunEvents, automationRuns } from "../schema";
 
 describe("automation run schema", () => {
   it("defines the persisted run table used by scheduler and triage", () => {
@@ -14,6 +14,19 @@ describe("automation run schema", () => {
     expect(automationRuns.taskId).toBeDefined();
     expect(automationRuns.output).toBeDefined();
     expect(automationRuns.errorMessage).toBeDefined();
+    expect(automationRuns.retryCount).toBeDefined();
+    expect(automationRuns.maxAttempts).toBeDefined();
+    expect(automationRuns.nextRetryAt).toBeDefined();
     expect(automationRuns.completedAt).toBeDefined();
+  });
+
+  it("defines persisted run events for live detail replay", () => {
+    expect(automationRunEvents).toBeDefined();
+    expect(automationRunEvents.runId).toBeDefined();
+    expect(automationRunEvents.sequence).toBeDefined();
+    expect(automationRunEvents.type).toBeDefined();
+    expect(automationRunEvents.message).toBeDefined();
+    expect(automationRunEvents.toolName).toBeDefined();
+    expect(automationRunEvents.detail).toBeDefined();
   });
 });

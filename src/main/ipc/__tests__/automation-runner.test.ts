@@ -45,6 +45,9 @@ const run = {
   inputTokens: null,
   outputTokens: null,
   totalTokens: null,
+  retryCount: 0,
+  maxAttempts: 3,
+  nextRetryAt: null,
   createdAt: "2026-06-18T09:00:00.000Z",
   updatedAt: "2026-06-18T09:00:00.000Z",
   startedAt: null,
@@ -90,6 +93,39 @@ describe("automation headless runner", () => {
       status: "succeeded",
       output: "Repo is clean.",
       usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
+    });
+  });
+
+  it("records replayable run events while consuming headless output", async () => {
+    const startAutomationRun = vi.fn(() => ({
+      ...run,
+      status: "running" as const,
+    }));
+    const finishAutomationRun = vi.fn((id, updates) => ({
+      ...run,
+      id,
+      ...updates,
+    }));
+    const recordAutomationRunEvent = vi.fn();
+
+    await runAutomationHeadless(run, automation, {
+      startAutomationRun,
+      finishAutomationRun,
+      recordAutomationRunEvent,
+      runAgent: () => completedAgentRun(),
+    });
+
+    expect(recordAutomationRunEvent).toHaveBeenCalledWith("run-1", {
+      message: "Repo is clean.",
+      type: "message_update",
+    });
+    expect(recordAutomationRunEvent).toHaveBeenCalledWith("run-1", {
+      detail: expect.objectContaining({
+        status: "completed",
+        usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
+      }),
+      message: "Repo is clean.",
+      type: "agent_end",
     });
   });
 

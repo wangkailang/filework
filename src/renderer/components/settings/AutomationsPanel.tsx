@@ -86,10 +86,24 @@ export interface AutomationRunRecord {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  retryCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+export interface AutomationRunEventRecord {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  message: string | null;
+  toolName: string | null;
+  detail: unknown;
+  createdAt: string;
 }
 
 interface AutomationDraft {
@@ -137,6 +151,22 @@ const EMPTY_DRAFT: AutomationDraft = {
 const inputCls =
   "w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus:border-primary focus:outline-none";
 const TRIAGE_PAGE_SIZE = 8;
+const DEFAULT_DAILY_TIME = "09:00";
+const DEFAULT_WEEKLY_DAY = "Mon";
+const DEFAULT_INTERVAL_AMOUNT = "1";
+const DEFAULT_INTERVAL_UNIT: IntervalUnit = "h";
+
+type IntervalUnit = "m" | "h" | "d";
+
+const WEEKDAY_OPTIONS = [
+  ["Mon", "Monday"],
+  ["Tue", "Tuesday"],
+  ["Wed", "Wednesday"],
+  ["Thu", "Thursday"],
+  ["Fri", "Friday"],
+  ["Sat", "Saturday"],
+  ["Sun", "Sunday"],
+] as const;
 
 const typeLabels = (
   LL: TranslationFunctions,
@@ -154,6 +184,162 @@ const scheduleKindLabels = (
   interval: LL.automations_scheduleInterval(),
   weekly: LL.automations_scheduleWeekly(),
 });
+
+const defaultScheduleValueFor = (kind: AutomationScheduleKind): string => {
+  if (kind === "daily") return DEFAULT_DAILY_TIME;
+  if (kind === "weekly") return `${DEFAULT_WEEKLY_DAY} ${DEFAULT_DAILY_TIME}`;
+  if (kind === "interval")
+    return `${DEFAULT_INTERVAL_AMOUNT}${DEFAULT_INTERVAL_UNIT}`;
+  return "0 9 * * *";
+};
+
+const normalizeTimeValue = (value: string): string =>
+  /^\d{2}:\d{2}$/.test(value) ? value : DEFAULT_DAILY_TIME;
+
+const parseWeeklySchedule = (
+  value: string,
+): { day: (typeof WEEKDAY_OPTIONS)[number][0]; time: string } => {
+  const [dayCandidate, timeCandidate] = value.trim().split(/\s+/);
+  const day = WEEKDAY_OPTIONS.some(([option]) => option === dayCandidate)
+    ? (dayCandidate as (typeof WEEKDAY_OPTIONS)[number][0])
+    : DEFAULT_WEEKLY_DAY;
+  return {
+    day,
+    time: normalizeTimeValue(timeCandidate ?? ""),
+  };
+};
+
+const buildWeeklySchedule = (day: string, time: string): string =>
+  `${day} ${normalizeTimeValue(time)}`;
+
+const parseIntervalSchedule = (
+  value: string,
+): { amount: string; unit: IntervalUnit } => {
+  const match = value.trim().match(/^(\d+)\s*([mhd])$/i);
+  if (!match) {
+    return { amount: DEFAULT_INTERVAL_AMOUNT, unit: DEFAULT_INTERVAL_UNIT };
+  }
+  const [, amount, unit] = match;
+  return {
+    amount: amount || DEFAULT_INTERVAL_AMOUNT,
+    unit: unit.toLowerCase() as IntervalUnit,
+  };
+};
+
+const buildIntervalSchedule = (amount: string, unit: IntervalUnit): string => {
+  const parsed = Number.parseInt(amount, 10);
+  const safeAmount = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  return `${safeAmount}${unit}`;
+};
+
+const formatWeekday = (
+  day: (typeof WEEKDAY_OPTIONS)[number][0],
+  locale: Locales,
+): string => {
+  const dayIndex = WEEKDAY_OPTIONS.findIndex(([value]) => value === day);
+  if (dayIndex < 0) return day;
+  try {
+    const date = new Date(Date.UTC(2026, 5, 22 + dayIndex, 12));
+    return new Intl.DateTimeFormat(locale, { weekday: "short" }).format(date);
+  } catch {
+    return day;
+  }
+};
+
+const formatIntervalUnit = (
+  unit: IntervalUnit,
+  amount: string,
+  LL: TranslationFunctions,
+  locale: Locales,
+): string => {
+  if (locale === "en" && amount === "1") {
+    if (unit === "m") return "minute";
+    if (unit === "h") return "hour";
+    return "day";
+  }
+  if (unit === "m") return LL.automations_scheduleUnitMinutes();
+  if (unit === "h") return LL.automations_scheduleUnitHours();
+  return LL.automations_scheduleUnitDays();
+};
+
+const formatScheduleSummary = (
+  kind: AutomationScheduleKind,
+  value: string,
+  LL: TranslationFunctions,
+  locale: Locales,
+): string => {
+  const trimmed = value.trim();
+  if (kind === "weekly") {
+    const weekly = parseWeeklySchedule(trimmed);
+    return `${LL.automations_scheduleWeekly()} · ${formatWeekday(
+      weekly.day,
+      locale,
+    )} ${weekly.time}`;
+  }
+  if (kind === "interval") {
+    const match = trimmed.match(/^(\d+)\s*([mhd])$/i);
+    if (!match) return `${LL.automations_scheduleInterval()} · ${trimmed}`;
+    const [, amount, unit] = match;
+    const safeAmount = amount || DEFAULT_INTERVAL_AMOUNT;
+    const safeUnit = unit.toLowerCase() as IntervalUnit;
+    return `${LL.automations_scheduleEvery()} ${safeAmount} ${formatIntervalUnit(
+      safeUnit,
+      safeAmount,
+      LL,
+      locale,
+    )}`;
+  }
+  if (kind === "daily") {
+    const displayValue = /^\d{2}:\d{2}$/.test(trimmed)
+      ? trimmed
+      : trimmed || DEFAULT_DAILY_TIME;
+    return `${LL.automations_scheduleDaily()} · ${displayValue}`;
+  }
+  return `${LL.automations_scheduleCron()} · ${trimmed}`;
+};
+
+const automationTemplates = (
+  LL: TranslationFunctions,
+): Array<{
+  id: "daily-commit-summary" | "dependency-monitor" | "ci-failure-watch";
+  title: string;
+  prompt: string;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  type: AutomationType;
+  runMode: AutomationRunMode;
+}> => [
+  {
+    id: "daily-commit-summary",
+    title: LL.automations_templateDailyCommitTitle(),
+    prompt:
+      "统计最近 24 小时的 commit 改动，按模块汇总提交数量、主要文件变化、风险点和后续建议，并输出中文日报。",
+    scheduleKind: "daily",
+    scheduleValue: DEFAULT_DAILY_TIME,
+    type: "project",
+    runMode: "worktree",
+  },
+  {
+    id: "dependency-monitor",
+    title: LL.automations_templateDependenciesTitle(),
+    prompt:
+      "检查项目依赖更新和锁文件变化，识别安全更新、破坏性升级风险和需要关注的包，并给出建议。",
+    scheduleKind: "weekly",
+    scheduleValue: `${DEFAULT_WEEKLY_DAY} ${DEFAULT_DAILY_TIME}`,
+    type: "project",
+    runMode: "worktree",
+  },
+  {
+    id: "ci-failure-watch",
+    title: LL.automations_templateCiFailureTitle(),
+    prompt:
+      "检查最近的 CI 或测试失败信息，归纳失败原因、影响范围和下一步排查建议；如果没有失败则简要说明当前状态。",
+    scheduleKind: "interval",
+    scheduleValue: "30m",
+    type: "project",
+    runMode: "worktree",
+  },
+];
 
 const runModeLabels = (
   LL: TranslationFunctions,
@@ -274,6 +460,196 @@ const buildRunDetailMarkdown = (
 const isActiveAutomationRun = (run: AutomationRunRecord): boolean =>
   run.status === "queued" || run.status === "running";
 
+interface AutomationScheduleValueControlProps {
+  draft: AutomationDraft;
+  LL: TranslationFunctions;
+  locale: Locales;
+  onDraftChange: (draft: AutomationDraft) => void;
+}
+
+export const AutomationScheduleValueControl = ({
+  draft,
+  LL,
+  locale,
+  onDraftChange,
+}: AutomationScheduleValueControlProps) => {
+  if (draft.scheduleKind === "daily") {
+    return (
+      <div data-automation-schedule-builder="daily">
+        <label
+          htmlFor="automation-daily-time"
+          className="mb-1 block text-xs text-muted-foreground"
+        >
+          {LL.automations_scheduleTime()}
+        </label>
+        <input
+          id="automation-daily-time"
+          type="time"
+          data-automation-daily-time="true"
+          value={normalizeTimeValue(draft.scheduleValue)}
+          onChange={(event) =>
+            onDraftChange({
+              ...draft,
+              scheduleValue: normalizeTimeValue(event.target.value),
+            })
+          }
+          className={inputCls}
+        />
+      </div>
+    );
+  }
+
+  if (draft.scheduleKind === "weekly") {
+    const weekly = parseWeeklySchedule(draft.scheduleValue);
+    return (
+      <div
+        data-automation-schedule-builder="weekly"
+        className="grid grid-cols-[minmax(0,1fr)_120px] gap-2"
+      >
+        <div>
+          <label
+            htmlFor="automation-weekly-day"
+            className="mb-1 block text-xs text-muted-foreground"
+          >
+            {LL.automations_scheduleDay()}
+          </label>
+          <select
+            id="automation-weekly-day"
+            data-automation-weekly-day="true"
+            value={weekly.day}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                scheduleValue: buildWeeklySchedule(
+                  event.target.value,
+                  weekly.time,
+                ),
+              })
+            }
+            className={inputCls}
+          >
+            {WEEKDAY_OPTIONS.map(([value]) => (
+              <option key={value} value={value}>
+                {formatWeekday(value, locale)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label
+            htmlFor="automation-weekly-time"
+            className="mb-1 block text-xs text-muted-foreground"
+          >
+            {LL.automations_scheduleTime()}
+          </label>
+          <input
+            id="automation-weekly-time"
+            type="time"
+            data-automation-weekly-time="true"
+            value={weekly.time}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                scheduleValue: buildWeeklySchedule(
+                  weekly.day,
+                  event.target.value,
+                ),
+              })
+            }
+            className={inputCls}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (draft.scheduleKind === "interval") {
+    const interval = parseIntervalSchedule(draft.scheduleValue);
+    return (
+      <div
+        data-automation-schedule-builder="interval"
+        className="grid grid-cols-[minmax(0,1fr)_120px] gap-2"
+      >
+        <div>
+          <label
+            htmlFor="automation-interval-amount"
+            className="mb-1 block text-xs text-muted-foreground"
+          >
+            {LL.automations_scheduleEvery()}
+          </label>
+          <input
+            id="automation-interval-amount"
+            type="number"
+            min={1}
+            step={1}
+            data-automation-interval-amount="true"
+            value={interval.amount}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                scheduleValue: buildIntervalSchedule(
+                  event.target.value,
+                  interval.unit,
+                ),
+              })
+            }
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="automation-interval-unit"
+            className="mb-1 block text-xs text-muted-foreground"
+          >
+            {LL.automations_scheduleValue()}
+          </label>
+          <select
+            id="automation-interval-unit"
+            data-automation-interval-unit="true"
+            value={interval.unit}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                scheduleValue: buildIntervalSchedule(
+                  interval.amount,
+                  event.target.value as IntervalUnit,
+                ),
+              })
+            }
+            className={inputCls}
+          >
+            <option value="m">{LL.automations_scheduleUnitMinutes()}</option>
+            <option value="h">{LL.automations_scheduleUnitHours()}</option>
+            <option value="d">{LL.automations_scheduleUnitDays()}</option>
+          </select>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div data-automation-schedule-builder="cron">
+      <label
+        htmlFor="automation-cron-value"
+        className="mb-1 block text-xs text-muted-foreground"
+      >
+        {LL.automations_scheduleValue()}
+      </label>
+      <input
+        id="automation-cron-value"
+        value={draft.scheduleValue}
+        onChange={(event) =>
+          onDraftChange({
+            ...draft,
+            scheduleValue: event.target.value,
+          })
+        }
+        className={`${inputCls} font-mono text-xs`}
+      />
+    </div>
+  );
+};
+
 interface AutomationFormDialogProps {
   draft: AutomationDraft;
   saving: boolean;
@@ -342,6 +718,14 @@ const AutomationFormDialog = ({
     event.preventDefault();
     if (!canSubmit || saving) return;
     onSubmit();
+  };
+
+  const handleScheduleKindChange = (kind: AutomationScheduleKind) => {
+    onDraftChange({
+      ...draft,
+      scheduleKind: kind,
+      scheduleValue: defaultScheduleValueFor(kind),
+    });
   };
 
   return (
@@ -449,11 +833,9 @@ const AutomationFormDialog = ({
                   id="automation-schedule-kind"
                   value={draft.scheduleKind}
                   onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      scheduleKind: event.target
-                        .value as AutomationScheduleKind,
-                    })
+                    handleScheduleKindChange(
+                      event.target.value as AutomationScheduleKind,
+                    )
                   }
                   className={inputCls}
                 >
@@ -467,25 +849,12 @@ const AutomationFormDialog = ({
                 </select>
               </div>
 
-              <div>
-                <label
-                  htmlFor="automation-schedule-value"
-                  className="mb-1 block text-xs text-muted-foreground"
-                >
-                  {LL.automations_scheduleValue()}
-                </label>
-                <input
-                  id="automation-schedule-value"
-                  value={draft.scheduleValue}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      scheduleValue: event.target.value,
-                    })
-                  }
-                  className={inputCls}
-                />
-              </div>
+              <AutomationScheduleValueControl
+                draft={draft}
+                LL={LL}
+                locale={locale}
+                onDraftChange={onDraftChange}
+              />
             </div>
 
             {(schedulePreview || schedulePreviewError) && (
@@ -714,6 +1083,7 @@ export const AutomationDeleteDialog = ({
 const AutomationRunDetailsDialog = ({
   LL,
   completedAt,
+  events,
   onClose,
   run,
   runStatusLabels,
@@ -721,6 +1091,7 @@ const AutomationRunDetailsDialog = ({
 }: {
   LL: TranslationFunctions;
   completedAt: string | null;
+  events: AutomationRunEventRecord[];
   onClose: () => void;
   run: AutomationRunRecord | null;
   runStatusLabels: Record<AutomationRunStatus, string>;
@@ -775,6 +1146,36 @@ const AutomationRunDetailsDialog = ({
             className="min-h-0 overflow-auto rounded-lg border border-border bg-background p-4"
           >
             <MessageResponse>{buildRunDetailMarkdown(run, LL)}</MessageResponse>
+            {events.length > 0 && (
+              <div
+                data-automation-run-events={run.id}
+                className="mt-5 border-t border-border pt-4"
+              >
+                <h5 className="mb-2 text-xs font-medium text-muted-foreground">
+                  {LL.automations_runDetailsEvents()}
+                </h5>
+                <div className="space-y-2">
+                  {events.map((event) => (
+                    <div
+                      key={event.id}
+                      className="rounded-md border border-border bg-muted/30 px-2.5 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span className="font-mono">{event.type}</span>
+                        {event.toolName && (
+                          <span className="truncate">{event.toolName}</span>
+                        )}
+                      </div>
+                      {event.message && (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
+                          {event.message}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
@@ -785,6 +1186,7 @@ const AutomationRunDetailsDialog = ({
 const AutomationRunRowContent = ({
   LL,
   completedAt,
+  retryAt,
   run,
   runStatusLabels,
   showDetails = false,
@@ -792,6 +1194,7 @@ const AutomationRunRowContent = ({
 }: {
   LL: TranslationFunctions;
   completedAt: string | null;
+  retryAt: string | null;
   run: AutomationRunRecord;
   runStatusLabels: Record<AutomationRunStatus, string>;
   showDetails?: boolean;
@@ -825,6 +1228,15 @@ const AutomationRunRowContent = ({
           })}
         </span>
       )}
+      {run.maxAttempts > 1 && run.status === "failed" && (
+        <span>
+          {LL.automations_runAttempt({
+            current: String(run.retryCount + 1),
+            max: String(run.maxAttempts),
+          })}
+        </span>
+      )}
+      {retryAt && <span>{LL.automations_runRetryAt({ value: retryAt })}</span>}
       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
         {run.trigger === "manual"
           ? LL.automations_triggerManual()
@@ -872,6 +1284,9 @@ export const AutomationsPanel = ({
   const [cleaningRuns, setCleaningRuns] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] =
     useState<AutomationRunRecord | null>(null);
+  const [selectedRunEvents, setSelectedRunEvents] = useState<
+    AutomationRunEventRecord[]
+  >([]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -903,9 +1318,44 @@ export const AutomationsPanel = ({
     return () => window.clearInterval(timer);
   }, [initialAutomations, refresh]);
 
+  useEffect(() => {
+    if (!selectedRunDetails) {
+      setSelectedRunEvents([]);
+      return;
+    }
+
+    let disposed = false;
+    window.filework.automations
+      .listRunEvents(selectedRunDetails.id)
+      .then((events) => {
+        if (!disposed) setSelectedRunEvents(events);
+      })
+      .catch(() => {
+        if (!disposed) setSelectedRunEvents([]);
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedRunDetails]);
+
   const openCreate = () => setDraft(EMPTY_DRAFT);
   const openEdit = (automation: AutomationRecord) =>
     setDraft(draftFromAutomation(automation));
+  const applyTemplate = (
+    template: ReturnType<typeof automationTemplates>[number],
+  ) => {
+    setDraft({
+      ...EMPTY_DRAFT,
+      enabled: true,
+      prompt: template.prompt,
+      runMode: template.runMode,
+      scheduleKind: template.scheduleKind,
+      scheduleValue: template.scheduleValue,
+      title: template.title,
+      type: template.type,
+    });
+  };
 
   const handleSave = async () => {
     if (!draft) return;
@@ -1002,7 +1452,7 @@ export const AutomationsPanel = ({
 
   const handleRunAction = async (
     run: AutomationRunRecord,
-    action: "cancel" | "handled" | "rerun",
+    action: "cancel" | "continue" | "handled" | "rerun",
   ) => {
     const busyKey = `${action}:${run.id}`;
     setRunActionBusyKey(busyKey);
@@ -1010,6 +1460,8 @@ export const AutomationsPanel = ({
     try {
       if (action === "cancel") {
         await window.filework.automations.cancelRun(run.id);
+      } else if (action === "continue") {
+        await window.filework.automations.continueRun(run.id);
       } else if (action === "handled") {
         await window.filework.automations.markRunHandled(run.id);
       } else {
@@ -1048,9 +1500,9 @@ export const AutomationsPanel = ({
   };
 
   const labels = typeLabels(LL);
-  const scheduleLabels = scheduleKindLabels(LL);
   const runModes = runModeLabels(LL);
   const runStatusLabels = automationRunStatusLabels(LL);
+  const templates = automationTemplates(LL);
   const activeRunAutomationIds = new Set(
     runs.filter(isActiveAutomationRun).map((run) => run.automationId),
   );
@@ -1163,6 +1615,7 @@ export const AutomationsPanel = ({
             {visibleTriageRuns.map((run) => {
               const startedAt = formatDateTime(run.startedAt, locale);
               const completedAt = formatDateTime(run.completedAt, locale);
+              const retryAt = formatDateTime(run.nextRetryAt, locale);
               const canCancel =
                 run.status === "queued" ||
                 run.status === "running" ||
@@ -1173,6 +1626,12 @@ export const AutomationsPanel = ({
                   label: LL.automations_triageRerun(),
                   icon: RotateCw,
                   show: true,
+                },
+                {
+                  action: "continue" as const,
+                  label: LL.automations_triageContinueRun(),
+                  icon: Play,
+                  show: run.status === "needs_action",
                 },
                 {
                   action: "handled" as const,
@@ -1209,6 +1668,7 @@ export const AutomationsPanel = ({
                         run={run}
                         startedAt={startedAt}
                         completedAt={completedAt}
+                        retryAt={retryAt}
                         showDetails
                         LL={LL}
                         runStatusLabels={runStatusLabels}
@@ -1225,6 +1685,7 @@ export const AutomationsPanel = ({
                         run={run}
                         startedAt={startedAt}
                         completedAt={completedAt}
+                        retryAt={retryAt}
                         showDetails
                         LL={LL}
                         runStatusLabels={runStatusLabels}
@@ -1356,8 +1817,12 @@ export const AutomationsPanel = ({
                 className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs ${status.bodyClass}`}
               >
                 <span>
-                  {scheduleLabels[automation.scheduleKind]} ·{" "}
-                  {automation.scheduleValue}
+                  {formatScheduleSummary(
+                    automation.scheduleKind,
+                    automation.scheduleValue,
+                    LL,
+                    locale,
+                  )}
                 </span>
                 {automation.type === "project" && automation.runMode && (
                   <span>{runModes[automation.runMode]}</span>
@@ -1428,6 +1893,44 @@ export const AutomationsPanel = ({
       })}
     </div>
   );
+  const templatesSection =
+    view === "tasks" && templates.length > 0 ? (
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {LL.automations_templatesTitle()}
+        </h4>
+        <div className="grid gap-2 md:grid-cols-3">
+          {templates.map((template) => (
+            <button
+              type="button"
+              key={template.id}
+              data-automation-template={template.id}
+              onClick={() => applyTemplate(template)}
+              className="group rounded-lg border border-border bg-muted/20 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {template.title}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatScheduleSummary(
+                      template.scheduleKind,
+                      template.scheduleValue,
+                      LL,
+                      locale,
+                    )}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-md bg-background px-2 py-1 text-[11px] text-primary ring-1 ring-border group-hover:ring-primary/30">
+                  {LL.automations_templateUse()}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   if (isRail) {
     const enabledCount = automations.filter(
@@ -1528,8 +2031,12 @@ export const AutomationsPanel = ({
                       <div
                         className={`mt-0.5 truncate text-[11px] ${status.bodyClass}`}
                       >
-                        {scheduleLabels[automation.scheduleKind]} ·{" "}
-                        {automation.scheduleValue}
+                        {formatScheduleSummary(
+                          automation.scheduleKind,
+                          automation.scheduleValue,
+                          LL,
+                          locale,
+                        )}
                       </div>
                       {lastRun && (
                         <div
@@ -1614,6 +2121,7 @@ export const AutomationsPanel = ({
         />
         <AutomationRunDetailsDialog
           LL={LL}
+          events={selectedRunEvents}
           run={selectedRunDetails}
           startedAt={formatDateTime(
             selectedRunDetails?.startedAt ?? null,
@@ -1631,7 +2139,13 @@ export const AutomationsPanel = ({
   }
 
   return (
-    <div data-automation-view={view} className="space-y-4">
+    <div
+      data-automation-view={view}
+      data-automation-draft-open={draft ? "true" : undefined}
+      data-automation-draft-schedule-kind={draft?.scheduleKind}
+      data-automation-draft-title={draft?.title || undefined}
+      className="space-y-4"
+    >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">
@@ -1688,7 +2202,14 @@ export const AutomationsPanel = ({
         </div>
       )}
 
-      {view === "tasks" ? taskListSection : triageSection}
+      {view === "tasks" ? (
+        <>
+          {templatesSection}
+          {taskListSection}
+        </>
+      ) : (
+        triageSection
+      )}
 
       {formDialog}
       <AutomationDeleteDialog
@@ -1698,6 +2219,7 @@ export const AutomationsPanel = ({
       />
       <AutomationRunDetailsDialog
         LL={LL}
+        events={selectedRunEvents}
         run={selectedRunDetails}
         startedAt={formatDateTime(
           selectedRunDetails?.startedAt ?? null,

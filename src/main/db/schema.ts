@@ -197,10 +197,24 @@ export const automationRuns = sqliteTable("automation_runs", {
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
   totalTokens: integer("total_tokens"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  nextRetryAt: text("next_retry_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   startedAt: text("started_at"),
   completedAt: text("completed_at"),
+});
+
+export const automationRunEvents = sqliteTable("automation_run_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  sequence: integer("sequence").notNull(),
+  type: text("type").notNull(),
+  message: text("message"),
+  toolName: text("tool_name"),
+  detail: text("detail"),
+  createdAt: text("created_at").notNull(),
 });
 
 /**

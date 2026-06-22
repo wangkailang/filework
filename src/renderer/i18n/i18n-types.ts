@@ -483,6 +483,30 @@ type RootTranslation = {
 	 */
 	automations_scheduleCron: string
 	/**
+	 * D​a​y
+	 */
+	automations_scheduleDay: string
+	/**
+	 * T​i​m​e
+	 */
+	automations_scheduleTime: string
+	/**
+	 * E​v​e​r​y
+	 */
+	automations_scheduleEvery: string
+	/**
+	 * m​i​n​u​t​e​s
+	 */
+	automations_scheduleUnitMinutes: string
+	/**
+	 * h​o​u​r​s
+	 */
+	automations_scheduleUnitHours: string
+	/**
+	 * d​a​y​s
+	 */
+	automations_scheduleUnitDays: string
+	/**
 	 * N​e​x​t​ ​r​u​n​ ​{​v​a​l​u​e​}​ ​(​{​t​i​m​e​Z​o​n​e​}​)
 	 * @param {string} timeZone
 	 * @param {string} value
@@ -493,6 +517,26 @@ type RootTranslation = {
 	 * @param {string} value
 	 */
 	automations_schedulePreviewError: RequiredParams<'value'>
+	/**
+	 * R​e​c​o​m​m​e​n​d​e​d​ ​a​u​t​o​m​a​t​i​o​n​s
+	 */
+	automations_templatesTitle: string
+	/**
+	 * D​a​i​l​y​ ​c​o​m​m​i​t​ ​s​u​m​m​a​r​y
+	 */
+	automations_templateDailyCommitTitle: string
+	/**
+	 * D​e​p​e​n​d​e​n​c​y​ ​u​p​d​a​t​e​ ​m​o​n​i​t​o​r
+	 */
+	automations_templateDependenciesTitle: string
+	/**
+	 * C​I​ ​f​a​i​l​u​r​e​ ​t​r​a​c​k​i​n​g
+	 */
+	automations_templateCiFailureTitle: string
+	/**
+	 * U​s​e​ ​t​e​m​p​l​a​t​e
+	 */
+	automations_templateUse: string
 	/**
 	 * P​r​o​m​p​t
 	 */
@@ -602,6 +646,10 @@ type RootTranslation = {
 	 */
 	automations_runDetailsError: string
 	/**
+	 * E​x​e​c​u​t​i​o​n​ ​e​v​e​n​t​s
+	 */
+	automations_runDetailsEvents: string
+	/**
 	 * N​o​ ​o​u​t​p​u​t​ ​y​e​t​.
 	 */
 	automations_runDetailsEmpty: string
@@ -673,6 +721,10 @@ type RootTranslation = {
 	 */
 	automations_triageRerun: string
 	/**
+	 * C​o​n​t​i​n​u​e​ ​r​u​n
+	 */
+	automations_triageContinueRun: string
+	/**
 	 * M​a​r​k​ ​h​a​n​d​l​e​d
 	 */
 	automations_triageMarkHandled: string
@@ -736,6 +788,17 @@ type RootTranslation = {
 	 * @param {string} value
 	 */
 	automations_runCompleted: RequiredParams<'value'>
+	/**
+	 * A​t​t​e​m​p​t​ ​{​c​u​r​r​e​n​t​}​/​{​m​a​x​}
+	 * @param {string} current
+	 * @param {string} max
+	 */
+	automations_runAttempt: RequiredParams<'current' | 'max'>
+	/**
+	 * R​e​t​r​y​ ​a​t​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runRetryAt: RequiredParams<'value'>
 	/**
 	 * S​t​a​r​t​e​d
 	 */
@@ -2831,6 +2894,30 @@ export type TranslationFunctions = {
 	 */
 	automations_scheduleCron: () => LocalizedString
 	/**
+	 * Day
+	 */
+	automations_scheduleDay: () => LocalizedString
+	/**
+	 * Time
+	 */
+	automations_scheduleTime: () => LocalizedString
+	/**
+	 * Every
+	 */
+	automations_scheduleEvery: () => LocalizedString
+	/**
+	 * minutes
+	 */
+	automations_scheduleUnitMinutes: () => LocalizedString
+	/**
+	 * hours
+	 */
+	automations_scheduleUnitHours: () => LocalizedString
+	/**
+	 * days
+	 */
+	automations_scheduleUnitDays: () => LocalizedString
+	/**
 	 * Next run {value} ({timeZone})
 	 */
 	automations_schedulePreview: (arg: { timeZone: string, value: string }) => LocalizedString
@@ -2838,6 +2925,26 @@ export type TranslationFunctions = {
 	 * Invalid schedule: {value}
 	 */
 	automations_schedulePreviewError: (arg: { value: string }) => LocalizedString
+	/**
+	 * Recommended automations
+	 */
+	automations_templatesTitle: () => LocalizedString
+	/**
+	 * Daily commit summary
+	 */
+	automations_templateDailyCommitTitle: () => LocalizedString
+	/**
+	 * Dependency update monitor
+	 */
+	automations_templateDependenciesTitle: () => LocalizedString
+	/**
+	 * CI failure tracking
+	 */
+	automations_templateCiFailureTitle: () => LocalizedString
+	/**
+	 * Use template
+	 */
+	automations_templateUse: () => LocalizedString
 	/**
 	 * Prompt
 	 */
@@ -2947,6 +3054,10 @@ export type TranslationFunctions = {
 	 */
 	automations_runDetailsError: () => LocalizedString
 	/**
+	 * Execution events
+	 */
+	automations_runDetailsEvents: () => LocalizedString
+	/**
 	 * No output yet.
 	 */
 	automations_runDetailsEmpty: () => LocalizedString
@@ -3015,6 +3126,10 @@ export type TranslationFunctions = {
 	 */
 	automations_triageRerun: () => LocalizedString
 	/**
+	 * Continue run
+	 */
+	automations_triageContinueRun: () => LocalizedString
+	/**
 	 * Mark handled
 	 */
 	automations_triageMarkHandled: () => LocalizedString
@@ -3070,6 +3185,14 @@ export type TranslationFunctions = {
 	 * Completed {value}
 	 */
 	automations_runCompleted: (arg: { value: string }) => LocalizedString
+	/**
+	 * Attempt {current}/{max}
+	 */
+	automations_runAttempt: (arg: { current: string, max: string }) => LocalizedString
+	/**
+	 * Retry at {value}
+	 */
+	automations_runRetryAt: (arg: { value: string }) => LocalizedString
 	/**
 	 * Started
 	 */

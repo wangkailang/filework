@@ -30,6 +30,7 @@ describe("automation scheduler", () => {
     }));
     const scheduler = createAutomationScheduler({
       listDueAutomations: vi.fn(() => [dueAutomation]),
+      listDueAutomationRunRetries: vi.fn(() => []),
       queueAutomationRun,
       runAutomationRun,
       now: () => new Date("2026-06-18T09:00:00.000Z"),
@@ -44,11 +45,44 @@ describe("automation scheduler", () => {
     expect(runAutomationRun).toHaveBeenCalledWith("run-1");
   });
 
+  it("requeues due retry runs before normal scheduled automations", async () => {
+    const now = new Date("2026-06-18T09:05:00.000Z");
+    const retryRun = { id: "run-failed", automationId: "auto-1" };
+    const runAutomationRun = vi.fn(async () => undefined);
+    const listDueAutomationRunRetries = vi.fn(() => [retryRun]);
+    const queueAutomationRunRetry = vi.fn(() => ({
+      id: "run-retry",
+      automationId: "auto-1",
+    }));
+    const queueAutomationRun = vi.fn(() => ({
+      id: "run-scheduled",
+      automationId: "auto-1",
+    }));
+    const scheduler = createAutomationScheduler({
+      listDueAutomations: vi.fn(() => [dueAutomation]),
+      listDueAutomationRunRetries,
+      queueAutomationRun,
+      queueAutomationRunRetry,
+      runAutomationRun,
+      now: () => now,
+    });
+
+    await scheduler.tick();
+
+    expect(listDueAutomationRunRetries).toHaveBeenCalledWith(now);
+    expect(queueAutomationRunRetry).toHaveBeenCalledWith("run-failed", {
+      now,
+    });
+    expect(queueAutomationRun).not.toHaveBeenCalled();
+    expect(runAutomationRun).toHaveBeenCalledWith("run-retry");
+  });
+
   it("manual trigger returns the queued run and executes it", async () => {
     const run = { id: "run-manual", automationId: "auto-1" };
     const runAutomationRun = vi.fn(async () => undefined);
     const scheduler = createAutomationScheduler({
       listDueAutomations: vi.fn(() => []),
+      listDueAutomationRunRetries: vi.fn(() => []),
       queueAutomationRun: vi.fn(() => run),
       runAutomationRun,
       now: () => new Date("2026-06-18T10:00:00.000Z"),
@@ -63,6 +97,7 @@ describe("automation scheduler", () => {
     const recoverInterruptedRuns = vi.fn(() => []);
     const scheduler = createAutomationScheduler({
       listDueAutomations: vi.fn(() => []),
+      listDueAutomationRunRetries: vi.fn(() => []),
       queueAutomationRun: vi.fn(),
       recoverInterruptedRuns,
       runAutomationRun,
@@ -99,6 +134,9 @@ describe("automation scheduler", () => {
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
+      retryCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: null,
       createdAt: "2026-06-18T09:00:00.000Z",
       updatedAt: "2026-06-18T10:00:00.000Z",
       startedAt: "2026-06-18T09:00:05.000Z",
@@ -107,6 +145,7 @@ describe("automation scheduler", () => {
     const onRecoveredRun = vi.fn();
     const scheduler = createAutomationScheduler({
       listDueAutomations: vi.fn(() => []),
+      listDueAutomationRunRetries: vi.fn(() => []),
       queueAutomationRun: vi.fn(),
       recoverInterruptedRuns: vi.fn(() => [recoveredRun]),
       runAutomationRun: vi.fn(async () => undefined),

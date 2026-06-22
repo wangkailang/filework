@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TranslationFunctions } from "../../../i18n/i18n-types";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -10,6 +11,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
     LL: {
       automations_add: () => "新建自动化",
       automations_cancel: () => "取消",
+      automations_createTitle: () => "新建自动化",
       automations_description: () =>
         "管理由 Agent 创建的定时任务、提醒和项目监控。",
       automations_delete: () => "删除",
@@ -18,16 +20,22 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_deleteConfirmTitle: () => "删除自动化？",
       automations_disable: () => "停用",
       automations_edit: () => "编辑",
+      automations_editTitle: () => "编辑自动化",
       automations_empty: () => "还没有自动化。",
       automations_enable: () => "启用",
       automations_enabled: () => "启用",
+      automations_errorRequired: () => "名称、Prompt 和计划不能为空。",
       automations_loading: () => "正在加载自动化...",
       automations_lastRun: ({ value }: { value: string }) =>
         `上次运行 ${value}`,
+      automations_modelId: () => "模型覆盖",
       automations_nextRun: ({ value }: { value: string }) =>
         `下次运行 ${value}`,
+      automations_name: () => "名称",
       automations_notScheduled: () => "未计划",
       automations_prompt: () => "Prompt",
+      automations_reasoningEffort: () => "推理强度",
+      automations_runMode: () => "运行模式",
       automations_runModeLocal: () => "本地项目",
       automations_runModeWorktree: () => "隔离 worktree",
       automations_runCompleted: ({ value }: { value: string }) =>
@@ -46,8 +54,30 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_showTriage: () => "运行诊断",
       automations_scheduleCron: () => "Cron",
       automations_scheduleDaily: () => "每天",
+      automations_scheduleDay: () => "星期",
+      automations_scheduleEvery: () => "每",
       automations_scheduleInterval: () => "间隔",
+      automations_scheduleKind: () => "计划类型",
+      automations_schedulePreview: ({
+        timeZone,
+        value,
+      }: {
+        timeZone: string;
+        value: string;
+      }) => `预计下次执行 ${value}（${timeZone}）`,
+      automations_schedulePreviewError: ({ value }: { value: string }) =>
+        `计划无效：${value}`,
+      automations_scheduleTime: () => "时间",
+      automations_scheduleUnitDays: () => "天",
+      automations_scheduleUnitHours: () => "小时",
+      automations_scheduleUnitMinutes: () => "分钟",
+      automations_scheduleValue: () => "计划值",
       automations_scheduleWeekly: () => "每周",
+      automations_templateCiFailureTitle: () => "CI 失败跟踪",
+      automations_templateDependenciesTitle: () => "依赖更新监控",
+      automations_templateDailyCommitTitle: () => "每日 commit 统计",
+      automations_templateUse: () => "使用模板",
+      automations_templatesTitle: () => "推荐自动化",
       automations_tokenInput: ({ value }: { value: string }) =>
         `输入 ${value} tokens`,
       automations_tokenOutput: ({ value }: { value: string }) =>
@@ -58,6 +88,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_triageFilterHandled: () => "已处理",
       automations_triageFilterOpen: () => "待处理",
       automations_triageMarkHandled: () => "标记已处理",
+      automations_triageContinueRun: () => "继续运行",
       automations_triageNextPage: () => "下一页",
       automations_triagePreviousPage: () => "上一页",
       automations_triageRerun: () => "重跑",
@@ -70,7 +101,17 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_runDetailsPrompt: () => "执行指令",
       automations_runDetailsOutput: () => "输出",
       automations_runDetailsError: () => "错误",
+      automations_runDetailsEvents: () => "执行事件",
       automations_runDetailsEmpty: () => "暂无输出",
+      automations_runAttempt: ({
+        current,
+        max,
+      }: {
+        current: string;
+        max: string;
+      }) => `第 ${current}/${max} 次`,
+      automations_runRetryAt: ({ value }: { value: string }) =>
+        `下次重试 ${value}`,
       automations_save: () => "保存",
       automations_schedule: () => "计划",
       automations_statusDisabled: () => "已停用",
@@ -81,9 +122,12 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_triggering: () => "触发中",
       automations_triageTitle: () => "运行诊断",
       automations_title: () => "自动化",
+      automations_type: () => "类型",
       automations_typeProject: () => "项目",
       automations_typeStandalone: () => "独立",
       automations_typeThread: () => "当前对话",
+      automations_workspacePaths: () => "工作区路径",
+      automations_workspacePathsPlaceholder: () => "每行一个绝对路径",
       task_running: () => "执行中",
     },
   }),
@@ -92,8 +136,19 @@ vi.mock("../../../i18n/i18n-react", () => ({
 import {
   AutomationDeleteDialogContent,
   type AutomationRecord,
+  AutomationScheduleValueControl,
   AutomationsPanel,
 } from "../AutomationsPanel";
+
+const scheduleControlLL = {
+  automations_scheduleDay: () => "星期",
+  automations_scheduleEvery: () => "每",
+  automations_scheduleTime: () => "时间",
+  automations_scheduleUnitDays: () => "天",
+  automations_scheduleUnitHours: () => "小时",
+  automations_scheduleUnitMinutes: () => "分钟",
+  automations_scheduleValue: () => "计划值",
+} as unknown as TranslationFunctions;
 
 const installDom = () => {
   const { document, window } = parseHTML(
@@ -158,6 +213,9 @@ const automationRunRecord = () => ({
   inputTokens: null,
   outputTokens: null,
   totalTokens: null,
+  retryCount: 0,
+  maxAttempts: 3,
+  nextRetryAt: null,
   createdAt: "2026-06-18T01:00:00.000Z",
   updatedAt: "2026-06-18T01:02:00.000Z",
   startedAt: "2026-06-18T01:00:10.000Z",
@@ -208,6 +266,32 @@ describe("AutomationsPanel", () => {
 
     expect(fullHtml).toContain("上次运行");
     expect(railHtml).toContain("上次运行");
+  });
+
+  it("renders weekly and interval schedules as localized human-readable text", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        initialAutomations={[
+          automationRecord({
+            id: "auto-weekly",
+            scheduleKind: "weekly",
+            scheduleValue: "Mon 09:00",
+            title: "Weekly check",
+          }),
+          automationRecord({
+            id: "auto-interval",
+            scheduleKind: "interval",
+            scheduleValue: "30m",
+            title: "CI monitor",
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("每周 · 周一 09:00");
+    expect(html).toContain("每 30 分钟");
+    expect(html).not.toContain("每周 · Mon 09:00");
+    expect(html).not.toContain("间隔 · 30m");
   });
 
   it("renders a compact rail section without the settings description", () => {
@@ -345,7 +429,9 @@ describe("AutomationsPanel", () => {
         delete: vi.fn(),
         list: vi.fn(() => Promise.resolve([automationRecord()])),
         listRuns: vi.fn(() => Promise.resolve([automationRunRecord()])),
+        listRunEvents: vi.fn(() => Promise.resolve([])),
         markRunHandled: vi.fn(),
+        continueRun: vi.fn(),
         rerun: vi.fn(),
         trigger: vi.fn(),
         update: vi.fn(),
@@ -414,6 +500,7 @@ describe("AutomationsPanel", () => {
     expect(html).toContain("待处理");
     expect(html).toContain("等待处理");
     expect(html).toContain("重跑");
+    expect(html).toContain("继续运行");
     expect(html).toContain("标记已处理");
     expect(html).toContain("取消运行");
     expect(html).not.toContain("Requires approval");
@@ -465,6 +552,147 @@ describe("AutomationsPanel", () => {
     );
 
     expect(html.indexOf("新建自动化")).toBeLessThan(html.indexOf("任务列表"));
+  });
+
+  it("opens the create form with structured schedule controls", async () => {
+    const { document, window } = installDom();
+    Object.assign(window, {
+      filework: {
+        automations: {
+          previewSchedule: vi.fn(() =>
+            Promise.resolve({
+              nextRunAt: "2026-06-19T09:00:00.000Z",
+              timeZone: "Asia/Shanghai",
+            }),
+          ),
+        },
+      },
+    });
+    let root: Root | null = createRoot(
+      document.getElementById("root") as HTMLElement,
+    );
+
+    await act(async () => {
+      root?.render(<AutomationsPanel initialAutomations={[]} />);
+    });
+
+    const createButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("新建自动化"),
+    );
+    expect(createButton).toBeTruthy();
+
+    await act(async () => {
+      createButton?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.body.innerHTML).toContain(
+      'data-automation-draft-open="true"',
+    );
+
+    const scheduleHtml = renderToStaticMarkup(
+      <AutomationScheduleValueControl
+        draft={{
+          enabled: true,
+          modelId: "",
+          prompt: "",
+          reasoningEffort: "",
+          runMode: "local",
+          scheduleKind: "daily",
+          scheduleValue: "09:00",
+          title: "",
+          type: "standalone",
+          workspacePathsText: "",
+        }}
+        LL={scheduleControlLL}
+        locale="zh-CN"
+        onDraftChange={() => undefined}
+      />,
+    );
+
+    expect(scheduleHtml).toContain('data-automation-schedule-builder="daily"');
+    expect(scheduleHtml).toContain('data-automation-daily-time="true"');
+    expect(scheduleHtml).not.toContain('id="automation-schedule-value"');
+
+    const weeklyScheduleHtml = renderToStaticMarkup(
+      <AutomationScheduleValueControl
+        draft={{
+          enabled: true,
+          modelId: "",
+          prompt: "",
+          reasoningEffort: "",
+          runMode: "local",
+          scheduleKind: "weekly",
+          scheduleValue: "Mon 09:00",
+          title: "",
+          type: "standalone",
+          workspacePathsText: "",
+        }}
+        LL={scheduleControlLL}
+        locale="zh-CN"
+        onDraftChange={() => undefined}
+      />,
+    );
+
+    expect(weeklyScheduleHtml).toContain("周一");
+    expect(weeklyScheduleHtml).not.toContain("Monday");
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+  });
+
+  it("prefills the create form from a recommended automation template", async () => {
+    const { document, window } = installDom();
+    Object.assign(window, {
+      filework: {
+        automations: {
+          previewSchedule: vi.fn(() =>
+            Promise.resolve({
+              nextRunAt: "2026-06-19T09:00:00.000Z",
+              timeZone: "Asia/Shanghai",
+            }),
+          ),
+        },
+      },
+    });
+    let root: Root | null = createRoot(
+      document.getElementById("root") as HTMLElement,
+    );
+
+    await act(async () => {
+      root?.render(<AutomationsPanel initialAutomations={[]} />);
+    });
+
+    const templateButton = document.querySelector(
+      '[data-automation-template="daily-commit-summary"]',
+    );
+    expect(templateButton).toBeTruthy();
+
+    await act(async () => {
+      (templateButton as HTMLElement | null)?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.body.innerHTML).toContain(
+      'data-automation-draft-title="每日 commit 统计"',
+    );
+    expect(document.body.innerHTML).toContain(
+      'data-automation-draft-schedule-kind="daily"',
+    );
+
+    expect(document.body.innerHTML).toContain("每周 · 周一 09:00");
+    expect(document.body.innerHTML).toContain("每 30 分钟");
+    expect(document.body.innerHTML).not.toContain("每周 · Mon 09:00");
+    expect(document.body.innerHTML).not.toContain("间隔 · 30m");
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
   });
 
   it("renders enabled and disabled automations with distinct status treatments", () => {

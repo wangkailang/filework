@@ -10,6 +10,7 @@ import {
   cleanupAutomationRuns,
   createAutomation,
   deleteAutomation,
+  listAutomationRunEvents,
   listAutomationRuns,
   listAutomations,
   markAutomationRunHandled,
@@ -17,6 +18,7 @@ import {
   updateAutomation,
 } from "../db";
 import {
+  continueAutomationRun,
   prepareAutomationChatRun,
   rerunAutomationRun,
   triggerAutomationNow,
@@ -168,6 +170,18 @@ export const registerAutomationsHandlers = () => {
 
   ipcMain.handle("automations:rerun", async (_event, payload: { id: string }) =>
     rerunAutomationRun(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:continueRun",
+    async (_event, payload: { id: string }) =>
+      continueAutomationRun(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:listRunEvents",
+    async (_event, payload: { id: string }) =>
+      listAutomationRunEvents(requireId(payload)),
   );
 
   ipcMain.handle(

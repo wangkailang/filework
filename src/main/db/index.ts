@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { app } from "electron";
 import type { CredentialKind } from "../../shared/credentials";
@@ -156,6 +156,9 @@ export const initDatabase = async () => {
       input_tokens INTEGER,
       output_tokens INTEGER,
       total_tokens INTEGER,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      next_retry_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       started_at TEXT,
@@ -163,6 +166,18 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_retry ON automation_runs(next_retry_at);
+    CREATE TABLE IF NOT EXISTS automation_run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT,
+      tool_name TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_run_events_run ON automation_run_events(run_id, sequence);
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
@@ -250,6 +265,9 @@ export const initDatabase = async () => {
         input_tokens INTEGER,
         output_tokens INTEGER,
         total_tokens INTEGER,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        next_retry_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         started_at TEXT,
@@ -275,6 +293,9 @@ export const initDatabase = async () => {
         input_tokens,
         output_tokens,
         total_tokens,
+        retry_count,
+        max_attempts,
+        next_retry_at,
         created_at,
         updated_at,
         started_at,
@@ -300,6 +321,9 @@ export const initDatabase = async () => {
         input_tokens,
         output_tokens,
         total_tokens,
+        0,
+        3,
+        NULL,
         created_at,
         updated_at,
         started_at,
@@ -315,6 +339,42 @@ export const initDatabase = async () => {
   sqlite.exec(
     "CREATE INDEX IF NOT EXISTS idx_automation_runs_triage ON automation_runs(triage_status, updated_at)",
   );
+  const automationRunColumns = new Set(
+    (
+      (sqlite.pragma("table_info(automation_runs)") as
+        | Array<{ name: string }>
+        | undefined) ?? []
+    ).map((column) => column.name),
+  );
+  if (!automationRunColumns.has("retry_count")) {
+    sqlite.exec(
+      "ALTER TABLE automation_runs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+  if (!automationRunColumns.has("max_attempts")) {
+    sqlite.exec(
+      "ALTER TABLE automation_runs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3",
+    );
+  }
+  if (!automationRunColumns.has("next_retry_at")) {
+    sqlite.exec("ALTER TABLE automation_runs ADD COLUMN next_retry_at TEXT");
+  }
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS idx_automation_runs_retry ON automation_runs(next_retry_at)",
+  );
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS automation_run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT,
+      tool_name TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_run_events_run ON automation_run_events(run_id, sequence);
+  `);
 
   // 迁移:Tavily 之前的数据库 CHECK 约束仅限
   // github_pat/gitlab_pat。SQLite 无法 ALTER 一个 CHECK 约束 ——
@@ -720,10 +780,24 @@ export interface AutomationRunRecord {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  retryCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+export interface AutomationRunEventRecord {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  message: string | null;
+  toolName: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export type CredentialTestStatus = "unknown" | "ok" | "error";
@@ -1355,6 +1429,19 @@ const ACTIVE_AUTOMATION_RUN_STATUSES: AutomationRunStatus[] = [
   "queued",
   "running",
 ];
+const AUTOMATION_RETRY_BASE_DELAY_MS = 5 * 60_000;
+const AUTOMATION_RETRY_MAX_DELAY_MS = 60 * 60_000;
+
+const computeAutomationRetryAt = (
+  retryCount: number,
+  now = new Date(),
+): string => {
+  const delay = Math.min(
+    AUTOMATION_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, retryCount),
+    AUTOMATION_RETRY_MAX_DELAY_MS,
+  );
+  return new Date(now.getTime() + delay).toISOString();
+};
 
 const mapAutomationRunRow = (
   row: typeof schema.automationRuns.$inferSelect,
@@ -1380,6 +1467,9 @@ const mapAutomationRunRow = (
   inputTokens: row.inputTokens ?? null,
   outputTokens: row.outputTokens ?? null,
   totalTokens: row.totalTokens ?? null,
+  retryCount: row.retryCount ?? 0,
+  maxAttempts: row.maxAttempts ?? 3,
+  nextRetryAt: row.nextRetryAt ?? null,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   startedAt: row.startedAt ?? null,
@@ -1472,6 +1562,9 @@ export const queueAutomationRun = (
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
+      retryCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: null,
       createdAt: now,
       updatedAt: now,
       startedAt: null,
@@ -1565,6 +1658,10 @@ export const finishAutomationRun = (
   if (existing.status === "canceled") return existing;
 
   const now = (input.now ?? new Date()).toISOString();
+  const nextRetryAt =
+    input.status === "failed" && existing.retryCount < existing.maxAttempts - 1
+      ? computeAutomationRetryAt(existing.retryCount, new Date(now))
+      : null;
   const triageStatus =
     input.status === "failed" || input.status === "needs_action"
       ? "open"
@@ -1579,6 +1676,7 @@ export const finishAutomationRun = (
       inputTokens: input.usage?.inputTokens ?? null,
       outputTokens: input.usage?.outputTokens ?? null,
       totalTokens: input.usage?.totalTokens ?? null,
+      nextRetryAt,
       updatedAt: now,
       completedAt: now,
     })
@@ -1634,6 +1732,136 @@ export const cancelAutomationRun = (
   if (!updated) throw new Error(`Automation run not found after cancel: ${id}`);
   return updated;
 };
+
+export const continueAutomationRun = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status !== "needs_action") {
+    throw new Error(`Automation run is not waiting for action: ${id}`);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "queued",
+      triageStatus: "open",
+      needsActionReason: null,
+      errorMessage: null,
+      nextRetryAt: null,
+      updatedAt: now,
+      completedAt: null,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const continued = getAutomationRun(id);
+  if (!continued)
+    throw new Error(`Automation run not found after continue: ${id}`);
+  return continued;
+};
+
+export const listDueAutomationRunRetries = (
+  now = new Date(),
+): AutomationRunRecord[] => {
+  const nowIso = now.toISOString();
+  return db
+    .select()
+    .from(schema.automationRuns)
+    .where(
+      and(
+        eq(schema.automationRuns.status, "failed"),
+        isNotNull(schema.automationRuns.nextRetryAt),
+        lte(schema.automationRuns.nextRetryAt, nowIso),
+      ),
+    )
+    .all()
+    .map(mapAutomationRunRow)
+    .filter((run) => run.retryCount < run.maxAttempts - 1);
+};
+
+export const queueAutomationRunRetry = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status !== "failed") {
+    throw new Error(`Automation run is not retryable: ${id}`);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "queued",
+      retryCount: existing.retryCount + 1,
+      nextRetryAt: null,
+      updatedAt: now,
+      completedAt: null,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const retried = getAutomationRun(id);
+  if (!retried) throw new Error(`Automation run not found after retry: ${id}`);
+  return retried;
+};
+
+export const recordAutomationRunEvent = (
+  runId: string,
+  input: {
+    detail?: Record<string, unknown> | null;
+    message?: string | null;
+    now?: Date;
+    toolName?: string | null;
+    type: string;
+  },
+): AutomationRunEventRecord => {
+  const last = db
+    .select()
+    .from(schema.automationRunEvents)
+    .where(eq(schema.automationRunEvents.runId, runId))
+    .all()
+    .reduce((max, row) => Math.max(max, row.sequence), 0);
+  const id = crypto.randomUUID();
+  const createdAt = (input.now ?? new Date()).toISOString();
+  db.insert(schema.automationRunEvents)
+    .values({
+      id,
+      runId,
+      sequence: last + 1,
+      type: input.type,
+      message: input.message ?? null,
+      toolName: input.toolName ?? null,
+      detail: input.detail ? JSON.stringify(input.detail) : null,
+      createdAt,
+    })
+    .run();
+  const event = listAutomationRunEvents(runId).find((item) => item.id === id);
+  if (!event)
+    throw new Error(`Automation run event not found after create: ${id}`);
+  return event;
+};
+
+export const listAutomationRunEvents = (
+  runId: string,
+): AutomationRunEventRecord[] =>
+  db
+    .select()
+    .from(schema.automationRunEvents)
+    .where(eq(schema.automationRunEvents.runId, runId))
+    .all()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((row) => ({
+      id: row.id,
+      runId: row.runId,
+      sequence: row.sequence,
+      type: row.type,
+      message: row.message ?? null,
+      toolName: row.toolName ?? null,
+      detail: row.detail
+        ? (JSON.parse(row.detail) as Record<string, unknown>)
+        : null,
+      createdAt: row.createdAt,
+    }));
 
 export const cleanupAutomationRuns = (
   input: {

@@ -63,10 +63,24 @@ type AutomationRunRecord = {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  retryCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+};
+
+type AutomationRunEventRecord = {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  message: string | null;
+  toolName: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
 };
 
 type AutomationCreatePayload = {
@@ -980,6 +994,10 @@ const api = {
       ipcRenderer.invoke("automations:prepareChatRun", payload),
     rerun: (id: string): Promise<AutomationRunRecord> =>
       ipcRenderer.invoke("automations:rerun", { id }),
+    continueRun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:continueRun", { id }),
+    listRunEvents: (id: string): Promise<AutomationRunEventRecord[]> =>
+      ipcRenderer.invoke("automations:listRunEvents", { id }),
     markRunHandled: (id: string): Promise<AutomationRunRecord> =>
       ipcRenderer.invoke("automations:markRunHandled", { id }),
     cancelRun: (id: string): Promise<AutomationRunRecord> =>

@@ -1,5 +1,6 @@
 import {
   type AutomationRunRecord,
+  continueAutomationRun as continueAutomationRunRecord,
   finishAutomationRun,
   getAutomation,
   getAutomationRun,
@@ -43,6 +44,14 @@ export const rerunAutomationRun = async (
     throw new Error(`Automation not found: ${run.automationId}`);
   }
   return scheduler.triggerNow(automation.id);
+};
+
+export const continueAutomationRun = async (
+  runId: string,
+): Promise<AutomationRunRecord> => {
+  const run = continueAutomationRunRecord(runId);
+  void runAutomationRun(run.id);
+  return run;
 };
 
 export const prepareAutomationChatRun = (

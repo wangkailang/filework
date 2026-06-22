@@ -122,6 +122,18 @@ vi.mock("../../db", () => ({
     dbState.runs = dbState.runs.filter((run) => run.triageStatus !== "handled");
     return { deleted: before - dbState.runs.length };
   }),
+  listAutomationRunEvents: vi.fn((runId: string) => [
+    {
+      id: "event-1",
+      runId,
+      sequence: 1,
+      type: "message_update",
+      message: "Repo is clean.",
+      toolName: null,
+      detail: null,
+      createdAt: "2026-06-18T04:00:01.000Z",
+    },
+  ]),
   updateAutomation: vi.fn((id, updates) => {
     const row = dbState.automations.find((a) => a.id === id);
     if (!row) throw new Error(`Automation not found: ${id}`);
@@ -220,6 +232,17 @@ vi.mock("../automation-service", () => ({
     dbState.runs.push(run);
     return run;
   }),
+  continueAutomationRun: vi.fn((runId: string) => {
+    const existing = dbState.runs.find((run) => run.id === runId);
+    if (!existing) throw new Error(`Automation run not found: ${runId}`);
+    existing.status = "queued";
+    existing.triageStatus = "open";
+    existing.needsActionReason = null;
+    existing.errorMessage = null;
+    existing.completedAt = null;
+    existing.updatedAt = "2026-06-18T04:05:00.000Z";
+    return existing;
+  }),
 }));
 
 import { cleanupAutomationRuns } from "../../db";
@@ -242,7 +265,9 @@ describe("automations handlers", () => {
     expect(handlers.has("automations:listRuns")).toBe(true);
     expect(handlers.has("automations:markRunHandled")).toBe(true);
     expect(handlers.has("automations:cancelRun")).toBe(true);
+    expect(handlers.has("automations:continueRun")).toBe(true);
     expect(handlers.has("automations:rerun")).toBe(true);
+    expect(handlers.has("automations:listRunEvents")).toBe(true);
     expect(handlers.has("automations:cleanupRuns")).toBe(true);
     expect(handlers.has("automations:previewSchedule")).toBe(true);
     expect(handlers.has("automations:delete")).toBe(true);
@@ -447,9 +472,18 @@ describe("automations handlers", () => {
 
     const markHandled = handlers.get("automations:markRunHandled");
     const cancelRun = handlers.get("automations:cancelRun");
+    const continueRun = handlers.get("automations:continueRun");
     const rerun = handlers.get("automations:rerun");
+    const listRunEvents = handlers.get("automations:listRunEvents");
     const listRuns = handlers.get("automations:listRuns");
-    if (!markHandled || !cancelRun || !rerun || !listRuns) {
+    if (
+      !markHandled ||
+      !cancelRun ||
+      !continueRun ||
+      !rerun ||
+      !listRunEvents ||
+      !listRuns
+    ) {
       throw new Error("automation run action handlers missing");
     }
 
@@ -463,14 +497,32 @@ describe("automations handlers", () => {
       status: "canceled",
       triageStatus: "handled",
     });
+    dbState.runs[0].status = "needs_action";
+    dbState.runs[0].triageStatus = "open";
+    dbState.runs[0].needsActionReason = "Requires approval";
+    dbState.runs[0].errorMessage = "Requires approval";
+    await expect(continueRun(null, { id: "run-1" })).resolves.toMatchObject({
+      id: "run-1",
+      status: "queued",
+      triageStatus: "open",
+      needsActionReason: null,
+    });
     await expect(rerun(null, { id: "run-1" })).resolves.toMatchObject({
       id: "run-2",
       trigger: "manual",
       status: "queued",
     });
+    await expect(listRunEvents(null, { id: "run-1" })).resolves.toEqual([
+      expect.objectContaining({
+        runId: "run-1",
+        sequence: 1,
+        type: "message_update",
+      }),
+    ]);
     await expect(
       listRuns(null, { triageStatus: "open", limit: 10 }),
     ).resolves.toEqual([
+      expect.objectContaining({ id: "run-1", triageStatus: "open" }),
       expect.objectContaining({ id: "run-2", triageStatus: "open" }),
     ]);
   });

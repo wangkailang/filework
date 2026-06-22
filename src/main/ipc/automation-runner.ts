@@ -15,6 +15,7 @@ import {
   type AutomationRunRecord,
   type AutomationRunStatus,
   finishAutomationRun,
+  recordAutomationRunEvent,
   startAutomationRun,
 } from "../db";
 import { buildAgentToolRegistry } from "./agent-tools";
@@ -29,6 +30,7 @@ type AutomationRunAgent = (
 interface AutomationRunnerDeps {
   startAutomationRun?: typeof startAutomationRun;
   finishAutomationRun?: typeof finishAutomationRun;
+  recordAutomationRunEvent?: typeof recordAutomationRunEvent;
   runAgent?: AutomationRunAgent;
 }
 
@@ -109,6 +111,15 @@ const buildAutomationPrompt = (
   ];
   if (run.workspacePaths?.length) {
     lines.push(`Workspace paths: ${run.workspacePaths.join(", ")}`);
+  }
+  if (run.needsActionReason || run.output) {
+    lines.push("", "Continuation context:");
+    if (run.needsActionReason) {
+      lines.push(`Previous needs-action reason: ${run.needsActionReason}`);
+    }
+    if (run.output) {
+      lines.push("Previous output:", run.output);
+    }
   }
   lines.push(
     "",
@@ -283,14 +294,28 @@ const consumeAutomationAgentRun = async (
   scopedRun: AutomationRunRecord,
   automation: AutomationRecord,
   runAgent: AutomationRunAgent,
+  recordEvent: typeof recordAutomationRunEvent,
 ): Promise<AutomationAgentRunResult> => {
   let output = "";
   let needsActionReason: string | null = null;
   let usage: TokenUsage | undefined;
+  const safeRecordEvent = (
+    input: Parameters<typeof recordAutomationRunEvent>[1],
+  ) => {
+    try {
+      recordEvent(scopedRun.id, input);
+    } catch {
+      // Event persistence is observational; the run result remains authoritative.
+    }
+  };
   try {
     for await (const event of runAgent(scopedRun, automation)) {
       if (event.type === "message_update") {
         output += event.deltaText;
+        safeRecordEvent({
+          message: event.deltaText,
+          type: "message_update",
+        });
       }
       if (event.type === "tool_execution_end") {
         const result = event.result as
@@ -302,11 +327,29 @@ const consumeAutomationAgentRun = async (
               ? result.reason
               : "Automation requires manual action before it can continue.";
         }
+        safeRecordEvent({
+          detail: {
+            durationMs: event.durationMs,
+            success: event.success,
+            toolCallId: event.toolCallId,
+          },
+          message: result?.denied === true ? needsActionReason : null,
+          toolName: event.toolName,
+          type: "tool_execution_end",
+        });
       }
       if (event.type !== "agent_end") continue;
 
       usage = event.totalUsage;
       if (typeof event.finalText === "string") output = event.finalText;
+      safeRecordEvent({
+        detail: {
+          status: event.status,
+          usage,
+        },
+        message: output,
+        type: "agent_end",
+      });
 
       if (needsActionReason) {
         return {
@@ -385,6 +428,7 @@ export const runAutomationHeadless = async (
   {
     startAutomationRun: startRun = startAutomationRun,
     finishAutomationRun: finishRun = finishAutomationRun,
+    recordAutomationRunEvent: recordEvent = recordAutomationRunEvent,
     runAgent = createDefaultAgentRun,
   }: AutomationRunnerDeps = {},
 ): Promise<AutomationRunRecord> => {
@@ -394,7 +438,12 @@ export const runAutomationHeadless = async (
   const results = [];
   for (const scopedRun of getScopedRuns(startedRun, automation)) {
     results.push(
-      await consumeAutomationAgentRun(scopedRun, automation, runAgent),
+      await consumeAutomationAgentRun(
+        scopedRun,
+        automation,
+        runAgent,
+        recordEvent,
+      ),
     );
   }
   const result = aggregateAutomationRunResults(results);

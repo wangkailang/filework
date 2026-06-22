@@ -1,16 +1,25 @@
 import {
   type AutomationRecord,
   type AutomationRunRecord,
+  listDueAutomationRunRetries,
   listDueAutomations,
   queueAutomationRun,
+  queueAutomationRunRetry,
   recoverInterruptedAutomationRuns,
 } from "../db";
 
 interface AutomationSchedulerDeps {
   listDueAutomations?: (now: Date) => AutomationRecord[];
+  listDueAutomationRunRetries?: (
+    now: Date,
+  ) => Pick<AutomationRunRecord, "id" | "automationId">[];
   queueAutomationRun?: (
     automationId: string,
     input: { trigger: "manual" | "scheduled"; now: Date },
+  ) => Pick<AutomationRunRecord, "id" | "automationId">;
+  queueAutomationRunRetry?: (
+    runId: string,
+    input: { now: Date },
   ) => Pick<AutomationRunRecord, "id" | "automationId">;
   recoverInterruptedRuns?: (now: Date) => AutomationRunRecord[];
   runAutomationRun: (runId: string) => Promise<unknown>;
@@ -31,7 +40,9 @@ export interface AutomationScheduler {
 
 export const createAutomationScheduler = ({
   listDueAutomations: listDue = listDueAutomations,
+  listDueAutomationRunRetries: listDueRetries = listDueAutomationRunRetries,
   queueAutomationRun: queueRun = queueAutomationRun,
+  queueAutomationRunRetry: queueRetryRun = queueAutomationRunRetry,
   recoverInterruptedRuns = recoverInterruptedAutomationRuns,
   runAutomationRun,
   now = () => new Date(),
@@ -58,6 +69,14 @@ export const createAutomationScheduler = ({
 
   const tick = async (): Promise<void> => {
     const tickNow = now();
+    for (const retry of listDueRetries(tickNow)) {
+      if (inFlightAutomationIds.has(retry.automationId)) continue;
+      try {
+        launch(queueRetryRun(retry.id, { now: tickNow }));
+      } catch (error) {
+        onError(error);
+      }
+    }
     for (const automation of listDue(tickNow)) {
       if (inFlightAutomationIds.has(automation.id)) continue;
       try {
