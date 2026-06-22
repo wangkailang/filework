@@ -99,6 +99,7 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 
 ### Tool Choice
 - Prefer local exact evidence first: \`rg\` / file reads for repo facts, structured parser or database query for structured data, rendered fetch only when raw text is insufficient.
+- For reminders, scheduled checks, recurring monitors, or follow-ups: call \`automation_update\`; clarify missing task/cadence. Thread automations preserve this context; standalone/project automations run independently.
 
 ### Privacy and Safety Boundaries
 - Never log or transmit file contents except as required to complete the user's explicit request with the configured tools and AI provider.
@@ -107,7 +108,7 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - Refuse or narrow requests that would enable malware, credential theft, weapon construction, or other direct harm; keep the reply brief and offer a safe alternative when one exists.
 
 ### Delegation
-- PREFER \`spawnSubagent\` whenever a task splits into independent, parallelizable units: multi-topic research/comparison ("compare X, Y, Z"), per-item fan-out, or multi-directory/multi-file analysis. Open one sub-agent per unit in a single call rather than running searches/reads sequentially yourself — it's faster and keeps their bulk out of your context.
+- PREFER \`spawnSubagent\` for independent parallel units: multi-topic research/comparison, per-item fan-out, or multi-directory/multi-file analysis. Open one sub-agent per unit in a single call.
 - Do NOT delegate single-step work, order-dependent steps (sub-agents can't talk to each other), or anything needing user clarification. See the tool description for details.
 
 ### Deterministic Computation

@@ -133,6 +133,91 @@ export const mediaJobs = sqliteTable("media_jobs", {
 });
 
 /**
+ * 用户让 Agent 创建的自动化定义。
+ *
+ * 现阶段它是自动化定义的持久化入口:Agent 可通过
+ * automation_update 工具创建、更新、禁用或列出定义。后台 runner/UI 可在
+ * 这个表上继续演进,不需要再改变 agent 工具契约。
+ */
+export const automations = sqliteTable("automations", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  prompt: text("prompt").notNull(),
+  type: text("type", { enum: ["thread", "standalone", "project"] }).notNull(),
+  scheduleKind: text("schedule_kind", {
+    enum: ["interval", "daily", "weekly", "cron"],
+  }).notNull(),
+  scheduleValue: text("schedule_value").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  threadId: text("thread_id"),
+  workspacePaths: text("workspace_paths"),
+  runMode: text("run_mode", { enum: ["local", "worktree"] }),
+  modelId: text("model_id"),
+  reasoningEffort: text("reasoning_effort"),
+  lastRunAt: text("last_run_at"),
+  nextRunAt: text("next_run_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * 自动化每一次执行的持久化记录。自动化定义可以被编辑或删除,run 行保留
+ * 执行时的标题/prompt/workspace 快照,供 Triage 与历史回溯使用。
+ */
+export const automationRuns = sqliteTable("automation_runs", {
+  id: text("id").primaryKey(),
+  automationId: text("automation_id").notNull(),
+  automationTitle: text("automation_title").notNull(),
+  trigger: text("trigger", { enum: ["manual", "scheduled"] }).notNull(),
+  status: text("status", {
+    enum: [
+      "queued",
+      "running",
+      "needs_action",
+      "succeeded",
+      "failed",
+      "canceled",
+    ],
+  }).notNull(),
+  triageStatus: text("triage_status", {
+    enum: ["open", "handled"],
+  })
+    .notNull()
+    .default("open"),
+  needsActionReason: text("needs_action_reason"),
+  chatSessionId: text("chat_session_id"),
+  assistantMessageId: text("assistant_message_id"),
+  taskId: text("task_id"),
+  prompt: text("prompt").notNull(),
+  workspacePaths: text("workspace_paths"),
+  threadId: text("thread_id"),
+  modelId: text("model_id"),
+  output: text("output"),
+  errorMessage: text("error_message"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  nextRetryAt: text("next_retry_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  startedAt: text("started_at"),
+  completedAt: text("completed_at"),
+});
+
+export const automationRunEvents = sqliteTable("automation_run_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  sequence: integer("sequence").notNull(),
+  type: text("type").notNull(),
+  message: text("message"),
+  toolName: text("tool_name"),
+  detail: text("detail"),
+  createdAt: text("created_at").notNull(),
+});
+
+/**
  * 用户配置的 MCP(Model Context Protocol)服务器。每一行描述一个由主进程
  * 启动或连接的服务器,使其工具可供 agent loop 使用。`env`/`headers` 中的
  * 敏感值应使用 `${env:VAR}` 占位符 —— 运行时展开见 `src/main/mcp/manager.ts`

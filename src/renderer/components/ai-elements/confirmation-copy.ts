@@ -20,6 +20,14 @@ const getSpawnSubagentConcurrency = (
   return Math.max(1, Math.min(args.concurrency, taskCount));
 };
 
+const isAutomationUpdateTool = (toolName: string) =>
+  toolName === "automation_update";
+
+const getAutomationAction = (args: unknown): string | null => {
+  if (!isRecord(args) || typeof args.action !== "string") return null;
+  return args.action;
+};
+
 export const getBatchToolLabel = (
   LL: TranslationFunctions,
   toolName: string,
@@ -38,8 +46,40 @@ export const getBatchApprovalTitle = ({
   entries: BatchApprovalEntry[];
 }): string => {
   const label = getBatchToolLabel(LL, toolName);
+  if (isAutomationUpdateTool(toolName)) {
+    return LL.approval_automationUpdate_title();
+  }
   if (entries.length === 1) return LL.approval_batch_title_single(label);
   return LL.approval_batch_title_multiple(entries.length, label);
+};
+
+export const getBatchApproveLabel = ({
+  LL,
+  toolName,
+  count,
+}: {
+  LL: TranslationFunctions;
+  toolName: string;
+  count: number;
+}): string => {
+  if (count === 1 && isAutomationUpdateTool(toolName)) {
+    return LL.approval_automationUpdate_approve_once();
+  }
+  if (count === 1) return LL.chat_approve();
+  return LL.approval_batch_approve_all(count);
+};
+
+export const getBatchAlwaysAllowLabel = ({
+  LL,
+  toolName,
+}: {
+  LL: TranslationFunctions;
+  toolName: string;
+}): string => {
+  if (isAutomationUpdateTool(toolName)) {
+    return LL.approval_automationUpdate_always_allow();
+  }
+  return LL.approval_batch_always_allow(getBatchToolLabel(LL, toolName));
 };
 
 export const summarizeBatchEntry = (
@@ -47,6 +87,17 @@ export const summarizeBatchEntry = (
   entry: BatchApprovalEntry,
   LL: TranslationFunctions,
 ): string | null => {
+  if (isAutomationUpdateTool(toolName)) {
+    const action = getAutomationAction(entry.args);
+    if (action === "create")
+      return LL.approval_automationUpdate_summary_create();
+    if (action === "update")
+      return LL.approval_automationUpdate_summary_update();
+    if (action === "delete")
+      return LL.approval_automationUpdate_summary_delete();
+    if (action === "list") return LL.approval_automationUpdate_summary_list();
+    return LL.approval_automationUpdate_summary_change();
+  }
   if (toolName !== "spawnSubagent") return null;
   const taskCount = getSpawnSubagentTaskCount(entry.args);
   const concurrency = getSpawnSubagentConcurrency(entry.args, taskCount);

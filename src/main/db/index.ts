@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { app } from "electron";
 import type { CredentialKind } from "../../shared/credentials";
@@ -116,6 +116,68 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_media_jobs_session ON media_jobs(session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_jobs(status);
+    CREATE TABLE IF NOT EXISTS automations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('thread','standalone','project')),
+      schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('interval','daily','weekly','cron')),
+      schedule_value TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      thread_id TEXT,
+      workspace_paths TEXT,
+      run_mode TEXT CHECK(run_mode IN ('local','worktree')),
+      model_id TEXT,
+      reasoning_effort TEXT,
+      last_run_at TEXT,
+      next_run_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_run ON automations(enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_automations_thread ON automations(thread_id);
+    CREATE TABLE IF NOT EXISTS automation_runs (
+      id TEXT PRIMARY KEY,
+      automation_id TEXT NOT NULL,
+      automation_title TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
+      status TEXT NOT NULL CHECK(status IN ('queued','running','needs_action','succeeded','failed','canceled')),
+      triage_status TEXT NOT NULL DEFAULT 'open' CHECK(triage_status IN ('open','handled')),
+      needs_action_reason TEXT,
+      chat_session_id TEXT,
+      assistant_message_id TEXT,
+      task_id TEXT,
+      prompt TEXT NOT NULL,
+      workspace_paths TEXT,
+      thread_id TEXT,
+      model_id TEXT,
+      output TEXT,
+      error_message TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      total_tokens INTEGER,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      next_retry_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_automation_runs_retry ON automation_runs(next_retry_at);
+    CREATE TABLE IF NOT EXISTS automation_run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT,
+      tool_name TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_run_events_run ON automation_run_events(run_id, sequence);
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK(kind IN ('github_pat','gitlab_pat','tavily_pat','firecrawl_pat')),
@@ -161,6 +223,157 @@ export const initDatabase = async () => {
       allow_commands INTEGER NOT NULL DEFAULT 0,
       allow_hooks INTEGER NOT NULL DEFAULT 0
     );
+  `);
+
+  const automationRunsSql = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='automation_runs'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (
+    automationRunsSql &&
+    (!automationRunsSql.includes("needs_action") ||
+      !automationRunsSql.includes("triage_status") ||
+      !automationRunsSql.includes("needs_action_reason") ||
+      !automationRunsSql.includes("chat_session_id") ||
+      !automationRunsSql.includes("assistant_message_id") ||
+      !automationRunsSql.includes("task_id"))
+  ) {
+    sqlite.exec(`
+      DROP INDEX IF EXISTS idx_automation_runs_automation;
+      DROP INDEX IF EXISTS idx_automation_runs_status;
+      DROP INDEX IF EXISTS idx_automation_runs_triage;
+      CREATE TABLE automation_runs_new (
+        id TEXT PRIMARY KEY,
+        automation_id TEXT NOT NULL,
+        automation_title TEXT NOT NULL,
+        trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
+        status TEXT NOT NULL CHECK(status IN ('queued','running','needs_action','succeeded','failed','canceled')),
+        triage_status TEXT NOT NULL DEFAULT 'open' CHECK(triage_status IN ('open','handled')),
+        needs_action_reason TEXT,
+        chat_session_id TEXT,
+        assistant_message_id TEXT,
+        task_id TEXT,
+        prompt TEXT NOT NULL,
+        workspace_paths TEXT,
+        thread_id TEXT,
+        model_id TEXT,
+        output TEXT,
+        error_message TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        next_retry_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT
+      );
+      INSERT INTO automation_runs_new (
+        id,
+        automation_id,
+        automation_title,
+        trigger,
+        status,
+        triage_status,
+        needs_action_reason,
+        chat_session_id,
+        assistant_message_id,
+        task_id,
+        prompt,
+        workspace_paths,
+        thread_id,
+        model_id,
+        output,
+        error_message,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        retry_count,
+        max_attempts,
+        next_retry_at,
+        created_at,
+        updated_at,
+        started_at,
+        completed_at
+      )
+      SELECT
+        id,
+        automation_id,
+        automation_title,
+        trigger,
+        status,
+        CASE WHEN status IN ('succeeded','canceled') THEN 'handled' ELSE 'open' END,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        prompt,
+        workspace_paths,
+        thread_id,
+        model_id,
+        output,
+        error_message,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        0,
+        3,
+        NULL,
+        created_at,
+        updated_at,
+        started_at,
+        completed_at
+      FROM automation_runs;
+      DROP TABLE automation_runs;
+      ALTER TABLE automation_runs_new RENAME TO automation_runs;
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_triage ON automation_runs(triage_status, updated_at);
+    `);
+  }
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS idx_automation_runs_triage ON automation_runs(triage_status, updated_at)",
+  );
+  const automationRunColumns = new Set(
+    (
+      (sqlite.pragma("table_info(automation_runs)") as
+        | Array<{ name: string }>
+        | undefined) ?? []
+    ).map((column) => column.name),
+  );
+  if (!automationRunColumns.has("retry_count")) {
+    sqlite.exec(
+      "ALTER TABLE automation_runs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+  if (!automationRunColumns.has("max_attempts")) {
+    sqlite.exec(
+      "ALTER TABLE automation_runs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3",
+    );
+  }
+  if (!automationRunColumns.has("next_retry_at")) {
+    sqlite.exec("ALTER TABLE automation_runs ADD COLUMN next_retry_at TEXT");
+  }
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS idx_automation_runs_retry ON automation_runs(next_retry_at)",
+  );
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS automation_run_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT,
+      tool_name TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_run_events_run ON automation_run_events(run_id, sequence);
   `);
 
   // 迁移:Tavily 之前的数据库 CHECK 约束仅限
@@ -515,6 +728,78 @@ interface RecentWorkspace {
   metadata: string | null;
 }
 
+export type AutomationType = "thread" | "standalone" | "project";
+export type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
+export type AutomationRunMode = "local" | "worktree";
+export type AutomationRunTrigger = "manual" | "scheduled";
+export type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "needs_action"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+export type AutomationRunTriageStatus = "open" | "handled";
+
+export interface AutomationRecord {
+  id: string;
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled: boolean;
+  threadId: string | null;
+  workspacePaths: string[] | null;
+  runMode: AutomationRunMode | null;
+  modelId: string | null;
+  reasoningEffort: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationRunRecord {
+  id: string;
+  automationId: string;
+  automationTitle: string;
+  trigger: AutomationRunTrigger;
+  status: AutomationRunStatus;
+  triageStatus: AutomationRunTriageStatus;
+  needsActionReason: string | null;
+  chatSessionId: string | null;
+  assistantMessageId: string | null;
+  taskId: string | null;
+  prompt: string;
+  workspacePaths: string[] | null;
+  threadId: string | null;
+  modelId: string | null;
+  output: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  retryCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface AutomationRunEventRecord {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  message: string | null;
+  toolName: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export type CredentialTestStatus = "unknown" | "ok" | "error";
 
 export interface Credential {
@@ -711,6 +996,925 @@ export const getTaskSummary = (taskId: string): TaskSummary | null => {
 };
 
 // ============================================================================
+// 自动化定义
+// ============================================================================
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
+};
+
+const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
+  const match = value.trim().match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!match) throw new Error(`Invalid time of day: ${value}`);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) {
+    throw new Error(`Invalid time of day: ${value}`);
+  }
+  return { hour, minute };
+};
+
+const CRON_MONTH_NAMES: Record<string, number> = {
+  apr: 4,
+  aug: 8,
+  dec: 12,
+  feb: 2,
+  jan: 1,
+  jul: 7,
+  jun: 6,
+  mar: 3,
+  may: 5,
+  nov: 11,
+  oct: 10,
+  sep: 9,
+};
+
+const CRON_WEEKDAY_NAMES: Record<string, number> = {
+  fri: 5,
+  mon: 1,
+  sat: 6,
+  sun: 0,
+  thu: 4,
+  tue: 2,
+  wed: 3,
+};
+
+const parseCronNumber = (
+  value: string,
+  min: number,
+  max: number,
+  aliases?: Record<string, number>,
+): number | null => {
+  const normalized = value.trim().toLowerCase();
+  const aliased = aliases?.[normalized];
+  const parsed = aliased ?? Number(normalized);
+  if (!Number.isInteger(parsed)) return null;
+  if (max === 6 && parsed === 7) return 0;
+  if (parsed < min || parsed > max) return null;
+  return parsed;
+};
+
+const parseCronField = (
+  field: string,
+  min: number,
+  max: number,
+  aliases?: Record<string, number>,
+): Set<number> | null => {
+  const values = new Set<number>();
+
+  for (const rawPart of field.split(",")) {
+    const part = rawPart.trim();
+    if (!part) return null;
+
+    const [rangePart, stepPart] = part.split("/");
+    const step = stepPart === undefined ? 1 : Number(stepPart);
+    if (!Number.isInteger(step) || step <= 0) return null;
+
+    let start: number;
+    let end: number;
+
+    if (rangePart === "*" || rangePart === "?") {
+      start = min;
+      end = max;
+    } else if (rangePart.includes("-")) {
+      const [rawStart, rawEnd] = rangePart.split("-");
+      const parsedStart = parseCronNumber(rawStart, min, max, aliases);
+      const parsedEnd = parseCronNumber(rawEnd, min, max, aliases);
+      if (parsedStart === null || parsedEnd === null || parsedStart > parsedEnd)
+        return null;
+      start = parsedStart;
+      end = parsedEnd;
+    } else {
+      const parsed = parseCronNumber(rangePart, min, max, aliases);
+      if (parsed === null) return null;
+      start = parsed;
+      end = parsed;
+    }
+
+    for (let value = start; value <= end; value += step) {
+      values.add(value);
+    }
+  }
+
+  return values;
+};
+
+const isCronWildcard = (field: string): boolean => {
+  const value = field.trim();
+  return value === "*" || value === "?";
+};
+
+const computeCronNextRunAt = (value: string, now: Date): string | null => {
+  const parts = value.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+
+  const [minuteField, hourField, dayField, monthField, weekdayField] = parts;
+  const minutes = parseCronField(minuteField, 0, 59);
+  const hours = parseCronField(hourField, 0, 23);
+  const days = parseCronField(dayField, 1, 31);
+  const months = parseCronField(monthField, 1, 12, CRON_MONTH_NAMES);
+  const weekdays = parseCronField(weekdayField, 0, 6, CRON_WEEKDAY_NAMES);
+  if (!minutes || !hours || !days || !months || !weekdays) return null;
+
+  const dayWildcard = isCronWildcard(dayField);
+  const weekdayWildcard = isCronWildcard(weekdayField);
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+  next.setMinutes(next.getMinutes() + 1);
+
+  for (let i = 0; i < 366 * 24 * 60; i += 1) {
+    const dayMatches = days.has(next.getDate());
+    const weekdayMatches = weekdays.has(next.getDay());
+    const calendarDayMatches =
+      dayWildcard && weekdayWildcard
+        ? true
+        : dayWildcard
+          ? weekdayMatches
+          : weekdayWildcard
+            ? dayMatches
+            : dayMatches || weekdayMatches;
+
+    if (
+      minutes.has(next.getMinutes()) &&
+      hours.has(next.getHours()) &&
+      months.has(next.getMonth() + 1) &&
+      calendarDayMatches
+    ) {
+      return next.toISOString();
+    }
+
+    next.setMinutes(next.getMinutes() + 1);
+  }
+
+  return null;
+};
+
+export const computeAutomationNextRunAt = (
+  scheduleKind: AutomationScheduleKind,
+  scheduleValue: string,
+  now: Date = new Date(),
+): string | null => {
+  const value = scheduleValue.trim();
+  if (!value) return null;
+
+  if (scheduleKind === "interval") {
+    const match = value.match(
+      /^(\d+)\s*(m|min|minute|minutes|h|hour|hours|d|day|days)$/i,
+    );
+    if (!match) {
+      throw new Error(`Invalid interval schedule value: ${scheduleValue}`);
+    }
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Invalid interval schedule value: ${scheduleValue}`);
+    }
+    const unit = match[2].toLowerCase();
+    const multiplier = unit.startsWith("m")
+      ? 60_000
+      : unit.startsWith("h")
+        ? 60 * 60_000
+        : 24 * 60 * 60_000;
+    return new Date(now.getTime() + amount * multiplier).toISOString();
+  }
+
+  if (scheduleKind === "daily") {
+    const { hour, minute } = parseTimeOfDay(value);
+    const next = new Date(now);
+    next.setHours(hour, minute, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next.toISOString();
+  }
+
+  if (scheduleKind === "weekly") {
+    const weekdayMatch = value
+      .toLowerCase()
+      .match(
+        /\b(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\b/,
+      );
+    if (!weekdayMatch) return null;
+    const targetDay = WEEKDAY_INDEX[weekdayMatch[1]];
+    const { hour, minute } = parseTimeOfDay(value);
+    const next = new Date(now);
+    next.setHours(hour, minute, 0, 0);
+    const daysAhead = (targetDay - next.getDay() + 7) % 7;
+    next.setDate(next.getDate() + daysAhead);
+    if (next <= now) next.setDate(next.getDate() + 7);
+    return next.toISOString();
+  }
+
+  return computeCronNextRunAt(value, now);
+};
+
+export const previewAutomationSchedule = (
+  scheduleKind: AutomationScheduleKind,
+  scheduleValue: string,
+  now: Date = new Date(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local",
+): { nextRunAt: string; timeZone: string } => {
+  const nextRunAt = computeAutomationNextRunAt(
+    scheduleKind,
+    scheduleValue,
+    now,
+  );
+  if (!nextRunAt) {
+    throw new Error(`Invalid automation schedule: ${scheduleValue}`);
+  }
+  return { nextRunAt, timeZone };
+};
+
+const mapAutomationRow = (
+  row: typeof schema.automations.$inferSelect,
+): AutomationRecord => ({
+  id: row.id,
+  title: row.title,
+  prompt: row.prompt,
+  type: row.type,
+  scheduleKind: row.scheduleKind,
+  scheduleValue: row.scheduleValue,
+  enabled: row.enabled,
+  threadId: row.threadId ?? null,
+  workspacePaths: row.workspacePaths
+    ? (JSON.parse(row.workspacePaths) as string[])
+    : null,
+  runMode: row.runMode ?? null,
+  modelId: row.modelId ?? null,
+  reasoningEffort: row.reasoningEffort ?? null,
+  lastRunAt: row.lastRunAt ?? null,
+  nextRunAt: row.nextRunAt ?? null,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+export const listAutomations = (filter?: {
+  enabled?: boolean;
+  type?: AutomationType;
+  threadId?: string;
+}): AutomationRecord[] => {
+  let rows = db.select().from(schema.automations).all();
+  if (filter?.enabled !== undefined) {
+    rows = rows.filter((row) => row.enabled === filter.enabled);
+  }
+  if (filter?.type) rows = rows.filter((row) => row.type === filter.type);
+  if (filter?.threadId) {
+    rows = rows.filter((row) => row.threadId === filter.threadId);
+  }
+  return rows
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    .map(mapAutomationRow);
+};
+
+export const getAutomation = (id: string): AutomationRecord | null => {
+  const row = db
+    .select()
+    .from(schema.automations)
+    .where(eq(schema.automations.id, id))
+    .get();
+  return row ? mapAutomationRow(row) : null;
+};
+
+export const createAutomation = (input: {
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled?: boolean;
+  threadId?: string | null;
+  workspacePaths?: string[] | null;
+  runMode?: AutomationRunMode | null;
+  modelId?: string | null;
+  reasoningEffort?: string | null;
+}): AutomationRecord => {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const nextRunAt =
+    input.enabled === false
+      ? null
+      : computeAutomationNextRunAt(input.scheduleKind, input.scheduleValue);
+  db.insert(schema.automations)
+    .values({
+      id,
+      title: input.title,
+      prompt: input.prompt,
+      type: input.type,
+      scheduleKind: input.scheduleKind,
+      scheduleValue: input.scheduleValue,
+      enabled: input.enabled ?? true,
+      threadId: input.threadId ?? null,
+      workspacePaths: input.workspacePaths
+        ? JSON.stringify(input.workspacePaths)
+        : null,
+      runMode: input.runMode ?? null,
+      modelId: input.modelId ?? null,
+      reasoningEffort: input.reasoningEffort ?? null,
+      lastRunAt: null,
+      nextRunAt,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  const created = getAutomation(id);
+  if (!created) throw new Error(`Automation not found after create: ${id}`);
+  return created;
+};
+
+export const updateAutomation = (
+  id: string,
+  updates: Partial<
+    Omit<AutomationRecord, "id" | "createdAt" | "updatedAt" | "nextRunAt">
+  >,
+): AutomationRecord => {
+  const existing = getAutomation(id);
+  if (!existing) throw new Error(`Automation not found: ${id}`);
+
+  const scheduleKind = updates.scheduleKind ?? existing.scheduleKind;
+  const scheduleValue = updates.scheduleValue ?? existing.scheduleValue;
+  const enabled = updates.enabled ?? existing.enabled;
+  const mapped: Record<string, unknown> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (updates.title !== undefined) mapped.title = updates.title;
+  if (updates.prompt !== undefined) mapped.prompt = updates.prompt;
+  if (updates.type !== undefined) mapped.type = updates.type;
+  if (updates.scheduleKind !== undefined)
+    mapped.scheduleKind = updates.scheduleKind;
+  if (updates.scheduleValue !== undefined)
+    mapped.scheduleValue = updates.scheduleValue;
+  if (updates.enabled !== undefined) mapped.enabled = updates.enabled;
+  if (updates.threadId !== undefined) mapped.threadId = updates.threadId;
+  if (updates.workspacePaths !== undefined) {
+    mapped.workspacePaths = updates.workspacePaths
+      ? JSON.stringify(updates.workspacePaths)
+      : null;
+  }
+  if (updates.runMode !== undefined) mapped.runMode = updates.runMode;
+  if (updates.modelId !== undefined) mapped.modelId = updates.modelId;
+  if (updates.reasoningEffort !== undefined)
+    mapped.reasoningEffort = updates.reasoningEffort;
+  if (updates.lastRunAt !== undefined) mapped.lastRunAt = updates.lastRunAt;
+  if (
+    updates.enabled !== undefined ||
+    updates.scheduleKind !== undefined ||
+    updates.scheduleValue !== undefined
+  ) {
+    mapped.nextRunAt = enabled
+      ? computeAutomationNextRunAt(scheduleKind, scheduleValue)
+      : null;
+  }
+
+  db.update(schema.automations)
+    .set(mapped)
+    .where(eq(schema.automations.id, id))
+    .run();
+  const updated = getAutomation(id);
+  if (!updated) throw new Error(`Automation not found after update: ${id}`);
+  return updated;
+};
+
+export const deleteAutomation = (id: string): boolean => {
+  const existing = getAutomation(id);
+  if (!existing) return false;
+  db.delete(schema.automations).where(eq(schema.automations.id, id)).run();
+  return true;
+};
+
+export const triggerAutomation = (
+  id: string,
+  now = new Date(),
+): AutomationRecord => {
+  const existing = getAutomation(id);
+  if (!existing) throw new Error(`Automation not found: ${id}`);
+
+  const lastRunAt = now.toISOString();
+  const nextRunAt = existing.enabled
+    ? computeAutomationNextRunAt(
+        existing.scheduleKind,
+        existing.scheduleValue,
+        now,
+      )
+    : null;
+
+  db.update(schema.automations)
+    .set({
+      lastRunAt,
+      nextRunAt,
+      updatedAt: lastRunAt,
+    })
+    .where(eq(schema.automations.id, id))
+    .run();
+
+  const updated = getAutomation(id);
+  if (!updated) throw new Error(`Automation not found after trigger: ${id}`);
+  return updated;
+};
+
+// ============================================================================
+// 自动化执行记录
+// ============================================================================
+
+const ACTIVE_AUTOMATION_RUN_STATUSES: AutomationRunStatus[] = [
+  "queued",
+  "running",
+];
+const AUTOMATION_RETRY_BASE_DELAY_MS = 5 * 60_000;
+const AUTOMATION_RETRY_MAX_DELAY_MS = 60 * 60_000;
+
+const computeAutomationRetryAt = (
+  retryCount: number,
+  now = new Date(),
+): string => {
+  const delay = Math.min(
+    AUTOMATION_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, retryCount),
+    AUTOMATION_RETRY_MAX_DELAY_MS,
+  );
+  return new Date(now.getTime() + delay).toISOString();
+};
+
+const mapAutomationRunRow = (
+  row: typeof schema.automationRuns.$inferSelect,
+): AutomationRunRecord => ({
+  id: row.id,
+  automationId: row.automationId,
+  automationTitle: row.automationTitle,
+  trigger: row.trigger,
+  status: row.status,
+  triageStatus: row.triageStatus,
+  needsActionReason: row.needsActionReason ?? null,
+  chatSessionId: row.chatSessionId ?? null,
+  assistantMessageId: row.assistantMessageId ?? null,
+  taskId: row.taskId ?? null,
+  prompt: row.prompt,
+  workspacePaths: row.workspacePaths
+    ? (JSON.parse(row.workspacePaths) as string[])
+    : null,
+  threadId: row.threadId ?? null,
+  modelId: row.modelId ?? null,
+  output: row.output ?? null,
+  errorMessage: row.errorMessage ?? null,
+  inputTokens: row.inputTokens ?? null,
+  outputTokens: row.outputTokens ?? null,
+  totalTokens: row.totalTokens ?? null,
+  retryCount: row.retryCount ?? 0,
+  maxAttempts: row.maxAttempts ?? 3,
+  nextRetryAt: row.nextRetryAt ?? null,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  startedAt: row.startedAt ?? null,
+  completedAt: row.completedAt ?? null,
+});
+
+export const listAutomationRuns = (filter?: {
+  automationId?: string;
+  status?: AutomationRunStatus;
+  triageStatus?: AutomationRunTriageStatus;
+  limit?: number;
+  offset?: number;
+}): AutomationRunRecord[] => {
+  let rows = db.select().from(schema.automationRuns).all();
+  if (filter?.automationId) {
+    rows = rows.filter((row) => row.automationId === filter.automationId);
+  }
+  if (filter?.status) {
+    rows = rows.filter((row) => row.status === filter.status);
+  }
+  if (filter?.triageStatus) {
+    rows = rows.filter((row) => row.triageStatus === filter.triageStatus);
+  }
+  const sorted = rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const offset =
+    typeof filter?.offset === "number" && filter.offset > 0 ? filter.offset : 0;
+  const offsetRows = offset > 0 ? sorted.slice(offset) : sorted;
+  const limited =
+    typeof filter?.limit === "number" && filter.limit > 0
+      ? offsetRows.slice(0, filter.limit)
+      : offsetRows;
+  return limited.map(mapAutomationRunRow);
+};
+
+export const getAutomationRun = (id: string): AutomationRunRecord | null => {
+  const row = db
+    .select()
+    .from(schema.automationRuns)
+    .where(eq(schema.automationRuns.id, id))
+    .get();
+  return row ? mapAutomationRunRow(row) : null;
+};
+
+export const getActiveAutomationRun = (
+  automationId: string,
+): AutomationRunRecord | null => {
+  const run = listAutomationRuns({ automationId }).find((row) =>
+    ACTIVE_AUTOMATION_RUN_STATUSES.includes(row.status),
+  );
+  return run ?? null;
+};
+
+export const queueAutomationRun = (
+  automationId: string,
+  input: {
+    assistantMessageId?: string | null;
+    chatSessionId?: string | null;
+    trigger: AutomationRunTrigger;
+    now?: Date;
+  },
+): AutomationRunRecord => {
+  const existingActive = getActiveAutomationRun(automationId);
+  if (existingActive) return existingActive;
+
+  const automation = getAutomation(automationId);
+  if (!automation) throw new Error(`Automation not found: ${automationId}`);
+
+  const id = crypto.randomUUID();
+  const now = (input.now ?? new Date()).toISOString();
+  db.insert(schema.automationRuns)
+    .values({
+      id,
+      automationId,
+      automationTitle: automation.title,
+      trigger: input.trigger,
+      status: "queued",
+      triageStatus: "open",
+      needsActionReason: null,
+      chatSessionId: input.chatSessionId ?? null,
+      assistantMessageId: input.assistantMessageId ?? null,
+      taskId: null,
+      prompt: automation.prompt,
+      workspacePaths: automation.workspacePaths
+        ? JSON.stringify(automation.workspacePaths)
+        : null,
+      threadId: automation.threadId,
+      modelId: automation.modelId,
+      output: null,
+      errorMessage: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      retryCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: null,
+      createdAt: now,
+      updatedAt: now,
+      startedAt: null,
+      completedAt: null,
+    })
+    .run();
+
+  if (input.trigger === "scheduled") {
+    db.update(schema.automations)
+      .set({
+        nextRunAt: automation.enabled
+          ? computeAutomationNextRunAt(
+              automation.scheduleKind,
+              automation.scheduleValue,
+              new Date(now),
+            )
+          : null,
+        updatedAt: now,
+      })
+      .where(eq(schema.automations.id, automation.id))
+      .run();
+  }
+
+  const queued = getAutomationRun(id);
+  if (!queued) throw new Error(`Automation run not found after queue: ${id}`);
+  return queued;
+};
+
+export const startAutomationRun = (
+  id: string,
+  input: { now?: Date; taskId?: string | null } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "canceled") return existing;
+
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "running",
+      taskId: input.taskId ?? existing.taskId,
+      startedAt: existing.startedAt ?? now,
+      updatedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+
+  const automation = getAutomation(existing.automationId);
+  if (automation) {
+    db.update(schema.automations)
+      .set({
+        lastRunAt: now,
+        nextRunAt: automation.enabled
+          ? computeAutomationNextRunAt(
+              automation.scheduleKind,
+              automation.scheduleValue,
+              new Date(now),
+            )
+          : null,
+        updatedAt: now,
+      })
+      .where(eq(schema.automations.id, automation.id))
+      .run();
+  }
+
+  const started = getAutomationRun(id);
+  if (!started) throw new Error(`Automation run not found after start: ${id}`);
+  return started;
+};
+
+export const finishAutomationRun = (
+  id: string,
+  input: {
+    status: Extract<
+      AutomationRunStatus,
+      "needs_action" | "succeeded" | "failed" | "canceled"
+    >;
+    output?: string | null;
+    errorMessage?: string | null;
+    needsActionReason?: string | null;
+    usage?: {
+      inputTokens?: number | null;
+      outputTokens?: number | null;
+      totalTokens?: number | null;
+    };
+    now?: Date;
+  },
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "canceled") return existing;
+
+  const now = (input.now ?? new Date()).toISOString();
+  const nextRetryAt =
+    input.status === "failed" && existing.retryCount < existing.maxAttempts - 1
+      ? computeAutomationRetryAt(existing.retryCount, new Date(now))
+      : null;
+  const triageStatus =
+    input.status === "failed" || input.status === "needs_action"
+      ? "open"
+      : "handled";
+  db.update(schema.automationRuns)
+    .set({
+      status: input.status,
+      triageStatus,
+      needsActionReason: input.needsActionReason ?? null,
+      output: input.output ?? null,
+      errorMessage: input.errorMessage ?? null,
+      inputTokens: input.usage?.inputTokens ?? null,
+      outputTokens: input.usage?.outputTokens ?? null,
+      totalTokens: input.usage?.totalTokens ?? null,
+      nextRetryAt,
+      updatedAt: now,
+      completedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+
+  const finished = getAutomationRun(id);
+  if (!finished)
+    throw new Error(`Automation run not found after finish: ${id}`);
+  return finished;
+};
+
+export const markAutomationRunHandled = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      triageStatus: "handled",
+      updatedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const updated = getAutomationRun(id);
+  if (!updated)
+    throw new Error(`Automation run not found after triage update: ${id}`);
+  return updated;
+};
+
+export const cancelAutomationRun = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "succeeded" || existing.status === "failed") {
+    return markAutomationRunHandled(id, input);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "canceled",
+      triageStatus: "handled",
+      updatedAt: now,
+      completedAt: existing.completedAt ?? now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const updated = getAutomationRun(id);
+  if (!updated) throw new Error(`Automation run not found after cancel: ${id}`);
+  return updated;
+};
+
+export const continueAutomationRun = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status !== "needs_action") {
+    throw new Error(`Automation run is not waiting for action: ${id}`);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "queued",
+      triageStatus: "open",
+      needsActionReason: null,
+      errorMessage: null,
+      nextRetryAt: null,
+      updatedAt: now,
+      completedAt: null,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const continued = getAutomationRun(id);
+  if (!continued)
+    throw new Error(`Automation run not found after continue: ${id}`);
+  return continued;
+};
+
+export const listDueAutomationRunRetries = (
+  now = new Date(),
+): AutomationRunRecord[] => {
+  const nowIso = now.toISOString();
+  return db
+    .select()
+    .from(schema.automationRuns)
+    .where(
+      and(
+        eq(schema.automationRuns.status, "failed"),
+        isNotNull(schema.automationRuns.nextRetryAt),
+        lte(schema.automationRuns.nextRetryAt, nowIso),
+      ),
+    )
+    .all()
+    .map(mapAutomationRunRow)
+    .filter((run) => run.retryCount < run.maxAttempts - 1);
+};
+
+export const queueAutomationRunRetry = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status !== "failed") {
+    throw new Error(`Automation run is not retryable: ${id}`);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "queued",
+      retryCount: existing.retryCount + 1,
+      nextRetryAt: null,
+      updatedAt: now,
+      completedAt: null,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const retried = getAutomationRun(id);
+  if (!retried) throw new Error(`Automation run not found after retry: ${id}`);
+  return retried;
+};
+
+export const recordAutomationRunEvent = (
+  runId: string,
+  input: {
+    detail?: Record<string, unknown> | null;
+    message?: string | null;
+    now?: Date;
+    toolName?: string | null;
+    type: string;
+  },
+): AutomationRunEventRecord => {
+  const last = db
+    .select()
+    .from(schema.automationRunEvents)
+    .where(eq(schema.automationRunEvents.runId, runId))
+    .all()
+    .reduce((max, row) => Math.max(max, row.sequence), 0);
+  const id = crypto.randomUUID();
+  const createdAt = (input.now ?? new Date()).toISOString();
+  db.insert(schema.automationRunEvents)
+    .values({
+      id,
+      runId,
+      sequence: last + 1,
+      type: input.type,
+      message: input.message ?? null,
+      toolName: input.toolName ?? null,
+      detail: input.detail ? JSON.stringify(input.detail) : null,
+      createdAt,
+    })
+    .run();
+  const event = listAutomationRunEvents(runId).find((item) => item.id === id);
+  if (!event)
+    throw new Error(`Automation run event not found after create: ${id}`);
+  return event;
+};
+
+export const listAutomationRunEvents = (
+  runId: string,
+): AutomationRunEventRecord[] =>
+  db
+    .select()
+    .from(schema.automationRunEvents)
+    .where(eq(schema.automationRunEvents.runId, runId))
+    .all()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((row) => ({
+      id: row.id,
+      runId: row.runId,
+      sequence: row.sequence,
+      type: row.type,
+      message: row.message ?? null,
+      toolName: row.toolName ?? null,
+      detail: row.detail
+        ? (JSON.parse(row.detail) as Record<string, unknown>)
+        : null,
+      createdAt: row.createdAt,
+    }));
+
+export const cleanupAutomationRuns = (
+  input: {
+    olderThanDays?: number;
+    triageStatus?: AutomationRunTriageStatus;
+    now?: Date;
+  } = {},
+): { deleted: number } => {
+  const triageStatus = input.triageStatus ?? "handled";
+  const cutoff =
+    typeof input.olderThanDays === "number" && input.olderThanDays > 0
+      ? new Date(
+          (input.now ?? new Date()).getTime() -
+            input.olderThanDays * 24 * 60 * 60_000,
+        ).toISOString()
+      : null;
+  const runsToDelete = listAutomationRuns({ triageStatus }).filter((run) =>
+    cutoff ? run.updatedAt < cutoff : true,
+  );
+
+  for (const run of runsToDelete) {
+    db.delete(schema.automationRuns)
+      .where(eq(schema.automationRuns.id, run.id))
+      .run();
+  }
+
+  return { deleted: runsToDelete.length };
+};
+
+export const recoverInterruptedAutomationRuns = (
+  now: Date = new Date(),
+): AutomationRunRecord[] => {
+  const interrupted = listAutomationRuns().filter((run) =>
+    ACTIVE_AUTOMATION_RUN_STATUSES.includes(run.status),
+  );
+  return interrupted.map((run) =>
+    finishAutomationRun(run.id, {
+      status: "failed",
+      errorMessage: "Automation run interrupted before completion.",
+      now,
+    }),
+  );
+};
+
+export const listDueAutomations = (now = new Date()): AutomationRecord[] => {
+  const nowIso = now.toISOString();
+  return listAutomations({ enabled: true }).filter((automation) => {
+    if (!automation.nextRunAt || automation.nextRunAt > nowIso) return false;
+    return !getActiveAutomationRun(automation.id);
+  });
+};
+
+// ============================================================================
 // 设置
 // ============================================================================
 
@@ -847,6 +2051,49 @@ export const getCredential = (id: string): Credential | null => {
     .where(eq(schema.credentials.id, id))
     .get();
   return row ? mapCredentialRow(row) : null;
+};
+
+export const updateCredential = (input: {
+  id: string;
+  kind: CredentialKind;
+  label: string;
+  token?: string;
+  scopes?: string[] | null;
+}): Credential => {
+  const existing = db
+    .select()
+    .from(schema.credentials)
+    .where(eq(schema.credentials.id, input.id))
+    .get();
+  if (!existing) throw new Error(`Credential not found: ${input.id}`);
+
+  const tokenChanged = input.token != null && input.token.length > 0;
+  const kindChanged = input.kind !== existing.kind;
+  const updates: Partial<typeof schema.credentials.$inferInsert> = {
+    kind: input.kind,
+    label: input.label,
+  };
+  if (tokenChanged) {
+    updates.encryptedToken = encrypt(input.token ?? "");
+  }
+  if (input.scopes !== undefined) {
+    updates.scopes = input.scopes ? JSON.stringify(input.scopes) : null;
+  }
+  if (tokenChanged || kindChanged) {
+    updates.lastTestedAt = null;
+    updates.testStatus = null;
+    updates.lastTestError = null;
+    updates.lastTestedHost = null;
+  }
+
+  db.update(schema.credentials)
+    .set(updates)
+    .where(eq(schema.credentials.id, input.id))
+    .run();
+
+  const updated = getCredential(input.id);
+  if (!updated) throw new Error(`Credential not found: ${input.id}`);
+  return updated;
 };
 
 /** 返回解密后的 token。凭据 id 未知时抛错。 */

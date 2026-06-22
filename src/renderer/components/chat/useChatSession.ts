@@ -41,6 +41,64 @@ export interface StreamErrorInfo {
   recoveryActions?: string[];
 }
 
+type AutomationRecordForChat = {
+  id: string;
+  modelId: string | null;
+  prompt: string;
+  scheduleKind: string;
+  scheduleValue: string;
+  title: string;
+  type: string;
+  workspacePaths: string[] | null;
+};
+
+type AutomationRunRecordForChat = {
+  assistantMessageId: string | null;
+  automationId: string;
+  automationTitle: string;
+  chatSessionId: string | null;
+  id: string;
+  modelId: string | null;
+  prompt: string;
+  trigger: "manual" | "scheduled";
+  workspacePaths: string[] | null;
+};
+
+type AutomationChatPromptCopy = {
+  instructions: string;
+  runId: string;
+  runNow: string;
+  schedule: string;
+  type: string;
+  workspacePaths: string;
+};
+
+const buildAutomationChatPrompt = (
+  run: AutomationRunRecordForChat,
+  automation?: AutomationRecordForChat,
+  copy?: AutomationChatPromptCopy,
+): string => {
+  const lines = [
+    copy?.runNow ?? `Run automation now: ${run.automationTitle}`,
+    copy?.runId ?? `Automation run id: ${run.id}`,
+  ];
+  if (automation) {
+    lines.push(
+      copy?.type ?? `Automation type: ${automation.type}`,
+      copy?.schedule ??
+        `Schedule: ${automation.scheduleKind} ${automation.scheduleValue}`,
+    );
+  }
+  if (run.workspacePaths?.length) {
+    lines.push(
+      copy?.workspacePaths ??
+        `Workspace paths: ${run.workspacePaths.join(", ")}`,
+    );
+  }
+  lines.push("", copy?.instructions ?? "Instructions:", run.prompt);
+  return lines.join("\n");
+};
+
 export function useChatSession(
   workspacePath: string,
   workspaceRefJson?: string,
@@ -520,6 +578,160 @@ export function useChatSession(
       });
   };
 
+  const handleTriggerAutomationRun = useCallback(
+    async (automation: AutomationRecordForChat) => {
+      const sessionId = await crud.createNewSession();
+      const assistantId = crypto.randomUUID();
+      const prepared = await window.filework.automations.prepareChatRun({
+        assistantMessageId: assistantId,
+        id: automation.id,
+        sessionId,
+      });
+      const prompt = buildAutomationChatPrompt(prepared, automation, {
+        instructions: LL.automations_chatPromptInstructions(),
+        runId: LL.automations_chatPromptRunId({ id: prepared.id }),
+        runNow: LL.automations_chatPromptRunNow({
+          title: prepared.automationTitle,
+        }),
+        schedule: LL.automations_chatPromptSchedule({
+          kind: automation.scheduleKind,
+          value: automation.scheduleValue,
+        }),
+        type: LL.automations_chatPromptType({ value: automation.type }),
+        workspacePaths: LL.automations_chatPromptWorkspacePaths({
+          value: prepared.workspacePaths?.join(", ") ?? "",
+        }),
+      });
+      const now = new Date().toISOString();
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        sessionId,
+        role: "user",
+        content: prompt,
+        timestamp: now,
+      };
+      const assistantMessage: ChatMessage = {
+        id: assistantId,
+        sessionId,
+        role: "assistant",
+        content: "",
+        timestamp: now,
+        parts: [],
+      };
+      const messages = [userMessage, assistantMessage];
+      const title = prepared.automationTitle;
+
+      window.filework.updateChatSession(sessionId, { title });
+      crud.setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                automationRun: {
+                  automationId: prepared.automationId,
+                  id: prepared.id,
+                  title,
+                },
+                title,
+              }
+            : s,
+        ),
+      );
+      crud.setMessages(messages);
+      crud.debouncedSave(messages, sessionId);
+      stream.setIsLoading(true);
+      crud.setLastUsage(null);
+      crud.setLastError(null);
+      stream.setRetryInfo(null);
+      stream.pendingStopRef.current = false;
+      stream.stopRequestedRef.current = false;
+      stream.streamAssistantIdRef.current = assistantId;
+      setSessionRunStates((prev) =>
+        markSessionPending(prev, {
+          sessionId,
+          assistantMessageId: assistantId,
+        }),
+      );
+
+      const executionWorkspacePath =
+        prepared.workspacePaths?.[0] ?? workspacePath;
+      const executionWorkspaceRefJson =
+        executionWorkspacePath === workspacePath ? workspaceRefJson : undefined;
+      const history = messages
+        .filter((m) => m.id !== assistantId)
+        .map(({ role, content, parts }) => ({
+          role,
+          content,
+          parts: parts?.filter((p) => p.type !== "plan"),
+        }));
+
+      window.filework
+        .executeTask({
+          prompt,
+          workspacePath: executionWorkspacePath,
+          workspaceRefJson: executionWorkspaceRefJson,
+          sessionId,
+          assistantMessageId: assistantId,
+          automationRunId: prepared.id,
+          llmConfigId:
+            prepared.modelId ??
+            automation.modelId ??
+            selectedLlmConfigId ??
+            undefined,
+          history,
+        })
+        .catch((error: unknown) => {
+          if (stream.streamAssistantIdRef.current !== assistantId) return;
+          const errMsg =
+            error instanceof Error ? error.message : LL.chat_unknownError();
+          const errorPart: MessagePart = {
+            type: "error",
+            message: errMsg,
+          };
+          crud.setLastError({ message: errMsg });
+          crud.setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              content: errMsg,
+              parts: [errorPart],
+            };
+            crud.debouncedSave(updated, sessionId);
+            return updated;
+          });
+          stream.setIsLoading(false);
+          stream.setRetryInfo(null);
+          stream.streamTaskIdRef.current = null;
+          stream.streamAssistantIdRef.current = null;
+          clearSessionRunStateBySession(sessionId);
+        });
+    },
+    [
+      LL,
+      crud,
+      selectedLlmConfigId,
+      stream,
+      workspacePath,
+      workspaceRefJson,
+      clearSessionRunStateBySession,
+    ],
+  );
+
+  const handleOpenAutomationRun = useCallback(
+    (run: AutomationRunRecordForChat) => {
+      if (!run.chatSessionId) return false;
+      stream.detachFromTask();
+      setSessionRunStates((prev) =>
+        clearSessionUnreadState(prev, run.chatSessionId ?? ""),
+      );
+      crud.handleSelectSession(run.chatSessionId, false);
+      return true;
+    },
+    [crud.handleSelectSession, stream.detachFromTask],
+  );
+
   const handleApproval = (toolCallId: string, approved: boolean) => {
     crud.setMessages((prev) => {
       const assistantId = stream.streamAssistantIdRef.current;
@@ -767,6 +979,8 @@ export function useChatSession(
     handleCancelPlan: plan.handleCancelPlan,
     handleStopGeneration,
     handleNewChat,
+    handleTriggerAutomationRun,
+    handleOpenAutomationRun,
     handleSelectSession,
     handleDeleteSession,
     handleRenameSession: crud.handleRenameSession,

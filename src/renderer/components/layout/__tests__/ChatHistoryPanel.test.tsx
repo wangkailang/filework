@@ -31,6 +31,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
         "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
       session_rename: () => "重命名",
       session_unread: () => "未读",
+      automations_title: () => "自动化",
       task_pending: () => "等待中",
       task_running: () => "执行中",
     },
@@ -117,6 +118,70 @@ describe("ChatHistoryPanel", () => {
     expect(html).toContain("group-hover:opacity-0");
     expect(html).toContain("group-hover:opacity-100");
     expect(html).not.toContain("w-11");
+  });
+
+  it("hides automation-backed sessions from the project chat list", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("regular-session", "普通项目对话"),
+          updatedAt: "2026-06-13T07:00:00.000Z",
+        },
+        {
+          ...session("automation-session", "新对话"),
+          automationRun: {
+            id: "run-1",
+            automationId: "auto-1",
+            title: "每日 Filework commit 改动统计",
+          },
+        } as ChatSession,
+        {
+          ...session(
+            "legacy-automation-session",
+            "Run automation now: 每日仓库巡检",
+          ),
+          automationRun: {
+            id: "run-2",
+            automationId: "auto-2",
+            title: "每日仓库巡检",
+          },
+        } as ChatSession,
+      ],
+      activeSessionId: "automation-session",
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain("普通项目对话");
+    expect(html).not.toContain('data-session-row="automation-session"');
+    expect(html).not.toContain('data-session-row="legacy-automation-session"');
+    expect(html).not.toContain("每日 Filework commit 改动统计");
+    expect(html).not.toContain("每日仓库巡检");
+    expect(html).not.toContain("Run automation now:");
+    expect(html).not.toContain(">新对话<");
+  });
+
+  it("shows the empty state when a workspace only has automation chats", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("automation-session", "Run automation now: 每日仓库巡检"),
+          automationRun: {
+            id: "run-1",
+            automationId: "auto-1",
+            title: "每日仓库巡检",
+          },
+        } as ChatSession,
+      ],
+      activeSessionId: "automation-session",
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain("暂无会话");
+    expect(html).not.toContain('data-session-row="automation-session"');
   });
 
   it("exposes current branch context in the session detail affordance", () => {

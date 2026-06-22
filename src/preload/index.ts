@@ -12,6 +12,91 @@ type WorkspaceMemoryEntry = {
   updatedAt: string;
 };
 
+type AutomationType = "thread" | "standalone" | "project";
+type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
+type AutomationRunMode = "local" | "worktree";
+type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "needs_action"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+type AutomationRunTriageStatus = "open" | "handled";
+
+type AutomationRecord = {
+  id: string;
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled: boolean;
+  threadId: string | null;
+  workspacePaths: string[] | null;
+  runMode: AutomationRunMode | null;
+  modelId: string | null;
+  reasoningEffort: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AutomationRunRecord = {
+  id: string;
+  automationId: string;
+  automationTitle: string;
+  trigger: "manual" | "scheduled";
+  status: AutomationRunStatus;
+  triageStatus: AutomationRunTriageStatus;
+  needsActionReason: string | null;
+  chatSessionId: string | null;
+  assistantMessageId: string | null;
+  taskId: string | null;
+  prompt: string;
+  workspacePaths: string[] | null;
+  threadId: string | null;
+  modelId: string | null;
+  output: string | null;
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  retryCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+type AutomationRunEventRecord = {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  message: string | null;
+  toolName: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type AutomationCreatePayload = {
+  title: string;
+  prompt: string;
+  type: AutomationType;
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+  enabled?: boolean;
+  threadId?: string | null;
+  workspacePaths?: string[] | null;
+  runMode?: AutomationRunMode | null;
+  modelId?: string | null;
+  reasoningEffort?: string | null;
+};
+
 /**
  * 通过 contextBridge 向渲染进程暴露安全的 IPC 方法。
  * 这是主进程与渲染进程之间的唯一桥梁。
@@ -114,6 +199,7 @@ const api = {
     sessionId?: string;
     /** 本回合助手消息 id;登记进重连表,刷新后据此重挂。 */
     assistantMessageId?: string;
+    automationRunId?: string;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";
@@ -873,6 +959,73 @@ const api = {
     ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:getAll"),
 
+  // 自动化
+  automations: {
+    list: (filter?: {
+      enabled?: boolean;
+      type?: AutomationType;
+      threadId?: string;
+    }): Promise<AutomationRecord[]> =>
+      ipcRenderer.invoke("automations:list", filter),
+    listRuns: (filter?: {
+      automationId?: string;
+      status?: AutomationRunStatus;
+      triageStatus?: AutomationRunTriageStatus;
+      limit?: number;
+      offset?: number;
+    }): Promise<AutomationRunRecord[]> =>
+      ipcRenderer.invoke("automations:listRuns", filter),
+    create: (payload: AutomationCreatePayload): Promise<AutomationRecord> =>
+      ipcRenderer.invoke("automations:create", payload),
+    update: (
+      id: string,
+      updates: Partial<
+        Omit<AutomationRecord, "id" | "createdAt" | "updatedAt" | "nextRunAt">
+      >,
+    ): Promise<AutomationRecord> =>
+      ipcRenderer.invoke("automations:update", { id, updates }),
+    trigger: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:trigger", { id }),
+    prepareChatRun: (payload: {
+      assistantMessageId: string;
+      id: string;
+      sessionId: string;
+    }): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:prepareChatRun", payload),
+    rerun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:rerun", { id }),
+    continueRun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:continueRun", { id }),
+    listRunEvents: (id: string): Promise<AutomationRunEventRecord[]> =>
+      ipcRenderer.invoke("automations:listRunEvents", { id }),
+    markRunHandled: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:markRunHandled", { id }),
+    cancelRun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:cancelRun", { id }),
+    cleanupRuns: (payload?: {
+      olderThanDays?: number;
+      triageStatus?: AutomationRunTriageStatus;
+    }): Promise<{ deleted: number }> =>
+      ipcRenderer.invoke("automations:cleanupRuns", payload),
+    previewSchedule: (payload: {
+      scheduleKind: AutomationScheduleKind;
+      scheduleValue: string;
+    }): Promise<{ nextRunAt: string; timeZone: string }> =>
+      ipcRenderer.invoke("automations:previewSchedule", payload),
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke("automations:delete", { id }),
+    onOpenTriage: (callback: (payload: { runId?: string }) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: { runId?: string },
+      ) => callback(payload);
+      ipcRenderer.on("automations:open-triage", handler);
+      return () => {
+        ipcRenderer.removeListener("automations:open-triage", handler);
+      };
+    },
+  },
+
   // 危险工具白名单(持久化,可在设置面板管理)
   toolWhitelist: {
     getState: (): Promise<{ tools: string[]; enabled: string[] }> =>
@@ -1145,6 +1298,15 @@ const api = {
       token: string;
       scopes?: string[];
     }) => ipcRenderer.invoke("credentials:create", payload),
+    update: (
+      id: string,
+      payload: {
+        kind: CredentialKind;
+        label: string;
+        token?: string;
+        scopes?: string[];
+      },
+    ) => ipcRenderer.invoke("credentials:update", { id, ...payload }),
     delete: (id: string) => ipcRenderer.invoke("credentials:delete", { id }),
     test: (payload: {
       id?: string;

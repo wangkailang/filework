@@ -65,6 +65,11 @@ export interface ChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
+  automationRun?: {
+    id: string;
+    automationId: string;
+    title: string;
+  };
 }
 
 export interface ActiveSkillInfo {

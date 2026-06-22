@@ -8,7 +8,9 @@ import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import {
+  getBatchAlwaysAllowLabel,
   getBatchApprovalTitle,
+  getBatchApproveLabel,
   getBatchToolLabel,
   summarizeBatchEntry,
 } from "./confirmation-copy";
@@ -225,10 +227,10 @@ export const ConfirmationBatch = ({
             variant="default"
             onClick={() => onApprove(false)}
           >
-            {single ? LL.chat_approve() : LL.approval_batch_approve_all(count)}
+            {getBatchApproveLabel({ LL, toolName, count })}
           </ConfirmationAction>
           <ConfirmationAction variant="outline" onClick={() => onApprove(true)}>
-            {LL.approval_batch_always_allow(label)}
+            {getBatchAlwaysAllowLabel({ LL, toolName })}
           </ConfirmationAction>
           <ConfirmationAction variant="destructive" onClick={onDeny}>
             {single ? LL.chat_reject() : LL.approval_batch_reject_all()}

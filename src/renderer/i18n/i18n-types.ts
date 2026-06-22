@@ -253,6 +253,587 @@ type RootTranslation = {
 	 */
 	settings_testConnection: string
 	/**
+	 * C​r​e​d​e​n​t​i​a​l​s
+	 */
+	settings_credentials: string
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​s
+	 */
+	settings_automations: string
+	/**
+	 * C​r​e​d​e​n​t​i​a​l​s
+	 */
+	credentials_title: string
+	/**
+	 * A​P​I​ ​k​e​y​s​ ​a​n​d​ ​p​e​r​s​o​n​a​l​ ​a​c​c​e​s​s​ ​t​o​k​e​n​s​ ​f​o​r​ ​G​i​t​H​u​b​,​ ​G​i​t​L​a​b​,​ ​T​a​v​i​l​y​,​ ​a​n​d​ ​F​i​r​e​c​r​a​w​l​.​ ​T​o​k​e​n​s​ ​a​r​e​ ​e​n​c​r​y​p​t​e​d​ ​l​o​c​a​l​l​y​ ​a​n​d​ ​n​e​v​e​r​ ​s​h​o​w​n​ ​a​f​t​e​r​ ​s​a​v​i​n​g​.
+	 */
+	credentials_description: string
+	/**
+	 * A​d​d​ ​t​o​k​e​n
+	 */
+	credentials_addToken: string
+	/**
+	 * A​d​d​ ​t​o​k​e​n
+	 */
+	credentials_createTitle: string
+	/**
+	 * E​d​i​t​ ​t​o​k​e​n
+	 */
+	credentials_editTitle: string
+	/**
+	 * K​i​n​d
+	 */
+	credentials_kind: string
+	/**
+	 * L​a​b​e​l
+	 */
+	credentials_label: string
+	/**
+	 * e​.​g​.​ ​w​o​r​k​ ​a​c​c​o​u​n​t
+	 */
+	credentials_labelPlaceholder: string
+	/**
+	 * T​o​k​e​n
+	 */
+	credentials_token: string
+	/**
+	 * S​t​o​r​e​d​ ​e​n​c​r​y​p​t​e​d​ ​a​t​ ​r​e​s​t​ ​w​i​t​h​ ​t​h​e​ ​s​a​m​e​ ​k​e​y​ ​a​s​ ​y​o​u​r​ ​L​L​M​ ​A​P​I​ ​k​e​y​s​.
+	 */
+	credentials_tokenHint: string
+	/**
+	 * L​e​a​v​e​ ​b​l​a​n​k​ ​t​o​ ​k​e​e​p​ ​e​x​i​s​t​i​n​g​ ​t​o​k​e​n
+	 */
+	credentials_keepExistingToken: string
+	/**
+	 * S​a​v​e
+	 */
+	credentials_save: string
+	/**
+	 * C​a​n​c​e​l
+	 */
+	credentials_cancel: string
+	/**
+	 * N​o​ ​t​o​k​e​n​s​ ​s​t​o​r​e​d​ ​y​e​t​.
+	 */
+	credentials_empty: string
+	/**
+	 * L​o​a​d​i​n​g​ ​c​r​e​d​e​n​t​i​a​l​s​.​.​.
+	 */
+	credentials_loading: string
+	/**
+	 * T​e​s​t
+	 */
+	credentials_test: string
+	/**
+	 * T​e​s​t​i​n​g
+	 */
+	credentials_testing: string
+	/**
+	 * E​d​i​t
+	 */
+	credentials_edit: string
+	/**
+	 * D​e​l​e​t​e
+	 */
+	credentials_delete: string
+	/**
+	 * A​d​d​e​d​ ​{​d​a​t​e​}
+	 * @param {string} date
+	 */
+	credentials_addedOn: RequiredParams<'date'>
+	/**
+	 * H​o​s​t​ ​{​h​o​s​t​}
+	 * @param {string} host
+	 */
+	credentials_lastTestedHost: RequiredParams<'host'>
+	/**
+	 * S​c​o​p​e​s​:​ ​{​s​c​o​p​e​s​}
+	 * @param {string} scopes
+	 */
+	credentials_scopes: RequiredParams<'scopes'>
+	/**
+	 * C​o​n​n​e​c​t​e​d​ ​a​s​ ​{​l​o​g​i​n​}
+	 * @param {string} login
+	 */
+	credentials_connectedAs: RequiredParams<'login'>
+	/**
+	 * T​o​k​e​n​ ​i​n​v​a​l​i​d
+	 */
+	credentials_tokenInvalid: string
+	/**
+	 * N​o​t​ ​t​e​s​t​e​d​ ​y​e​t
+	 */
+	credentials_notTested: string
+	/**
+	 * H​e​a​l​t​h​y​ ​-​ ​t​e​s​t​e​d​ ​{​w​h​e​n​}
+	 * @param {string} when
+	 */
+	credentials_testedHealthy: RequiredParams<'when'>
+	/**
+	 * E​r​r​o​r​:​ ​{​e​r​r​o​r​}​ ​(​t​e​s​t​e​d​ ​{​w​h​e​n​}​)
+	 * @param {string} error
+	 * @param {string} when
+	 */
+	credentials_testedError: RequiredParams<'error' | 'when'>
+	/**
+	 * n​e​v​e​r
+	 */
+	credentials_relativeNever: string
+	/**
+	 * u​n​k​n​o​w​n
+	 */
+	credentials_relativeUnknown: string
+	/**
+	 * j​u​s​t​ ​n​o​w
+	 */
+	credentials_relativeJustNow: string
+	/**
+	 * {​c​o​u​n​t​}​m​ ​a​g​o
+	 * @param {number} count
+	 */
+	credentials_relativeMinutes: RequiredParams<'count'>
+	/**
+	 * {​c​o​u​n​t​}​h​ ​a​g​o
+	 * @param {number} count
+	 */
+	credentials_relativeHours: RequiredParams<'count'>
+	/**
+	 * {​c​o​u​n​t​}​d​ ​a​g​o
+	 * @param {number} count
+	 */
+	credentials_relativeDays: RequiredParams<'count'>
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​s
+	 */
+	automations_title: string
+	/**
+	 * M​a​n​a​g​e​ ​s​c​h​e​d​u​l​e​d​ ​t​a​s​k​s​,​ ​r​e​m​i​n​d​e​r​s​,​ ​a​n​d​ ​p​r​o​j​e​c​t​ ​m​o​n​i​t​o​r​s​ ​c​r​e​a​t​e​d​ ​b​y​ ​t​h​e​ ​a​g​e​n​t​.
+	 */
+	automations_description: string
+	/**
+	 * N​e​w​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	automations_add: string
+	/**
+	 * N​e​w​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	automations_createTitle: string
+	/**
+	 * E​d​i​t​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	automations_editTitle: string
+	/**
+	 * N​a​m​e
+	 */
+	automations_name: string
+	/**
+	 * T​y​p​e
+	 */
+	automations_type: string
+	/**
+	 * C​u​r​r​e​n​t​ ​t​h​r​e​a​d
+	 */
+	automations_typeThread: string
+	/**
+	 * S​t​a​n​d​a​l​o​n​e
+	 */
+	automations_typeStandalone: string
+	/**
+	 * P​r​o​j​e​c​t
+	 */
+	automations_typeProject: string
+	/**
+	 * R​u​n​ ​m​o​d​e
+	 */
+	automations_runMode: string
+	/**
+	 * L​o​c​a​l​ ​p​r​o​j​e​c​t
+	 */
+	automations_runModeLocal: string
+	/**
+	 * I​s​o​l​a​t​e​d​ ​w​o​r​k​t​r​e​e
+	 */
+	automations_runModeWorktree: string
+	/**
+	 * S​c​h​e​d​u​l​e
+	 */
+	automations_schedule: string
+	/**
+	 * S​c​h​e​d​u​l​e​ ​k​i​n​d
+	 */
+	automations_scheduleKind: string
+	/**
+	 * S​c​h​e​d​u​l​e​ ​v​a​l​u​e
+	 */
+	automations_scheduleValue: string
+	/**
+	 * I​n​t​e​r​v​a​l
+	 */
+	automations_scheduleInterval: string
+	/**
+	 * D​a​i​l​y
+	 */
+	automations_scheduleDaily: string
+	/**
+	 * W​e​e​k​l​y
+	 */
+	automations_scheduleWeekly: string
+	/**
+	 * C​r​o​n
+	 */
+	automations_scheduleCron: string
+	/**
+	 * D​a​y
+	 */
+	automations_scheduleDay: string
+	/**
+	 * T​i​m​e
+	 */
+	automations_scheduleTime: string
+	/**
+	 * E​v​e​r​y
+	 */
+	automations_scheduleEvery: string
+	/**
+	 * m​i​n​u​t​e​s
+	 */
+	automations_scheduleUnitMinutes: string
+	/**
+	 * h​o​u​r​s
+	 */
+	automations_scheduleUnitHours: string
+	/**
+	 * d​a​y​s
+	 */
+	automations_scheduleUnitDays: string
+	/**
+	 * N​e​x​t​ ​r​u​n​ ​{​v​a​l​u​e​}​ ​(​{​t​i​m​e​Z​o​n​e​}​)
+	 * @param {string} timeZone
+	 * @param {string} value
+	 */
+	automations_schedulePreview: RequiredParams<'timeZone' | 'value'>
+	/**
+	 * I​n​v​a​l​i​d​ ​s​c​h​e​d​u​l​e​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_schedulePreviewError: RequiredParams<'value'>
+	/**
+	 * R​e​c​o​m​m​e​n​d​e​d​ ​a​u​t​o​m​a​t​i​o​n​s
+	 */
+	automations_templatesTitle: string
+	/**
+	 * D​a​i​l​y​ ​c​o​m​m​i​t​ ​s​u​m​m​a​r​y
+	 */
+	automations_templateDailyCommitTitle: string
+	/**
+	 * D​e​p​e​n​d​e​n​c​y​ ​u​p​d​a​t​e​ ​m​o​n​i​t​o​r
+	 */
+	automations_templateDependenciesTitle: string
+	/**
+	 * C​I​ ​f​a​i​l​u​r​e​ ​t​r​a​c​k​i​n​g
+	 */
+	automations_templateCiFailureTitle: string
+	/**
+	 * U​s​e​ ​t​e​m​p​l​a​t​e
+	 */
+	automations_templateUse: string
+	/**
+	 * P​r​o​m​p​t
+	 */
+	automations_prompt: string
+	/**
+	 * W​o​r​k​s​p​a​c​e​ ​p​a​t​h​s
+	 */
+	automations_workspacePaths: string
+	/**
+	 * O​n​e​ ​a​b​s​o​l​u​t​e​ ​p​a​t​h​ ​p​e​r​ ​l​i​n​e
+	 */
+	automations_workspacePathsPlaceholder: string
+	/**
+	 * M​o​d​e​l​ ​o​v​e​r​r​i​d​e
+	 */
+	automations_modelId: string
+	/**
+	 * R​e​a​s​o​n​i​n​g​ ​e​f​f​o​r​t
+	 */
+	automations_reasoningEffort: string
+	/**
+	 * E​n​a​b​l​e​d
+	 */
+	automations_enabled: string
+	/**
+	 * E​n​a​b​l​e
+	 */
+	automations_enable: string
+	/**
+	 * D​i​s​a​b​l​e
+	 */
+	automations_disable: string
+	/**
+	 * E​n​a​b​l​e​d
+	 */
+	automations_statusEnabled: string
+	/**
+	 * D​i​s​a​b​l​e​d
+	 */
+	automations_statusDisabled: string
+	/**
+	 * S​a​v​e
+	 */
+	automations_save: string
+	/**
+	 * C​a​n​c​e​l
+	 */
+	automations_cancel: string
+	/**
+	 * E​d​i​t
+	 */
+	automations_edit: string
+	/**
+	 * D​e​l​e​t​e
+	 */
+	automations_delete: string
+	/**
+	 * D​e​l​e​t​e​ ​a​u​t​o​m​a​t​i​o​n​?
+	 */
+	automations_deleteConfirmTitle: string
+	/**
+	 * T​h​i​s​ ​a​u​t​o​m​a​t​i​o​n​ ​w​i​l​l​ ​s​t​o​p​ ​r​u​n​n​i​n​g​.​ ​A​r​e​ ​y​o​u​ ​s​u​r​e​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​d​e​l​e​t​e​ ​i​t​?
+	 */
+	automations_deleteConfirmDesc: string
+	/**
+	 * R​u​n​ ​n​o​w
+	 */
+	automations_trigger: string
+	/**
+	 * R​u​n​n​i​n​g
+	 */
+	automations_triggering: string
+	/**
+	 * T​a​s​k​s
+	 */
+	automations_showTasks: string
+	/**
+	 * T​r​i​a​g​e
+	 */
+	automations_showTriage: string
+	/**
+	 * T​r​i​a​g​e
+	 */
+	automations_triageTitle: string
+	/**
+	 * V​i​e​w​ ​d​e​t​a​i​l​s
+	 */
+	automations_viewDetails: string
+	/**
+	 * R​u​n​ ​d​e​t​a​i​l​s
+	 */
+	automations_runDetailsTitle: string
+	/**
+	 * O​p​e​n​ ​c​h​a​t
+	 */
+	automations_runDetailsOpenChat: string
+	/**
+	 * I​n​s​t​r​u​c​t​i​o​n​s
+	 */
+	automations_runDetailsPrompt: string
+	/**
+	 * O​u​t​p​u​t
+	 */
+	automations_runDetailsOutput: string
+	/**
+	 * E​r​r​o​r
+	 */
+	automations_runDetailsError: string
+	/**
+	 * E​x​e​c​u​t​i​o​n​ ​e​v​e​n​t​s
+	 */
+	automations_runDetailsEvents: string
+	/**
+	 * N​o​ ​o​u​t​p​u​t​ ​y​e​t​.
+	 */
+	automations_runDetailsEmpty: string
+	/**
+	 * I​n​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenInput: RequiredParams<'value'>
+	/**
+	 * O​u​t​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenOutput: RequiredParams<'value'>
+	/**
+	 * T​o​t​a​l​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
+	 * @param {string} value
+	 */
+	automations_tokenTotal: RequiredParams<'value'>
+	/**
+	 * N​o​ ​r​u​n​s​ ​y​e​t​.
+	 */
+	automations_runsEmpty: string
+	/**
+	 * Q​u​e​u​e​d
+	 */
+	automations_runStatusQueued: string
+	/**
+	 * R​u​n​n​i​n​g
+	 */
+	automations_runStatusRunning: string
+	/**
+	 * N​e​e​d​s​ ​a​c​t​i​o​n
+	 */
+	automations_runStatusNeedsAction: string
+	/**
+	 * S​u​c​c​e​e​d​e​d
+	 */
+	automations_runStatusSucceeded: string
+	/**
+	 * F​a​i​l​e​d
+	 */
+	automations_runStatusFailed: string
+	/**
+	 * C​a​n​c​e​l​e​d
+	 */
+	automations_runStatusCanceled: string
+	/**
+	 * O​p​e​n
+	 */
+	automations_triageFilterOpen: string
+	/**
+	 * H​a​n​d​l​e​d
+	 */
+	automations_triageFilterHandled: string
+	/**
+	 * A​l​l
+	 */
+	automations_triageFilterAll: string
+	/**
+	 * C​l​e​a​r​ ​h​a​n​d​l​e​d
+	 */
+	automations_triageCleanupHandled: string
+	/**
+	 * C​l​e​a​r​ ​o​l​d​e​r​ ​t​h​a​n​ ​3​0​d
+	 */
+	automations_triageCleanupOldHandled: string
+	/**
+	 * R​e​r​u​n
+	 */
+	automations_triageRerun: string
+	/**
+	 * C​o​n​t​i​n​u​e​ ​r​u​n
+	 */
+	automations_triageContinueRun: string
+	/**
+	 * M​a​r​k​ ​h​a​n​d​l​e​d
+	 */
+	automations_triageMarkHandled: string
+	/**
+	 * C​a​n​c​e​l​ ​r​u​n
+	 */
+	automations_triageCancelRun: string
+	/**
+	 * P​r​e​v​i​o​u​s
+	 */
+	automations_triagePreviousPage: string
+	/**
+	 * N​e​x​t
+	 */
+	automations_triageNextPage: string
+	/**
+	 * M​a​n​u​a​l
+	 */
+	automations_triggerManual: string
+	/**
+	 * S​c​h​e​d​u​l​e​d
+	 */
+	automations_triggerScheduled: string
+	/**
+	 * R​u​n​ ​a​u​t​o​m​a​t​i​o​n​ ​n​o​w​:​ ​{​t​i​t​l​e​}
+	 * @param {string} title
+	 */
+	automations_chatPromptRunNow: RequiredParams<'title'>
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​ ​r​u​n​ ​I​D​:​ ​{​i​d​}
+	 * @param {string} id
+	 */
+	automations_chatPromptRunId: RequiredParams<'id'>
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​ ​t​y​p​e​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_chatPromptType: RequiredParams<'value'>
+	/**
+	 * S​c​h​e​d​u​l​e​:​ ​{​k​i​n​d​}​ ​{​v​a​l​u​e​}
+	 * @param {string} kind
+	 * @param {string} value
+	 */
+	automations_chatPromptSchedule: RequiredParams<'kind' | 'value'>
+	/**
+	 * W​o​r​k​s​p​a​c​e​ ​p​a​t​h​s​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_chatPromptWorkspacePaths: RequiredParams<'value'>
+	/**
+	 * I​n​s​t​r​u​c​t​i​o​n​s​:
+	 */
+	automations_chatPromptInstructions: string
+	/**
+	 * S​t​a​r​t​e​d​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runStarted: RequiredParams<'value'>
+	/**
+	 * C​o​m​p​l​e​t​e​d​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runCompleted: RequiredParams<'value'>
+	/**
+	 * A​t​t​e​m​p​t​ ​{​c​u​r​r​e​n​t​}​/​{​m​a​x​}
+	 * @param {string} current
+	 * @param {string} max
+	 */
+	automations_runAttempt: RequiredParams<'current' | 'max'>
+	/**
+	 * R​e​t​r​y​ ​a​t​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_runRetryAt: RequiredParams<'value'>
+	/**
+	 * S​t​a​r​t​e​d
+	 */
+	automations_runStartedLabel: string
+	/**
+	 * C​o​m​p​l​e​t​e​d
+	 */
+	automations_runCompletedLabel: string
+	/**
+	 * N​o​ ​a​u​t​o​m​a​t​i​o​n​s​ ​y​e​t​.
+	 */
+	automations_empty: string
+	/**
+	 * L​o​a​d​i​n​g​ ​a​u​t​o​m​a​t​i​o​n​s​.​.​.
+	 */
+	automations_loading: string
+	/**
+	 * N​e​x​t​ ​r​u​n​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_nextRun: RequiredParams<'value'>
+	/**
+	 * L​a​s​t​ ​r​u​n​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_lastRun: RequiredParams<'value'>
+	/**
+	 * N​o​t​ ​s​c​h​e​d​u​l​e​d
+	 */
+	automations_notScheduled: string
+	/**
+	 * N​a​m​e​,​ ​p​r​o​m​p​t​,​ ​a​n​d​ ​s​c​h​e​d​u​l​e​ ​a​r​e​ ​r​e​q​u​i​r​e​d​.
+	 */
+	automations_errorRequired: string
+	/**
 	 * P​e​n​d​i​n​g
 	 */
 	task_pending: string
@@ -902,6 +1483,10 @@ type RootTranslation = {
 	 */
 	toolName_findDuplicates: string
 	/**
+	 * M​a​n​a​g​e​ ​A​u​t​o​m​a​t​i​o​n​s
+	 */
+	toolName_automationUpdate: string
+	/**
 	 * R​u​n​ ​C​o​m​m​a​n​d
 	 */
 	toolName_runCommand: string
@@ -1024,6 +1609,38 @@ type RootTranslation = {
 	 * @param {number} 0
 	 */
 	approval_batch_more: RequiredParams<'0'>
+	/**
+	 * A​p​p​r​o​v​e​ ​a​u​t​o​m​a​t​i​o​n​ ​c​h​a​n​g​e​s​?
+	 */
+	approval_automationUpdate_title: string
+	/**
+	 * A​p​p​r​o​v​e​ ​t​h​i​s​ ​c​h​a​n​g​e
+	 */
+	approval_automationUpdate_approve_once: string
+	/**
+	 * A​l​w​a​y​s​ ​a​l​l​o​w​ ​a​u​t​o​m​a​t​i​o​n​ ​c​h​a​n​g​e​s
+	 */
+	approval_automationUpdate_always_allow: string
+	/**
+	 * W​i​l​l​ ​c​h​a​n​g​e​ ​a​u​t​o​m​a​t​i​o​n​ ​s​e​t​t​i​n​g​s
+	 */
+	approval_automationUpdate_summary_change: string
+	/**
+	 * W​i​l​l​ ​c​r​e​a​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_create: string
+	/**
+	 * W​i​l​l​ ​u​p​d​a​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_update: string
+	/**
+	 * W​i​l​l​ ​d​e​l​e​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_delete: string
+	/**
+	 * W​i​l​l​ ​l​i​s​t​ ​a​u​t​o​m​a​t​i​o​n​s
+	 */
+	approval_automationUpdate_summary_list: string
 	/**
 	 * {​0​}​ ​s​u​b​a​g​e​n​t​s​ ​·​ ​c​o​n​c​u​r​r​e​n​c​y​ ​{​1​}
 	 * @param {number} 0
@@ -2057,6 +2674,558 @@ export type TranslationFunctions = {
 	 */
 	settings_testConnection: () => LocalizedString
 	/**
+	 * Credentials
+	 */
+	settings_credentials: () => LocalizedString
+	/**
+	 * Automations
+	 */
+	settings_automations: () => LocalizedString
+	/**
+	 * Credentials
+	 */
+	credentials_title: () => LocalizedString
+	/**
+	 * API keys and personal access tokens for GitHub, GitLab, Tavily, and Firecrawl. Tokens are encrypted locally and never shown after saving.
+	 */
+	credentials_description: () => LocalizedString
+	/**
+	 * Add token
+	 */
+	credentials_addToken: () => LocalizedString
+	/**
+	 * Add token
+	 */
+	credentials_createTitle: () => LocalizedString
+	/**
+	 * Edit token
+	 */
+	credentials_editTitle: () => LocalizedString
+	/**
+	 * Kind
+	 */
+	credentials_kind: () => LocalizedString
+	/**
+	 * Label
+	 */
+	credentials_label: () => LocalizedString
+	/**
+	 * e.g. work account
+	 */
+	credentials_labelPlaceholder: () => LocalizedString
+	/**
+	 * Token
+	 */
+	credentials_token: () => LocalizedString
+	/**
+	 * Stored encrypted at rest with the same key as your LLM API keys.
+	 */
+	credentials_tokenHint: () => LocalizedString
+	/**
+	 * Leave blank to keep existing token
+	 */
+	credentials_keepExistingToken: () => LocalizedString
+	/**
+	 * Save
+	 */
+	credentials_save: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	credentials_cancel: () => LocalizedString
+	/**
+	 * No tokens stored yet.
+	 */
+	credentials_empty: () => LocalizedString
+	/**
+	 * Loading credentials...
+	 */
+	credentials_loading: () => LocalizedString
+	/**
+	 * Test
+	 */
+	credentials_test: () => LocalizedString
+	/**
+	 * Testing
+	 */
+	credentials_testing: () => LocalizedString
+	/**
+	 * Edit
+	 */
+	credentials_edit: () => LocalizedString
+	/**
+	 * Delete
+	 */
+	credentials_delete: () => LocalizedString
+	/**
+	 * Added {date}
+	 */
+	credentials_addedOn: (arg: { date: string }) => LocalizedString
+	/**
+	 * Host {host}
+	 */
+	credentials_lastTestedHost: (arg: { host: string }) => LocalizedString
+	/**
+	 * Scopes: {scopes}
+	 */
+	credentials_scopes: (arg: { scopes: string }) => LocalizedString
+	/**
+	 * Connected as {login}
+	 */
+	credentials_connectedAs: (arg: { login: string }) => LocalizedString
+	/**
+	 * Token invalid
+	 */
+	credentials_tokenInvalid: () => LocalizedString
+	/**
+	 * Not tested yet
+	 */
+	credentials_notTested: () => LocalizedString
+	/**
+	 * Healthy - tested {when}
+	 */
+	credentials_testedHealthy: (arg: { when: string }) => LocalizedString
+	/**
+	 * Error: {error} (tested {when})
+	 */
+	credentials_testedError: (arg: { error: string, when: string }) => LocalizedString
+	/**
+	 * never
+	 */
+	credentials_relativeNever: () => LocalizedString
+	/**
+	 * unknown
+	 */
+	credentials_relativeUnknown: () => LocalizedString
+	/**
+	 * just now
+	 */
+	credentials_relativeJustNow: () => LocalizedString
+	/**
+	 * {count}m ago
+	 */
+	credentials_relativeMinutes: (arg: { count: number }) => LocalizedString
+	/**
+	 * {count}h ago
+	 */
+	credentials_relativeHours: (arg: { count: number }) => LocalizedString
+	/**
+	 * {count}d ago
+	 */
+	credentials_relativeDays: (arg: { count: number }) => LocalizedString
+	/**
+	 * Automations
+	 */
+	automations_title: () => LocalizedString
+	/**
+	 * Manage scheduled tasks, reminders, and project monitors created by the agent.
+	 */
+	automations_description: () => LocalizedString
+	/**
+	 * New automation
+	 */
+	automations_add: () => LocalizedString
+	/**
+	 * New automation
+	 */
+	automations_createTitle: () => LocalizedString
+	/**
+	 * Edit automation
+	 */
+	automations_editTitle: () => LocalizedString
+	/**
+	 * Name
+	 */
+	automations_name: () => LocalizedString
+	/**
+	 * Type
+	 */
+	automations_type: () => LocalizedString
+	/**
+	 * Current thread
+	 */
+	automations_typeThread: () => LocalizedString
+	/**
+	 * Standalone
+	 */
+	automations_typeStandalone: () => LocalizedString
+	/**
+	 * Project
+	 */
+	automations_typeProject: () => LocalizedString
+	/**
+	 * Run mode
+	 */
+	automations_runMode: () => LocalizedString
+	/**
+	 * Local project
+	 */
+	automations_runModeLocal: () => LocalizedString
+	/**
+	 * Isolated worktree
+	 */
+	automations_runModeWorktree: () => LocalizedString
+	/**
+	 * Schedule
+	 */
+	automations_schedule: () => LocalizedString
+	/**
+	 * Schedule kind
+	 */
+	automations_scheduleKind: () => LocalizedString
+	/**
+	 * Schedule value
+	 */
+	automations_scheduleValue: () => LocalizedString
+	/**
+	 * Interval
+	 */
+	automations_scheduleInterval: () => LocalizedString
+	/**
+	 * Daily
+	 */
+	automations_scheduleDaily: () => LocalizedString
+	/**
+	 * Weekly
+	 */
+	automations_scheduleWeekly: () => LocalizedString
+	/**
+	 * Cron
+	 */
+	automations_scheduleCron: () => LocalizedString
+	/**
+	 * Day
+	 */
+	automations_scheduleDay: () => LocalizedString
+	/**
+	 * Time
+	 */
+	automations_scheduleTime: () => LocalizedString
+	/**
+	 * Every
+	 */
+	automations_scheduleEvery: () => LocalizedString
+	/**
+	 * minutes
+	 */
+	automations_scheduleUnitMinutes: () => LocalizedString
+	/**
+	 * hours
+	 */
+	automations_scheduleUnitHours: () => LocalizedString
+	/**
+	 * days
+	 */
+	automations_scheduleUnitDays: () => LocalizedString
+	/**
+	 * Next run {value} ({timeZone})
+	 */
+	automations_schedulePreview: (arg: { timeZone: string, value: string }) => LocalizedString
+	/**
+	 * Invalid schedule: {value}
+	 */
+	automations_schedulePreviewError: (arg: { value: string }) => LocalizedString
+	/**
+	 * Recommended automations
+	 */
+	automations_templatesTitle: () => LocalizedString
+	/**
+	 * Daily commit summary
+	 */
+	automations_templateDailyCommitTitle: () => LocalizedString
+	/**
+	 * Dependency update monitor
+	 */
+	automations_templateDependenciesTitle: () => LocalizedString
+	/**
+	 * CI failure tracking
+	 */
+	automations_templateCiFailureTitle: () => LocalizedString
+	/**
+	 * Use template
+	 */
+	automations_templateUse: () => LocalizedString
+	/**
+	 * Prompt
+	 */
+	automations_prompt: () => LocalizedString
+	/**
+	 * Workspace paths
+	 */
+	automations_workspacePaths: () => LocalizedString
+	/**
+	 * One absolute path per line
+	 */
+	automations_workspacePathsPlaceholder: () => LocalizedString
+	/**
+	 * Model override
+	 */
+	automations_modelId: () => LocalizedString
+	/**
+	 * Reasoning effort
+	 */
+	automations_reasoningEffort: () => LocalizedString
+	/**
+	 * Enabled
+	 */
+	automations_enabled: () => LocalizedString
+	/**
+	 * Enable
+	 */
+	automations_enable: () => LocalizedString
+	/**
+	 * Disable
+	 */
+	automations_disable: () => LocalizedString
+	/**
+	 * Enabled
+	 */
+	automations_statusEnabled: () => LocalizedString
+	/**
+	 * Disabled
+	 */
+	automations_statusDisabled: () => LocalizedString
+	/**
+	 * Save
+	 */
+	automations_save: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	automations_cancel: () => LocalizedString
+	/**
+	 * Edit
+	 */
+	automations_edit: () => LocalizedString
+	/**
+	 * Delete
+	 */
+	automations_delete: () => LocalizedString
+	/**
+	 * Delete automation?
+	 */
+	automations_deleteConfirmTitle: () => LocalizedString
+	/**
+	 * This automation will stop running. Are you sure you want to delete it?
+	 */
+	automations_deleteConfirmDesc: () => LocalizedString
+	/**
+	 * Run now
+	 */
+	automations_trigger: () => LocalizedString
+	/**
+	 * Running
+	 */
+	automations_triggering: () => LocalizedString
+	/**
+	 * Tasks
+	 */
+	automations_showTasks: () => LocalizedString
+	/**
+	 * Triage
+	 */
+	automations_showTriage: () => LocalizedString
+	/**
+	 * Triage
+	 */
+	automations_triageTitle: () => LocalizedString
+	/**
+	 * View details
+	 */
+	automations_viewDetails: () => LocalizedString
+	/**
+	 * Run details
+	 */
+	automations_runDetailsTitle: () => LocalizedString
+	/**
+	 * Open chat
+	 */
+	automations_runDetailsOpenChat: () => LocalizedString
+	/**
+	 * Instructions
+	 */
+	automations_runDetailsPrompt: () => LocalizedString
+	/**
+	 * Output
+	 */
+	automations_runDetailsOutput: () => LocalizedString
+	/**
+	 * Error
+	 */
+	automations_runDetailsError: () => LocalizedString
+	/**
+	 * Execution events
+	 */
+	automations_runDetailsEvents: () => LocalizedString
+	/**
+	 * No output yet.
+	 */
+	automations_runDetailsEmpty: () => LocalizedString
+	/**
+	 * Input {value} tokens
+	 */
+	automations_tokenInput: (arg: { value: string }) => LocalizedString
+	/**
+	 * Output {value} tokens
+	 */
+	automations_tokenOutput: (arg: { value: string }) => LocalizedString
+	/**
+	 * Total {value} tokens
+	 */
+	automations_tokenTotal: (arg: { value: string }) => LocalizedString
+	/**
+	 * No runs yet.
+	 */
+	automations_runsEmpty: () => LocalizedString
+	/**
+	 * Queued
+	 */
+	automations_runStatusQueued: () => LocalizedString
+	/**
+	 * Running
+	 */
+	automations_runStatusRunning: () => LocalizedString
+	/**
+	 * Needs action
+	 */
+	automations_runStatusNeedsAction: () => LocalizedString
+	/**
+	 * Succeeded
+	 */
+	automations_runStatusSucceeded: () => LocalizedString
+	/**
+	 * Failed
+	 */
+	automations_runStatusFailed: () => LocalizedString
+	/**
+	 * Canceled
+	 */
+	automations_runStatusCanceled: () => LocalizedString
+	/**
+	 * Open
+	 */
+	automations_triageFilterOpen: () => LocalizedString
+	/**
+	 * Handled
+	 */
+	automations_triageFilterHandled: () => LocalizedString
+	/**
+	 * All
+	 */
+	automations_triageFilterAll: () => LocalizedString
+	/**
+	 * Clear handled
+	 */
+	automations_triageCleanupHandled: () => LocalizedString
+	/**
+	 * Clear older than 30d
+	 */
+	automations_triageCleanupOldHandled: () => LocalizedString
+	/**
+	 * Rerun
+	 */
+	automations_triageRerun: () => LocalizedString
+	/**
+	 * Continue run
+	 */
+	automations_triageContinueRun: () => LocalizedString
+	/**
+	 * Mark handled
+	 */
+	automations_triageMarkHandled: () => LocalizedString
+	/**
+	 * Cancel run
+	 */
+	automations_triageCancelRun: () => LocalizedString
+	/**
+	 * Previous
+	 */
+	automations_triagePreviousPage: () => LocalizedString
+	/**
+	 * Next
+	 */
+	automations_triageNextPage: () => LocalizedString
+	/**
+	 * Manual
+	 */
+	automations_triggerManual: () => LocalizedString
+	/**
+	 * Scheduled
+	 */
+	automations_triggerScheduled: () => LocalizedString
+	/**
+	 * Run automation now: {title}
+	 */
+	automations_chatPromptRunNow: (arg: { title: string }) => LocalizedString
+	/**
+	 * Automation run ID: {id}
+	 */
+	automations_chatPromptRunId: (arg: { id: string }) => LocalizedString
+	/**
+	 * Automation type: {value}
+	 */
+	automations_chatPromptType: (arg: { value: string }) => LocalizedString
+	/**
+	 * Schedule: {kind} {value}
+	 */
+	automations_chatPromptSchedule: (arg: { kind: string, value: string }) => LocalizedString
+	/**
+	 * Workspace paths: {value}
+	 */
+	automations_chatPromptWorkspacePaths: (arg: { value: string }) => LocalizedString
+	/**
+	 * Instructions:
+	 */
+	automations_chatPromptInstructions: () => LocalizedString
+	/**
+	 * Started {value}
+	 */
+	automations_runStarted: (arg: { value: string }) => LocalizedString
+	/**
+	 * Completed {value}
+	 */
+	automations_runCompleted: (arg: { value: string }) => LocalizedString
+	/**
+	 * Attempt {current}/{max}
+	 */
+	automations_runAttempt: (arg: { current: string, max: string }) => LocalizedString
+	/**
+	 * Retry at {value}
+	 */
+	automations_runRetryAt: (arg: { value: string }) => LocalizedString
+	/**
+	 * Started
+	 */
+	automations_runStartedLabel: () => LocalizedString
+	/**
+	 * Completed
+	 */
+	automations_runCompletedLabel: () => LocalizedString
+	/**
+	 * No automations yet.
+	 */
+	automations_empty: () => LocalizedString
+	/**
+	 * Loading automations...
+	 */
+	automations_loading: () => LocalizedString
+	/**
+	 * Next run {value}
+	 */
+	automations_nextRun: (arg: { value: string }) => LocalizedString
+	/**
+	 * Last run {value}
+	 */
+	automations_lastRun: (arg: { value: string }) => LocalizedString
+	/**
+	 * Not scheduled
+	 */
+	automations_notScheduled: () => LocalizedString
+	/**
+	 * Name, prompt, and schedule are required.
+	 */
+	automations_errorRequired: () => LocalizedString
+	/**
 	 * Pending
 	 */
 	task_pending: () => LocalizedString
@@ -2697,6 +3866,10 @@ export type TranslationFunctions = {
 	 */
 	toolName_findDuplicates: () => LocalizedString
 	/**
+	 * Manage Automations
+	 */
+	toolName_automationUpdate: () => LocalizedString
+	/**
 	 * Run Command
 	 */
 	toolName_runCommand: () => LocalizedString
@@ -2804,6 +3977,38 @@ export type TranslationFunctions = {
 	 * … {0} more
 	 */
 	approval_batch_more: (arg0: number) => LocalizedString
+	/**
+	 * Approve automation changes?
+	 */
+	approval_automationUpdate_title: () => LocalizedString
+	/**
+	 * Approve this change
+	 */
+	approval_automationUpdate_approve_once: () => LocalizedString
+	/**
+	 * Always allow automation changes
+	 */
+	approval_automationUpdate_always_allow: () => LocalizedString
+	/**
+	 * Will change automation settings
+	 */
+	approval_automationUpdate_summary_change: () => LocalizedString
+	/**
+	 * Will create an automation
+	 */
+	approval_automationUpdate_summary_create: () => LocalizedString
+	/**
+	 * Will update an automation
+	 */
+	approval_automationUpdate_summary_update: () => LocalizedString
+	/**
+	 * Will delete an automation
+	 */
+	approval_automationUpdate_summary_delete: () => LocalizedString
+	/**
+	 * Will list automations
+	 */
+	approval_automationUpdate_summary_list: () => LocalizedString
 	/**
 	 * {0} subagents · concurrency {1}
 	 */

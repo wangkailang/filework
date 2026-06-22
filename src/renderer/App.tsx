@@ -110,6 +110,10 @@ export const App = () => {
   const [dockFilePath, setDockFilePath] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState<number>(getInitialDockWidth);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [automationInitialView, setAutomationInitialView] = useState<
+    "tasks" | "triage"
+  >("tasks");
+  const [automationViewRevision, setAutomationViewRevision] = useState(0);
   // 钻入面板:当前在 dock 查看的子 agent(批次 + 子任务)。
   const [dockSubagent, setDockSubagent] = useState<{
     batchId: string;
@@ -210,6 +214,15 @@ export const App = () => {
     return () => window.removeEventListener("filework:open-subagent", handler);
   }, [openSubagentInDock]);
 
+  useEffect(() => {
+    return window.filework.automations.onOpenTriage(() => {
+      setAutomationInitialView("triage");
+      setAutomationViewRevision((revision) => revision + 1);
+      setDockTab("automations");
+      setDockOpen(true);
+    });
+  }, []);
+
   // 全局快捷键:⇧⌘ + 首字母 切换右侧面板(与 DockMenu 的提示一致)。
   // 非 git 项目无 diff(网页面板恒可用);无选中子 agent 时跳过 subagent。
   useEffect(() => {
@@ -217,6 +230,7 @@ export const App = () => {
       p: "preview",
       f: "search",
       t: "trash",
+      m: "automations",
       d: "diff",
       w: "web",
       a: "subagent",
@@ -425,6 +439,12 @@ export const App = () => {
     }
   };
   const toggleDiff = () => openDockTab("diff");
+  const openAutomations = () => {
+    setAutomationInitialView("tasks");
+    setAutomationViewRevision((revision) => revision + 1);
+    setDockTab("automations");
+    setDockOpen(true);
+  };
 
   if (isRestoring) {
     return (
@@ -503,6 +523,8 @@ export const App = () => {
                   onToggleDiff={toggleDiff}
                   onBranchSwitched={handleBranchSwitched}
                   onCloseWorkspace={() => setWorkspace(null)}
+                  automationsOpen={dockOpen && dockTab === "automations"}
+                  onOpenAutomations={openAutomations}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <main className="relative flex min-w-0 flex-1 overflow-hidden">
@@ -544,6 +566,8 @@ export const App = () => {
                       currentBranch={workspace.currentBranch}
                       diffInvalidator={diffInvalidator}
                       isGitRepo={workspace.isGitRepo}
+                      automationInitialView={automationInitialView}
+                      automationViewRevision={automationViewRevision}
                     />
                   )}
                 </main>
@@ -556,12 +580,12 @@ export const App = () => {
                 onSwitchWorkspace={() => setWorkspace(null)}
               />
             </BrowserRouterProvider>
+            <SettingsModal
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              onLocaleChange={setLocale}
+            />
           </ChatSessionProvider>
-          <SettingsModal
-            open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            onLocaleChange={setLocale}
-          />
         </div>
       )}
       <Toaster

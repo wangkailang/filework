@@ -84,6 +84,17 @@ type SessionPreview = {
   top: number;
 };
 
+const AUTOMATION_TITLE_PREFIXES = [
+  /^Run automation now:\s*/i,
+  /^现在执行自动化[：:]\s*/,
+  /^执行自动化[：:]\s*/,
+];
+
+const isAutomationSession = (session: ChatSession): boolean => {
+  if (session.automationRun) return true;
+  return AUTOMATION_TITLE_PREFIXES.some((prefix) => prefix.test(session.title));
+};
+
 export const ChatHistoryPanel = ({
   currentBranch = null,
   isGitRepo = false,
@@ -98,6 +109,10 @@ export const ChatHistoryPanel = ({
   // 待二次确认删除的会话(null 表示无弹框)。
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
   const [preview, setPreview] = useState<SessionPreview | null>(null);
+  const projectSessions = useMemo(
+    () => chat.sessions.filter((session) => !isAutomationSession(session)),
+    [chat.sessions],
+  );
 
   const groups = useMemo(() => {
     const now = new Date();
@@ -114,7 +129,7 @@ export const ChatHistoryPanel = ({
       "earlier",
     ];
     const map = new Map<BucketKey, ChatSession[]>();
-    const sorted = [...chat.sessions].sort((a, b) => {
+    const sorted = [...projectSessions].sort((a, b) => {
       const byUpdatedAt =
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       if (byUpdatedAt !== 0) return byUpdatedAt;
@@ -129,7 +144,7 @@ export const ChatHistoryPanel = ({
     return order
       .map((key) => ({ key, items: map.get(key) ?? [] }))
       .filter((g) => g.items.length > 0);
-  }, [chat.sessions]);
+  }, [projectSessions]);
 
   const groupLabel: Record<BucketKey, () => string> = {
     today: LL.session_group_today,
@@ -181,7 +196,7 @@ export const ChatHistoryPanel = ({
   return (
     <div className="flex h-full flex-col">
       <div className="mt-2 flex-1 overflow-y-auto" onScroll={hidePreview}>
-        {chat.sessions.length === 0 ? (
+        {projectSessions.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             {LL.session_empty()}
           </div>
@@ -253,9 +268,9 @@ export const ChatHistoryPanel = ({
                         }
                         onBlur={hidePreview}
                       >
-                        <div className="truncate text-sm font-medium text-foreground">
+                        <span className="truncate text-sm font-medium text-foreground">
                           {s.title}
-                        </div>
+                        </span>
                         <div
                           data-session-row-meta={s.id}
                           className="ml-auto inline-flex h-5 shrink-0 items-center justify-end text-xs tabular-nums text-muted-foreground transition-opacity group-hover:opacity-0"
@@ -364,9 +379,9 @@ export const ChatHistoryPanel = ({
           style={{ left: preview.left, top: preview.top }}
         >
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 truncate text-sm font-semibold">
+            <span className="min-w-0 truncate text-sm font-semibold">
               {preview.session.title}
-            </div>
+            </span>
             <div className="shrink-0 text-xs text-muted-foreground">
               {preview.absoluteStamp}
             </div>

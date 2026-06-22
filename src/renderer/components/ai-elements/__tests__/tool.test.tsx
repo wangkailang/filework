@@ -12,6 +12,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       tool_preparing: () => "Preparing",
       tool_result: () => "Result",
       tool_running: () => "Running",
+      toolName_automationUpdate: () => "Manage automations",
       toolName_createDirectory: () => "Create directory",
       toolName_deleteFile: () => "Delete file",
       toolName_directoryStats: () => "Directory stats",
@@ -70,5 +71,16 @@ describe("Tool chrome", () => {
     expect(html).toContain("font-normal");
     expect(html).toContain("text-status-error/80");
     expect(html).not.toContain("text-status-error whitespace-pre-wrap");
+  });
+
+  it("localizes the automation update tool name", () => {
+    const html = renderToStaticMarkup(
+      <Tool defaultOpen>
+        <ToolHeader state="output-available" toolName="automation_update" />
+      </Tool>,
+    );
+
+    expect(html).toContain("Manage automations");
+    expect(html).not.toContain("automation_update");
   });
 });

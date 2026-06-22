@@ -2,6 +2,7 @@
 // 由父级(App)通过 mode 决定分栏(参与 flex 布局)还是浮层(absolute 覆盖)。
 import {
   Bot,
+  CalendarClock,
   FileText,
   GitCompareArrows,
   Globe,
@@ -27,6 +28,7 @@ import {
   resolveFullscreenDockTop,
 } from "../layout/layout-geometry";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { AutomationsDockPanel } from "./AutomationsDockPanel";
 import { SearchPanel } from "./SearchPanel";
 import { TrashPanel } from "./TrashPanel";
 
@@ -35,6 +37,7 @@ export type DockTab =
   | "diff"
   | "web"
   | "subagent"
+  | "automations"
   | "search"
   | "trash";
 
@@ -56,6 +59,8 @@ export const ContextDock = ({
   currentBranch,
   diffInvalidator,
   isGitRepo,
+  automationInitialView = "tasks",
+  automationViewRevision = 0,
 }: {
   mode: DockMode;
   width: number;
@@ -77,6 +82,8 @@ export const ContextDock = ({
   diffInvalidator: number;
   /** 非 git 项目隐藏「差异」标签与内容(网页面板对所有工作区可用)。 */
   isGitRepo: boolean;
+  automationInitialView?: "tasks" | "triage";
+  automationViewRevision?: number;
 }) => {
   const { LL } = useI18nContext();
   const widthRef = useRef(width);
@@ -196,6 +203,7 @@ export const ContextDock = ({
             {tabTrigger("preview", LL.dock_preview(), FileText)}
             {tabTrigger("search", LL.dock_search(), Search)}
             {tabTrigger("trash", LL.dock_trash(), Trash2)}
+            {tabTrigger("automations", LL.automations_title(), CalendarClock)}
             {isGitRepo && tabTrigger("diff", LL.dock_diff(), GitCompareArrows)}
             {tabTrigger("web", LL.dock_web(), Globe)}
             {subagentSel && tabTrigger("subagent", LL.dock_subagent(), Bot)}
@@ -266,6 +274,16 @@ export const ContextDock = ({
             <TrashPanel
               workspaceRoot={workspaceRoot}
               active={effectiveTab === "trash"}
+            />
+          </TabsContent>
+          <TabsContent
+            forceMount
+            value="automations"
+            className="h-full data-[state=inactive]:hidden"
+          >
+            <AutomationsDockPanel
+              initialView={automationInitialView}
+              viewRevision={automationViewRevision}
             />
           </TabsContent>
           {/* 差异:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}

@@ -32,6 +32,7 @@ import {
   type IncrementalScanResult,
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
+import { buildAutomationUpdateTool } from "../core/agent/tools/automation";
 import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
 import { clearMemoryTool, updateMemoryTool } from "../core/agent/tools/memory";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
@@ -93,6 +94,8 @@ interface BuildAgentToolRegistryOptions {
   llmConfigId?: string;
   /** spawnSubagent 用:子 agent 的工作目录(继承父级 workspace.root)。 */
   workspacePath?: string;
+  /** 当前聊天会话 id。thread automation 默认绑定到这个会话。 */
+  currentThreadId?: string;
   /**
    * spawnSubagent 用:父 agent 当前可委派的 skill id 全集。子 agent 的
    * allowedSkills 只能是它的子集(主 agent 限制子 agent 能力的硬边界)。
@@ -598,6 +601,7 @@ export const buildAgentToolRegistry = ({
   parentSignal,
   llmConfigId,
   workspacePath,
+  currentThreadId,
   parentAllowedSkills,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
@@ -641,6 +645,15 @@ export const buildAgentToolRegistry = ({
   // 一次性清空记忆(user / workspace / all)—— 对应「清理 memory」等指令。
   if (allow("clearMemory")) {
     registry.register(clearMemoryTool);
+  }
+
+  if (allow("automation_update")) {
+    registry.register(
+      buildAutomationUpdateTool({
+        currentThreadId,
+        currentWorkspacePath: workspacePath,
+      }),
+    );
   }
 
   // Web 工具(Layer 0 搜索 + Layer 1/2'/4 抽取)。仅当注入了 fetch 实现

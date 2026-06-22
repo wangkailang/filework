@@ -3,6 +3,7 @@
 // 复用原 Sidebar 的可拖宽 / 可折叠逻辑(宽度 clamp 走 layout-geometry)。
 import {
   Blocks,
+  CalendarClock,
   FolderOpen,
   GitCompareArrows,
   Github,
@@ -42,6 +43,20 @@ import {
 
 export type RailTab = "chats" | "files";
 
+const AUTOMATION_TITLE_PREFIXES = [
+  /^Run automation now:\s*/i,
+  /^现在执行自动化[：:]\s*/,
+  /^执行自动化[：:]\s*/,
+];
+
+const isAutomationSession = (session: {
+  automationRun?: unknown;
+  title: string;
+}): boolean => {
+  if (session.automationRun) return true;
+  return AUTOMATION_TITLE_PREFIXES.some((prefix) => prefix.test(session.title));
+};
+
 export const LeftRail = ({
   workspacePath,
   workspaceRef,
@@ -61,6 +76,8 @@ export const LeftRail = ({
   onToggleDiff,
   onBranchSwitched,
   onCloseWorkspace,
+  automationsOpen,
+  onOpenAutomations,
   onOpenSettings,
 }: {
   workspacePath: string;
@@ -82,6 +99,8 @@ export const LeftRail = ({
   onToggleDiff?: () => void;
   onBranchSwitched?: (b: string) => void;
   onCloseWorkspace: () => void;
+  automationsOpen: boolean;
+  onOpenAutomations: () => void;
   onOpenSettings: () => void;
 }) => {
   const { LL } = useI18nContext();
@@ -161,6 +180,12 @@ export const LeftRail = ({
   // 仅 git 项目展示 diff 入口(非 git 时分支 chip 本就因无分支名隐藏,这里再兜一层)。
   const diffButtonVisible = isGitRepo;
   const railMetaLayout = resolveRailMetaLayout(width);
+  const activeSession = chat.sessions.find(
+    (s) => s.id === chat.activeSessionId,
+  );
+  const automationActive =
+    automationsOpen ||
+    (activeSession ? isAutomationSession(activeSession) : false);
 
   const segBtn = (tab: RailTab, label: string) => (
     <button
@@ -271,10 +296,36 @@ export const LeftRail = ({
             重挂载并重新列目录(取代旧 Sidebar 在 onSwitched 里的 refresh)。 */}
         <div className="min-h-0 flex-1">
           <div className={cn("h-full", railTab !== "chats" && "hidden")}>
-            <ChatHistoryPanel
-              currentBranch={branchForChip}
-              isGitRepo={isGitRepo}
-            />
+            <div className="flex h-full flex-col">
+              <div className="border-b border-border px-2 pb-2">
+                <button
+                  type="button"
+                  data-automation-launcher="true"
+                  aria-pressed={automationActive}
+                  onClick={onOpenAutomations}
+                  title={LL.automations_title()}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                    automationActive
+                      ? "bg-accent text-foreground shadow-[inset_2px_0_0_var(--color-primary)]"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <CalendarClock
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{LL.automations_title()}</span>
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <ChatHistoryPanel
+                  currentBranch={branchForChip}
+                  isGitRepo={isGitRepo}
+                />
+              </div>
+            </div>
           </div>
           <div className={cn("h-full", railTab !== "files" && "hidden")}>
             <FileTreePanel
