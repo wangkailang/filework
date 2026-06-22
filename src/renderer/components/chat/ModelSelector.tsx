@@ -19,6 +19,12 @@ interface LlmConfig {
   model: string;
   modality?: Modality;
   enabled?: boolean;
+  lastCheckStatus?: "success" | "error" | null;
+}
+
+export interface SelectableLlmConfig {
+  enabled?: boolean;
+  lastCheckStatus?: "success" | "error" | null;
 }
 
 interface ModelSelectorProps {
@@ -33,8 +39,14 @@ const MODALITY_LABELS: Record<Modality, string> = {
   video: "Video",
 };
 
-export function getSelectableLlmConfigs(configs: LlmConfig[]): LlmConfig[] {
-  return configs.filter((config) => config.enabled !== false);
+export function isSelectableLlmConfig(config: SelectableLlmConfig): boolean {
+  return config.enabled !== false && config.lastCheckStatus === "success";
+}
+
+export function getSelectableLlmConfigs<T extends SelectableLlmConfig>(
+  configs: T[],
+): T[] {
+  return configs.filter(isSelectableLlmConfig);
 }
 
 export const ModelSelector = ({

@@ -241,6 +241,7 @@ const ja: Translation = {
   llmConfig_test: "接続をテスト",
   llmConfig_statusUnchecked: "接続は未テストです",
   llmConfig_statusSuccess: "接続は正常です",
+  llmConfig_lastTestedAt: "{when} にテスト",
   llmConfig_optional: "任意",
   llmConfig_refreshModels: "モデルを更新",
   llmConfig_apiPathInvalid:

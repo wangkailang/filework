@@ -918,6 +918,11 @@ type RootTranslation = {
 	 */
 	llmConfig_statusSuccess: string
 	/**
+	 * T​e​s​t​e​d​ ​a​t​ ​{​w​h​e​n​}
+	 * @param {string} when
+	 */
+	llmConfig_lastTestedAt: RequiredParams<'when'>
+	/**
 	 * o​p​t​i​o​n​a​l
 	 */
 	llmConfig_optional: string
@@ -3413,6 +3418,10 @@ export type TranslationFunctions = {
 	 * Connection OK
 	 */
 	llmConfig_statusSuccess: () => LocalizedString
+	/**
+	 * Tested at {when}
+	 */
+	llmConfig_lastTestedAt: (arg: { when: string }) => LocalizedString
 	/**
 	 * optional
 	 */

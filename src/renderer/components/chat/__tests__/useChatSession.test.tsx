@@ -59,7 +59,7 @@ const createFileworkMock = () => ({
   getChatSessions: vi.fn(() => Promise.resolve([])),
   llmConfig: {
     get: vi.fn(),
-    list: vi.fn(() => Promise.resolve([])),
+    list: vi.fn(() => Promise.resolve([] as unknown[])),
   },
   media: {
     createVideoJob: vi.fn(),
@@ -113,10 +113,15 @@ describe("useChatSession", () => {
   let root: Root | null = null;
   let latest: ChatSessionValue | null = null;
   let filework: ReturnType<typeof createFileworkMock>;
+  let localStorageMock: {
+    getItem: ReturnType<typeof vi.fn>;
+    removeItem: ReturnType<typeof vi.fn>;
+    setItem: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     const { document, window } = parseHTML('<div id="root"></div>');
-    const localStorageMock = {
+    localStorageMock = {
       getItem: vi.fn(() => null),
       removeItem: vi.fn(),
       setItem: vi.fn(),
@@ -198,5 +203,34 @@ describe("useChatSession", () => {
       id: "session-manual",
       title: "每日 Filework commit 改动统计",
     });
+  });
+
+  it("clears a persisted LLM config when it is not selectable", async () => {
+    localStorageMock.getItem.mockReturnValue("config-error");
+    filework.llmConfig.list.mockResolvedValue([
+      {
+        id: "config-error",
+        enabled: true,
+        lastCheckStatus: "error",
+      },
+    ]);
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(latest?.selectedLlmConfigId).toBeNull();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "filework-selected-llm-config",
+    );
   });
 });

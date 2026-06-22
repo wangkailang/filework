@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { TooltipProvider } from "../../ui/tooltip";
-import { LlmConfigStatusIndicator } from "../LlmConfigPanel";
+import {
+  buildLlmConfigStatusTooltip,
+  LlmConfigStatusIndicator,
+} from "../LlmConfigPanel";
 
 describe("LlmConfigStatusIndicator", () => {
   it("uses a portal-backed tooltip instead of inline clipped hover content", () => {
@@ -19,5 +22,25 @@ describe("LlmConfigStatusIndicator", () => {
     expect(html).toContain('aria-label="HTTP 401: bad key"');
     expect(html).toContain('data-slot="tooltip-trigger"');
     expect(html).not.toContain("group-hover:opacity-100");
+  });
+
+  it("includes the connection test time in status tooltip copy", () => {
+    const LL = {
+      llmConfig_lastTestedAt: ({ when }: { when: string }) => `测试于 ${when}`,
+      llmConfig_statusSuccess: () => "连接正常",
+      llmConfig_statusUnchecked: () => "尚未测试连接",
+    };
+
+    expect(
+      buildLlmConfigStatusTooltip(
+        {
+          lastCheckedAt: "2026-06-22T10:30:00.000Z",
+          lastCheckMessage: null,
+          lastCheckStatus: "success",
+        },
+        LL,
+        "zh-CN",
+      ),
+    ).toEqual(["连接正常", "测试于 2026年6月22日 18:30"]);
   });
 });

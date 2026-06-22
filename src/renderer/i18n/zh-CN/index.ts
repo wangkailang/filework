@@ -238,6 +238,7 @@ const zhCN: Translation = {
   llmConfig_test: "测试连接",
   llmConfig_statusUnchecked: "尚未测试连接",
   llmConfig_statusSuccess: "连接正常",
+  llmConfig_lastTestedAt: "测试于 {when}",
   llmConfig_optional: "可选",
   llmConfig_refreshModels: "刷新模型",
   llmConfig_apiPathInvalid:

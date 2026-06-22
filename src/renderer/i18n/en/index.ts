@@ -249,6 +249,7 @@ const en: BaseTranslation = {
   llmConfig_test: "Test connection",
   llmConfig_statusUnchecked: "Connection has not been tested",
   llmConfig_statusSuccess: "Connection OK",
+  llmConfig_lastTestedAt: "Tested at {when:string}",
   llmConfig_optional: "optional",
   llmConfig_refreshModels: "Refresh models",
   llmConfig_apiPathInvalid:

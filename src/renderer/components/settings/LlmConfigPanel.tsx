@@ -9,11 +9,56 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
+import type { Locales } from "../../i18n/i18n-types";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { type LlmConfig, LlmConfigEditModal } from "./LlmConfigEditModal";
 
 type LlmConfigStatus = "success" | "error" | null;
+type LlmConfigStatusCopy = {
+  llmConfig_lastTestedAt: (arg: { when: string }) => string;
+  llmConfig_statusSuccess: () => string;
+  llmConfig_statusUnchecked: () => string;
+};
+
+const formatCheckedAt = (
+  iso: string | null,
+  locale: Locales,
+): string | null => {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      hour12: false,
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+};
+
+export function buildLlmConfigStatusTooltip(
+  config: Pick<
+    LlmConfig,
+    "lastCheckedAt" | "lastCheckMessage" | "lastCheckStatus"
+  >,
+  LL: LlmConfigStatusCopy,
+  locale: Locales,
+): string[] {
+  const lines = [
+    config.lastCheckMessage ??
+      (config.lastCheckStatus === "success"
+        ? LL.llmConfig_statusSuccess()
+        : LL.llmConfig_statusUnchecked()),
+  ];
+  const checkedAt = formatCheckedAt(config.lastCheckedAt, locale);
+  if (checkedAt) {
+    lines.push(LL.llmConfig_lastTestedAt({ when: checkedAt }));
+  }
+  return lines;
+}
 
 export const LlmConfigStatusIndicator = ({
   busy,
@@ -21,9 +66,10 @@ export const LlmConfigStatusIndicator = ({
   status,
 }: {
   busy: boolean;
-  label: string;
+  label: string | string[];
   status: LlmConfigStatus;
 }) => {
+  const labelText = Array.isArray(label) ? label.join("\n") : label;
   const icon = busy ? (
     <Loader2 size={13} className="animate-spin text-primary" />
   ) : status === "success" ? (
@@ -37,7 +83,7 @@ export const LlmConfigStatusIndicator = ({
   return (
     <Tooltip>
       <TooltipTrigger
-        aria-label={label}
+        aria-label={labelText}
         className="flex w-4 shrink-0 cursor-help appearance-none items-center justify-center border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         type="button"
       >
@@ -45,19 +91,19 @@ export const LlmConfigStatusIndicator = ({
       </TooltipTrigger>
       <TooltipContent
         align="center"
-        className="z-[100] max-w-[min(320px,calc(100vw-2rem))] whitespace-normal break-words leading-snug"
+        className="z-[100] max-w-[min(320px,calc(100vw-2rem))] whitespace-pre-line break-words leading-snug"
         collisionPadding={8}
         side="bottom"
         sideOffset={6}
       >
-        {label}
+        {labelText}
       </TooltipContent>
     </Tooltip>
   );
 };
 
 export const LlmConfigPanel = () => {
-  const { LL } = useI18nContext();
+  const { LL, locale } = useI18nContext();
   const [configs, setConfigs] = useState<LlmConfig[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<LlmConfig | null>(null);
@@ -152,11 +198,7 @@ export const LlmConfigPanel = () => {
       {/* Config list */}
       <div className="space-y-2">
         {configs.map((c) => {
-          const statusTitle =
-            c.lastCheckMessage ??
-            (c.lastCheckStatus === "success"
-              ? LL.llmConfig_statusSuccess()
-              : LL.llmConfig_statusUnchecked());
+          const statusTitle = buildLlmConfigStatusTooltip(c, LL, locale);
           return (
             <div
               key={c.id}
