@@ -68,3 +68,78 @@ describe("validateLlmConfigPayload — xiaomi provider", () => {
     expect(err).toBeNull();
   });
 });
+
+describe("validateLlmConfigPayload — OpenAI Compatible provider", () => {
+  it("accepts a complete custom OpenAI-compatible config", () => {
+    const err = validateLlmConfigPayload({
+      name: "OpenRouter",
+      provider: "custom",
+      apiKey: "sk-test",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-4o-mini",
+    });
+
+    expect(err).toBeNull();
+  });
+
+  it("accepts custom OpenAI-compatible config without apiKey for local servers", () => {
+    const err = validateLlmConfigPayload({
+      name: "OpenRouter",
+      provider: "custom",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-4o-mini",
+    });
+
+    expect(err).toBeNull();
+  });
+
+  it("accepts a chat completions API path for custom OpenAI-compatible configs", () => {
+    const err = validateLlmConfigPayload({
+      name: "Gateway",
+      provider: "custom",
+      baseUrl: "https://gateway.example.com",
+      apiPath: "/v1/chat/completions",
+      model: "gpt-4o-mini",
+    });
+
+    expect(err).toBeNull();
+  });
+
+  it("rejects custom API paths that are not absolute paths", () => {
+    const err = validateLlmConfigPayload({
+      name: "Gateway",
+      provider: "custom",
+      baseUrl: "https://gateway.example.com",
+      apiPath: "v1/chat/completions",
+      model: "gpt-4o-mini",
+    });
+
+    expect(err).toMatch(/apiPath/);
+  });
+
+  it("rejects custom API paths outside the chat completions endpoint contract", () => {
+    const err = validateLlmConfigPayload({
+      name: "Gateway",
+      provider: "custom",
+      baseUrl: "https://gateway.example.com",
+      apiPath: "/v1/responses",
+      model: "gpt-4o-mini",
+    });
+
+    expect(err).toMatch(/apiPath/);
+  });
+});
+
+describe("validateLlmConfigPayload — GitHub Copilot provider", () => {
+  it("accepts GitHub Copilot configs without a manually entered API key", () => {
+    const err = validateLlmConfigPayload({
+      name: "Copilot",
+      provider: "github-copilot",
+      baseUrl: "https://api.githubcopilot.com",
+      apiPath: "/chat/completions",
+      model: "gpt-5.5",
+    });
+
+    expect(err).toBeNull();
+  });
+});

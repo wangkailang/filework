@@ -90,12 +90,17 @@ export const initDatabase = async () => {
     CREATE TABLE IF NOT EXISTS llm_configs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi')),
+      provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi','github-copilot')),
       api_key TEXT,
       base_url TEXT,
+      api_path TEXT,
       model TEXT NOT NULL,
       modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
       is_default INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_checked_at TEXT,
+      last_check_status TEXT,
+      last_check_message TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -166,7 +171,6 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
-    CREATE INDEX IF NOT EXISTS idx_automation_runs_retry ON automation_runs(next_retry_at);
     CREATE TABLE IF NOT EXISTS automation_run_events (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -560,6 +564,23 @@ export const initDatabase = async () => {
       "ALTER TABLE llm_configs ADD COLUMN modality TEXT NOT NULL DEFAULT 'chat'",
     );
   }
+  if (!llmCols.some((c) => c.name === "api_path")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN api_path TEXT");
+  }
+  if (!llmCols.some((c) => c.name === "enabled")) {
+    sqlite.exec(
+      "ALTER TABLE llm_configs ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+    );
+  }
+  if (!llmCols.some((c) => c.name === "last_checked_at")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN last_checked_at TEXT");
+  }
+  if (!llmCols.some((c) => c.name === "last_check_status")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN last_check_status TEXT");
+  }
+  if (!llmCols.some((c) => c.name === "last_check_message")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN last_check_message TEXT");
+  }
   const llmConfigsSql = (
     sqlite
       .prepare(
@@ -577,16 +598,24 @@ export const initDatabase = async () => {
             provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax')),
             api_key TEXT,
             base_url TEXT,
+            api_path TEXT,
             model TEXT NOT NULL,
             modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
             is_default INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_checked_at TEXT,
+            last_check_status TEXT,
+            last_check_message TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, model, modality, is_default, created_at, updated_at)
-            SELECT id, name, provider, api_key, base_url, model,
+          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, base_url, api_path, model,
                    COALESCE(modality, 'chat'),
-                   is_default, created_at, updated_at
+                   is_default,
+                   COALESCE(enabled, 1),
+                   last_checked_at, last_check_status, last_check_message,
+                   created_at, updated_at
               FROM llm_configs;
           DROP TABLE llm_configs;
           ALTER TABLE llm_configs_new RENAME TO llm_configs;
@@ -620,16 +649,24 @@ export const initDatabase = async () => {
             provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi')),
             api_key TEXT,
             base_url TEXT,
+            api_path TEXT,
             model TEXT NOT NULL,
             modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
             is_default INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_checked_at TEXT,
+            last_check_status TEXT,
+            last_check_message TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, model, modality, is_default, created_at, updated_at)
-            SELECT id, name, provider, api_key, base_url, model,
+          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, base_url, api_path, model,
                    COALESCE(modality, 'chat'),
-                   is_default, created_at, updated_at
+                   is_default,
+                   COALESCE(enabled, 1),
+                   last_checked_at, last_check_status, last_check_message,
+                   created_at, updated_at
               FROM llm_configs;
           DROP TABLE llm_configs;
           ALTER TABLE llm_configs_new RENAME TO llm_configs;
@@ -639,6 +676,57 @@ export const initDatabase = async () => {
     } catch (err) {
       console.error(
         "[db] failed to widen llm_configs.provider CHECK; existing configs remain usable, new xiaomi provider rows will fail:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  // 第三轮放宽:向 provider CHECK 加入 'github-copilot'。
+  const llmConfigsSqlV3 = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='llm_configs'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (llmConfigsSqlV3 && !llmConfigsSqlV3.includes("github-copilot")) {
+    try {
+      sqlite.transaction(() => {
+        sqlite.exec(`
+          CREATE TABLE llm_configs_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL CHECK(provider IN ('openai','anthropic','deepseek','ollama','custom','minimax','xiaomi','github-copilot')),
+            api_key TEXT,
+            base_url TEXT,
+            api_path TEXT,
+            model TEXT NOT NULL,
+            modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
+            is_default INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_checked_at TEXT,
+            last_check_status TEXT,
+            last_check_message TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO llm_configs_new (id, name, provider, api_key, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+            SELECT id, name, provider, api_key, base_url, api_path, model,
+                   COALESCE(modality, 'chat'),
+                   is_default,
+                   COALESCE(enabled, 1),
+                   last_checked_at, last_check_status, last_check_message,
+                   created_at, updated_at
+              FROM llm_configs;
+          DROP TABLE llm_configs;
+          ALTER TABLE llm_configs_new RENAME TO llm_configs;
+        `);
+      })();
+      console.log(
+        "[db] widened llm_configs.provider CHECK to include github-copilot",
+      );
+    } catch (err) {
+      console.error(
+        "[db] failed to widen llm_configs.provider CHECK; existing configs remain usable, new github-copilot provider rows will fail:",
         err instanceof Error ? err.message : err,
       );
     }
@@ -2172,9 +2260,11 @@ export type LlmProvider =
   | "ollama"
   | "custom"
   | "minimax"
-  | "xiaomi";
+  | "xiaomi"
+  | "github-copilot";
 
 export type LlmModality = "chat" | "image" | "video";
+export type LlmCheckStatus = "success" | "error";
 
 export interface LlmConfig {
   id: string;
@@ -2182,10 +2272,15 @@ export interface LlmConfig {
   provider: LlmProvider;
   apiKey: string | null;
   baseUrl: string | null;
+  apiPath: string | null;
   model: string;
   /** 该配置的产出类型。为向后兼容默认 "chat"。 */
   modality: LlmModality;
   isDefault: boolean;
+  enabled: boolean;
+  lastCheckedAt: string | null;
+  lastCheckStatus: LlmCheckStatus | null;
+  lastCheckMessage: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2203,16 +2298,37 @@ function mapRowToLlmConfig(
     provider: row.provider,
     apiKey: row.apiKey ? decrypt(row.apiKey) : null,
     baseUrl: row.baseUrl,
+    apiPath: row.apiPath,
     model: row.model,
     modality: row.modality,
     isDefault: row.isDefault,
+    enabled: row.enabled,
+    lastCheckedAt: row.lastCheckedAt,
+    lastCheckStatus: row.lastCheckStatus,
+    lastCheckMessage: row.lastCheckMessage,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 export const createLlmConfig = (
-  config: Omit<LlmConfig, "id" | "createdAt" | "updatedAt" | "modality"> & {
+  config: Omit<
+    LlmConfig,
+    | "id"
+    | "createdAt"
+    | "updatedAt"
+    | "modality"
+    | "apiPath"
+    | "enabled"
+    | "lastCheckedAt"
+    | "lastCheckStatus"
+    | "lastCheckMessage"
+  > & {
+    apiPath?: string | null;
+    enabled?: boolean;
+    lastCheckedAt?: string | null;
+    lastCheckStatus?: LlmCheckStatus | null;
+    lastCheckMessage?: string | null;
     modality?: LlmModality;
   },
 ): LlmConfig => {
@@ -2228,9 +2344,14 @@ export const createLlmConfig = (
       provider: config.provider,
       apiKey: encryptedApiKey,
       baseUrl: config.baseUrl ?? null,
+      apiPath: config.apiPath ?? null,
       model: config.model,
       modality,
       isDefault: config.isDefault,
+      enabled: config.enabled ?? true,
+      lastCheckedAt: config.lastCheckedAt ?? null,
+      lastCheckStatus: config.lastCheckStatus ?? null,
+      lastCheckMessage: config.lastCheckMessage ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -2242,16 +2363,26 @@ export const createLlmConfig = (
     provider: config.provider,
     apiKey: config.apiKey,
     baseUrl: config.baseUrl ?? null,
+    apiPath: config.apiPath ?? null,
     model: config.model,
     modality,
     isDefault: config.isDefault,
+    enabled: config.enabled ?? true,
+    lastCheckedAt: config.lastCheckedAt ?? null,
+    lastCheckStatus: config.lastCheckStatus ?? null,
+    lastCheckMessage: config.lastCheckMessage ?? null,
     createdAt: now,
     updatedAt: now,
   };
 };
 
 export const getLlmConfigs = (): LlmConfig[] =>
-  db.select().from(schema.llmConfigs).all().map(mapRowToLlmConfig);
+  db
+    .select()
+    .from(schema.llmConfigs)
+    .orderBy(desc(schema.llmConfigs.updatedAt))
+    .all()
+    .map(mapRowToLlmConfig);
 
 export const getLlmConfig = (id: string): LlmConfig | null => {
   const row = db
@@ -2272,9 +2403,17 @@ export const updateLlmConfig = (
   if (updates.apiKey !== undefined)
     mapped.apiKey = updates.apiKey ? encrypt(updates.apiKey) : null;
   if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
+  if (updates.apiPath !== undefined) mapped.apiPath = updates.apiPath;
   if (updates.model !== undefined) mapped.model = updates.model;
   if (updates.modality !== undefined) mapped.modality = updates.modality;
   if (updates.isDefault !== undefined) mapped.isDefault = updates.isDefault;
+  if (updates.enabled !== undefined) mapped.enabled = updates.enabled;
+  if (updates.lastCheckedAt !== undefined)
+    mapped.lastCheckedAt = updates.lastCheckedAt;
+  if (updates.lastCheckStatus !== undefined)
+    mapped.lastCheckStatus = updates.lastCheckStatus;
+  if (updates.lastCheckMessage !== undefined)
+    mapped.lastCheckMessage = updates.lastCheckMessage;
   mapped.updatedAt = new Date().toISOString();
 
   db.update(schema.llmConfigs)
@@ -2304,7 +2443,12 @@ export const getDefaultLlmConfig = (): LlmConfig | null => {
   const row = db
     .select()
     .from(schema.llmConfigs)
-    .where(eq(schema.llmConfigs.isDefault, true))
+    .where(
+      and(
+        eq(schema.llmConfigs.isDefault, true),
+        eq(schema.llmConfigs.enabled, true),
+      ),
+    )
     .get();
   return row ? mapRowToLlmConfig(row) : null;
 };

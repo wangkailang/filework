@@ -24,7 +24,11 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     throw new Error("所选 LLM 配置不存在");
   }
 
-  const { provider, apiKey, baseUrl, model: modelId } = config;
+  if (config.enabled === false) {
+    throw new Error("所选 LLM 配置已停用，请在设置中启用后再使用");
+  }
+
+  const { provider, apiKey, baseUrl, apiPath, model: modelId } = config;
   console.log(
     "[AI] provider:",
     provider,
@@ -51,6 +55,7 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
       provider,
       apiKey: apiKey || "",
       baseUrl: resolvedBaseUrl,
+      apiPath,
       model: modelId,
     }),
     modelId,

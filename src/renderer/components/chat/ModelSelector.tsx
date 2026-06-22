@@ -18,6 +18,7 @@ interface LlmConfig {
   provider: string;
   model: string;
   modality?: Modality;
+  enabled?: boolean;
 }
 
 interface ModelSelectorProps {
@@ -31,6 +32,10 @@ const MODALITY_LABELS: Record<Modality, string> = {
   image: "Image",
   video: "Video",
 };
+
+export function getSelectableLlmConfigs(configs: LlmConfig[]): LlmConfig[] {
+  return configs.filter((config) => config.enabled !== false);
+}
 
 export const ModelSelector = ({
   selectedConfigId,
@@ -50,12 +55,13 @@ export const ModelSelector = ({
   }, [loadConfigs]);
 
   const grouped = useMemo(() => {
+    const selectableConfigs = getSelectableLlmConfigs(configs);
     const groups: Record<Modality, LlmConfig[]> = {
       chat: [],
       image: [],
       video: [],
     };
-    for (const c of configs) {
+    for (const c of selectableConfigs) {
       groups[c.modality ?? "chat"].push(c);
     }
     return MODALITY_ORDER.filter((m) => groups[m].length > 0).map((m) => ({
@@ -64,9 +70,13 @@ export const ModelSelector = ({
     }));
   }, [configs]);
 
-  if (configs.length <= 1) return null;
+  const selectableConfigs = getSelectableLlmConfigs(configs);
 
-  const selected = configs.find((c) => c.id === selectedConfigId) || configs[0];
+  if (selectableConfigs.length <= 1) return null;
+
+  const selected =
+    selectableConfigs.find((c) => c.id === selectedConfigId) ||
+    selectableConfigs[0];
   const selectedModality = selected?.modality ?? "chat";
   const hasMultipleModalities = grouped.length > 1;
 

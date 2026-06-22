@@ -886,6 +886,10 @@ type RootTranslation = {
 	 */
 	llmConfig_baseUrl: string
 	/**
+	 * A​P​I​ ​P​a​t​h
+	 */
+	llmConfig_apiPath: string
+	/**
 	 * M​o​d​e​l
 	 */
 	llmConfig_model: string
@@ -897,6 +901,34 @@ type RootTranslation = {
 	 * S​e​t​ ​a​s​ ​D​e​f​a​u​l​t
 	 */
 	llmConfig_setDefault: string
+	/**
+	 * E​n​a​b​l​e​d
+	 */
+	llmConfig_enabled: string
+	/**
+	 * T​e​s​t​ ​c​o​n​n​e​c​t​i​o​n
+	 */
+	llmConfig_test: string
+	/**
+	 * C​o​n​n​e​c​t​i​o​n​ ​h​a​s​ ​n​o​t​ ​b​e​e​n​ ​t​e​s​t​e​d
+	 */
+	llmConfig_statusUnchecked: string
+	/**
+	 * C​o​n​n​e​c​t​i​o​n​ ​O​K
+	 */
+	llmConfig_statusSuccess: string
+	/**
+	 * o​p​t​i​o​n​a​l
+	 */
+	llmConfig_optional: string
+	/**
+	 * R​e​f​r​e​s​h​ ​m​o​d​e​l​s
+	 */
+	llmConfig_refreshModels: string
+	/**
+	 * A​P​I​ ​P​a​t​h​ ​m​u​s​t​ ​s​t​a​r​t​ ​w​i​t​h​ ​/​ ​a​n​d​ ​e​n​d​ ​w​i​t​h​ ​/​c​h​a​t​/​c​o​m​p​l​e​t​i​o​n​s
+	 */
+	llmConfig_apiPathInvalid: string
 	/**
 	 * A​r​e​ ​y​o​u​ ​s​u​r​e​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​d​e​l​e​t​e​ ​t​h​i​s​ ​c​o​n​f​i​g​u​r​a​t​i​o​n​?
 	 */
@@ -925,6 +957,78 @@ type RootTranslation = {
 	 * C​a​n​c​e​l
 	 */
 	llmConfig_cancel: string
+	/**
+	 * G​i​t​H​u​b​ ​C​o​p​i​l​o​t​ ​A​u​t​h​o​r​i​z​a​t​i​o​n
+	 */
+	llmConfig_copilotTitle: string
+	/**
+	 * C​o​n​n​e​c​t​ ​C​o​p​i​l​o​t​ ​w​i​t​h​ ​G​i​t​H​u​b​ ​d​e​v​i​c​e​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​.​ ​A​f​t​e​r​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​,​ ​W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t​ ​s​a​v​e​s​ ​t​h​e​ ​e​n​c​r​y​p​t​e​d​ ​C​o​p​i​l​o​t​ ​a​c​c​e​s​s​ ​t​o​k​e​n​.
+	 */
+	llmConfig_copilotDescription: string
+	/**
+	 * G​e​t​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​c​o​d​e
+	 */
+	llmConfig_copilotStepGetCode: string
+	/**
+	 * G​e​n​e​r​a​t​e​ ​a​ ​G​i​t​H​u​b​ ​d​e​v​i​c​e​ ​c​o​d​e
+	 */
+	llmConfig_copilotStepGetCodeHint: string
+	/**
+	 * G​e​t​ ​c​o​d​e
+	 */
+	llmConfig_copilotGetCode: string
+	/**
+	 * C​o​p​y​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​c​o​d​e
+	 */
+	llmConfig_copilotStepCopyCode: string
+	/**
+	 * C​l​i​c​k​ ​t​h​e​ ​b​u​t​t​o​n​ ​a​b​o​v​e​ ​t​o​ ​g​e​n​e​r​a​t​e​ ​a​ ​c​o​d​e
+	 */
+	llmConfig_copilotCodePlaceholder: string
+	/**
+	 * C​o​p​i​e​d
+	 */
+	llmConfig_copilotCopied: string
+	/**
+	 * C​o​p​y
+	 */
+	llmConfig_copilotCopy: string
+	/**
+	 * O​p​e​n​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​p​a​g​e
+	 */
+	llmConfig_copilotStepOpenPage: string
+	/**
+	 * E​n​t​e​r​ ​t​h​e​ ​c​o​p​i​e​d​ ​c​o​d​e​ ​o​n​ ​G​i​t​H​u​b​ ​a​n​d​ ​c​o​m​p​l​e​t​e​ ​a​u​t​h​o​r​i​z​a​t​i​o​n
+	 */
+	llmConfig_copilotStepOpenPageHint: string
+	/**
+	 * O​p​e​n​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​p​a​g​e
+	 */
+	llmConfig_copilotOpenPage: string
+	/**
+	 * C​o​m​p​l​e​t​e​ ​c​o​n​n​e​c​t​i​o​n
+	 */
+	llmConfig_copilotStepComplete: string
+	/**
+	 * A​f​t​e​r​ ​f​i​n​i​s​h​i​n​g​ ​a​u​t​h​o​r​i​z​a​t​i​o​n​ ​o​n​ ​G​i​t​H​u​b​,​ ​c​l​i​c​k​ ​t​h​i​s​ ​b​u​t​t​o​n​ ​t​o​ ​s​a​v​e​ ​t​h​e​ ​c​o​n​n​e​c​t​i​o​n
+	 */
+	llmConfig_copilotStepCompleteHint: string
+	/**
+	 * C​o​n​n​e​c​t​ ​G​i​t​H​u​b
+	 */
+	llmConfig_copilotConnect: string
+	/**
+	 * G​i​t​H​u​b​ ​C​o​p​i​l​o​t​ ​c​o​n​n​e​c​t​e​d
+	 */
+	llmConfig_copilotConnectedTitle: string
+	/**
+	 * D​i​s​c​o​n​n​e​c​t​ ​t​o​ ​c​l​e​a​r​ ​t​h​e​ ​s​a​v​e​d​ ​C​o​p​i​l​o​t​ ​t​o​k​e​n​.​ ​Y​o​u​ ​c​a​n​ ​a​u​t​h​o​r​i​z​e​ ​t​h​i​s​ ​c​h​a​n​n​e​l​ ​a​g​a​i​n​ ​a​f​t​e​r​w​a​r​d​s​.
+	 */
+	llmConfig_copilotConnectedDescription: string
+	/**
+	 * D​i​s​c​o​n​n​e​c​t
+	 */
+	llmConfig_copilotDisconnect: string
 	/**
 	 * M​C​P​ ​S​e​r​v​e​r​s
 	 */
@@ -3278,6 +3382,10 @@ export type TranslationFunctions = {
 	 */
 	llmConfig_baseUrl: () => LocalizedString
 	/**
+	 * API Path
+	 */
+	llmConfig_apiPath: () => LocalizedString
+	/**
 	 * Model
 	 */
 	llmConfig_model: () => LocalizedString
@@ -3289,6 +3397,34 @@ export type TranslationFunctions = {
 	 * Set as Default
 	 */
 	llmConfig_setDefault: () => LocalizedString
+	/**
+	 * Enabled
+	 */
+	llmConfig_enabled: () => LocalizedString
+	/**
+	 * Test connection
+	 */
+	llmConfig_test: () => LocalizedString
+	/**
+	 * Connection has not been tested
+	 */
+	llmConfig_statusUnchecked: () => LocalizedString
+	/**
+	 * Connection OK
+	 */
+	llmConfig_statusSuccess: () => LocalizedString
+	/**
+	 * optional
+	 */
+	llmConfig_optional: () => LocalizedString
+	/**
+	 * Refresh models
+	 */
+	llmConfig_refreshModels: () => LocalizedString
+	/**
+	 * API Path must start with / and end with /chat/completions
+	 */
+	llmConfig_apiPathInvalid: () => LocalizedString
 	/**
 	 * Are you sure you want to delete this configuration?
 	 */
@@ -3317,6 +3453,78 @@ export type TranslationFunctions = {
 	 * Cancel
 	 */
 	llmConfig_cancel: () => LocalizedString
+	/**
+	 * GitHub Copilot Authorization
+	 */
+	llmConfig_copilotTitle: () => LocalizedString
+	/**
+	 * Connect Copilot with GitHub device authorization. After authorization, Workspace Agent saves the encrypted Copilot access token.
+	 */
+	llmConfig_copilotDescription: () => LocalizedString
+	/**
+	 * Get authorization code
+	 */
+	llmConfig_copilotStepGetCode: () => LocalizedString
+	/**
+	 * Generate a GitHub device code
+	 */
+	llmConfig_copilotStepGetCodeHint: () => LocalizedString
+	/**
+	 * Get code
+	 */
+	llmConfig_copilotGetCode: () => LocalizedString
+	/**
+	 * Copy authorization code
+	 */
+	llmConfig_copilotStepCopyCode: () => LocalizedString
+	/**
+	 * Click the button above to generate a code
+	 */
+	llmConfig_copilotCodePlaceholder: () => LocalizedString
+	/**
+	 * Copied
+	 */
+	llmConfig_copilotCopied: () => LocalizedString
+	/**
+	 * Copy
+	 */
+	llmConfig_copilotCopy: () => LocalizedString
+	/**
+	 * Open authorization page
+	 */
+	llmConfig_copilotStepOpenPage: () => LocalizedString
+	/**
+	 * Enter the copied code on GitHub and complete authorization
+	 */
+	llmConfig_copilotStepOpenPageHint: () => LocalizedString
+	/**
+	 * Open authorization page
+	 */
+	llmConfig_copilotOpenPage: () => LocalizedString
+	/**
+	 * Complete connection
+	 */
+	llmConfig_copilotStepComplete: () => LocalizedString
+	/**
+	 * After finishing authorization on GitHub, click this button to save the connection
+	 */
+	llmConfig_copilotStepCompleteHint: () => LocalizedString
+	/**
+	 * Connect GitHub
+	 */
+	llmConfig_copilotConnect: () => LocalizedString
+	/**
+	 * GitHub Copilot connected
+	 */
+	llmConfig_copilotConnectedTitle: () => LocalizedString
+	/**
+	 * Disconnect to clear the saved Copilot token. You can authorize this channel again afterwards.
+	 */
+	llmConfig_copilotConnectedDescription: () => LocalizedString
+	/**
+	 * Disconnect
+	 */
+	llmConfig_copilotDisconnect: () => LocalizedString
 	/**
 	 * MCP Servers
 	 */

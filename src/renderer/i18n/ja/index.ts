@@ -233,9 +233,18 @@ const ja: Translation = {
   llmConfig_provider: "プロバイダー",
   llmConfig_apiKey: "APIキー",
   llmConfig_baseUrl: "ベースURL",
+  llmConfig_apiPath: "APIパス",
   llmConfig_model: "モデル",
   llmConfig_default: "デフォルト",
   llmConfig_setDefault: "デフォルトに設定",
+  llmConfig_enabled: "有効",
+  llmConfig_test: "接続をテスト",
+  llmConfig_statusUnchecked: "接続は未テストです",
+  llmConfig_statusSuccess: "接続は正常です",
+  llmConfig_optional: "任意",
+  llmConfig_refreshModels: "モデルを更新",
+  llmConfig_apiPathInvalid:
+    "APIパスは / で始まり、/chat/completions で終わる必要があります",
   llmConfig_deleteConfirm: "この設定を削除してもよろしいですか？",
   llmConfig_deleteLastError:
     "デフォルト設定を少なくとも1つ保持する必要があります",
@@ -245,6 +254,28 @@ const ja: Translation = {
   llmConfig_notFound: "選択されたLLM設定が存在しません",
   llmConfig_save: "保存",
   llmConfig_cancel: "キャンセル",
+  llmConfig_copilotTitle: "GitHub Copilot 認証",
+  llmConfig_copilotDescription:
+    "GitHub のデバイス認証で Copilot に接続します。認証後、暗号化された Copilot アクセストークンを保存します。",
+  llmConfig_copilotStepGetCode: "認証コードを取得",
+  llmConfig_copilotStepGetCodeHint: "GitHub デバイスコードを生成します",
+  llmConfig_copilotGetCode: "コードを取得",
+  llmConfig_copilotStepCopyCode: "認証コードをコピー",
+  llmConfig_copilotCodePlaceholder: "上のボタンで認証コードを生成します",
+  llmConfig_copilotCopied: "コピー済み",
+  llmConfig_copilotCopy: "コピー",
+  llmConfig_copilotStepOpenPage: "認証ページを開く",
+  llmConfig_copilotStepOpenPageHint:
+    "GitHub でコピーしたコードを入力し、認証を完了します",
+  llmConfig_copilotOpenPage: "認証ページを開く",
+  llmConfig_copilotStepComplete: "接続を完了",
+  llmConfig_copilotStepCompleteHint:
+    "GitHub で認証を完了した後、このボタンで接続を保存します",
+  llmConfig_copilotConnect: "GitHub に接続",
+  llmConfig_copilotConnectedTitle: "GitHub Copilot 接続済み",
+  llmConfig_copilotConnectedDescription:
+    "切断すると保存済みの Copilot トークンを消去します。あとでこのチャネルを再認証できます。",
+  llmConfig_copilotDisconnect: "切断",
 
   // MCP Configuration
   mcpConfig_title: "MCP サーバー",

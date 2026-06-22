@@ -12,10 +12,10 @@ import { getProviderFetch } from "../provider-fetch";
 import {
   type CacheMetrics,
   NO_CACHE_METRICS,
-  NO_PROVIDER_OPTIONS,
   type ProviderAdapter,
   type ProviderConfig,
 } from "./base";
+import { resolveOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
 export class OpenAIAdapter implements ProviderAdapter {
   readonly name = "openai";
@@ -24,11 +24,29 @@ export class OpenAIAdapter implements ProviderAdapter {
     const isCustomEndpoint =
       config.provider === "custom" ||
       (config.baseUrl != null && !config.baseUrl.includes("api.openai.com"));
+    const resolvedBaseUrl = resolveOpenAICompatibleBaseUrl(
+      config.baseUrl,
+      config.apiPath,
+    );
+    const providerFetch = getProviderFetch();
+    const fetch: typeof globalThis.fetch | undefined =
+      config.provider === "github-copilot"
+        ? (input: RequestInfo | URL, init?: RequestInit) => {
+            const headers = new Headers(init?.headers);
+            headers.set("Editor-Version", "filework/0.1.0");
+            headers.set("User-Agent", "Filework");
+            headers.set("Copilot-Integration-Id", "vscode-chat");
+            return (providerFetch ?? globalThis.fetch)(input, {
+              ...init,
+              headers,
+            });
+          }
+        : providerFetch;
     const openai = createOpenAI({
       apiKey: config.apiKey || "",
-      baseURL: config.baseUrl || undefined,
+      baseURL: resolvedBaseUrl,
       // 参见 provider-fetch.ts —— 启动时设置的、按 host 感知代理的 fetch。
-      fetch: getProviderFetch(),
+      fetch,
     });
     return isCustomEndpoint ? openai.chat(config.model) : openai(config.model);
   }

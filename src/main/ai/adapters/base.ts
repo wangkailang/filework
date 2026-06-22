@@ -18,6 +18,7 @@ export interface ProviderConfig {
   provider: string;
   apiKey: string;
   baseUrl?: string | null;
+  apiPath?: string | null;
   model: string;
 }
 

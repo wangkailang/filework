@@ -241,9 +241,18 @@ const en: BaseTranslation = {
   llmConfig_provider: "Provider",
   llmConfig_apiKey: "API Key",
   llmConfig_baseUrl: "Base URL",
+  llmConfig_apiPath: "API Path",
   llmConfig_model: "Model",
   llmConfig_default: "Default",
   llmConfig_setDefault: "Set as Default",
+  llmConfig_enabled: "Enabled",
+  llmConfig_test: "Test connection",
+  llmConfig_statusUnchecked: "Connection has not been tested",
+  llmConfig_statusSuccess: "Connection OK",
+  llmConfig_optional: "optional",
+  llmConfig_refreshModels: "Refresh models",
+  llmConfig_apiPathInvalid:
+    "API Path must start with / and end with /chat/completions",
   llmConfig_deleteConfirm:
     "Are you sure you want to delete this configuration?",
   llmConfig_deleteLastError: "At least one default configuration must be kept",
@@ -253,6 +262,28 @@ const en: BaseTranslation = {
   llmConfig_notFound: "Selected LLM configuration does not exist",
   llmConfig_save: "Save",
   llmConfig_cancel: "Cancel",
+  llmConfig_copilotTitle: "GitHub Copilot Authorization",
+  llmConfig_copilotDescription:
+    "Connect Copilot with GitHub device authorization. After authorization, Workspace Agent saves the encrypted Copilot access token.",
+  llmConfig_copilotStepGetCode: "Get authorization code",
+  llmConfig_copilotStepGetCodeHint: "Generate a GitHub device code",
+  llmConfig_copilotGetCode: "Get code",
+  llmConfig_copilotStepCopyCode: "Copy authorization code",
+  llmConfig_copilotCodePlaceholder: "Click the button above to generate a code",
+  llmConfig_copilotCopied: "Copied",
+  llmConfig_copilotCopy: "Copy",
+  llmConfig_copilotStepOpenPage: "Open authorization page",
+  llmConfig_copilotStepOpenPageHint:
+    "Enter the copied code on GitHub and complete authorization",
+  llmConfig_copilotOpenPage: "Open authorization page",
+  llmConfig_copilotStepComplete: "Complete connection",
+  llmConfig_copilotStepCompleteHint:
+    "After finishing authorization on GitHub, click this button to save the connection",
+  llmConfig_copilotConnect: "Connect GitHub",
+  llmConfig_copilotConnectedTitle: "GitHub Copilot connected",
+  llmConfig_copilotConnectedDescription:
+    "Disconnect to clear the saved Copilot token. You can authorize this channel again afterwards.",
+  llmConfig_copilotDisconnect: "Disconnect",
 
   // MCP Configuration
   mcpConfig_title: "MCP Servers",

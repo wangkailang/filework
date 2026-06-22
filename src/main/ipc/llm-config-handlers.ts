@@ -8,16 +8,25 @@ import {
   setDefaultLlmConfig,
   updateLlmConfig,
 } from "../db";
+import {
+  completeGithubCopilotDeviceFlow,
+  fetchGithubCopilotModels,
+  startGithubCopilotDeviceFlow,
+} from "./github-copilot-auth";
+import { testLlmConfigConnection } from "./llm-config-connection";
 
 type Provider = LlmConfig["provider"];
+const GITHUB_COPILOT_DEFAULT_MODEL = "gpt-5.5";
 
 interface CreatePayload {
   name?: string;
   provider?: Provider;
   apiKey?: string;
   baseUrl?: string;
+  apiPath?: string;
   model?: string;
   modality?: LlmModality;
+  enabled?: boolean;
   isDefault?: boolean;
 }
 
@@ -27,10 +36,21 @@ interface UpdatePayload {
   provider?: Provider;
   apiKey?: string;
   baseUrl?: string;
+  apiPath?: string | null;
   model?: string;
   modality?: LlmModality;
+  enabled?: boolean;
   isDefault?: boolean;
 }
+
+interface CompleteGithubCopilotPayload {
+  deviceCode: string;
+  name?: string;
+  model?: string;
+  configId?: string;
+}
+
+type LlmConfigResult = LlmConfig | { error: string };
 
 /**
  * 根据 provider 类型校验必填字段。
@@ -55,6 +75,7 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     "custom",
     "minimax",
     "xiaomi",
+    "github-copilot",
   ];
   if (!validProviders.includes(data.provider)) {
     return `Invalid provider: ${data.provider}`;
@@ -76,9 +97,21 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
   // ollama/custom/xiaomi 需要显式指定 baseUrl。我们依赖的任何 SDK 都
   // 没有内置小米开放平台的默认 endpoint;
   // 用户需从小米开发者控制台粘贴。
-  if (["ollama", "custom", "xiaomi"].includes(data.provider)) {
+  if (
+    ["ollama", "custom", "xiaomi", "github-copilot"].includes(data.provider)
+  ) {
     if (!data.baseUrl || data.baseUrl.trim() === "") {
       return "baseUrl is required for this provider";
+    }
+  }
+
+  if (data.apiPath !== undefined && data.apiPath.trim() !== "") {
+    const apiPath = data.apiPath.trim();
+    if (
+      !apiPath.startsWith("/") ||
+      !apiPath.toLowerCase().endsWith("/chat/completions")
+    ) {
+      return "apiPath must start with / and end with /chat/completions";
     }
   }
 
@@ -87,6 +120,111 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
   }
 
   return null;
+}
+
+async function getGithubCopilotModelForConnection(
+  token: { apiToken: string; baseUrl: string },
+  model?: string,
+): Promise<string> {
+  const selectedModel = model?.trim();
+  if (selectedModel) return selectedModel;
+
+  try {
+    const models = await fetchGithubCopilotModels({
+      apiToken: token.apiToken,
+      baseUrl: token.baseUrl,
+    });
+    return models[0]?.value || GITHUB_COPILOT_DEFAULT_MODEL;
+  } catch {
+    return GITHUB_COPILOT_DEFAULT_MODEL;
+  }
+}
+
+export function disconnectGithubCopilotConfig(id: string): LlmConfigResult {
+  try {
+    const config = getLlmConfig(id);
+    if (!config) {
+      return { error: "Selected LLM configuration does not exist" };
+    }
+    if (config.provider !== "github-copilot") {
+      return { error: "Selected LLM configuration is not GitHub Copilot" };
+    }
+
+    updateLlmConfig(id, {
+      apiKey: "",
+      enabled: false,
+      lastCheckedAt: null,
+      lastCheckStatus: null,
+      lastCheckMessage: "GitHub Copilot disconnected",
+    });
+    return (
+      getLlmConfig(id) ?? {
+        error: "Selected LLM configuration does not exist",
+      }
+    );
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function completeGithubCopilotConnection(
+  payload: CompleteGithubCopilotPayload,
+): Promise<LlmConfigResult> {
+  try {
+    const existing = payload.configId ? getLlmConfig(payload.configId) : null;
+    if (payload.configId && !existing) {
+      return { error: "Selected LLM configuration does not exist" };
+    }
+    if (existing && existing.provider !== "github-copilot") {
+      return { error: "Selected LLM configuration is not GitHub Copilot" };
+    }
+
+    const token = await completeGithubCopilotDeviceFlow({
+      deviceCode: payload.deviceCode,
+    });
+    const model = await getGithubCopilotModelForConnection(
+      token,
+      payload.model,
+    );
+    const now = new Date().toISOString();
+
+    if (existing) {
+      updateLlmConfig(existing.id, {
+        name: payload.name?.trim() || existing.name,
+        apiKey: token.apiToken,
+        baseUrl: token.baseUrl,
+        apiPath: "/chat/completions",
+        model,
+        modality: "chat",
+        enabled: true,
+        lastCheckedAt: now,
+        lastCheckStatus: "success",
+        lastCheckMessage: "GitHub Copilot connected",
+      });
+      return (
+        getLlmConfig(existing.id) ?? {
+          error: "Selected LLM configuration does not exist",
+        }
+      );
+    }
+
+    return createLlmConfig({
+      name: payload.name?.trim() || "GitHub Copilot",
+      provider: "github-copilot",
+      apiKey: token.apiToken,
+      baseUrl: token.baseUrl,
+      apiPath: "/chat/completions",
+      model,
+      modality: "chat",
+      enabled: true,
+      isDefault: false,
+      lastCheckedAt: now,
+      lastCheckStatus: "success",
+      lastCheckMessage: "GitHub Copilot connected",
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export const registerLlmConfigHandlers = () => {
@@ -127,8 +265,10 @@ export const registerLlmConfigHandlers = () => {
         provider,
         apiKey: data.apiKey ?? null,
         baseUrl: data.baseUrl ?? null,
+        apiPath: data.apiPath?.trim() || null,
         model,
         modality: data.modality ?? "chat",
+        enabled: data.enabled ?? true,
         isDefault: data.isDefault ?? false,
       });
     } catch (err) {
@@ -142,6 +282,20 @@ export const registerLlmConfigHandlers = () => {
       try {
         const { id, isDefault, ...updates } = payload;
         if (Object.keys(updates).length > 0) {
+          if (
+            updates.apiPath !== undefined &&
+            updates.apiPath !== null &&
+            updates.apiPath.trim() !== "" &&
+            (!updates.apiPath.trim().startsWith("/") ||
+              !updates.apiPath
+                .trim()
+                .toLowerCase()
+                .endsWith("/chat/completions"))
+          ) {
+            return {
+              error: "apiPath must start with / and end with /chat/completions",
+            };
+          }
           updateLlmConfig(id, updates);
         }
         if (isDefault) {
@@ -152,6 +306,72 @@ export const registerLlmConfigHandlers = () => {
         return { error: err instanceof Error ? err.message : String(err) };
       }
     },
+  );
+
+  ipcMain.handle("llm-config:test", async (_event, payload: { id: string }) => {
+    try {
+      const config = getLlmConfig(payload.id);
+      if (!config) {
+        return { error: "Selected LLM configuration does not exist" };
+      }
+
+      const result = await testLlmConfigConnection(config);
+      updateLlmConfig(config.id, {
+        lastCheckedAt: new Date().toISOString(),
+        lastCheckStatus: result.status,
+        lastCheckMessage: result.message,
+      });
+      return getLlmConfig(config.id);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("llm-config:copilot:start", async () => {
+    try {
+      return await startGithubCopilotDeviceFlow();
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(
+    "llm-config:copilot:models",
+    async (_event, payload: { id: string }) => {
+      try {
+        const config = getLlmConfig(payload.id);
+        if (!config) {
+          return { error: "Selected LLM configuration does not exist" };
+        }
+        if (config.provider !== "github-copilot") {
+          return {
+            error: "Selected LLM configuration is not GitHub Copilot",
+          };
+        }
+        if (!config.apiKey) {
+          return { error: "GitHub Copilot token is missing" };
+        }
+
+        return await fetchGithubCopilotModels({
+          apiToken: config.apiKey,
+          baseUrl: config.baseUrl,
+        });
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "llm-config:copilot:complete",
+    async (_event, payload: CompleteGithubCopilotPayload) =>
+      completeGithubCopilotConnection(payload),
+  );
+
+  ipcMain.handle(
+    "llm-config:copilot:disconnect",
+    async (_event, payload: { id: string }) =>
+      disconnectGithubCopilotConfig(payload.id),
   );
 
   ipcMain.handle(
