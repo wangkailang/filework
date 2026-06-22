@@ -67,6 +67,7 @@ import { Button } from "../ui/button";
 import { type AgentState, AgentTelemetry } from "./AgentTelemetry";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
+import { movePendingBatchApprovalsToEnd } from "./assistant-part-ordering";
 import { useChatSessionContext } from "./ChatSessionProvider";
 import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
@@ -858,7 +859,7 @@ export const ChatPanel = ({
     // 关键:已经跑完并交付结果(output-available/error)的前置只读探索
     // (listDirectory / readFile 等)保留可见——这正是用户期望在聊天里看到的。
     // 批准后(status→executing)其余工具会重新出现。
-    const visibleParts = parts.filter((p) => {
+    const visibleParts = movePendingBatchApprovalsToEnd(parts).filter((p) => {
       if (p.type !== "tool") return true;
       const tp = p as ToolPart;
       // askClarification 的问答由上方的 clarification 交互卡(ClarificationCard,

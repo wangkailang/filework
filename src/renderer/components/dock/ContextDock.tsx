@@ -59,6 +59,8 @@ export const ContextDock = ({
   currentBranch,
   diffInvalidator,
   isGitRepo,
+  automationInitialView = "tasks",
+  automationViewRevision = 0,
 }: {
   mode: DockMode;
   width: number;
@@ -80,6 +82,8 @@ export const ContextDock = ({
   diffInvalidator: number;
   /** 非 git 项目隐藏「差异」标签与内容(网页面板对所有工作区可用)。 */
   isGitRepo: boolean;
+  automationInitialView?: "tasks" | "triage";
+  automationViewRevision?: number;
 }) => {
   const { LL } = useI18nContext();
   const widthRef = useRef(width);
@@ -277,7 +281,10 @@ export const ContextDock = ({
             value="automations"
             className="h-full data-[state=inactive]:hidden"
           >
-            <AutomationsDockPanel />
+            <AutomationsDockPanel
+              initialView={automationInitialView}
+              viewRevision={automationViewRevision}
+            />
           </TabsContent>
           {/* 差异:仅 git 项目挂载(非 git 时标签与内容一并隐藏)。 */}
           {isGitRepo && (

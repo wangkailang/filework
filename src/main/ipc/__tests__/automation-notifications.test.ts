@@ -102,4 +102,26 @@ describe("automation notifications", () => {
       body: "Daily repo check: Triage で詳細を確認してください",
     });
   });
+
+  it("invokes the run click handler when the user opens the notification", () => {
+    const clickHandlers: Array<() => void> = [];
+    const show = vi.fn();
+    const on = vi.fn((event: string, handler: () => void) => {
+      if (event === "click") clickHandlers.push(handler);
+    });
+    const notificationCtor = vi.fn(() => ({ on, show }));
+    const onClick = vi.fn();
+    const notify = createAutomationRunNotifier({
+      Notification: notificationCtor,
+      isSupported: () => true,
+      onClick,
+    });
+
+    notify(failedRun);
+    clickHandlers[0]?.();
+
+    expect(on).toHaveBeenCalledWith("click", expect.any(Function));
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledWith(failedRun);
+  });
 });

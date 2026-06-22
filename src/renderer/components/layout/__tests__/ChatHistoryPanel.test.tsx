@@ -120,10 +120,14 @@ describe("ChatHistoryPanel", () => {
     expect(html).not.toContain("w-11");
   });
 
-  it("marks automation-backed sessions and uses the automation title", () => {
+  it("hides automation-backed sessions from the project chat list", () => {
     chatState.value = {
       ...(chatState.value as Record<string, unknown>),
       sessions: [
+        {
+          ...session("regular-session", "普通项目对话"),
+          updatedAt: "2026-06-13T07:00:00.000Z",
+        },
         {
           ...session("automation-session", "新对话"),
           automationRun: {
@@ -149,13 +153,35 @@ describe("ChatHistoryPanel", () => {
 
     const html = renderToStaticMarkup(<ChatHistoryPanel />);
 
-    expect(html).toContain('data-session-automation="run-1"');
-    expect(html).toContain('data-session-automation="run-2"');
-    expect(html).toContain('aria-label="自动化"');
-    expect(html).toContain("每日 Filework commit 改动统计");
-    expect(html).toContain("每日仓库巡检");
+    expect(html).toContain("普通项目对话");
+    expect(html).not.toContain('data-session-row="automation-session"');
+    expect(html).not.toContain('data-session-row="legacy-automation-session"');
+    expect(html).not.toContain("每日 Filework commit 改动统计");
+    expect(html).not.toContain("每日仓库巡检");
     expect(html).not.toContain("Run automation now:");
     expect(html).not.toContain(">新对话<");
+  });
+
+  it("shows the empty state when a workspace only has automation chats", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("automation-session", "Run automation now: 每日仓库巡检"),
+          automationRun: {
+            id: "run-1",
+            automationId: "auto-1",
+            title: "每日仓库巡检",
+          },
+        } as ChatSession,
+      ],
+      activeSessionId: "automation-session",
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain("暂无会话");
+    expect(html).not.toContain('data-session-row="automation-session"');
   });
 
   it("exposes current branch context in the session detail affordance", () => {

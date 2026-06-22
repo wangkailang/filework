@@ -1,5 +1,8 @@
+import { parseHTML } from "linkedom";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -62,6 +65,12 @@ vi.mock("../../../i18n/i18n-react", () => ({
       automations_triageCleanupHandled: () => "清理已处理",
       automations_triageCleanupOldHandled: () => "清理 30 天前",
       automations_viewDetails: () => "查看详情",
+      automations_runDetailsTitle: () => "运行详情",
+      automations_runDetailsOpenChat: () => "打开对话",
+      automations_runDetailsPrompt: () => "执行指令",
+      automations_runDetailsOutput: () => "输出",
+      automations_runDetailsError: () => "错误",
+      automations_runDetailsEmpty: () => "暂无输出",
       automations_save: () => "保存",
       automations_schedule: () => "计划",
       automations_statusDisabled: () => "已停用",
@@ -85,6 +94,27 @@ import {
   type AutomationRecord,
   AutomationsPanel,
 } from "../AutomationsPanel";
+
+const installDom = () => {
+  const { document, window } = parseHTML(
+    '<!doctype html><html><body><div id="root"></div></body></html>',
+  );
+
+  Object.assign(window, {
+    setInterval: globalThis.setInterval,
+    clearInterval: globalThis.clearInterval,
+  });
+  vi.stubGlobal("window", window);
+  vi.stubGlobal("document", document);
+  vi.stubGlobal("Node", window.Node);
+  vi.stubGlobal("HTMLElement", window.HTMLElement);
+  vi.stubGlobal("Event", window.Event);
+  vi.stubGlobal("MouseEvent", window.MouseEvent);
+  vi.stubGlobal("navigator", window.navigator);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+
+  return { document, window };
+};
 
 const automationRecord = (
   overrides: Partial<AutomationRecord> = {},
@@ -132,6 +162,11 @@ const automationRunRecord = () => ({
   updatedAt: "2026-06-18T01:02:00.000Z",
   startedAt: "2026-06-18T01:00:10.000Z",
   completedAt: "2026-06-18T01:02:00.000Z",
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 describe("AutomationsPanel", () => {
@@ -265,7 +300,7 @@ describe("AutomationsPanel", () => {
     expect(html).not.toContain("flex-col items-end");
   });
 
-  it("does not offer legacy run detail drill-in without a chat session", () => {
+  it("offers an inline detail preview for headless runs without a chat session", () => {
     const html = renderToStaticMarkup(
       <AutomationsPanel
         initialView="triage"
@@ -274,8 +309,9 @@ describe("AutomationsPanel", () => {
       />,
     );
 
-    expect(html).not.toContain("查看详情");
-    expect(html).not.toContain("data-automation-run-detail-layout");
+    expect(html).toContain("查看详情");
+    expect(html).toContain('data-automation-run-detail-mode="preview"');
+    expect(html).not.toContain("Command failed");
   });
 
   it("renders chat-backed run details as an open-in-chat target", () => {
@@ -298,6 +334,64 @@ describe("AutomationsPanel", () => {
       'data-automation-run-chat-session-id="session-automation-1"',
     );
     expect(html).toContain("查看详情");
+  });
+
+  it("passes the persisted automation metadata when rerunning from triage", async () => {
+    const { document, window } = installDom();
+    const filework = {
+      automations: {
+        cancelRun: vi.fn(),
+        cleanupRuns: vi.fn(),
+        delete: vi.fn(),
+        list: vi.fn(() => Promise.resolve([automationRecord()])),
+        listRuns: vi.fn(() => Promise.resolve([automationRunRecord()])),
+        markRunHandled: vi.fn(),
+        rerun: vi.fn(),
+        trigger: vi.fn(),
+        update: vi.fn(),
+      },
+    };
+    Object.assign(window, { filework });
+    const onRerunAutomationRun = vi.fn();
+    let root: Root | null = createRoot(
+      document.getElementById("root") as HTMLElement,
+    );
+
+    await act(async () => {
+      root?.render(
+        <AutomationsPanel
+          initialView="triage"
+          initialAutomations={[automationRecord()]}
+          initialRuns={[automationRunRecord()]}
+          onRerunAutomationRun={onRerunAutomationRun}
+        />,
+      );
+    });
+
+    const rerunButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("重跑"),
+    );
+    expect(rerunButton).toBeTruthy();
+
+    await act(async () => {
+      rerunButton?.dispatchEvent(new window.Event("click", { bubbles: true }));
+    });
+
+    expect(filework.automations.rerun).not.toHaveBeenCalled();
+    expect(onRerunAutomationRun).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "run-1" }),
+      expect.objectContaining({
+        id: "auto-1",
+        scheduleKind: "daily",
+        scheduleValue: "09:00",
+        type: "project",
+      }),
+    );
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
   });
 
   it("renders actionable needs-action runs in triage", () => {

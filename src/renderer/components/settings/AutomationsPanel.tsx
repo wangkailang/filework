@@ -25,6 +25,7 @@ import {
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales, TranslationFunctions } from "../../i18n/i18n-types";
 import { formatTokens } from "../../utils/format";
+import { MessageResponse } from "../ai-elements/message";
 import {
   Dialog,
   DialogContent,
@@ -111,7 +112,10 @@ interface AutomationsPanelProps {
   initialView?: AutomationView;
   onTriggerAutomation?: (automation: AutomationRecord) => Promise<void> | void;
   onOpenRunDetails?: (run: AutomationRunRecord) => void;
-  onRerunAutomationRun?: (run: AutomationRunRecord) => Promise<void> | void;
+  onRerunAutomationRun?: (
+    run: AutomationRunRecord,
+    automation: AutomationRecord,
+  ) => Promise<void> | void;
   onAfterTriggerAutomation?: () => void;
   runningAutomationId?: string | null;
   variant?: "full" | "rail";
@@ -250,6 +254,21 @@ const automationRunStatusClass = (status: AutomationRunStatus): string => {
     return "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300";
   }
   return "border-border bg-muted text-muted-foreground";
+};
+
+const buildRunDetailMarkdown = (
+  run: AutomationRunRecord,
+  LL: TranslationFunctions,
+): string => {
+  const sections: string[] = [];
+  if (run.output?.trim()) {
+    sections.push(`## ${LL.automations_runDetailsOutput()}\n\n${run.output}`);
+  }
+  const error = run.errorMessage ?? run.needsActionReason;
+  if (error?.trim()) {
+    sections.push(`## ${LL.automations_runDetailsError()}\n\n${error}`);
+  }
+  return sections.join("\n\n").trim() || LL.automations_runDetailsEmpty();
 };
 
 const isActiveAutomationRun = (run: AutomationRunRecord): boolean =>
@@ -692,6 +711,77 @@ export const AutomationDeleteDialog = ({
   );
 };
 
+const AutomationRunDetailsDialog = ({
+  LL,
+  completedAt,
+  onClose,
+  run,
+  runStatusLabels,
+  startedAt,
+}: {
+  LL: TranslationFunctions;
+  completedAt: string | null;
+  onClose: () => void;
+  run: AutomationRunRecord | null;
+  runStatusLabels: Record<AutomationRunStatus, string>;
+  startedAt: string | null;
+}) => (
+  <Dialog open={run !== null} onOpenChange={(open) => !open && onClose()}>
+    {run && (
+      <DialogContent className="grid h-[min(82vh,820px)] w-full! max-w-4xl! grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden bg-background! p-0! text-foreground! shadow-lg">
+        <div className="border-b border-border px-5 py-4">
+          <DialogTitle className="pr-8 text-base">
+            {LL.automations_runDetailsTitle()}
+          </DialogTitle>
+          <DialogDescription className="mt-2">
+            <span className="block truncate font-medium text-foreground">
+              {run.automationTitle}
+            </span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span
+                className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
+              >
+                {runStatusLabels[run.status]}
+              </span>
+              {startedAt && (
+                <span>{LL.automations_runStarted({ value: startedAt })}</span>
+              )}
+              {completedAt && (
+                <span>
+                  {LL.automations_runCompleted({ value: completedAt })}
+                </span>
+              )}
+              {run.totalTokens !== null && (
+                <span>
+                  {LL.automations_tokenTotal({
+                    value: formatTokens(run.totalTokens),
+                  })}
+                </span>
+              )}
+            </span>
+          </DialogDescription>
+        </div>
+        <div className="grid min-h-0 gap-4 px-5 pb-5 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.5fr)]">
+          <div className="min-h-0 overflow-auto rounded-lg border border-border bg-muted/30 p-3">
+            <h5 className="mb-2 text-xs font-medium text-muted-foreground">
+              {LL.automations_runDetailsPrompt()}
+            </h5>
+            <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground">
+              {run.prompt}
+            </pre>
+          </div>
+          <div
+            data-automation-run-detail-preview={run.id}
+            className="min-h-0 overflow-auto rounded-lg border border-border bg-background p-4"
+          >
+            <MessageResponse>{buildRunDetailMarkdown(run, LL)}</MessageResponse>
+          </div>
+        </div>
+      </DialogContent>
+    )}
+  </Dialog>
+);
+
 const AutomationRunRowContent = ({
   LL,
   completedAt,
@@ -780,6 +870,8 @@ export const AutomationsPanel = ({
   const [triagePage, setTriagePage] = useState(0);
   const [runActionBusyKey, setRunActionBusyKey] = useState<string | null>(null);
   const [cleaningRuns, setCleaningRuns] = useState(false);
+  const [selectedRunDetails, setSelectedRunDetails] =
+    useState<AutomationRunRecord | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -920,10 +1012,15 @@ export const AutomationsPanel = ({
         await window.filework.automations.cancelRun(run.id);
       } else if (action === "handled") {
         await window.filework.automations.markRunHandled(run.id);
-      } else if (onRerunAutomationRun) {
-        await onRerunAutomationRun(run);
       } else {
-        await window.filework.automations.rerun(run.id);
+        const automation = automations.find(
+          (item) => item.id === run.automationId,
+        );
+        if (onRerunAutomationRun && automation) {
+          await onRerunAutomationRun(run, automation);
+        } else {
+          await window.filework.automations.rerun(run.id);
+        }
       }
       await refresh();
     } catch (err) {
@@ -1101,10 +1198,11 @@ export const AutomationsPanel = ({
                   data-automation-run-layout="compact"
                   className="grid gap-3 border-border px-3 py-2.5 transition-colors hover:bg-accent/40 not-last:border-b md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
                 >
-                  {run.chatSessionId ? (
+                  {run.chatSessionId && onOpenRunDetails ? (
                     <button
                       type="button"
                       onClick={() => onOpenRunDetails?.(run)}
+                      data-automation-run-detail-mode="chat"
                       className="min-w-0 text-left"
                     >
                       <AutomationRunRowContent
@@ -1117,15 +1215,21 @@ export const AutomationsPanel = ({
                       />
                     </button>
                   ) : (
-                    <div className="min-w-0 text-left">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRunDetails(run)}
+                      data-automation-run-detail-mode="preview"
+                      className="min-w-0 text-left"
+                    >
                       <AutomationRunRowContent
                         run={run}
                         startedAt={startedAt}
                         completedAt={completedAt}
+                        showDetails
                         LL={LL}
                         runStatusLabels={runStatusLabels}
                       />
-                    </div>
+                    </button>
                   )}
                   <div
                     data-automation-run-actions={run.id}
@@ -1508,6 +1612,20 @@ export const AutomationsPanel = ({
           onCancel={() => setPendingDelete(null)}
           onConfirm={handleConfirmDelete}
         />
+        <AutomationRunDetailsDialog
+          LL={LL}
+          run={selectedRunDetails}
+          startedAt={formatDateTime(
+            selectedRunDetails?.startedAt ?? null,
+            locale,
+          )}
+          completedAt={formatDateTime(
+            selectedRunDetails?.completedAt ?? null,
+            locale,
+          )}
+          runStatusLabels={runStatusLabels}
+          onClose={() => setSelectedRunDetails(null)}
+        />
       </div>
     );
   }
@@ -1577,6 +1695,20 @@ export const AutomationsPanel = ({
         automation={pendingDelete}
         onCancel={() => setPendingDelete(null)}
         onConfirm={handleConfirmDelete}
+      />
+      <AutomationRunDetailsDialog
+        LL={LL}
+        run={selectedRunDetails}
+        startedAt={formatDateTime(
+          selectedRunDetails?.startedAt ?? null,
+          locale,
+        )}
+        completedAt={formatDateTime(
+          selectedRunDetails?.completedAt ?? null,
+          locale,
+        )}
+        runStatusLabels={runStatusLabels}
+        onClose={() => setSelectedRunDetails(null)}
       />
     </div>
   );

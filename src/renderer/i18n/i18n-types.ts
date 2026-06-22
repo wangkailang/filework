@@ -582,6 +582,30 @@ type RootTranslation = {
 	 */
 	automations_viewDetails: string
 	/**
+	 * R​u​n​ ​d​e​t​a​i​l​s
+	 */
+	automations_runDetailsTitle: string
+	/**
+	 * O​p​e​n​ ​c​h​a​t
+	 */
+	automations_runDetailsOpenChat: string
+	/**
+	 * I​n​s​t​r​u​c​t​i​o​n​s
+	 */
+	automations_runDetailsPrompt: string
+	/**
+	 * O​u​t​p​u​t
+	 */
+	automations_runDetailsOutput: string
+	/**
+	 * E​r​r​o​r
+	 */
+	automations_runDetailsError: string
+	/**
+	 * N​o​ ​o​u​t​p​u​t​ ​y​e​t​.
+	 */
+	automations_runDetailsEmpty: string
+	/**
 	 * I​n​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
 	 * @param {string} value
 	 */
@@ -1522,6 +1546,38 @@ type RootTranslation = {
 	 * @param {number} 0
 	 */
 	approval_batch_more: RequiredParams<'0'>
+	/**
+	 * A​p​p​r​o​v​e​ ​a​u​t​o​m​a​t​i​o​n​ ​c​h​a​n​g​e​s​?
+	 */
+	approval_automationUpdate_title: string
+	/**
+	 * A​p​p​r​o​v​e​ ​t​h​i​s​ ​c​h​a​n​g​e
+	 */
+	approval_automationUpdate_approve_once: string
+	/**
+	 * A​l​w​a​y​s​ ​a​l​l​o​w​ ​a​u​t​o​m​a​t​i​o​n​ ​c​h​a​n​g​e​s
+	 */
+	approval_automationUpdate_always_allow: string
+	/**
+	 * W​i​l​l​ ​c​h​a​n​g​e​ ​a​u​t​o​m​a​t​i​o​n​ ​s​e​t​t​i​n​g​s
+	 */
+	approval_automationUpdate_summary_change: string
+	/**
+	 * W​i​l​l​ ​c​r​e​a​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_create: string
+	/**
+	 * W​i​l​l​ ​u​p​d​a​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_update: string
+	/**
+	 * W​i​l​l​ ​d​e​l​e​t​e​ ​a​n​ ​a​u​t​o​m​a​t​i​o​n
+	 */
+	approval_automationUpdate_summary_delete: string
+	/**
+	 * W​i​l​l​ ​l​i​s​t​ ​a​u​t​o​m​a​t​i​o​n​s
+	 */
+	approval_automationUpdate_summary_list: string
 	/**
 	 * {​0​}​ ​s​u​b​a​g​e​n​t​s​ ​·​ ​c​o​n​c​u​r​r​e​n​c​y​ ​{​1​}
 	 * @param {number} 0
@@ -2871,6 +2927,30 @@ export type TranslationFunctions = {
 	 */
 	automations_viewDetails: () => LocalizedString
 	/**
+	 * Run details
+	 */
+	automations_runDetailsTitle: () => LocalizedString
+	/**
+	 * Open chat
+	 */
+	automations_runDetailsOpenChat: () => LocalizedString
+	/**
+	 * Instructions
+	 */
+	automations_runDetailsPrompt: () => LocalizedString
+	/**
+	 * Output
+	 */
+	automations_runDetailsOutput: () => LocalizedString
+	/**
+	 * Error
+	 */
+	automations_runDetailsError: () => LocalizedString
+	/**
+	 * No output yet.
+	 */
+	automations_runDetailsEmpty: () => LocalizedString
+	/**
 	 * Input {value} tokens
 	 */
 	automations_tokenInput: (arg: { value: string }) => LocalizedString
@@ -3774,6 +3854,38 @@ export type TranslationFunctions = {
 	 * … {0} more
 	 */
 	approval_batch_more: (arg0: number) => LocalizedString
+	/**
+	 * Approve automation changes?
+	 */
+	approval_automationUpdate_title: () => LocalizedString
+	/**
+	 * Approve this change
+	 */
+	approval_automationUpdate_approve_once: () => LocalizedString
+	/**
+	 * Always allow automation changes
+	 */
+	approval_automationUpdate_always_allow: () => LocalizedString
+	/**
+	 * Will change automation settings
+	 */
+	approval_automationUpdate_summary_change: () => LocalizedString
+	/**
+	 * Will create an automation
+	 */
+	approval_automationUpdate_summary_create: () => LocalizedString
+	/**
+	 * Will update an automation
+	 */
+	approval_automationUpdate_summary_update: () => LocalizedString
+	/**
+	 * Will delete an automation
+	 */
+	approval_automationUpdate_summary_delete: () => LocalizedString
+	/**
+	 * Will list automations
+	 */
+	approval_automationUpdate_summary_list: () => LocalizedString
 	/**
 	 * {0} subagents · concurrency {1}
 	 */

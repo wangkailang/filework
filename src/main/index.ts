@@ -33,6 +33,7 @@ import { getSetting, initDatabase } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
+import { setAutomationRunNotificationClickHandler } from "./ipc/automation-notifications";
 import {
   startAutomationScheduler,
   stopAutomationScheduler,
@@ -88,7 +89,7 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const createWindow = () => {
+const createWindow = (): BrowserWindow => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -154,6 +155,22 @@ const createWindow = () => {
     }
     return { action: "deny" };
   });
+
+  return mainWindow;
+};
+
+const openAutomationTriageFromNotification = (runId: string): void => {
+  const win = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+
+  const send = () => win.webContents.send("automations:open-triage", { runId });
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
 };
 
 app.whenReady().then(async () => {
@@ -365,6 +382,9 @@ app.whenReady().then(async () => {
   registerTaskTraceHandlers();
   registerToolWhitelistHandlers();
   registerCredentialsHandlers();
+  setAutomationRunNotificationClickHandler((run) =>
+    openAutomationTriageFromNotification(run.id),
+  );
   startAutomationScheduler();
 
   // MCP —— 加载持久化的服务器配置,注册 IPC,并在后台打开每个已启用的

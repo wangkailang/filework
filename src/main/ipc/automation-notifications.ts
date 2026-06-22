@@ -8,6 +8,7 @@ type AutomationNotificationOptions = {
 };
 
 type AutomationNotification = {
+  on?: (event: "click", handler: () => void) => void;
   show: () => void;
 };
 
@@ -17,6 +18,7 @@ interface AutomationRunNotifierDeps {
   Notification?: AutomationNotificationFactory;
   getLocale?: () => string | null | undefined;
   isSupported?: () => boolean;
+  onClick?: (run: AutomationRunRecord) => void;
 }
 
 const defaultIsSupported = (): boolean => {
@@ -109,17 +111,34 @@ const createNotification = (
   }
 };
 
+let automationRunNotificationClickHandler:
+  | ((run: AutomationRunRecord) => void)
+  | null = null;
+
+export const setAutomationRunNotificationClickHandler = (
+  handler: ((run: AutomationRunRecord) => void) | null,
+): void => {
+  automationRunNotificationClickHandler = handler;
+};
+
 export const createAutomationRunNotifier = ({
   Notification = ElectronNotification,
   getLocale = () => app?.getLocale?.() ?? "zh-CN",
   isSupported = defaultIsSupported,
+  onClick,
 }: AutomationRunNotifierDeps = {}) => {
   return (run: AutomationRunRecord): void => {
     const message = getAttentionMessage(run, normalizeLocale(getLocale()));
     if (!message || !isSupported()) return;
 
     try {
-      createNotification(Notification, message).show();
+      const notification = createNotification(Notification, message);
+      const clickHandler =
+        onClick ??
+        ((clickedRun: AutomationRunRecord) =>
+          automationRunNotificationClickHandler?.(clickedRun));
+      notification.on?.("click", () => clickHandler(run));
+      notification.show();
     } catch (error) {
       console.warn("Failed to show automation notification", error);
     }

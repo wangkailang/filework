@@ -43,6 +43,20 @@ import {
 
 export type RailTab = "chats" | "files";
 
+const AUTOMATION_TITLE_PREFIXES = [
+  /^Run automation now:\s*/i,
+  /^现在执行自动化[：:]\s*/,
+  /^执行自动化[：:]\s*/,
+];
+
+const isAutomationSession = (session: {
+  automationRun?: unknown;
+  title: string;
+}): boolean => {
+  if (session.automationRun) return true;
+  return AUTOMATION_TITLE_PREFIXES.some((prefix) => prefix.test(session.title));
+};
+
 export const LeftRail = ({
   workspacePath,
   workspaceRef,
@@ -166,6 +180,12 @@ export const LeftRail = ({
   // 仅 git 项目展示 diff 入口(非 git 时分支 chip 本就因无分支名隐藏,这里再兜一层)。
   const diffButtonVisible = isGitRepo;
   const railMetaLayout = resolveRailMetaLayout(width);
+  const activeSession = chat.sessions.find(
+    (s) => s.id === chat.activeSessionId,
+  );
+  const automationActive =
+    automationsOpen ||
+    (activeSession ? isAutomationSession(activeSession) : false);
 
   const segBtn = (tab: RailTab, label: string) => (
     <button
@@ -281,17 +301,21 @@ export const LeftRail = ({
                 <button
                   type="button"
                   data-automation-launcher="true"
+                  aria-pressed={automationActive}
                   onClick={onOpenAutomations}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs transition-colors",
-                    automationsOpen
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                  aria-pressed={automationsOpen}
                   title={LL.automations_title()}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                    automationActive
+                      ? "bg-accent text-foreground shadow-[inset_2px_0_0_var(--color-primary)]"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
                 >
-                  <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                  <CalendarClock
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
                   <span className="truncate">{LL.automations_title()}</span>
                 </button>
               </div>

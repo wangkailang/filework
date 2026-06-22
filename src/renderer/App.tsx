@@ -110,6 +110,10 @@ export const App = () => {
   const [dockFilePath, setDockFilePath] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState<number>(getInitialDockWidth);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [automationInitialView, setAutomationInitialView] = useState<
+    "tasks" | "triage"
+  >("tasks");
+  const [automationViewRevision, setAutomationViewRevision] = useState(0);
   // 钻入面板:当前在 dock 查看的子 agent(批次 + 子任务)。
   const [dockSubagent, setDockSubagent] = useState<{
     batchId: string;
@@ -209,6 +213,15 @@ export const App = () => {
     window.addEventListener("filework:open-subagent", handler);
     return () => window.removeEventListener("filework:open-subagent", handler);
   }, [openSubagentInDock]);
+
+  useEffect(() => {
+    return window.filework.automations.onOpenTriage(() => {
+      setAutomationInitialView("triage");
+      setAutomationViewRevision((revision) => revision + 1);
+      setDockTab("automations");
+      setDockOpen(true);
+    });
+  }, []);
 
   // 全局快捷键:⇧⌘ + 首字母 切换右侧面板(与 DockMenu 的提示一致)。
   // 非 git 项目无 diff(网页面板恒可用);无选中子 agent 时跳过 subagent。
@@ -426,7 +439,12 @@ export const App = () => {
     }
   };
   const toggleDiff = () => openDockTab("diff");
-  const openAutomations = () => openDockTab("automations");
+  const openAutomations = () => {
+    setAutomationInitialView("tasks");
+    setAutomationViewRevision((revision) => revision + 1);
+    setDockTab("automations");
+    setDockOpen(true);
+  };
 
   if (isRestoring) {
     return (
@@ -548,6 +566,8 @@ export const App = () => {
                       currentBranch={workspace.currentBranch}
                       diffInvalidator={diffInvalidator}
                       isGitRepo={workspace.isGitRepo}
+                      automationInitialView={automationInitialView}
+                      automationViewRevision={automationViewRevision}
                     />
                   )}
                 </main>

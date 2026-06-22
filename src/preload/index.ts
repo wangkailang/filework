@@ -996,6 +996,16 @@ const api = {
       ipcRenderer.invoke("automations:previewSchedule", payload),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("automations:delete", { id }),
+    onOpenTriage: (callback: (payload: { runId?: string }) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: { runId?: string },
+      ) => callback(payload);
+      ipcRenderer.on("automations:open-triage", handler);
+      return () => {
+        ipcRenderer.removeListener("automations:open-triage", handler);
+      };
+    },
   },
 
   // 危险工具白名单(持久化,可在设置面板管理)
