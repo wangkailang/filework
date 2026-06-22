@@ -25,6 +25,12 @@ describe("LlmConfigStatusIndicator", () => {
   });
 
   it("includes the connection test time in status tooltip copy", () => {
+    const checkedAt = "2026-06-22T10:30:00.000Z";
+    const formattedCheckedAt = new Intl.DateTimeFormat("zh-CN", {
+      dateStyle: "medium",
+      hour12: false,
+      timeStyle: "short",
+    }).format(new Date(checkedAt));
     const LL = {
       llmConfig_lastTestedAt: ({ when }: { when: string }) => `测试于 ${when}`,
       llmConfig_statusSuccess: () => "连接正常",
@@ -34,13 +40,13 @@ describe("LlmConfigStatusIndicator", () => {
     expect(
       buildLlmConfigStatusTooltip(
         {
-          lastCheckedAt: "2026-06-22T10:30:00.000Z",
+          lastCheckedAt: checkedAt,
           lastCheckMessage: null,
           lastCheckStatus: "success",
         },
         LL,
         "zh-CN",
       ),
-    ).toEqual(["连接正常", "测试于 2026年6月22日 18:30"]);
+    ).toEqual(["连接正常", `测试于 ${formattedCheckedAt}`]);
   });
 });
