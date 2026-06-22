@@ -141,7 +141,12 @@ export const initDatabase = async () => {
       automation_id TEXT NOT NULL,
       automation_title TEXT NOT NULL,
       trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
-      status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','canceled')),
+      status TEXT NOT NULL CHECK(status IN ('queued','running','needs_action','succeeded','failed','canceled')),
+      triage_status TEXT NOT NULL DEFAULT 'open' CHECK(triage_status IN ('open','handled')),
+      needs_action_reason TEXT,
+      chat_session_id TEXT,
+      assistant_message_id TEXT,
+      task_id TEXT,
       prompt TEXT NOT NULL,
       workspace_paths TEXT,
       thread_id TEXT,
@@ -204,6 +209,112 @@ export const initDatabase = async () => {
       allow_hooks INTEGER NOT NULL DEFAULT 0
     );
   `);
+
+  const automationRunsSql = (
+    sqlite
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='automation_runs'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (
+    automationRunsSql &&
+    (!automationRunsSql.includes("needs_action") ||
+      !automationRunsSql.includes("triage_status") ||
+      !automationRunsSql.includes("needs_action_reason") ||
+      !automationRunsSql.includes("chat_session_id") ||
+      !automationRunsSql.includes("assistant_message_id") ||
+      !automationRunsSql.includes("task_id"))
+  ) {
+    sqlite.exec(`
+      DROP INDEX IF EXISTS idx_automation_runs_automation;
+      DROP INDEX IF EXISTS idx_automation_runs_status;
+      DROP INDEX IF EXISTS idx_automation_runs_triage;
+      CREATE TABLE automation_runs_new (
+        id TEXT PRIMARY KEY,
+        automation_id TEXT NOT NULL,
+        automation_title TEXT NOT NULL,
+        trigger TEXT NOT NULL CHECK(trigger IN ('manual','scheduled')),
+        status TEXT NOT NULL CHECK(status IN ('queued','running','needs_action','succeeded','failed','canceled')),
+        triage_status TEXT NOT NULL DEFAULT 'open' CHECK(triage_status IN ('open','handled')),
+        needs_action_reason TEXT,
+        chat_session_id TEXT,
+        assistant_message_id TEXT,
+        task_id TEXT,
+        prompt TEXT NOT NULL,
+        workspace_paths TEXT,
+        thread_id TEXT,
+        model_id TEXT,
+        output TEXT,
+        error_message TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT
+      );
+      INSERT INTO automation_runs_new (
+        id,
+        automation_id,
+        automation_title,
+        trigger,
+        status,
+        triage_status,
+        needs_action_reason,
+        chat_session_id,
+        assistant_message_id,
+        task_id,
+        prompt,
+        workspace_paths,
+        thread_id,
+        model_id,
+        output,
+        error_message,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        created_at,
+        updated_at,
+        started_at,
+        completed_at
+      )
+      SELECT
+        id,
+        automation_id,
+        automation_title,
+        trigger,
+        status,
+        CASE WHEN status IN ('succeeded','canceled') THEN 'handled' ELSE 'open' END,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        prompt,
+        workspace_paths,
+        thread_id,
+        model_id,
+        output,
+        error_message,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        created_at,
+        updated_at,
+        started_at,
+        completed_at
+      FROM automation_runs;
+      DROP TABLE automation_runs;
+      ALTER TABLE automation_runs_new RENAME TO automation_runs;
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_status ON automation_runs(status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_automation_runs_triage ON automation_runs(triage_status, updated_at);
+    `);
+  }
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS idx_automation_runs_triage ON automation_runs(triage_status, updated_at)",
+  );
 
   // 迁移:Tavily 之前的数据库 CHECK 约束仅限
   // github_pat/gitlab_pat。SQLite 无法 ALTER 一个 CHECK 约束 ——
@@ -564,9 +675,11 @@ export type AutomationRunTrigger = "manual" | "scheduled";
 export type AutomationRunStatus =
   | "queued"
   | "running"
+  | "needs_action"
   | "succeeded"
   | "failed"
   | "canceled";
+export type AutomationRunTriageStatus = "open" | "handled";
 
 export interface AutomationRecord {
   id: string;
@@ -593,6 +706,11 @@ export interface AutomationRunRecord {
   automationTitle: string;
   trigger: AutomationRunTrigger;
   status: AutomationRunStatus;
+  triageStatus: AutomationRunTriageStatus;
+  needsActionReason: string | null;
+  chatSessionId: string | null;
+  assistantMessageId: string | null;
+  taskId: string | null;
   prompt: string;
   workspacePaths: string[] | null;
   threadId: string | null;
@@ -1026,6 +1144,23 @@ export const computeAutomationNextRunAt = (
   return computeCronNextRunAt(value, now);
 };
 
+export const previewAutomationSchedule = (
+  scheduleKind: AutomationScheduleKind,
+  scheduleValue: string,
+  now: Date = new Date(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local",
+): { nextRunAt: string; timeZone: string } => {
+  const nextRunAt = computeAutomationNextRunAt(
+    scheduleKind,
+    scheduleValue,
+    now,
+  );
+  if (!nextRunAt) {
+    throw new Error(`Invalid automation schedule: ${scheduleValue}`);
+  }
+  return { nextRunAt, timeZone };
+};
+
 const mapAutomationRow = (
   row: typeof schema.automations.$inferSelect,
 ): AutomationRecord => ({
@@ -1229,6 +1364,11 @@ const mapAutomationRunRow = (
   automationTitle: row.automationTitle,
   trigger: row.trigger,
   status: row.status,
+  triageStatus: row.triageStatus,
+  needsActionReason: row.needsActionReason ?? null,
+  chatSessionId: row.chatSessionId ?? null,
+  assistantMessageId: row.assistantMessageId ?? null,
+  taskId: row.taskId ?? null,
   prompt: row.prompt,
   workspacePaths: row.workspacePaths
     ? (JSON.parse(row.workspacePaths) as string[])
@@ -1249,7 +1389,9 @@ const mapAutomationRunRow = (
 export const listAutomationRuns = (filter?: {
   automationId?: string;
   status?: AutomationRunStatus;
+  triageStatus?: AutomationRunTriageStatus;
   limit?: number;
+  offset?: number;
 }): AutomationRunRecord[] => {
   let rows = db.select().from(schema.automationRuns).all();
   if (filter?.automationId) {
@@ -1258,11 +1400,17 @@ export const listAutomationRuns = (filter?: {
   if (filter?.status) {
     rows = rows.filter((row) => row.status === filter.status);
   }
+  if (filter?.triageStatus) {
+    rows = rows.filter((row) => row.triageStatus === filter.triageStatus);
+  }
   const sorted = rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const offset =
+    typeof filter?.offset === "number" && filter.offset > 0 ? filter.offset : 0;
+  const offsetRows = offset > 0 ? sorted.slice(offset) : sorted;
   const limited =
     typeof filter?.limit === "number" && filter.limit > 0
-      ? sorted.slice(0, filter.limit)
-      : sorted;
+      ? offsetRows.slice(0, filter.limit)
+      : offsetRows;
   return limited.map(mapAutomationRunRow);
 };
 
@@ -1286,7 +1434,12 @@ export const getActiveAutomationRun = (
 
 export const queueAutomationRun = (
   automationId: string,
-  input: { trigger: AutomationRunTrigger; now?: Date },
+  input: {
+    assistantMessageId?: string | null;
+    chatSessionId?: string | null;
+    trigger: AutomationRunTrigger;
+    now?: Date;
+  },
 ): AutomationRunRecord => {
   const existingActive = getActiveAutomationRun(automationId);
   if (existingActive) return existingActive;
@@ -1303,6 +1456,11 @@ export const queueAutomationRun = (
       automationTitle: automation.title,
       trigger: input.trigger,
       status: "queued",
+      triageStatus: "open",
+      needsActionReason: null,
+      chatSessionId: input.chatSessionId ?? null,
+      assistantMessageId: input.assistantMessageId ?? null,
+      taskId: null,
       prompt: automation.prompt,
       workspacePaths: automation.workspacePaths
         ? JSON.stringify(automation.workspacePaths)
@@ -1321,6 +1479,22 @@ export const queueAutomationRun = (
     })
     .run();
 
+  if (input.trigger === "scheduled") {
+    db.update(schema.automations)
+      .set({
+        nextRunAt: automation.enabled
+          ? computeAutomationNextRunAt(
+              automation.scheduleKind,
+              automation.scheduleValue,
+              new Date(now),
+            )
+          : null,
+        updatedAt: now,
+      })
+      .where(eq(schema.automations.id, automation.id))
+      .run();
+  }
+
   const queued = getAutomationRun(id);
   if (!queued) throw new Error(`Automation run not found after queue: ${id}`);
   return queued;
@@ -1328,15 +1502,17 @@ export const queueAutomationRun = (
 
 export const startAutomationRun = (
   id: string,
-  input: { now?: Date } = {},
+  input: { now?: Date; taskId?: string | null } = {},
 ): AutomationRunRecord => {
   const existing = getAutomationRun(id);
   if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "canceled") return existing;
 
   const now = (input.now ?? new Date()).toISOString();
   db.update(schema.automationRuns)
     .set({
       status: "running",
+      taskId: input.taskId ?? existing.taskId,
       startedAt: existing.startedAt ?? now,
       updatedAt: now,
     })
@@ -1369,9 +1545,13 @@ export const startAutomationRun = (
 export const finishAutomationRun = (
   id: string,
   input: {
-    status: Extract<AutomationRunStatus, "succeeded" | "failed" | "canceled">;
+    status: Extract<
+      AutomationRunStatus,
+      "needs_action" | "succeeded" | "failed" | "canceled"
+    >;
     output?: string | null;
     errorMessage?: string | null;
+    needsActionReason?: string | null;
     usage?: {
       inputTokens?: number | null;
       outputTokens?: number | null;
@@ -1382,11 +1562,18 @@ export const finishAutomationRun = (
 ): AutomationRunRecord => {
   const existing = getAutomationRun(id);
   if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "canceled") return existing;
 
   const now = (input.now ?? new Date()).toISOString();
+  const triageStatus =
+    input.status === "failed" || input.status === "needs_action"
+      ? "open"
+      : "handled";
   db.update(schema.automationRuns)
     .set({
       status: input.status,
+      triageStatus,
+      needsActionReason: input.needsActionReason ?? null,
       output: input.output ?? null,
       errorMessage: input.errorMessage ?? null,
       inputTokens: input.usage?.inputTokens ?? null,
@@ -1402,6 +1589,78 @@ export const finishAutomationRun = (
   if (!finished)
     throw new Error(`Automation run not found after finish: ${id}`);
   return finished;
+};
+
+export const markAutomationRunHandled = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      triageStatus: "handled",
+      updatedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const updated = getAutomationRun(id);
+  if (!updated)
+    throw new Error(`Automation run not found after triage update: ${id}`);
+  return updated;
+};
+
+export const cancelAutomationRun = (
+  id: string,
+  input: { now?: Date } = {},
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  if (existing.status === "succeeded" || existing.status === "failed") {
+    return markAutomationRunHandled(id, input);
+  }
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      status: "canceled",
+      triageStatus: "handled",
+      updatedAt: now,
+      completedAt: existing.completedAt ?? now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const updated = getAutomationRun(id);
+  if (!updated) throw new Error(`Automation run not found after cancel: ${id}`);
+  return updated;
+};
+
+export const cleanupAutomationRuns = (
+  input: {
+    olderThanDays?: number;
+    triageStatus?: AutomationRunTriageStatus;
+    now?: Date;
+  } = {},
+): { deleted: number } => {
+  const triageStatus = input.triageStatus ?? "handled";
+  const cutoff =
+    typeof input.olderThanDays === "number" && input.olderThanDays > 0
+      ? new Date(
+          (input.now ?? new Date()).getTime() -
+            input.olderThanDays * 24 * 60 * 60_000,
+        ).toISOString()
+      : null;
+  const runsToDelete = listAutomationRuns({ triageStatus }).filter((run) =>
+    cutoff ? run.updatedAt < cutoff : true,
+  );
+
+  for (const run of runsToDelete) {
+    db.delete(schema.automationRuns)
+      .where(eq(schema.automationRuns.id, run.id))
+      .run();
+  }
+
+  return { deleted: runsToDelete.length };
 };
 
 export const recoverInterruptedAutomationRuns = (

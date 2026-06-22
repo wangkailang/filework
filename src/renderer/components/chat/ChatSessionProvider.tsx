@@ -21,6 +21,8 @@ type ChatSessionLiteValue = Pick<
   | "isLoading"
   | "setSelectedLlmConfigId"
   | "handleNewChat"
+  | "handleTriggerAutomationRun"
+  | "handleOpenAutomationRun"
   | "handleSelectSession"
   | "handleDeleteSession"
   | "handleRenameSession"
@@ -49,6 +51,8 @@ export const ChatSessionProvider = ({
       isLoading: value.isLoading,
       setSelectedLlmConfigId: value.setSelectedLlmConfigId,
       handleNewChat: value.handleNewChat,
+      handleTriggerAutomationRun: value.handleTriggerAutomationRun,
+      handleOpenAutomationRun: value.handleOpenAutomationRun,
       handleSelectSession: value.handleSelectSession,
       handleDeleteSession: value.handleDeleteSession,
       handleRenameSession: value.handleRenameSession,
@@ -62,6 +66,8 @@ export const ChatSessionProvider = ({
       value.isLoading,
       value.setSelectedLlmConfigId,
       value.handleNewChat,
+      value.handleTriggerAutomationRun,
+      value.handleOpenAutomationRun,
       value.handleSelectSession,
       value.handleDeleteSession,
       value.handleRenameSession,

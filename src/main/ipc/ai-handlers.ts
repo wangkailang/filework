@@ -47,12 +47,14 @@ import { decodeRef, type WorkspaceRef } from "../core/workspace/workspace-ref";
 import {
   addTask,
   deleteSkillTrust,
+  finishAutomationRun,
   getDefaultLlmConfig,
   getLlmConfig,
   getSetting,
   listSkillTrust,
   type SkillTrustRow,
   setSetting,
+  startAutomationRun,
   updateTask,
   upsertSkillTrust,
 } from "../db";
@@ -139,6 +141,30 @@ const requireWorkspaceFactoryDeps = (): WorkspaceFactoryDeps => {
   return workspaceFactoryDeps;
 };
 
+const startAutomationRunForTask = (
+  automationRunId: string | undefined,
+  taskId: string,
+) => {
+  if (!automationRunId) return;
+  try {
+    startAutomationRun(automationRunId, { taskId });
+  } catch (error) {
+    console.warn("[Automation] Failed to start chat run", error);
+  }
+};
+
+const finishAutomationRunForTask = (
+  automationRunId: string | undefined,
+  input: Parameters<typeof finishAutomationRun>[1],
+) => {
+  if (!automationRunId) return;
+  try {
+    finishAutomationRun(automationRunId, input);
+  } catch (error) {
+    console.warn("[Automation] Failed to finish chat run", error);
+  }
+};
+
 /**
  * 主任务执行 handler
  */
@@ -158,6 +184,8 @@ const handleTaskExecutionInner = async (
     sessionId?: string;
     /** 渲染层为本回合预生成的助手消息 id;登记进重连表,刷新后据此重挂。 */
     assistantMessageId?: string;
+    /** 自动化手动运行记录 id。存在时,本 chat 任务会同步 automation_runs。 */
+    automationRunId?: string;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
@@ -212,6 +240,7 @@ const handleTaskExecutionInner = async (
     assistantMessageId: payload.assistantMessageId,
     target: originalSender,
   });
+  startAutomationRunForTask(payload.automationRunId, id);
 
   try {
     if (!sender.isDestroyed()) {
@@ -810,6 +839,12 @@ const handleTaskExecutionInner = async (
                 result: errorMsg,
                 completedAt: new Date().toISOString(),
               });
+              finishAutomationRunForTask(payload.automationRunId, {
+                status: "failed",
+                errorMessage: errorMsg,
+                output: fullText || errorMsg,
+                usage: ev.totalUsage,
+              });
               emitTaskTraceEvent(sender, {
                 taskId: id,
                 type: "task-failed",
@@ -853,6 +888,15 @@ const handleTaskExecutionInner = async (
               inputTokens: agentInputTokens,
               outputTokens: agentOutputTokens,
               totalTokens: agentTotalTokens,
+            });
+            finishAutomationRunForTask(payload.automationRunId, {
+              status: wasCancelled ? "canceled" : "succeeded",
+              output: fullText,
+              usage: {
+                inputTokens: agentInputTokens,
+                outputTokens: agentOutputTokens,
+                totalTokens: agentTotalTokens,
+              },
             });
             // 通过 provider adapter 处理缓存事件
             try {
@@ -912,6 +956,10 @@ const handleTaskExecutionInner = async (
         result: fullText,
         completedAt: new Date().toISOString(),
       });
+      finishAutomationRunForTask(payload.automationRunId, {
+        status: "succeeded",
+        output: fullText,
+      });
       if (!sender.isDestroyed()) {
         sender.send("ai:stream-done", { id, ...streamRoute });
       }
@@ -930,6 +978,11 @@ const handleTaskExecutionInner = async (
       status: "failed",
       result: errorMsg,
       completedAt: new Date().toISOString(),
+    });
+    finishAutomationRunForTask(payload.automationRunId, {
+      status: "failed",
+      errorMessage: errorMsg,
+      output: errorMsg,
     });
 
     emitTaskTraceEvent(sender, {

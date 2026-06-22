@@ -7,6 +7,11 @@ describe("automation run schema", () => {
     expect(automationRuns).toBeDefined();
     expect(automationRuns.automationId).toBeDefined();
     expect(automationRuns.status).toBeDefined();
+    expect(automationRuns.triageStatus).toBeDefined();
+    expect(automationRuns.needsActionReason).toBeDefined();
+    expect(automationRuns.chatSessionId).toBeDefined();
+    expect(automationRuns.assistantMessageId).toBeDefined();
+    expect(automationRuns.taskId).toBeDefined();
     expect(automationRuns.output).toBeDefined();
     expect(automationRuns.errorMessage).toBeDefined();
     expect(automationRuns.completedAt).toBeDefined();

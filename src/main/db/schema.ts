@@ -170,8 +170,24 @@ export const automationRuns = sqliteTable("automation_runs", {
   automationTitle: text("automation_title").notNull(),
   trigger: text("trigger", { enum: ["manual", "scheduled"] }).notNull(),
   status: text("status", {
-    enum: ["queued", "running", "succeeded", "failed", "canceled"],
+    enum: [
+      "queued",
+      "running",
+      "needs_action",
+      "succeeded",
+      "failed",
+      "canceled",
+    ],
   }).notNull(),
+  triageStatus: text("triage_status", {
+    enum: ["open", "handled"],
+  })
+    .notNull()
+    .default("open"),
+  needsActionReason: text("needs_action_reason"),
+  chatSessionId: text("chat_session_id"),
+  assistantMessageId: text("assistant_message_id"),
+  taskId: text("task_id"),
   prompt: text("prompt").notNull(),
   workspacePaths: text("workspace_paths"),
   threadId: text("thread_id"),

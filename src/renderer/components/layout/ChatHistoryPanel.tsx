@@ -4,6 +4,7 @@
 // 相对时间,并支持双击或点铅笔图标就地重命名。
 import {
   AlertCircle,
+  CalendarClock,
   Check,
   GitBranch,
   Loader2,
@@ -82,6 +83,37 @@ type SessionPreview = {
   absoluteStamp: string;
   left: number;
   top: number;
+};
+
+type SessionPresentation = {
+  automationId: string | null;
+  title: string;
+};
+
+const AUTOMATION_TITLE_PREFIXES = [
+  /^Run automation now:\s*/i,
+  /^现在执行自动化[：:]\s*/,
+  /^执行自动化[：:]\s*/,
+];
+
+const sessionPresentation = (session: ChatSession): SessionPresentation => {
+  const automationTitle = session.automationRun?.title?.trim();
+  if (automationTitle) {
+    return {
+      automationId: session.automationRun?.id ?? session.id,
+      title: automationTitle,
+    };
+  }
+
+  for (const prefix of AUTOMATION_TITLE_PREFIXES) {
+    if (!prefix.test(session.title)) continue;
+    return {
+      automationId: session.id,
+      title: session.title.replace(prefix, "").trim() || session.title,
+    };
+  }
+
+  return { automationId: null, title: session.title };
 };
 
 export const ChatHistoryPanel = ({
@@ -199,6 +231,7 @@ export const ChatHistoryPanel = ({
                   group.key,
                   locale,
                 );
+                const presentation = sessionPresentation(s);
                 const relativeAge = formatAge(s.updatedAt, Date.now(), locale);
                 const runStateLabel =
                   runState?.status === "pending"
@@ -253,8 +286,26 @@ export const ChatHistoryPanel = ({
                         }
                         onBlur={hidePreview}
                       >
-                        <div className="truncate text-sm font-medium text-foreground">
-                          {s.title}
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {presentation.automationId && (
+                            <span
+                              data-session-automation={
+                                presentation.automationId
+                              }
+                              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-primary"
+                              role="img"
+                              aria-label={LL.automations_title()}
+                              title={LL.automations_title()}
+                            >
+                              <CalendarClock
+                                className="size-3.5"
+                                aria-hidden="true"
+                              />
+                            </span>
+                          )}
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {presentation.title}
+                          </span>
                         </div>
                         <div
                           data-session-row-meta={s.id}
@@ -364,8 +415,16 @@ export const ChatHistoryPanel = ({
           style={{ left: preview.left, top: preview.top }}
         >
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 truncate text-sm font-semibold">
-              {preview.session.title}
+            <div className="flex min-w-0 items-center gap-1.5">
+              {sessionPresentation(preview.session).automationId && (
+                <CalendarClock
+                  className="size-3.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+              )}
+              <span className="min-w-0 truncate text-sm font-semibold">
+                {sessionPresentation(preview.session).title}
+              </span>
             </div>
             <div className="shrink-0 text-xs text-muted-foreground">
               {preview.absoluteStamp}

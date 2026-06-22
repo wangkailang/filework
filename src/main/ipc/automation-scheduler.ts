@@ -16,6 +16,7 @@ interface AutomationSchedulerDeps {
   runAutomationRun: (runId: string) => Promise<unknown>;
   now?: () => Date;
   intervalMs?: number;
+  onRecoveredRun?: (run: AutomationRunRecord) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -35,6 +36,7 @@ export const createAutomationScheduler = ({
   runAutomationRun,
   now = () => new Date(),
   intervalMs = 60_000,
+  onRecoveredRun = () => undefined,
   onError = (error) => {
     console.error("[automation-scheduler]", error);
   },
@@ -87,7 +89,9 @@ export const createAutomationScheduler = ({
         void tick();
       }, intervalMs);
       try {
-        recoverInterruptedRuns(now());
+        for (const run of recoverInterruptedRuns(now())) {
+          onRecoveredRun(run);
+        }
       } catch (error) {
         onError(error);
       }

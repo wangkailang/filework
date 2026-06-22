@@ -24,6 +24,12 @@ describe("automation translations", () => {
     expect(enMessages.automations_tokenTotal).toBe(
       "Total {value:string} tokens",
     );
+    expect(enMessages.automations_runStatusNeedsAction).toBe("Needs action");
+    expect(enMessages.automations_triageCleanupHandled).toBe("Clear handled");
+    expect(enMessages.automations_triageCleanupOldHandled).toBe(
+      "Clear older than 30d",
+    );
+    expect(enMessages.automations_triageRerun).toBe("Rerun");
 
     expect(zhMessages.settings_automations).toBe("自动化");
     expect(zhMessages.automations_add).toBe("新建自动化");
@@ -36,6 +42,10 @@ describe("automation translations", () => {
     expect(zhMessages.automations_tokenInput).toBe("输入 {value} tokens");
     expect(zhMessages.automations_tokenOutput).toBe("输出 {value} tokens");
     expect(zhMessages.automations_tokenTotal).toBe("总计 {value} tokens");
+    expect(zhMessages.automations_runStatusNeedsAction).toBe("等待处理");
+    expect(zhMessages.automations_triageCleanupHandled).toBe("清理已处理");
+    expect(zhMessages.automations_triageCleanupOldHandled).toBe("清理 30 天前");
+    expect(zhMessages.automations_triageRerun).toBe("重跑");
 
     expect(jaMessages.settings_automations).toBe("自動化");
     expect(jaMessages.automations_add).toBe("自動化を作成");
@@ -48,5 +58,13 @@ describe("automation translations", () => {
     expect(jaMessages.automations_showTriage).toBe("実行診断");
     expect(jaMessages.automations_triageTitle).toBe("実行診断");
     expect(jaMessages.automations_tokenTotal).toBe("合計 {value} tokens");
+    expect(jaMessages.automations_runStatusNeedsAction).toBe("対応待ち");
+    expect(jaMessages.automations_triageCleanupHandled).toBe(
+      "対応済みをクリア",
+    );
+    expect(jaMessages.automations_triageCleanupOldHandled).toBe(
+      "30日前より古いものをクリア",
+    );
+    expect(jaMessages.automations_triageRerun).toBe("再実行");
   });
 });

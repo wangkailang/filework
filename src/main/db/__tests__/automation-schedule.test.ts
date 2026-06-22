@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { computeAutomationNextRunAt } from "../index";
+import {
+  computeAutomationNextRunAt,
+  previewAutomationSchedule,
+} from "../index";
 
 describe("automation schedule calculation", () => {
   it("computes the next run for five-field cron schedules", () => {
@@ -27,5 +30,25 @@ describe("automation schedule calculation", () => {
     expect(() =>
       computeAutomationNextRunAt("interval", "soon", new Date(2026, 5, 18, 9)),
     ).toThrow(/interval/i);
+  });
+
+  it("previews the next run and the display timezone", () => {
+    const preview = previewAutomationSchedule(
+      "daily",
+      "09:00",
+      new Date(2026, 5, 18, 8, 30),
+      "Asia/Shanghai",
+    );
+
+    expect(preview).toEqual({
+      nextRunAt: new Date(2026, 5, 18, 9).toISOString(),
+      timeZone: "Asia/Shanghai",
+    });
+  });
+
+  it("fails schedule previews when the next run cannot be computed", () => {
+    expect(() =>
+      previewAutomationSchedule("weekly", "someday 09:00", new Date()),
+    ).toThrow(/schedule/i);
   });
 });

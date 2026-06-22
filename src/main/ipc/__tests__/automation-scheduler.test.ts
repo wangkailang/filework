@@ -77,4 +77,47 @@ describe("automation scheduler", () => {
       new Date("2026-06-18T10:00:00.000Z"),
     );
   });
+
+  it("emits recovered interrupted runs for notification", async () => {
+    const recoveredRun = {
+      id: "run-recovered",
+      automationId: "auto-1",
+      automationTitle: "Daily repo check",
+      trigger: "scheduled" as const,
+      status: "failed" as const,
+      triageStatus: "open" as const,
+      needsActionReason: null,
+      chatSessionId: null,
+      assistantMessageId: null,
+      taskId: null,
+      prompt: "Check repo",
+      workspacePaths: ["/workspace"],
+      threadId: null,
+      modelId: null,
+      output: null,
+      errorMessage: "Automation run interrupted before completion.",
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      createdAt: "2026-06-18T09:00:00.000Z",
+      updatedAt: "2026-06-18T10:00:00.000Z",
+      startedAt: "2026-06-18T09:00:05.000Z",
+      completedAt: "2026-06-18T10:00:00.000Z",
+    };
+    const onRecoveredRun = vi.fn();
+    const scheduler = createAutomationScheduler({
+      listDueAutomations: vi.fn(() => []),
+      queueAutomationRun: vi.fn(),
+      recoverInterruptedRuns: vi.fn(() => [recoveredRun]),
+      runAutomationRun: vi.fn(async () => undefined),
+      now: () => new Date("2026-06-18T10:00:00.000Z"),
+      intervalMs: 10_000,
+      onRecoveredRun,
+    });
+
+    scheduler.start();
+    scheduler.stop();
+
+    expect(onRecoveredRun).toHaveBeenCalledWith(recoveredRun);
+  });
 });

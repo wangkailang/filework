@@ -40,7 +40,18 @@ const dbState = {
     automationId: string;
     automationTitle: string;
     trigger: "manual" | "scheduled";
-    status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+    status:
+      | "queued"
+      | "running"
+      | "needs_action"
+      | "succeeded"
+      | "failed"
+      | "canceled";
+    triageStatus: "open" | "handled";
+    needsActionReason: string | null;
+    chatSessionId: string | null;
+    assistantMessageId: string | null;
+    taskId: string | null;
     prompt: string;
     workspacePaths: string[] | null;
     threadId: string | null;
@@ -83,7 +94,34 @@ vi.mock("../../db", () => ({
     return dbState.automations.length !== before;
   }),
   listAutomations: vi.fn(() => dbState.automations),
-  listAutomationRuns: vi.fn(() => dbState.runs),
+  listAutomationRuns: vi.fn((filter) => {
+    let rows = dbState.runs;
+    if (filter?.triageStatus) {
+      rows = rows.filter((run) => run.triageStatus === filter.triageStatus);
+    }
+    return rows;
+  }),
+  markAutomationRunHandled: vi.fn((id: string) => {
+    const run = dbState.runs.find((item) => item.id === id);
+    if (!run) throw new Error(`Automation run not found: ${id}`);
+    run.triageStatus = "handled";
+    run.updatedAt = "2026-06-18T04:00:00.000Z";
+    return run;
+  }),
+  cancelAutomationRun: vi.fn((id: string) => {
+    const run = dbState.runs.find((item) => item.id === id);
+    if (!run) throw new Error(`Automation run not found: ${id}`);
+    run.status = "canceled";
+    run.triageStatus = "handled";
+    run.updatedAt = "2026-06-18T04:00:00.000Z";
+    run.completedAt = "2026-06-18T04:00:00.000Z";
+    return run;
+  }),
+  cleanupAutomationRuns: vi.fn(() => {
+    const before = dbState.runs.length;
+    dbState.runs = dbState.runs.filter((run) => run.triageStatus !== "handled");
+    return { deleted: before - dbState.runs.length };
+  }),
   updateAutomation: vi.fn((id, updates) => {
     const row = dbState.automations.find((a) => a.id === id);
     if (!row) throw new Error(`Automation not found: ${id}`);
@@ -95,6 +133,39 @@ vi.mock("../../db", () => ({
 }));
 
 vi.mock("../automation-service", () => ({
+  prepareAutomationChatRun: vi.fn(
+    (id: string, input: { assistantMessageId: string; sessionId: string }) => {
+      const automation = dbState.automations.find((a) => a.id === id);
+      if (!automation) throw new Error(`Automation not found: ${id}`);
+      const run = {
+        id: `run-${dbState.runs.length + 1}`,
+        automationId: id,
+        automationTitle: automation.title,
+        trigger: "manual" as const,
+        status: "queued" as const,
+        triageStatus: "open" as const,
+        needsActionReason: null,
+        chatSessionId: input.sessionId,
+        assistantMessageId: input.assistantMessageId,
+        taskId: null,
+        prompt: automation.prompt,
+        workspacePaths: automation.workspacePaths,
+        threadId: automation.threadId,
+        modelId: automation.modelId,
+        output: null,
+        errorMessage: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        createdAt: "2026-06-18T03:00:00.000Z",
+        updatedAt: "2026-06-18T03:00:00.000Z",
+        startedAt: null,
+        completedAt: null,
+      };
+      dbState.runs.push(run);
+      return run;
+    },
+  ),
   triggerAutomationNow: vi.fn((id: string) => {
     const automation = dbState.automations.find((a) => a.id === id);
     if (!automation) throw new Error(`Automation not found: ${id}`);
@@ -104,6 +175,11 @@ vi.mock("../automation-service", () => ({
       automationTitle: automation.title,
       trigger: "manual" as const,
       status: "queued" as const,
+      triageStatus: "open" as const,
+      needsActionReason: null,
+      chatSessionId: null,
+      assistantMessageId: null,
+      taskId: null,
       prompt: automation.prompt,
       workspacePaths: automation.workspacePaths,
       threadId: automation.threadId,
@@ -121,8 +197,32 @@ vi.mock("../automation-service", () => ({
     dbState.runs.push(run);
     return run;
   }),
+  rerunAutomationRun: vi.fn((runId: string) => {
+    const existing = dbState.runs.find((run) => run.id === runId);
+    if (!existing) throw new Error(`Automation run not found: ${runId}`);
+    const run = {
+      ...existing,
+      id: `run-${dbState.runs.length + 1}`,
+      trigger: "manual" as const,
+      status: "queued" as const,
+      triageStatus: "open" as const,
+      needsActionReason: null,
+      chatSessionId: existing.chatSessionId,
+      assistantMessageId: existing.assistantMessageId,
+      taskId: null,
+      output: null,
+      errorMessage: null,
+      createdAt: "2026-06-18T04:00:00.000Z",
+      updatedAt: "2026-06-18T04:00:00.000Z",
+      startedAt: null,
+      completedAt: null,
+    };
+    dbState.runs.push(run);
+    return run;
+  }),
 }));
 
+import { cleanupAutomationRuns } from "../../db";
 import { registerAutomationsHandlers } from "../automations-handlers";
 
 describe("automations handlers", () => {
@@ -138,7 +238,13 @@ describe("automations handlers", () => {
     expect(handlers.has("automations:create")).toBe(true);
     expect(handlers.has("automations:update")).toBe(true);
     expect(handlers.has("automations:trigger")).toBe(true);
+    expect(handlers.has("automations:prepareChatRun")).toBe(true);
     expect(handlers.has("automations:listRuns")).toBe(true);
+    expect(handlers.has("automations:markRunHandled")).toBe(true);
+    expect(handlers.has("automations:cancelRun")).toBe(true);
+    expect(handlers.has("automations:rerun")).toBe(true);
+    expect(handlers.has("automations:cleanupRuns")).toBe(true);
+    expect(handlers.has("automations:previewSchedule")).toBe(true);
     expect(handlers.has("automations:delete")).toBe(true);
   });
 
@@ -241,6 +347,36 @@ describe("automations handlers", () => {
     );
   });
 
+  it("prepares a chat-backed automation run without launching headless execution", async () => {
+    const create = handlers.get("automations:create");
+    const prepareChatRun = handlers.get("automations:prepareChatRun");
+    if (!create || !prepareChatRun)
+      throw new Error("automation handlers missing");
+
+    const created = (await create(null, {
+      title: "Manual chat check",
+      prompt: "Check the release notes.",
+      type: "standalone",
+      scheduleKind: "interval",
+      scheduleValue: "1h",
+    })) as { id: string };
+
+    await expect(
+      prepareChatRun(null, {
+        assistantMessageId: "assistant-1",
+        id: created.id,
+        sessionId: "session-1",
+      }),
+    ).resolves.toMatchObject({
+      automationId: created.id,
+      assistantMessageId: "assistant-1",
+      chatSessionId: "session-1",
+      status: "queued",
+      taskId: null,
+      trigger: "manual",
+    });
+  });
+
   it("lists recent automation runs for triage", async () => {
     dbState.runs.push({
       id: "run-1",
@@ -248,6 +384,11 @@ describe("automations handlers", () => {
       automationTitle: "Daily repo check",
       trigger: "scheduled",
       status: "failed",
+      triageStatus: "open",
+      needsActionReason: null,
+      chatSessionId: null,
+      assistantMessageId: null,
+      taskId: null,
       prompt: "Check repo",
       workspacePaths: ["/workspace"],
       threadId: null,
@@ -271,8 +412,148 @@ describe("automations handlers", () => {
         id: "run-1",
         automationTitle: "Daily repo check",
         status: "failed",
+        triageStatus: "open",
         errorMessage: "Command failed",
       },
     ]);
+  });
+
+  it("supports triage actions for handled, canceled, and rerun runs", async () => {
+    dbState.runs.push({
+      id: "run-1",
+      automationId: "auto-1",
+      automationTitle: "Daily repo check",
+      trigger: "scheduled",
+      status: "needs_action",
+      triageStatus: "open",
+      needsActionReason: "Requires approval",
+      chatSessionId: null,
+      assistantMessageId: null,
+      taskId: null,
+      prompt: "Check repo",
+      workspacePaths: ["/workspace"],
+      threadId: null,
+      modelId: null,
+      output: "Approval required",
+      errorMessage: "Requires approval",
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      createdAt: "2026-06-18T03:00:00.000Z",
+      updatedAt: "2026-06-18T03:01:00.000Z",
+      startedAt: "2026-06-18T03:00:05.000Z",
+      completedAt: null,
+    });
+
+    const markHandled = handlers.get("automations:markRunHandled");
+    const cancelRun = handlers.get("automations:cancelRun");
+    const rerun = handlers.get("automations:rerun");
+    const listRuns = handlers.get("automations:listRuns");
+    if (!markHandled || !cancelRun || !rerun || !listRuns) {
+      throw new Error("automation run action handlers missing");
+    }
+
+    await expect(markHandled(null, { id: "run-1" })).resolves.toMatchObject({
+      id: "run-1",
+      triageStatus: "handled",
+    });
+    dbState.runs[0].triageStatus = "open";
+    await expect(cancelRun(null, { id: "run-1" })).resolves.toMatchObject({
+      id: "run-1",
+      status: "canceled",
+      triageStatus: "handled",
+    });
+    await expect(rerun(null, { id: "run-1" })).resolves.toMatchObject({
+      id: "run-2",
+      trigger: "manual",
+      status: "queued",
+    });
+    await expect(
+      listRuns(null, { triageStatus: "open", limit: 10 }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: "run-2", triageStatus: "open" }),
+    ]);
+  });
+
+  it("cleans handled automation run history", async () => {
+    dbState.runs.push(
+      {
+        id: "run-open",
+        automationId: "auto-1",
+        automationTitle: "Daily repo check",
+        trigger: "scheduled",
+        status: "failed",
+        triageStatus: "open",
+        needsActionReason: null,
+        chatSessionId: null,
+        assistantMessageId: null,
+        taskId: null,
+        prompt: "Check repo",
+        workspacePaths: ["/workspace"],
+        threadId: null,
+        modelId: null,
+        output: null,
+        errorMessage: "Command failed",
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        createdAt: "2026-06-18T03:00:00.000Z",
+        updatedAt: "2026-06-18T03:01:00.000Z",
+        startedAt: "2026-06-18T03:00:05.000Z",
+        completedAt: "2026-06-18T03:01:00.000Z",
+      },
+      {
+        id: "run-handled",
+        automationId: "auto-1",
+        automationTitle: "Daily repo check",
+        trigger: "scheduled",
+        status: "succeeded",
+        triageStatus: "handled",
+        needsActionReason: null,
+        chatSessionId: null,
+        assistantMessageId: null,
+        taskId: null,
+        prompt: "Check repo",
+        workspacePaths: ["/workspace"],
+        threadId: null,
+        modelId: null,
+        output: "OK",
+        errorMessage: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+        createdAt: "2026-06-17T03:00:00.000Z",
+        updatedAt: "2026-06-17T03:01:00.000Z",
+        startedAt: "2026-06-17T03:00:05.000Z",
+        completedAt: "2026-06-17T03:01:00.000Z",
+      },
+    );
+
+    const cleanupRuns = handlers.get("automations:cleanupRuns");
+    const listRuns = handlers.get("automations:listRuns");
+    if (!cleanupRuns || !listRuns)
+      throw new Error("automation cleanup handler missing");
+
+    await expect(
+      cleanupRuns(null, { triageStatus: "handled" }),
+    ).resolves.toEqual({ deleted: 1 });
+    await expect(listRuns(null, { limit: 10 })).resolves.toEqual([
+      expect.objectContaining({ id: "run-open" }),
+    ]);
+  });
+
+  it("forwards run history retention filters when cleaning handled runs", async () => {
+    const cleanupRuns = handlers.get("automations:cleanupRuns");
+    if (!cleanupRuns) throw new Error("automation cleanup handler missing");
+
+    await cleanupRuns(null, {
+      olderThanDays: 30,
+      triageStatus: "handled",
+    });
+
+    expect(cleanupAutomationRuns).toHaveBeenLastCalledWith({
+      olderThanDays: 30,
+      triageStatus: "handled",
+    });
   });
 });

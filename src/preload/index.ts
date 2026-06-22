@@ -15,6 +15,14 @@ type WorkspaceMemoryEntry = {
 type AutomationType = "thread" | "standalone" | "project";
 type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
 type AutomationRunMode = "local" | "worktree";
+type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "needs_action"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+type AutomationRunTriageStatus = "open" | "handled";
 
 type AutomationRecord = {
   id: string;
@@ -40,7 +48,12 @@ type AutomationRunRecord = {
   automationId: string;
   automationTitle: string;
   trigger: "manual" | "scheduled";
-  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  status: AutomationRunStatus;
+  triageStatus: AutomationRunTriageStatus;
+  needsActionReason: string | null;
+  chatSessionId: string | null;
+  assistantMessageId: string | null;
+  taskId: string | null;
   prompt: string;
   workspacePaths: string[] | null;
   threadId: string | null;
@@ -172,6 +185,7 @@ const api = {
     sessionId?: string;
     /** 本回合助手消息 id;登记进重连表,刷新后据此重挂。 */
     assistantMessageId?: string;
+    automationRunId?: string;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";
@@ -941,8 +955,10 @@ const api = {
       ipcRenderer.invoke("automations:list", filter),
     listRuns: (filter?: {
       automationId?: string;
-      status?: AutomationRunRecord["status"];
+      status?: AutomationRunStatus;
+      triageStatus?: AutomationRunTriageStatus;
       limit?: number;
+      offset?: number;
     }): Promise<AutomationRunRecord[]> =>
       ipcRenderer.invoke("automations:listRuns", filter),
     create: (payload: AutomationCreatePayload): Promise<AutomationRecord> =>
@@ -956,6 +972,28 @@ const api = {
       ipcRenderer.invoke("automations:update", { id, updates }),
     trigger: (id: string): Promise<AutomationRunRecord> =>
       ipcRenderer.invoke("automations:trigger", { id }),
+    prepareChatRun: (payload: {
+      assistantMessageId: string;
+      id: string;
+      sessionId: string;
+    }): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:prepareChatRun", payload),
+    rerun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:rerun", { id }),
+    markRunHandled: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:markRunHandled", { id }),
+    cancelRun: (id: string): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:cancelRun", { id }),
+    cleanupRuns: (payload?: {
+      olderThanDays?: number;
+      triageStatus?: AutomationRunTriageStatus;
+    }): Promise<{ deleted: number }> =>
+      ipcRenderer.invoke("automations:cleanupRuns", payload),
+    previewSchedule: (payload: {
+      scheduleKind: AutomationScheduleKind;
+      scheduleValue: string;
+    }): Promise<{ nextRunAt: string; timeZone: string }> =>
+      ipcRenderer.invoke("automations:previewSchedule", payload),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke("automations:delete", { id }),
   },

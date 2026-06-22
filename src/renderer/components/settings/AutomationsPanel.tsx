@@ -1,13 +1,18 @@
 import {
   AlertTriangle,
   CalendarClock,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Loader2,
   Pencil,
   Play,
   Plus,
   Power,
+  RotateCw,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import {
   type ElementType,
@@ -20,7 +25,6 @@ import {
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales, TranslationFunctions } from "../../i18n/i18n-types";
 import { formatTokens } from "../../utils/format";
-import { MessageResponse } from "../ai-elements/message";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +36,15 @@ type AutomationType = "thread" | "standalone" | "project";
 type AutomationScheduleKind = "interval" | "daily" | "weekly" | "cron";
 type AutomationRunMode = "local" | "worktree";
 type AutomationView = "tasks" | "triage";
+type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "needs_action"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+type AutomationRunTriageStatus = "open" | "handled";
+type AutomationTriageFilter = AutomationRunTriageStatus | "all";
 
 export interface AutomationRecord {
   id: string;
@@ -57,7 +70,12 @@ export interface AutomationRunRecord {
   automationId: string;
   automationTitle: string;
   trigger: "manual" | "scheduled";
-  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  status: AutomationRunStatus;
+  triageStatus: AutomationRunTriageStatus;
+  needsActionReason: string | null;
+  chatSessionId: string | null;
+  assistantMessageId: string | null;
+  taskId: string | null;
   prompt: string;
   workspacePaths: string[] | null;
   threadId: string | null;
@@ -92,6 +110,8 @@ interface AutomationsPanelProps {
   initialRuns?: AutomationRunRecord[];
   initialView?: AutomationView;
   onTriggerAutomation?: (automation: AutomationRecord) => Promise<void> | void;
+  onOpenRunDetails?: (run: AutomationRunRecord) => void;
+  onRerunAutomationRun?: (run: AutomationRunRecord) => Promise<void> | void;
   onAfterTriggerAutomation?: () => void;
   runningAutomationId?: string | null;
   variant?: "full" | "rail";
@@ -112,6 +132,7 @@ const EMPTY_DRAFT: AutomationDraft = {
 
 const inputCls =
   "w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus:border-primary focus:outline-none";
+const TRIAGE_PAGE_SIZE = 8;
 
 const typeLabels = (
   LL: TranslationFunctions,
@@ -206,19 +227,21 @@ const automationStatus = (
 
 const automationRunStatusLabels = (
   LL: TranslationFunctions,
-): Record<AutomationRunRecord["status"], string> => ({
+): Record<AutomationRunStatus, string> => ({
   canceled: LL.automations_runStatusCanceled(),
   failed: LL.automations_runStatusFailed(),
+  needs_action: LL.automations_runStatusNeedsAction(),
   queued: LL.automations_runStatusQueued(),
   running: LL.automations_runStatusRunning(),
   succeeded: LL.automations_runStatusSucceeded(),
 });
 
-const automationRunStatusClass = (
-  status: AutomationRunRecord["status"],
-): string => {
+const automationRunStatusClass = (status: AutomationRunStatus): string => {
   if (status === "succeeded") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "needs_action") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
   }
   if (status === "failed") {
     return "border-destructive/20 bg-destructive/10 text-destructive";
@@ -247,12 +270,54 @@ const AutomationFormDialog = ({
   onClose,
   onSubmit,
 }: AutomationFormDialogProps) => {
-  const { LL } = useI18nContext();
+  const { LL, locale } = useI18nContext();
   const editing = Boolean(draft.id);
+  const [schedulePreview, setSchedulePreview] = useState<{
+    nextRunAt: string;
+    timeZone: string;
+  } | null>(null);
+  const [schedulePreviewError, setSchedulePreviewError] = useState<
+    string | null
+  >(null);
   const canSubmit =
     Boolean(draft.title.trim()) &&
     Boolean(draft.prompt.trim()) &&
     Boolean(draft.scheduleValue.trim());
+
+  useEffect(() => {
+    const value = draft.scheduleValue.trim();
+    if (!value) {
+      setSchedulePreview(null);
+      setSchedulePreviewError(null);
+      return;
+    }
+
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      window.filework.automations
+        .previewSchedule({
+          scheduleKind: draft.scheduleKind,
+          scheduleValue: value,
+        })
+        .then((preview) => {
+          if (disposed) return;
+          setSchedulePreview(preview);
+          setSchedulePreviewError(null);
+        })
+        .catch((err) => {
+          if (disposed) return;
+          setSchedulePreview(null);
+          setSchedulePreviewError(
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+    }, 250);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [draft.scheduleKind, draft.scheduleValue]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -403,6 +468,27 @@ const AutomationFormDialog = ({
                 />
               </div>
             </div>
+
+            {(schedulePreview || schedulePreviewError) && (
+              <div
+                className={`rounded-md border px-2.5 py-2 text-[11px] ${
+                  schedulePreview
+                    ? "border-border bg-muted/30 text-muted-foreground"
+                    : "border-destructive/20 bg-destructive/5 text-destructive"
+                }`}
+              >
+                {schedulePreview
+                  ? LL.automations_schedulePreview({
+                      timeZone: schedulePreview.timeZone,
+                      value:
+                        formatDateTime(schedulePreview.nextRunAt, locale) ??
+                        schedulePreview.nextRunAt,
+                    })
+                  : LL.automations_schedulePreviewError({
+                      value: schedulePreviewError ?? "",
+                    })}
+              </div>
+            )}
 
             <div>
               <label
@@ -606,142 +692,71 @@ export const AutomationDeleteDialog = ({
   );
 };
 
-export const AutomationRunDetailDialogContent = ({
+const AutomationRunRowContent = ({
+  LL,
+  completedAt,
   run,
-  TitleComponent = "h2",
-  DescriptionComponent = "p",
+  runStatusLabels,
+  showDetails = false,
+  startedAt,
 }: {
+  LL: TranslationFunctions;
+  completedAt: string | null;
   run: AutomationRunRecord;
-  TitleComponent?: ElementType;
-  DescriptionComponent?: ElementType;
-}) => {
-  const { LL, locale } = useI18nContext();
-  const runStatusLabels = automationRunStatusLabels(LL);
-  const startedAt = formatDateTime(run.startedAt, locale);
-  const completedAt = formatDateTime(run.completedAt, locale);
-  const workspacePaths = run.workspacePaths?.join("\n") ?? "-";
-  const tokenParts = [
-    run.inputTokens !== null
-      ? LL.automations_tokenInput({ value: formatTokens(run.inputTokens) })
-      : null,
-    run.outputTokens !== null
-      ? LL.automations_tokenOutput({ value: formatTokens(run.outputTokens) })
-      : null,
-    run.totalTokens !== null
-      ? LL.automations_tokenTotal({ value: formatTokens(run.totalTokens) })
-      : null,
-  ].filter(Boolean);
-
-  return (
-    <>
-      <div className="border-b border-border px-5 py-4 pr-12">
-        <TitleComponent className="text-sm font-medium text-foreground">
-          {LL.automations_runDetailTitle()}
-        </TitleComponent>
-        <DescriptionComponent className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {run.automationTitle}
-        </DescriptionComponent>
-      </div>
-      <div
-        className="max-h-[calc(100vh-160px)] space-y-5 overflow-y-auto px-6 py-5"
-        data-automation-run-detail-layout="expanded"
+  runStatusLabels: Record<AutomationRunStatus, string>;
+  showDetails?: boolean;
+  startedAt: string | null;
+}) => (
+  <>
+    <div className="flex min-w-0 items-center gap-2">
+      <span
+        className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
-          >
-            {runStatusLabels[run.status]}
-          </span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {run.trigger === "manual"
-              ? LL.automations_triggerManual()
-              : LL.automations_triggerScheduled()}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
-          <div>
-            <div className="text-muted-foreground">
-              {LL.automations_runStartedLabel()}
-            </div>
-            <div className="mt-1 text-foreground">{startedAt ?? "-"}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">
-              {LL.automations_runCompletedLabel()}
-            </div>
-            <div className="mt-1 text-foreground">{completedAt ?? "-"}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">
-              {LL.automations_runDetailTokens()}
-            </div>
-            <div className="mt-1 text-foreground">
-              {tokenParts.length ? tokenParts.join(" · ") : "-"}
-            </div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">ID</div>
-            <div className="mt-1 truncate font-mono text-[11px] text-foreground">
-              {run.id}
-            </div>
-          </div>
-        </div>
-
-        <section>
-          <h4 className="mb-1 text-xs font-medium text-muted-foreground">
-            {LL.automations_runDetailWorkspace()}
-          </h4>
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
-            {workspacePaths}
-          </pre>
-        </section>
-
-        <section>
-          <h4 className="mb-1 text-xs font-medium text-muted-foreground">
-            {LL.automations_runDetailPrompt()}
-          </h4>
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
-            {run.prompt}
-          </pre>
-        </section>
-
-        {run.errorMessage && (
-          <section>
-            <h4 className="mb-1 text-xs font-medium text-destructive">
-              {LL.automations_runDetailError()}
-            </h4>
-            <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
-              {run.errorMessage}
-            </pre>
-          </section>
-        )}
-
-        {run.output && (
-          <section>
-            <h4 className="mb-1 text-xs font-medium text-muted-foreground">
-              {LL.automations_runDetailOutput()}
-            </h4>
-            <div
-              className="min-h-48 max-h-[min(62vh,560px)] overflow-auto rounded-md border border-border bg-background p-4 text-sm text-foreground"
-              data-automation-run-output-markdown="true"
-            >
-              <MessageResponse className="text-sm leading-relaxed [&_pre]:text-xs">
-                {run.output}
-              </MessageResponse>
-            </div>
-          </section>
-        )}
-      </div>
-    </>
-  );
-};
+        {runStatusLabels[run.status]}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+        {run.automationTitle}
+      </span>
+    </div>
+    <div
+      data-automation-run-meta={run.id}
+      className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+    >
+      {startedAt && (
+        <span>{LL.automations_runStarted({ value: startedAt })}</span>
+      )}
+      {completedAt && (
+        <span>{LL.automations_runCompleted({ value: completedAt })}</span>
+      )}
+      {run.totalTokens !== null && (
+        <span>
+          {LL.automations_tokenTotal({
+            value: formatTokens(run.totalTokens),
+          })}
+        </span>
+      )}
+      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+        {run.trigger === "manual"
+          ? LL.automations_triggerManual()
+          : LL.automations_triggerScheduled()}
+      </span>
+      {showDetails && (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          <FileText className="h-2.5 w-2.5" />
+          {LL.automations_viewDetails()}
+        </span>
+      )}
+    </div>
+  </>
+);
 
 export const AutomationsPanel = ({
   initialAutomations,
   initialRuns,
   initialView = "tasks",
   onTriggerAutomation,
+  onOpenRunDetails,
+  onRerunAutomationRun,
   onAfterTriggerAutomation,
   runningAutomationId,
   variant = "full",
@@ -760,9 +775,11 @@ export const AutomationsPanel = ({
     null,
   );
   const [view, setView] = useState<AutomationView>(initialView);
-  const [selectedRun, setSelectedRun] = useState<AutomationRunRecord | null>(
-    null,
-  );
+  const [triageFilter, setTriageFilter] =
+    useState<AutomationTriageFilter>("open");
+  const [triagePage, setTriagePage] = useState(0);
+  const [runActionBusyKey, setRunActionBusyKey] = useState<string | null>(null);
+  const [cleaningRuns, setCleaningRuns] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -770,7 +787,7 @@ export const AutomationsPanel = ({
     try {
       const [items, recentRuns] = await Promise.all([
         window.filework.automations.list(),
-        window.filework.automations.listRuns({ limit: 20 }),
+        window.filework.automations.listRuns({ limit: 100 }),
       ]);
       setAutomations(items);
       setRuns(recentRuns);
@@ -875,8 +892,11 @@ export const AutomationsPanel = ({
     setError(null);
     let resetTriggering = true;
     try {
-      await onTriggerAutomation?.(automation);
-      await window.filework.automations.trigger(automation.id);
+      if (onTriggerAutomation) {
+        await onTriggerAutomation(automation);
+      } else {
+        await window.filework.automations.trigger(automation.id);
+      }
       await refresh();
       setTriggeringId(null);
       resetTriggering = false;
@@ -888,12 +908,66 @@ export const AutomationsPanel = ({
     }
   };
 
+  const handleRunAction = async (
+    run: AutomationRunRecord,
+    action: "cancel" | "handled" | "rerun",
+  ) => {
+    const busyKey = `${action}:${run.id}`;
+    setRunActionBusyKey(busyKey);
+    setError(null);
+    try {
+      if (action === "cancel") {
+        await window.filework.automations.cancelRun(run.id);
+      } else if (action === "handled") {
+        await window.filework.automations.markRunHandled(run.id);
+      } else if (onRerunAutomationRun) {
+        await onRerunAutomationRun(run);
+      } else {
+        await window.filework.automations.rerun(run.id);
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunActionBusyKey(null);
+    }
+  };
+
+  const handleCleanupHandledRuns = async (olderThanDays?: number) => {
+    setCleaningRuns(true);
+    setError(null);
+    try {
+      await window.filework.automations.cleanupRuns({
+        ...(olderThanDays ? { olderThanDays } : {}),
+        triageStatus: "handled",
+      });
+      setTriagePage(0);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCleaningRuns(false);
+    }
+  };
+
   const labels = typeLabels(LL);
   const scheduleLabels = scheduleKindLabels(LL);
   const runModes = runModeLabels(LL);
   const runStatusLabels = automationRunStatusLabels(LL);
   const activeRunAutomationIds = new Set(
     runs.filter(isActiveAutomationRun).map((run) => run.automationId),
+  );
+  const filteredTriageRuns = runs.filter((run) =>
+    triageFilter === "all" ? true : run.triageStatus === triageFilter,
+  );
+  const triagePageCount = Math.max(
+    1,
+    Math.ceil(filteredTriageRuns.length / TRIAGE_PAGE_SIZE),
+  );
+  const safeTriagePage = Math.min(triagePage, triagePageCount - 1);
+  const visibleTriageRuns = filteredTriageRuns.slice(
+    safeTriagePage * TRIAGE_PAGE_SIZE,
+    safeTriagePage * TRIAGE_PAGE_SIZE + TRIAGE_PAGE_SIZE,
   );
   const isRail = variant === "rail";
   const formDialog = draft ? (
@@ -907,106 +981,211 @@ export const AutomationsPanel = ({
       onSubmit={handleSave}
     />
   ) : null;
-  const runDetailDialog = (
-    <Dialog
-      open={selectedRun !== null}
-      onOpenChange={(open) => {
-        if (!open) setSelectedRun(null);
-      }}
-    >
-      {selectedRun && (
-        <DialogContent
-          className="flex! max-h-[calc(100vh-48px)]! flex-col gap-0! overflow-hidden bg-background! p-0! text-foreground! shadow-2xl w-[840px]! max-w-[calc(100vw-48px)]!"
-          data-automation-run-detail-size="wide"
-        >
-          <AutomationRunDetailDialogContent
-            run={selectedRun}
-            TitleComponent={DialogTitle}
-            DescriptionComponent={DialogDescription}
-          />
-        </DialogContent>
-      )}
-    </Dialog>
-  );
   const triageSection = (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {LL.automations_triageTitle()}
         </h4>
-        {runs.some(isActiveAutomationRun) && (
-          <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            {LL.automations_runStatusRunning()}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {runs.some(isActiveAutomationRun) && (
+            <span className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              {LL.automations_runStatusRunning()}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => handleCleanupHandledRuns()}
+            disabled={
+              cleaningRuns ||
+              !runs.some((run) => run.triageStatus === "handled")
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            {cleaningRuns ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+            {LL.automations_triageCleanupHandled()}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCleanupHandledRuns(30)}
+            disabled={
+              cleaningRuns ||
+              !runs.some((run) => run.triageStatus === "handled")
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            {cleaningRuns ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CalendarClock className="h-3 w-3" />
+            )}
+            {LL.automations_triageCleanupOldHandled()}
+          </button>
+          <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+            {(
+              [
+                ["open", LL.automations_triageFilterOpen()],
+                ["handled", LL.automations_triageFilterHandled()],
+                ["all", LL.automations_triageFilterAll()],
+              ] as Array<[AutomationTriageFilter, string]>
+            ).map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                onClick={() => {
+                  setTriageFilter(value);
+                  setTriagePage(0);
+                }}
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  triageFilter === value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-      {runs.length === 0 ? (
+      {filteredTriageRuns.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
           {LL.automations_runsEmpty()}
         </div>
       ) : (
-        <div
-          data-automation-triage-list="true"
-          className="overflow-hidden rounded-lg border border-border"
-        >
-          {runs.slice(0, 8).map((run) => {
-            const startedAt = formatDateTime(run.startedAt, locale);
-            const completedAt = formatDateTime(run.completedAt, locale);
-            const summary = run.errorMessage ?? run.output ?? run.prompt;
-            return (
+        <>
+          <div
+            data-automation-triage-list="true"
+            className="overflow-hidden rounded-lg border border-border"
+          >
+            {visibleTriageRuns.map((run) => {
+              const startedAt = formatDateTime(run.startedAt, locale);
+              const completedAt = formatDateTime(run.completedAt, locale);
+              const canCancel =
+                run.status === "queued" ||
+                run.status === "running" ||
+                run.status === "needs_action";
+              const rowActions = [
+                {
+                  action: "rerun" as const,
+                  label: LL.automations_triageRerun(),
+                  icon: RotateCw,
+                  show: true,
+                },
+                {
+                  action: "handled" as const,
+                  label: LL.automations_triageMarkHandled(),
+                  icon: CheckCircle2,
+                  show: run.triageStatus === "open",
+                },
+                {
+                  action: "cancel" as const,
+                  label: LL.automations_triageCancelRun(),
+                  icon: XCircle,
+                  show: canCancel,
+                },
+              ].filter((item) => item.show);
+              return (
+                <div
+                  key={run.id}
+                  data-automation-run-status={run.status}
+                  data-automation-run-triage={run.triageStatus}
+                  data-automation-run-chat-session-id={
+                    run.chatSessionId ?? undefined
+                  }
+                  data-automation-run-layout="compact"
+                  className="grid gap-3 border-border px-3 py-2.5 transition-colors hover:bg-accent/40 not-last:border-b md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
+                >
+                  {run.chatSessionId ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenRunDetails?.(run)}
+                      className="min-w-0 text-left"
+                    >
+                      <AutomationRunRowContent
+                        run={run}
+                        startedAt={startedAt}
+                        completedAt={completedAt}
+                        showDetails
+                        LL={LL}
+                        runStatusLabels={runStatusLabels}
+                      />
+                    </button>
+                  ) : (
+                    <div className="min-w-0 text-left">
+                      <AutomationRunRowContent
+                        run={run}
+                        startedAt={startedAt}
+                        completedAt={completedAt}
+                        LL={LL}
+                        runStatusLabels={runStatusLabels}
+                      />
+                    </div>
+                  )}
+                  <div
+                    data-automation-run-actions={run.id}
+                    className="flex shrink-0 flex-wrap items-start justify-end gap-1.5 md:max-w-[420px]"
+                  >
+                    {rowActions.map(({ action, label, icon: Icon }) => {
+                      const busyKey = `${action}:${run.id}`;
+                      const busy = runActionBusyKey === busyKey;
+                      return (
+                        <button
+                          type="button"
+                          key={action}
+                          disabled={Boolean(runActionBusyKey)}
+                          onClick={() => void handleRunAction(run, action)}
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground hover:bg-accent disabled:opacity-50"
+                        >
+                          {busy ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Icon className="h-3 w-3" />
+                          )}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {triagePageCount > 1 && (
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                key={run.id}
-                data-automation-run-status={run.status}
-                onClick={() => setSelectedRun(run)}
-                className="block w-full border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/60 not-last:border-b"
+                disabled={safeTriagePage === 0}
+                onClick={() => setTriagePage((page) => Math.max(0, page - 1))}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${automationRunStatusClass(run.status)}`}
-                  >
-                    {runStatusLabels[run.status]}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                    {run.automationTitle}
-                  </span>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {run.trigger === "manual"
-                      ? LL.automations_triggerManual()
-                      : LL.automations_triggerScheduled()}
-                  </span>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    <FileText className="h-2.5 w-2.5" />
-                    {LL.automations_viewDetails()}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                  {startedAt && (
-                    <span>
-                      {LL.automations_runStarted({ value: startedAt })}
-                    </span>
-                  )}
-                  {completedAt && (
-                    <span>
-                      {LL.automations_runCompleted({ value: completedAt })}
-                    </span>
-                  )}
-                  {run.totalTokens !== null && (
-                    <span>
-                      {LL.automations_tokenTotal({
-                        value: formatTokens(run.totalTokens),
-                      })}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                  {summary}
-                </p>
+                <ChevronLeft className="h-3 w-3" />
+                {LL.automations_triagePreviousPage()}
               </button>
-            );
-          })}
-        </div>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {safeTriagePage + 1}/{triagePageCount}
+              </span>
+              <button
+                type="button"
+                disabled={safeTriagePage >= triagePageCount - 1}
+                onClick={() =>
+                  setTriagePage((page) =>
+                    Math.min(triagePageCount - 1, page + 1),
+                  )
+                }
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              >
+                {LL.automations_triageNextPage()}
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1394,7 +1573,6 @@ export const AutomationsPanel = ({
       {view === "tasks" ? taskListSection : triageSection}
 
       {formDialog}
-      {runDetailDialog}
       <AutomationDeleteDialog
         automation={pendingDelete}
         onCancel={() => setPendingDelete(null)}

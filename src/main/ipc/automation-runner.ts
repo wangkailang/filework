@@ -13,6 +13,7 @@ import { readWorkspaceMemory } from "../core/workspace/workspace-memory";
 import {
   type AutomationRecord,
   type AutomationRunRecord,
+  type AutomationRunStatus,
   finishAutomationRun,
   startAutomationRun,
 } from "../db";
@@ -29,6 +30,20 @@ interface AutomationRunnerDeps {
   startAutomationRun?: typeof startAutomationRun;
   finishAutomationRun?: typeof finishAutomationRun;
   runAgent?: AutomationRunAgent;
+}
+
+type FinishedAutomationRunStatus = Extract<
+  AutomationRunStatus,
+  "needs_action" | "succeeded" | "failed" | "canceled"
+>;
+
+interface AutomationAgentRunResult {
+  errorMessage?: string | null;
+  needsActionReason?: string | null;
+  output: string;
+  status: FinishedAutomationRunStatus;
+  usage?: TokenUsage;
+  workspacePath?: string;
 }
 
 interface AutomationExecutionWorkspace {
@@ -227,6 +242,143 @@ const createDefaultAgentRun: AutomationRunAgent = async function* (
   }
 };
 
+const addUsage = (
+  total: TokenUsage | undefined,
+  usage: TokenUsage | undefined,
+): TokenUsage | undefined => {
+  if (!usage) return total;
+  if (!total) return { ...usage };
+  return {
+    inputTokens: (total.inputTokens ?? 0) + (usage.inputTokens ?? 0),
+    outputTokens: (total.outputTokens ?? 0) + (usage.outputTokens ?? 0),
+    totalTokens: (total.totalTokens ?? 0) + (usage.totalTokens ?? 0),
+  };
+};
+
+const getScopedRuns = (
+  run: AutomationRunRecord,
+  automation: AutomationRecord,
+): AutomationRunRecord[] => {
+  if (automation.type !== "project" || !run.workspacePaths?.length) {
+    return [run];
+  }
+  if (run.workspacePaths.length === 1) return [run];
+  return run.workspacePaths.map((workspacePath) => ({
+    ...run,
+    workspacePaths: [workspacePath],
+  }));
+};
+
+const formatScopedOutput = (results: AutomationAgentRunResult[]): string => {
+  if (results.length <= 1) return results[0]?.output ?? "";
+  return results
+    .map((result) => {
+      const title = result.workspacePath ?? "-";
+      return `### ${title}\n\n${result.output}`.trim();
+    })
+    .join("\n\n");
+};
+
+const consumeAutomationAgentRun = async (
+  scopedRun: AutomationRunRecord,
+  automation: AutomationRecord,
+  runAgent: AutomationRunAgent,
+): Promise<AutomationAgentRunResult> => {
+  let output = "";
+  let needsActionReason: string | null = null;
+  let usage: TokenUsage | undefined;
+  try {
+    for await (const event of runAgent(scopedRun, automation)) {
+      if (event.type === "message_update") {
+        output += event.deltaText;
+      }
+      if (event.type === "tool_execution_end") {
+        const result = event.result as
+          | { denied?: boolean; reason?: unknown }
+          | undefined;
+        if (result?.denied === true) {
+          needsActionReason =
+            typeof result.reason === "string"
+              ? result.reason
+              : "Automation requires manual action before it can continue.";
+        }
+      }
+      if (event.type !== "agent_end") continue;
+
+      usage = event.totalUsage;
+      if (typeof event.finalText === "string") output = event.finalText;
+
+      if (needsActionReason) {
+        return {
+          status: "needs_action",
+          output,
+          errorMessage: needsActionReason,
+          needsActionReason,
+          usage,
+          workspacePath: scopedRun.workspacePaths?.[0],
+        };
+      }
+
+      if (event.status === "failed") {
+        return {
+          status: "failed",
+          output,
+          errorMessage: event.error?.message ?? "Automation run failed",
+          usage,
+          workspacePath: scopedRun.workspacePaths?.[0],
+        };
+      }
+
+      return {
+        status: event.status === "cancelled" ? "canceled" : "succeeded",
+        output,
+        usage,
+        workspacePath: scopedRun.workspacePaths?.[0],
+      };
+    }
+
+    return {
+      status: "succeeded",
+      output,
+      usage,
+      workspacePath: scopedRun.workspacePaths?.[0],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: "failed",
+      output,
+      errorMessage: message,
+      usage,
+      workspacePath: scopedRun.workspacePaths?.[0],
+    };
+  }
+};
+
+const aggregateAutomationRunResults = (
+  results: AutomationAgentRunResult[],
+): AutomationAgentRunResult => {
+  const status =
+    results.find((result) => result.status === "needs_action")?.status ??
+    results.find((result) => result.status === "failed")?.status ??
+    results.find((result) => result.status === "canceled")?.status ??
+    "succeeded";
+  const needsAction = results.find((result) => result.needsActionReason);
+  const failed = results.find((result) => result.errorMessage);
+  const usage = results.reduce<TokenUsage | undefined>(
+    (total, result) => addUsage(total, result.usage),
+    undefined,
+  );
+
+  return {
+    status,
+    output: formatScopedOutput(results),
+    errorMessage: needsAction?.needsActionReason ?? failed?.errorMessage,
+    needsActionReason: needsAction?.needsActionReason,
+    usage,
+  };
+};
+
 export const runAutomationHeadless = async (
   run: AutomationRunRecord,
   automation: AutomationRecord,
@@ -236,48 +388,27 @@ export const runAutomationHeadless = async (
     runAgent = createDefaultAgentRun,
   }: AutomationRunnerDeps = {},
 ): Promise<AutomationRunRecord> => {
-  startRun(run.id);
+  const startedRun = startRun(run.id);
+  if (startedRun.status === "canceled") return startedRun;
 
-  let output = "";
-  let usage: TokenUsage | undefined;
-  try {
-    for await (const event of runAgent(run, automation)) {
-      if (event.type === "message_update") {
-        output += event.deltaText;
-      }
-      if (event.type !== "agent_end") continue;
-
-      usage = event.totalUsage;
-      if (typeof event.finalText === "string") output = event.finalText;
-
-      if (event.status === "failed") {
-        return finishRun(run.id, {
-          status: "failed",
-          output,
-          errorMessage: event.error?.message ?? "Automation run failed",
-          usage,
-        });
-      }
-
-      return finishRun(run.id, {
-        status: event.status === "cancelled" ? "canceled" : "succeeded",
-        output,
-        usage,
-      });
-    }
-
-    return finishRun(run.id, {
-      status: "succeeded",
-      output,
-      usage,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return finishRun(run.id, {
-      status: "failed",
-      output,
-      errorMessage: message,
-      usage,
-    });
+  const results = [];
+  for (const scopedRun of getScopedRuns(startedRun, automation)) {
+    results.push(
+      await consumeAutomationAgentRun(scopedRun, automation, runAgent),
+    );
   }
+  const result = aggregateAutomationRunResults(results);
+  const finishInput: Parameters<typeof finishRun>[1] = {
+    status: result.status,
+    output: result.output,
+    usage: result.usage,
+  };
+  if (result.errorMessage !== undefined) {
+    finishInput.errorMessage = result.errorMessage;
+  }
+  if (result.needsActionReason !== undefined) {
+    finishInput.needsActionReason = result.needsActionReason;
+  }
+
+  return finishRun(run.id, finishInput);
 };

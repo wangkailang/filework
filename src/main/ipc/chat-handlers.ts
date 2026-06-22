@@ -2,6 +2,30 @@ import { ipcMain } from "electron";
 
 import type { JsonlSessionStore } from "../core/session/jsonl-store";
 import type { ChatMessage, ChatSession } from "../core/session/types";
+import { listAutomationRuns } from "../db";
+
+const withAutomationRunMetadata = (sessions: ChatSession[]): ChatSession[] => {
+  const runsBySessionId = new Map<
+    string,
+    NonNullable<ChatSession["automationRun"]>
+  >();
+
+  for (const run of listAutomationRuns()) {
+    if (!run.chatSessionId || runsBySessionId.has(run.chatSessionId)) {
+      continue;
+    }
+    runsBySessionId.set(run.chatSessionId, {
+      id: run.id,
+      automationId: run.automationId,
+      title: run.automationTitle,
+    });
+  }
+
+  return sessions.map((session) => {
+    const automationRun = runsBySessionId.get(session.id);
+    return automationRun ? { ...session, automationRun } : session;
+  });
+};
 
 /**
  * 注册由 `JsonlSessionStore` 支撑的聊天会话 IPC handler。
@@ -23,7 +47,7 @@ export const registerChatHandlers = (store: JsonlSessionStore) => {
   ipcMain.handle(
     "chat:getSessions",
     async (_event, workspacePath: string): Promise<ChatSession[]> =>
-      store.listSessions(workspacePath),
+      withAutomationRunMetadata(await store.listSessions(workspacePath)),
   );
 
   ipcMain.handle(

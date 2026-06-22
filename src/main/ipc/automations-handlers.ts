@@ -3,15 +3,24 @@ import { ipcMain } from "electron";
 import {
   type AutomationRecord,
   type AutomationRunMode,
+  type AutomationRunTriageStatus,
   type AutomationScheduleKind,
   type AutomationType,
+  cancelAutomationRun,
+  cleanupAutomationRuns,
   createAutomation,
   deleteAutomation,
   listAutomationRuns,
   listAutomations,
+  markAutomationRunHandled,
+  previewAutomationSchedule,
   updateAutomation,
 } from "../db";
-import { triggerAutomationNow } from "./automation-service";
+import {
+  prepareAutomationChatRun,
+  rerunAutomationRun,
+  triggerAutomationNow,
+} from "./automation-service";
 
 type AutomationCreatePayload = {
   title: string;
@@ -32,6 +41,27 @@ type AutomationUpdatePayload = {
   updates: Partial<
     Omit<AutomationRecord, "id" | "createdAt" | "updatedAt" | "nextRunAt">
   >;
+};
+
+type AutomationPreviewPayload = {
+  scheduleKind: AutomationScheduleKind;
+  scheduleValue: string;
+};
+
+type AutomationCleanupRunsPayload = {
+  olderThanDays?: number;
+  triageStatus?: AutomationRunTriageStatus;
+};
+
+type AutomationPrepareChatRunPayload = {
+  assistantMessageId: string;
+  id: string;
+  sessionId: string;
+};
+
+const requireId = (payload: { id?: string } | null | undefined): string => {
+  if (!payload?.id?.trim()) throw new Error("id is required");
+  return payload.id.trim();
 };
 
 const trimOrNull = (value: string | null | undefined): string | null => {
@@ -117,16 +147,64 @@ export const registerAutomationsHandlers = () => {
   ipcMain.handle(
     "automations:trigger",
     async (_event, payload: { id: string }) => {
-      if (!payload?.id?.trim()) throw new Error("id is required");
-      return triggerAutomationNow(payload.id.trim());
+      return triggerAutomationNow(requireId(payload));
+    },
+  );
+
+  ipcMain.handle(
+    "automations:prepareChatRun",
+    async (_event, payload: AutomationPrepareChatRunPayload) => {
+      const id = requireId(payload);
+      if (!payload.sessionId?.trim()) throw new Error("sessionId is required");
+      if (!payload.assistantMessageId?.trim()) {
+        throw new Error("assistantMessageId is required");
+      }
+      return prepareAutomationChatRun(id, {
+        assistantMessageId: payload.assistantMessageId.trim(),
+        sessionId: payload.sessionId.trim(),
+      });
+    },
+  );
+
+  ipcMain.handle("automations:rerun", async (_event, payload: { id: string }) =>
+    rerunAutomationRun(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:markRunHandled",
+    async (_event, payload: { id: string }) =>
+      markAutomationRunHandled(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:cancelRun",
+    async (_event, payload: { id: string }) =>
+      cancelAutomationRun(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:cleanupRuns",
+    async (_event, payload?: AutomationCleanupRunsPayload) =>
+      cleanupAutomationRuns(payload),
+  );
+
+  ipcMain.handle(
+    "automations:previewSchedule",
+    async (_event, payload: AutomationPreviewPayload) => {
+      if (!payload?.scheduleKind) throw new Error("scheduleKind is required");
+      if (!payload.scheduleValue?.trim())
+        throw new Error("scheduleValue is required");
+      return previewAutomationSchedule(
+        payload.scheduleKind,
+        payload.scheduleValue.trim(),
+      );
     },
   );
 
   ipcMain.handle(
     "automations:delete",
     async (_event, payload: { id: string }) => {
-      if (!payload?.id?.trim()) throw new Error("id is required");
-      return deleteAutomation(payload.id.trim());
+      return deleteAutomation(requireId(payload));
     },
   );
 };

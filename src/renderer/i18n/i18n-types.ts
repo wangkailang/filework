@@ -483,6 +483,17 @@ type RootTranslation = {
 	 */
 	automations_scheduleCron: string
 	/**
+	 * N​e​x​t​ ​r​u​n​ ​{​v​a​l​u​e​}​ ​(​{​t​i​m​e​Z​o​n​e​}​)
+	 * @param {string} timeZone
+	 * @param {string} value
+	 */
+	automations_schedulePreview: RequiredParams<'timeZone' | 'value'>
+	/**
+	 * I​n​v​a​l​i​d​ ​s​c​h​e​d​u​l​e​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_schedulePreviewError: RequiredParams<'value'>
+	/**
 	 * P​r​o​m​p​t
 	 */
 	automations_prompt: string
@@ -571,30 +582,6 @@ type RootTranslation = {
 	 */
 	automations_viewDetails: string
 	/**
-	 * R​u​n​ ​d​e​t​a​i​l​s
-	 */
-	automations_runDetailTitle: string
-	/**
-	 * P​r​o​m​p​t
-	 */
-	automations_runDetailPrompt: string
-	/**
-	 * O​u​t​p​u​t
-	 */
-	automations_runDetailOutput: string
-	/**
-	 * E​r​r​o​r
-	 */
-	automations_runDetailError: string
-	/**
-	 * W​o​r​k​s​p​a​c​e
-	 */
-	automations_runDetailWorkspace: string
-	/**
-	 * T​o​k​e​n​ ​u​s​a​g​e
-	 */
-	automations_runDetailTokens: string
-	/**
 	 * I​n​p​u​t​ ​{​v​a​l​u​e​}​ ​t​o​k​e​n​s
 	 * @param {string} value
 	 */
@@ -622,6 +609,10 @@ type RootTranslation = {
 	 */
 	automations_runStatusRunning: string
 	/**
+	 * N​e​e​d​s​ ​a​c​t​i​o​n
+	 */
+	automations_runStatusNeedsAction: string
+	/**
 	 * S​u​c​c​e​e​d​e​d
 	 */
 	automations_runStatusSucceeded: string
@@ -634,6 +625,46 @@ type RootTranslation = {
 	 */
 	automations_runStatusCanceled: string
 	/**
+	 * O​p​e​n
+	 */
+	automations_triageFilterOpen: string
+	/**
+	 * H​a​n​d​l​e​d
+	 */
+	automations_triageFilterHandled: string
+	/**
+	 * A​l​l
+	 */
+	automations_triageFilterAll: string
+	/**
+	 * C​l​e​a​r​ ​h​a​n​d​l​e​d
+	 */
+	automations_triageCleanupHandled: string
+	/**
+	 * C​l​e​a​r​ ​o​l​d​e​r​ ​t​h​a​n​ ​3​0​d
+	 */
+	automations_triageCleanupOldHandled: string
+	/**
+	 * R​e​r​u​n
+	 */
+	automations_triageRerun: string
+	/**
+	 * M​a​r​k​ ​h​a​n​d​l​e​d
+	 */
+	automations_triageMarkHandled: string
+	/**
+	 * C​a​n​c​e​l​ ​r​u​n
+	 */
+	automations_triageCancelRun: string
+	/**
+	 * P​r​e​v​i​o​u​s
+	 */
+	automations_triagePreviousPage: string
+	/**
+	 * N​e​x​t
+	 */
+	automations_triageNextPage: string
+	/**
 	 * M​a​n​u​a​l
 	 */
 	automations_triggerManual: string
@@ -641,6 +672,36 @@ type RootTranslation = {
 	 * S​c​h​e​d​u​l​e​d
 	 */
 	automations_triggerScheduled: string
+	/**
+	 * R​u​n​ ​a​u​t​o​m​a​t​i​o​n​ ​n​o​w​:​ ​{​t​i​t​l​e​}
+	 * @param {string} title
+	 */
+	automations_chatPromptRunNow: RequiredParams<'title'>
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​ ​r​u​n​ ​I​D​:​ ​{​i​d​}
+	 * @param {string} id
+	 */
+	automations_chatPromptRunId: RequiredParams<'id'>
+	/**
+	 * A​u​t​o​m​a​t​i​o​n​ ​t​y​p​e​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_chatPromptType: RequiredParams<'value'>
+	/**
+	 * S​c​h​e​d​u​l​e​:​ ​{​k​i​n​d​}​ ​{​v​a​l​u​e​}
+	 * @param {string} kind
+	 * @param {string} value
+	 */
+	automations_chatPromptSchedule: RequiredParams<'kind' | 'value'>
+	/**
+	 * W​o​r​k​s​p​a​c​e​ ​p​a​t​h​s​:​ ​{​v​a​l​u​e​}
+	 * @param {string} value
+	 */
+	automations_chatPromptWorkspacePaths: RequiredParams<'value'>
+	/**
+	 * I​n​s​t​r​u​c​t​i​o​n​s​:
+	 */
+	automations_chatPromptInstructions: string
 	/**
 	 * S​t​a​r​t​e​d​ ​{​v​a​l​u​e​}
 	 * @param {string} value
@@ -1334,6 +1395,10 @@ type RootTranslation = {
 	 * F​i​n​d​ ​D​u​p​l​i​c​a​t​e​s
 	 */
 	toolName_findDuplicates: string
+	/**
+	 * M​a​n​a​g​e​ ​A​u​t​o​m​a​t​i​o​n​s
+	 */
+	toolName_automationUpdate: string
 	/**
 	 * R​u​n​ ​C​o​m​m​a​n​d
 	 */
@@ -2710,6 +2775,14 @@ export type TranslationFunctions = {
 	 */
 	automations_scheduleCron: () => LocalizedString
 	/**
+	 * Next run {value} ({timeZone})
+	 */
+	automations_schedulePreview: (arg: { timeZone: string, value: string }) => LocalizedString
+	/**
+	 * Invalid schedule: {value}
+	 */
+	automations_schedulePreviewError: (arg: { value: string }) => LocalizedString
+	/**
 	 * Prompt
 	 */
 	automations_prompt: () => LocalizedString
@@ -2798,30 +2871,6 @@ export type TranslationFunctions = {
 	 */
 	automations_viewDetails: () => LocalizedString
 	/**
-	 * Run details
-	 */
-	automations_runDetailTitle: () => LocalizedString
-	/**
-	 * Prompt
-	 */
-	automations_runDetailPrompt: () => LocalizedString
-	/**
-	 * Output
-	 */
-	automations_runDetailOutput: () => LocalizedString
-	/**
-	 * Error
-	 */
-	automations_runDetailError: () => LocalizedString
-	/**
-	 * Workspace
-	 */
-	automations_runDetailWorkspace: () => LocalizedString
-	/**
-	 * Token usage
-	 */
-	automations_runDetailTokens: () => LocalizedString
-	/**
 	 * Input {value} tokens
 	 */
 	automations_tokenInput: (arg: { value: string }) => LocalizedString
@@ -2846,6 +2895,10 @@ export type TranslationFunctions = {
 	 */
 	automations_runStatusRunning: () => LocalizedString
 	/**
+	 * Needs action
+	 */
+	automations_runStatusNeedsAction: () => LocalizedString
+	/**
 	 * Succeeded
 	 */
 	automations_runStatusSucceeded: () => LocalizedString
@@ -2858,6 +2911,46 @@ export type TranslationFunctions = {
 	 */
 	automations_runStatusCanceled: () => LocalizedString
 	/**
+	 * Open
+	 */
+	automations_triageFilterOpen: () => LocalizedString
+	/**
+	 * Handled
+	 */
+	automations_triageFilterHandled: () => LocalizedString
+	/**
+	 * All
+	 */
+	automations_triageFilterAll: () => LocalizedString
+	/**
+	 * Clear handled
+	 */
+	automations_triageCleanupHandled: () => LocalizedString
+	/**
+	 * Clear older than 30d
+	 */
+	automations_triageCleanupOldHandled: () => LocalizedString
+	/**
+	 * Rerun
+	 */
+	automations_triageRerun: () => LocalizedString
+	/**
+	 * Mark handled
+	 */
+	automations_triageMarkHandled: () => LocalizedString
+	/**
+	 * Cancel run
+	 */
+	automations_triageCancelRun: () => LocalizedString
+	/**
+	 * Previous
+	 */
+	automations_triagePreviousPage: () => LocalizedString
+	/**
+	 * Next
+	 */
+	automations_triageNextPage: () => LocalizedString
+	/**
 	 * Manual
 	 */
 	automations_triggerManual: () => LocalizedString
@@ -2865,6 +2958,30 @@ export type TranslationFunctions = {
 	 * Scheduled
 	 */
 	automations_triggerScheduled: () => LocalizedString
+	/**
+	 * Run automation now: {title}
+	 */
+	automations_chatPromptRunNow: (arg: { title: string }) => LocalizedString
+	/**
+	 * Automation run ID: {id}
+	 */
+	automations_chatPromptRunId: (arg: { id: string }) => LocalizedString
+	/**
+	 * Automation type: {value}
+	 */
+	automations_chatPromptType: (arg: { value: string }) => LocalizedString
+	/**
+	 * Schedule: {kind} {value}
+	 */
+	automations_chatPromptSchedule: (arg: { kind: string, value: string }) => LocalizedString
+	/**
+	 * Workspace paths: {value}
+	 */
+	automations_chatPromptWorkspacePaths: (arg: { value: string }) => LocalizedString
+	/**
+	 * Instructions:
+	 */
+	automations_chatPromptInstructions: () => LocalizedString
 	/**
 	 * Started {value}
 	 */
@@ -3545,6 +3662,10 @@ export type TranslationFunctions = {
 	 * Find Duplicates
 	 */
 	toolName_findDuplicates: () => LocalizedString
+	/**
+	 * Manage Automations
+	 */
+	toolName_automationUpdate: () => LocalizedString
 	/**
 	 * Run Command
 	 */
