@@ -97,6 +97,18 @@ type AutomationCreatePayload = {
   reasoningEffort?: string | null;
 };
 
+type LlmModelDiscoveryRequest =
+  | string
+  | { id: string }
+  | {
+      draft: {
+        provider: "custom";
+        apiKey?: string | null;
+        baseUrl: string;
+        apiPath?: string | null;
+      };
+    };
+
 /**
  * 通过 contextBridge 向渲染进程暴露安全的 IPC 方法。
  * 这是主进程与渲染进程之间的唯一桥梁。
@@ -1152,7 +1164,7 @@ const api = {
       | { error: string }
     > => ipcRenderer.invoke("llm-config:copilot:models", { id }),
     listModels: (
-      id: string,
+      request: LlmModelDiscoveryRequest,
     ): Promise<
       | Array<{
           value: string;
@@ -1167,7 +1179,11 @@ const api = {
           maxOutputTokens?: number | null;
         }>
       | { error: string }
-    > => ipcRenderer.invoke("llm-config:models", { id }),
+    > =>
+      ipcRenderer.invoke(
+        "llm-config:models",
+        typeof request === "string" ? { id: request } : request,
+      ),
     disconnectGithubCopilot: (id: string) =>
       ipcRenderer.invoke("llm-config:copilot:disconnect", { id }),
     delete: (id: string) => ipcRenderer.invoke("llm-config:delete", { id }),

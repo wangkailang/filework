@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import { join } from "node:path";
 import { ipcMain } from "electron";
+import { isImageGenerationModelId } from "../../shared/llm-modalities";
 import { resolveAdapterName } from "../ai/adapters";
 import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
 import { compressContext } from "../ai/context-compressor";
@@ -276,14 +277,22 @@ const handleTaskExecutionInner = async (
     const requestedLlmConfig = payload.llmConfigId
       ? getLlmConfig(payload.llmConfigId)
       : null;
-    if (
-      requestedLlmConfig?.modality === "image" ||
-      requestedLlmConfig?.modality === "video"
-    ) {
+    const inferredImageConfig =
+      requestedLlmConfig &&
+      (requestedLlmConfig.provider === "custom" ||
+        requestedLlmConfig.provider === "openai") &&
+      isImageGenerationModelId(requestedLlmConfig.model);
+    const mediaModality =
+      requestedLlmConfig?.modality === "image" || inferredImageConfig
+        ? "image"
+        : requestedLlmConfig?.modality === "video"
+          ? "video"
+          : null;
+    if (mediaModality && requestedLlmConfig) {
       const resolvedLlmConfigId = requestedLlmConfig.id;
       if (!isAvailableLlmConfig(requestedLlmConfig)) {
         throw new Error(
-          `此 ${requestedLlmConfig.modality} LLM 配置不可用，请先在设置中启用并测试连接成功。`,
+          `此 ${mediaModality} LLM 配置不可用，请先在设置中启用并测试连接成功。`,
         );
       }
 
@@ -295,13 +304,13 @@ const handleTaskExecutionInner = async (
           provider: requestedLlmConfig.provider,
           modelId: requestedLlmConfig.model,
           configId: resolvedLlmConfigId,
-          modality: requestedLlmConfig.modality,
+          modality: mediaModality,
           fallbackFromConfigId: null,
         },
       });
 
       const mediaSessionId = payload.sessionId ?? id;
-      if (requestedLlmConfig.modality === "image") {
+      if (mediaModality === "image") {
         const result = await generateImageForConfig({
           llmConfigId: resolvedLlmConfigId,
           sessionId: mediaSessionId,
@@ -338,7 +347,7 @@ const handleTaskExecutionInner = async (
           timestamp: new Date().toISOString(),
           detail: {
             status: "completed",
-            modality: "image",
+            modality: mediaModality,
             outputPath: result.path,
           },
         });

@@ -22,7 +22,7 @@
     }
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "FILEWORK_AI_DEVTOOLS=0 electron-vite dev",
     "dev:devtools": "concurrently -k -n app,devtools \"FILEWORK_AI_DEVTOOLS=1 electron-vite dev\" \"pnpm ai-devtools\"",
     "build": "electron-vite build",
     "start": "electron-vite preview",

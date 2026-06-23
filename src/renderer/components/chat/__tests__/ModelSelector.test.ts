@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { getSelectableLlmConfigs } from "../ModelSelector";
+import {
+  getDisplayLlmConfigModality,
+  getSelectableLlmConfigs,
+} from "../ModelSelector";
 
 describe("getSelectableLlmConfigs", () => {
   it("only keeps enabled LLM configs with successful connection checks", () => {
@@ -64,5 +67,34 @@ describe("getSelectableLlmConfigs", () => {
         },
       ]).map((config) => config.id),
     ).toEqual(["enabled", "legacy-success"]);
+  });
+});
+
+describe("getDisplayLlmConfigModality", () => {
+  it("groups legacy OpenAI-compatible gpt-image configs as image even when stored as chat", () => {
+    expect(
+      getDisplayLlmConfigModality({
+        provider: "custom",
+        model: "gpt-image-2",
+        modality: "chat",
+      }),
+    ).toBe("image");
+  });
+
+  it("keeps explicit non-chat modalities and regular chat models unchanged", () => {
+    expect(
+      getDisplayLlmConfigModality({
+        provider: "minimax",
+        model: "MiniMax-Hailuo-02",
+        modality: "video",
+      }),
+    ).toBe("video");
+    expect(
+      getDisplayLlmConfigModality({
+        provider: "custom",
+        model: "gpt-5.5",
+        modality: "chat",
+      }),
+    ).toBe("chat");
   });
 });

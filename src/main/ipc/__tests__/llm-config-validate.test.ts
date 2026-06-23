@@ -93,6 +93,30 @@ describe("validateLlmConfigPayload — OpenAI Compatible provider", () => {
     expect(err).toBeNull();
   });
 
+  it("accepts custom OpenAI-compatible image configs", () => {
+    const err = validateLlmConfigPayload({
+      name: "Image Gateway",
+      provider: "custom",
+      baseUrl: "https://gateway.example.com/v1",
+      model: "gpt-image-2",
+      modality: "image",
+    });
+
+    expect(err).toBeNull();
+  });
+
+  it("rejects custom OpenAI-compatible video configs", () => {
+    const err = validateLlmConfigPayload({
+      name: "Video Gateway",
+      provider: "custom",
+      baseUrl: "https://gateway.example.com/v1",
+      model: "video-model",
+      modality: "video",
+    });
+
+    expect(err).toMatch(/modality/);
+  });
+
   it("accepts a chat completions API path for custom OpenAI-compatible configs", () => {
     const err = validateLlmConfigPayload({
       name: "Gateway",

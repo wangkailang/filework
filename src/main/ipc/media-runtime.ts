@@ -7,10 +7,14 @@
  */
 
 import type { WebContents } from "electron";
-
-import { generateImage } from "../ai/minimax/image-client";
+import { isImageGenerationModelId } from "../../shared/llm-modalities";
+import { generateImage as generateMinimaxImage } from "../ai/minimax/image-client";
 import { MinimaxApiError } from "../ai/minimax/types";
 import { submitVideo } from "../ai/minimax/video-client";
+import {
+  generateOpenAICompatibleImage,
+  OpenAICompatibleImageError,
+} from "../ai/openai-compatible/image-client";
 import {
   createMediaJob,
   getLlmConfig,
@@ -85,24 +89,34 @@ export const validateMediaConfig = (
   llmConfigId: string,
   expectedModality: "image" | "video",
   prompt: string,
-): { ok: true; config: LlmConfig & { apiKey: string } } | { error: string } => {
+): { ok: true; config: LlmConfig } | { error: string } => {
   const config = getLlmConfig(llmConfigId);
   if (!config) return { error: "LLM config not found" };
-  if (config.modality !== expectedModality) {
+  const inferredOpenAICompatibleImage =
+    expectedModality === "image" &&
+    (config.provider === "custom" || config.provider === "openai") &&
+    isImageGenerationModelId(config.model);
+  if (config.modality !== expectedModality && !inferredOpenAICompatibleImage) {
     return {
       error: `LLM config modality is "${config.modality}", expected "${expectedModality}"`,
     };
   }
-  if (config.provider !== "minimax") {
+  const supported =
+    expectedModality === "image"
+      ? ["minimax", "custom", "openai"].includes(config.provider)
+      : config.provider === "minimax";
+  if (!supported) {
     return {
-      error: `Provider "${config.provider}" ${expectedModality} generation is not implemented (only MiniMax for now)`,
+      error: `Provider "${config.provider}" ${expectedModality} generation is not implemented`,
     };
   }
-  if (!config.apiKey) return { error: "LLM config has no API key" };
+  if (config.provider !== "custom" && !config.apiKey) {
+    return { error: "LLM config has no API key" };
+  }
   if (!prompt || prompt.trim() === "") {
     return { error: "prompt is required" };
   }
-  return { ok: true, config: { ...config, apiKey: config.apiKey } };
+  return { ok: true, config };
 };
 
 export const generateImageForConfig = async (
@@ -121,25 +135,39 @@ export const generateImageForConfig = async (
 
   let imageUrls: string[];
   try {
-    const result = await generateImage({
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      prompt: payload.prompt,
-      aspectRatio: payload.aspectRatio,
-      signal: payload.signal,
-      fetchImpl: runtimeDeps.fetchFn,
-    });
+    const result =
+      config.provider === "minimax"
+        ? await generateMinimaxImage({
+            apiKey: config.apiKey ?? "",
+            baseUrl: config.baseUrl,
+            model: config.model,
+            prompt: payload.prompt,
+            aspectRatio: payload.aspectRatio,
+            signal: payload.signal,
+            fetchImpl: runtimeDeps.fetchFn,
+          })
+        : await generateOpenAICompatibleImage({
+            apiKey: config.apiKey,
+            apiPath: config.apiPath,
+            baseUrl: config.baseUrl,
+            model: config.model,
+            prompt: payload.prompt,
+            signal: payload.signal,
+            fetchImpl: runtimeDeps.fetchFn,
+          });
     imageUrls = result.imageUrls;
   } catch (err) {
-    if (err instanceof MinimaxApiError) {
+    if (
+      err instanceof MinimaxApiError ||
+      err instanceof OpenAICompatibleImageError
+    ) {
       return { error: err.message };
     }
     return { error: err instanceof Error ? err.message : String(err) };
   }
 
   const firstUrl = imageUrls[0];
-  if (!firstUrl) return { error: "MiniMax returned no image URLs" };
+  if (!firstUrl) return { error: "Image provider returned no image URLs" };
 
   let saved: { path: string; shortId: string };
   try {
@@ -182,7 +210,7 @@ export const createVideoJobForConfig = async (
   let providerTaskId: string;
   try {
     const { taskId } = await submitVideo({
-      apiKey: config.apiKey,
+      apiKey: config.apiKey ?? "",
       baseUrl: config.baseUrl,
       model: config.model,
       prompt: payload.prompt,

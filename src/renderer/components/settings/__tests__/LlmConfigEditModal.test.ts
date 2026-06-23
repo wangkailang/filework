@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatLlmModelOptionLabel,
   getGithubCopilotAuthStepStates,
+  getLlmModelRefreshRequest,
   getLlmProviderFieldPolicy,
   getLlmReasoningEffortAvailability,
   getLlmSelectedModelAvailability,
@@ -19,7 +20,8 @@ describe("getLlmProviderFieldPolicy", () => {
       showBaseUrl: true,
       requireBaseUrl: true,
       showApiPath: true,
-      supportsImageVideo: false,
+      supportedModalities: ["chat", "image"],
+      supportsImageVideo: true,
       baseUrlPlaceholder: "https://api.example.com/v1",
       apiPathPlaceholder: "/chat/completions",
     });
@@ -32,6 +34,7 @@ describe("getLlmProviderFieldPolicy", () => {
       showBaseUrl: true,
       requireBaseUrl: true,
       showApiPath: true,
+      supportedModalities: ["chat"],
       supportsImageVideo: false,
       baseUrlPlaceholder: "https://api.githubcopilot.com",
       apiPathPlaceholder: "/chat/completions",
@@ -140,6 +143,69 @@ describe("getLlmProviderFieldPolicy", () => {
     expect(
       getLlmReasoningEffortAvailability("custom", [], "future-model"),
     ).toBe("unknown");
+  });
+
+  it("builds a draft model refresh request for new OpenAI-compatible configs", () => {
+    expect(
+      getLlmModelRefreshRequest({
+        copilotConnected: false,
+        editingId: null,
+        form: {
+          apiKey: "sk-draft",
+          apiPath: "/v1/chat/completions",
+          baseUrl: "https://gateway.example.com",
+          provider: "custom",
+        },
+      }),
+    ).toEqual({
+      draft: {
+        apiKey: "sk-draft",
+        apiPath: "/v1/chat/completions",
+        baseUrl: "https://gateway.example.com",
+        provider: "custom",
+      },
+    });
+
+    expect(
+      getLlmModelRefreshRequest({
+        copilotConnected: false,
+        editingId: null,
+        form: {
+          apiKey: "",
+          apiPath: "",
+          baseUrl: "",
+          provider: "custom",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps Copilot model refresh tied to an existing connected config", () => {
+    expect(
+      getLlmModelRefreshRequest({
+        copilotConnected: true,
+        editingId: "copilot-1",
+        form: {
+          apiKey: "",
+          apiPath: "/chat/completions",
+          baseUrl: "https://api.githubcopilot.com",
+          provider: "github-copilot",
+        },
+      }),
+    ).toEqual({ id: "copilot-1" });
+
+    expect(
+      getLlmModelRefreshRequest({
+        copilotConnected: false,
+        editingId: null,
+        form: {
+          apiKey: "",
+          apiPath: "/chat/completions",
+          baseUrl: "https://api.githubcopilot.com",
+          provider: "github-copilot",
+        },
+      }),
+    ).toBeNull();
   });
 
   it("shows reconnect auth flow after an existing Copilot config is disconnected", () => {
