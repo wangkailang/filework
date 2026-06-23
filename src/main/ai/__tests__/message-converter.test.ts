@@ -107,6 +107,43 @@ describe("convertToCoreMessages", () => {
     }
   });
 
+  it("does not replay malformed string tool args as a tool-call", async () => {
+    const history: HistoryMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        parts: [
+          {
+            type: "tool",
+            toolCallId: "bad-write",
+            toolName: "writeFile",
+            args: '{"path": "/tmp/a.txt", "content": "unterminated',
+            result: {
+              success: false,
+              error:
+                'Invalid input for tool writeFile: JSON parsing failed: Text: {"path": "/tmp/a.txt"',
+            },
+            state: "output-error",
+          },
+        ],
+      },
+    ];
+
+    const result = await convertToCoreMessages(history);
+
+    expect(result).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Skipped malformed writeFile tool call from prior history: Invalid input for tool writeFile: JSON parsing failed",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("ignores PlanMessagePart", async () => {
     const history: HistoryMessage[] = [
       {

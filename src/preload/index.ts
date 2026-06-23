@@ -436,6 +436,30 @@ const api = {
     ipcRenderer.on("ai:stream-delta", handler);
     return () => ipcRenderer.removeListener("ai:stream-delta", handler);
   },
+  onStreamMedia: (
+    callback: (data: {
+      id: string;
+      sessionId?: string;
+      assistantMessageId?: string;
+      part:
+        | import("../main/core/session/message-parts").ImagePart
+        | import("../main/core/session/message-parts").VideoJobPart;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        sessionId?: string;
+        assistantMessageId?: string;
+        part:
+          | import("../main/core/session/message-parts").ImagePart
+          | import("../main/core/session/message-parts").VideoJobPart;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-media", handler);
+    return () => ipcRenderer.removeListener("ai:stream-media", handler);
+  },
   onStreamReasoning: (
     callback: (data: { id: string; messageId: string; delta: string }) => void,
   ) => {
@@ -1053,6 +1077,17 @@ const api = {
       baseUrl?: string;
       apiPath?: string;
       model: string;
+      temperature?: number | null;
+      topP?: number | null;
+      maxOutputTokens?: number | null;
+      reasoningEffort?:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | null;
       modality?: "chat" | "image" | "video";
       enabled?: boolean;
       isDefault?: boolean;
@@ -1074,6 +1109,17 @@ const api = {
         baseUrl?: string;
         apiPath?: string | null;
         model?: string;
+        temperature?: number | null;
+        topP?: number | null;
+        maxOutputTokens?: number | null;
+        reasoningEffort?:
+          | "none"
+          | "minimal"
+          | "low"
+          | "medium"
+          | "high"
+          | "xhigh"
+          | null;
         modality?: "chat" | "image" | "video";
         enabled?: boolean;
         isDefault?: boolean;

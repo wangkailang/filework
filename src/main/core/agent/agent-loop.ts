@@ -91,6 +91,10 @@ export interface AgentLoopConfig {
    * 默认值,通常为 0.7-1.0)。评测框架应将其设为 `0` 以获得可复现的运行。
    */
   temperature?: number;
+  /** 传给 `streamText` 的 nucleus sampling 参数。默认不设置。 */
+  topP?: number;
+  /** 单次 `streamText` 调用允许模型生成的最大 token 数。默认不设置。 */
+  maxOutputTokens?: number;
   /** 合并进 streamText 调用的 provider 专属选项。 */
   providerOptions?: ProviderOptions;
   /** 调用方提供的 abort。中止会取消本次运行。 */
@@ -287,6 +291,12 @@ export class AgentLoop {
         providerOptions: this.cfg.providerOptions,
         ...(this.cfg.temperature !== undefined && {
           temperature: this.cfg.temperature,
+        }),
+        ...(this.cfg.topP !== undefined && {
+          topP: this.cfg.topP,
+        }),
+        ...(this.cfg.maxOutputTokens !== undefined && {
+          maxOutputTokens: this.cfg.maxOutputTokens,
         }),
       });
 

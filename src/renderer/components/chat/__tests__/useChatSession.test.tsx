@@ -82,6 +82,7 @@ const createFileworkMock = () => ({
   onStreamDelta: vi.fn(off),
   onStreamDone: vi.fn(off),
   onStreamError: vi.fn(off),
+  onStreamMedia: vi.fn(off),
   onStreamPlan: vi.fn(off),
   onStreamReasoning: vi.fn(off),
   onStreamReasoningEnd: vi.fn(off),
@@ -232,5 +233,116 @@ describe("useChatSession", () => {
     expect(localStorageMock.removeItem).toHaveBeenCalledWith(
       "filework-selected-llm-config",
     );
+  });
+
+  it("routes image configs through executeTask instead of direct media IPC", async () => {
+    const createdSession: ChatSession = {
+      id: "session-image",
+      workspacePath: "/workspace",
+      title: "新对话",
+      createdAt: "2026-06-23T09:00:00.000Z",
+      updatedAt: "2026-06-23T09:00:00.000Z",
+    };
+    filework.createChatSession.mockResolvedValue(createdSession);
+    filework.llmConfig.list.mockResolvedValue([
+      {
+        enabled: true,
+        id: "image-cfg",
+        lastCheckStatus: "success",
+        modality: "image",
+        modelAvailable: true,
+      },
+    ]);
+    filework.llmConfig.get.mockResolvedValue({
+      id: "image-cfg",
+      modality: "image",
+      model: "image-01",
+    });
+    filework.media.generateImage.mockResolvedValue({
+      configId: "image-cfg",
+      imageId: "img-1",
+      path: "/tmp/generated.png",
+      prompt: "画一张图",
+    });
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      latest?.setSelectedLlmConfigId("image-cfg");
+    });
+    await act(async () => {
+      await latest?.handleSubmit({ text: "画一张图" });
+    });
+
+    expect(filework.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llmConfigId: "image-cfg",
+        prompt: "画一张图",
+      }),
+    );
+    expect(filework.media.generateImage).not.toHaveBeenCalled();
+    expect(filework.media.createVideoJob).not.toHaveBeenCalled();
+  });
+
+  it("routes video configs through executeTask instead of direct media IPC", async () => {
+    const createdSession: ChatSession = {
+      id: "session-video",
+      workspacePath: "/workspace",
+      title: "新对话",
+      createdAt: "2026-06-23T09:05:00.000Z",
+      updatedAt: "2026-06-23T09:05:00.000Z",
+    };
+    filework.createChatSession.mockResolvedValue(createdSession);
+    filework.llmConfig.list.mockResolvedValue([
+      {
+        enabled: true,
+        id: "video-cfg",
+        lastCheckStatus: "success",
+        modality: "video",
+        modelAvailable: true,
+      },
+    ]);
+    filework.llmConfig.get.mockResolvedValue({
+      id: "video-cfg",
+      modality: "video",
+      model: "video-01",
+    });
+    filework.media.createVideoJob.mockResolvedValue({
+      configId: "video-cfg",
+      jobId: "job-1",
+      modelId: "video-01",
+      prompt: "生成视频",
+      status: "queued",
+    });
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      latest?.setSelectedLlmConfigId("video-cfg");
+    });
+    await act(async () => {
+      await latest?.handleSubmit({ text: "生成视频" });
+    });
+
+    expect(filework.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llmConfigId: "video-cfg",
+        prompt: "生成视频",
+      }),
+    );
+    expect(filework.media.createVideoJob).not.toHaveBeenCalled();
+    expect(filework.media.generateImage).not.toHaveBeenCalled();
   });
 });

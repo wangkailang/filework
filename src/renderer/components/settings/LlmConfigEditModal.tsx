@@ -30,6 +30,10 @@ export interface LlmConfig {
   baseUrl: string | null;
   apiPath: string | null;
   model: string;
+  temperature: number | null;
+  topP: number | null;
+  maxOutputTokens: number | null;
+  reasoningEffort: ReasoningEffort | null;
   modality: Modality;
   enabled: boolean;
   lastCheckedAt: string | null;
@@ -44,6 +48,10 @@ interface FormData {
   baseUrl: string;
   apiPath: string;
   model: string;
+  temperature: string;
+  topP: string;
+  maxOutputTokens: string;
+  reasoningEffort: "" | ReasoningEffort;
   modality: Modality;
   enabled: boolean;
 }
@@ -55,6 +63,10 @@ const EMPTY_FORM: FormData = {
   baseUrl: "",
   apiPath: "",
   model: "",
+  temperature: "",
+  topP: "",
+  maxOutputTokens: "",
+  reasoningEffort: "",
   modality: "chat",
   enabled: true,
 };
@@ -75,6 +87,27 @@ const MODALITIES: { value: Modality; label: string }[] = [
   { value: "image", label: "Image" },
   { value: "video", label: "Video" },
 ];
+
+type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+const REASONING_EFFORTS: Array<"" | ReasoningEffort> = [
+  "",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+function formatOptionalNumber(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function parseOptionalNumber(value: string): number | null {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : null;
+}
 
 export interface LlmModelOption {
   capabilities?: {
@@ -151,6 +184,30 @@ export function getLlmSelectedModelAvailability(
   return refreshedOptions.some((option) => option.value === currentValue)
     ? "available"
     : "unavailable";
+}
+
+export type LlmReasoningEffortAvailability =
+  | "supported"
+  | "unsupported"
+  | "unknown";
+
+export function getLlmReasoningEffortAvailability(
+  provider: Provider,
+  refreshedOptions: LlmModelOption[],
+  currentModel: string,
+): LlmReasoningEffortAvailability {
+  if (provider !== "github-copilot" && provider !== "custom") return "unknown";
+  if (refreshedOptions.length === 0) return "unknown";
+
+  const currentValue = currentModel.trim();
+  if (!currentValue) return "unknown";
+  const selected = refreshedOptions.find(
+    (option) => option.value === currentValue,
+  );
+  if (!selected?.capabilities) return "unknown";
+  return selected.capabilities.supportsReasoning === false
+    ? "unsupported"
+    : "supported";
 }
 
 export function shouldShowGithubCopilotAuthFlow(
@@ -370,6 +427,10 @@ export const LlmConfigEditModal = ({
         baseUrl: editing.baseUrl || "",
         apiPath: editing.apiPath || "",
         model: editing.model,
+        temperature: formatOptionalNumber(editing.temperature),
+        topP: formatOptionalNumber(editing.topP),
+        maxOutputTokens: formatOptionalNumber(editing.maxOutputTokens),
+        reasoningEffort: editing.reasoningEffort ?? "",
         modality: editing.modality ?? "chat",
         enabled: editing.enabled !== false,
       });
@@ -429,6 +490,24 @@ export const LlmConfigEditModal = ({
     ) {
       e.model = LL.llmConfig_modelUnavailable();
     }
+    const temperature = parseOptionalNumber(form.temperature);
+    if (
+      temperature !== null &&
+      (!Number.isFinite(temperature) || temperature < 0 || temperature > 2)
+    ) {
+      e.temperature = LL.llmConfig_temperatureInvalid();
+    }
+    const topP = parseOptionalNumber(form.topP);
+    if (topP !== null && (!Number.isFinite(topP) || topP < 0 || topP > 1)) {
+      e.topP = LL.llmConfig_topPInvalid();
+    }
+    const maxOutputTokens = parseOptionalNumber(form.maxOutputTokens);
+    if (
+      maxOutputTokens !== null &&
+      (!Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0)
+    ) {
+      e.maxOutputTokens = LL.llmConfig_maxOutputTokensInvalid();
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -446,6 +525,10 @@ export const LlmConfigEditModal = ({
       baseUrl: form.baseUrl || undefined,
       apiPath: apiPathValue ?? undefined,
       model: form.model,
+      temperature: parseOptionalNumber(form.temperature),
+      topP: parseOptionalNumber(form.topP),
+      maxOutputTokens: parseOptionalNumber(form.maxOutputTokens),
+      reasoningEffort: form.reasoningEffort || null,
       modality: form.modality,
       enabled: form.enabled,
     };
@@ -587,6 +670,10 @@ export const LlmConfigEditModal = ({
   const baseUrlInputId = "llm-config-base-url";
   const apiPathInputId = "llm-config-api-path";
   const modelInputId = "llm-config-model";
+  const temperatureInputId = "llm-config-temperature";
+  const topPInputId = "llm-config-top-p";
+  const maxOutputTokensInputId = "llm-config-max-output-tokens";
+  const reasoningEffortInputId = "llm-config-reasoning-effort";
   const enabledInputId = "llm-config-enabled";
 
   const fieldPolicy = getLlmProviderFieldPolicy(form.provider);
@@ -603,6 +690,12 @@ export const LlmConfigEditModal = ({
     refreshedModelOptions,
     selectedModelValue,
   );
+  const reasoningEffortAvailability = getLlmReasoningEffortAvailability(
+    form.provider,
+    refreshedModelOptions,
+    selectedModelValue,
+  );
+  const reasoningEffortDisabled = reasoningEffortAvailability === "unsupported";
   const showCopilotAuthFlow = shouldShowGithubCopilotAuthFlow(
     form.provider,
     Boolean(editing),
@@ -616,6 +709,29 @@ export const LlmConfigEditModal = ({
   const copilotStepStates = getGithubCopilotAuthStepStates(
     Boolean(copilotAuth),
   );
+  const getReasoningEffortLabel = (value: "" | ReasoningEffort): string => {
+    switch (value) {
+      case "":
+        return LL.llmConfig_providerDefault();
+      case "none":
+        return LL.llmConfig_reasoningEffortNone();
+      case "minimal":
+        return LL.llmConfig_reasoningEffortMinimal();
+      case "low":
+        return LL.llmConfig_reasoningEffortLow();
+      case "medium":
+        return LL.llmConfig_reasoningEffortMedium();
+      case "high":
+        return LL.llmConfig_reasoningEffortHigh();
+      case "xhigh":
+        return LL.llmConfig_reasoningEffortXHigh();
+    }
+  };
+
+  useEffect(() => {
+    if (!reasoningEffortDisabled || !form.reasoningEffort) return;
+    setForm((prev) => ({ ...prev, reasoningEffort: "" }));
+  }, [form.reasoningEffort, reasoningEffortDisabled]);
 
   return (
     <Dialog
@@ -876,6 +992,130 @@ export const LlmConfigEditModal = ({
                 </p>
               )}
           </div>
+
+          <details className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+              {LL.llmConfig_advancedOptions()}
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-2.5">
+              <div>
+                <label
+                  htmlFor={temperatureInputId}
+                  className="mb-1 block text-xs text-muted-foreground"
+                >
+                  {LL.llmConfig_temperature()}{" "}
+                  <span className="opacity-50">
+                    ({LL.llmConfig_optional()})
+                  </span>
+                </label>
+                <input
+                  id={temperatureInputId}
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={form.temperature}
+                  onChange={(e) =>
+                    setForm({ ...form, temperature: e.target.value })
+                  }
+                  placeholder={LL.llmConfig_providerDefault()}
+                  className={inputCls}
+                />
+                {errors.temperature && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.temperature}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label
+                  htmlFor={topPInputId}
+                  className="mb-1 block text-xs text-muted-foreground"
+                >
+                  {LL.llmConfig_topP()}{" "}
+                  <span className="opacity-50">
+                    ({LL.llmConfig_optional()})
+                  </span>
+                </label>
+                <input
+                  id={topPInputId}
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={form.topP}
+                  onChange={(e) => setForm({ ...form, topP: e.target.value })}
+                  placeholder={LL.llmConfig_providerDefault()}
+                  className={inputCls}
+                />
+                {errors.topP && (
+                  <p className="mt-1 text-xs text-destructive">{errors.topP}</p>
+                )}
+              </div>
+              <div>
+                <label
+                  htmlFor={maxOutputTokensInputId}
+                  className="mb-1 block text-xs text-muted-foreground"
+                >
+                  {LL.llmConfig_maxOutputTokens()}{" "}
+                  <span className="opacity-50">
+                    ({LL.llmConfig_optional()})
+                  </span>
+                </label>
+                <input
+                  id={maxOutputTokensInputId}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.maxOutputTokens}
+                  onChange={(e) =>
+                    setForm({ ...form, maxOutputTokens: e.target.value })
+                  }
+                  placeholder={LL.llmConfig_providerDefault()}
+                  className={inputCls}
+                />
+                {errors.maxOutputTokens && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.maxOutputTokens}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label
+                  htmlFor={reasoningEffortInputId}
+                  className="mb-1 block text-xs text-muted-foreground"
+                >
+                  {LL.llmConfig_reasoningEffort()}{" "}
+                  <span className="opacity-50">
+                    ({LL.llmConfig_optional()})
+                  </span>
+                </label>
+                <select
+                  id={reasoningEffortInputId}
+                  value={form.reasoningEffort}
+                  disabled={reasoningEffortDisabled}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      reasoningEffort: e.target.value as "" | ReasoningEffort,
+                    })
+                  }
+                  className={`${inputCls} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {REASONING_EFFORTS.map((value) => (
+                    <option key={value || "default"} value={value}>
+                      {getReasoningEffortLabel(value)}
+                    </option>
+                  ))}
+                </select>
+                {reasoningEffortDisabled && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {LL.llmConfig_reasoningEffortUnsupported()}
+                  </p>
+                )}
+              </div>
+            </div>
+          </details>
 
           <label
             htmlFor={enabledInputId}

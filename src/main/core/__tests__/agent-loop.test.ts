@@ -713,6 +713,35 @@ describe("AgentLoop", () => {
     expect(call.temperature).toBe(0);
   });
 
+  it("passes topP and maxOutputTokens to streamText when configured", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "ok" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      topP: 0.8,
+      maxOutputTokens: 4096,
+    });
+    await collect(loop, "hi");
+
+    const call = streamTextSpy.mock.calls[0][0] as {
+      maxOutputTokens?: number;
+      topP?: number;
+    };
+    expect(call.topP).toBe(0.8);
+    expect(call.maxOutputTokens).toBe(4096);
+  });
+
   it("omits temperature when not configured (preserves provider default)", async () => {
     scriptedRuns.push({
       parts: [

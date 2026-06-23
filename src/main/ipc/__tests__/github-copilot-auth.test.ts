@@ -156,7 +156,7 @@ describe("github copilot device auth", () => {
         label: "claude-sonnet-4.6",
         capabilities: {
           preferredApi: "chat_completions",
-          supportsReasoning: null,
+          supportsReasoning: false,
           supportsTools: true,
           supportsVision: null,
         },

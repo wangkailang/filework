@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchOpenAICompatibleModels } from "../llm-config-models";
+import {
+  fetchOpenAICompatibleModels,
+  inferLlmModelCapabilities,
+} from "../llm-config-models";
+
+describe("inferLlmModelCapabilities", () => {
+  it("marks known non-reasoning chat models as not supporting reasoning effort", () => {
+    expect(
+      inferLlmModelCapabilities("openai/gpt-4o-mini").supportsReasoning,
+    ).toBe(false);
+    expect(inferLlmModelCapabilities("deepseek-chat").supportsReasoning).toBe(
+      false,
+    );
+  });
+});
 
 describe("fetchOpenAICompatibleModels", () => {
   it("fetches /models from the resolved OpenAI-compatible base URL", async () => {
@@ -46,7 +60,7 @@ describe("fetchOpenAICompatibleModels", () => {
         label: "GPT-4o mini",
         capabilities: {
           preferredApi: "chat_completions",
-          supportsReasoning: null,
+          supportsReasoning: false,
           supportsTools: true,
           supportsVision: true,
         },

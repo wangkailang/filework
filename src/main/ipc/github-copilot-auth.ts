@@ -148,11 +148,15 @@ function inferGithubCopilotModelCapabilities(
   const isGpt5 = lowerId.startsWith("gpt-5");
   const isMini = lowerId.includes("mini");
   const isReasoningModel =
-    (isGpt5 && !isMini) || lowerId.startsWith("o1") || lowerId.startsWith("o3");
+    (isGpt5 && !isMini) ||
+    lowerId.startsWith("o1") ||
+    lowerId.startsWith("o3") ||
+    lowerId.startsWith("o4") ||
+    lowerId.startsWith("o5");
 
   return {
     preferredApi: isGpt5 && !isMini ? "responses" : "chat_completions",
-    supportsReasoning: isReasoningModel ? true : null,
+    supportsReasoning: isReasoningModel,
     supportsTools: true,
     supportsVision:
       lowerId.includes("vision") ||

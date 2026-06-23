@@ -36,6 +36,7 @@ import {
   defaultRules,
 } from "../core/agent/reflection-gate";
 import type { ClassifiedRetryError } from "../core/agent/retry";
+import type { ImagePart, VideoJobPart } from "../core/session/message-parts";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
   createWorkspace,
@@ -48,6 +49,7 @@ import {
   addTask,
   deleteSkillTrust,
   finishAutomationRun,
+  getLlmConfig,
   getSetting,
   listSkillTrust,
   type SkillTrustRow,
@@ -76,6 +78,7 @@ import type { UnifiedSkill } from "../skills-runtime/types";
 import { buildAgentToolRegistry } from "./agent-tools";
 import {
   getModelAndAdapterByConfigId,
+  isAvailableLlmConfig,
   selectAvailableChatLlmConfig,
 } from "./ai-models";
 import { registerPlanHandlers } from "./ai-plan-handlers";
@@ -101,6 +104,10 @@ import {
 import { settleBatch } from "./approval-batcher";
 import { buildApprovalHook } from "./approval-hook";
 import { createForkSkillRunner } from "./fork-skill-runner";
+import {
+  createVideoJobForConfig,
+  generateImageForConfig,
+} from "./media-runtime";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";
 import { registerUsageHandlers } from "./usage-handlers";
@@ -266,24 +273,149 @@ const handleTaskExecutionInner = async (
       },
     });
 
+    const requestedLlmConfig = payload.llmConfigId
+      ? getLlmConfig(payload.llmConfigId)
+      : null;
+    if (
+      requestedLlmConfig?.modality === "image" ||
+      requestedLlmConfig?.modality === "video"
+    ) {
+      const resolvedLlmConfigId = requestedLlmConfig.id;
+      if (!isAvailableLlmConfig(requestedLlmConfig)) {
+        throw new Error(
+          `此 ${requestedLlmConfig.modality} LLM 配置不可用，请先在设置中启用并测试连接成功。`,
+        );
+      }
+
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "model-selected",
+        timestamp: new Date().toISOString(),
+        detail: {
+          provider: requestedLlmConfig.provider,
+          modelId: requestedLlmConfig.model,
+          configId: resolvedLlmConfigId,
+          modality: requestedLlmConfig.modality,
+          fallbackFromConfigId: null,
+        },
+      });
+
+      const mediaSessionId = payload.sessionId ?? id;
+      if (requestedLlmConfig.modality === "image") {
+        const result = await generateImageForConfig({
+          llmConfigId: resolvedLlmConfigId,
+          sessionId: mediaSessionId,
+          prompt: payload.prompt,
+          signal: controller.signal,
+        });
+        if ("error" in result) throw new Error(result.error);
+
+        const part: ImagePart = {
+          type: "image",
+          path: result.path,
+          prompt: result.prompt,
+          configId: result.configId,
+          imageId: result.imageId,
+          modelId: result.modelId,
+        };
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-media", { id, ...streamRoute, part });
+        }
+        updateTask(id, {
+          status: "completed",
+          result: result.path,
+          completedAt: new Date().toISOString(),
+          modelId: requestedLlmConfig.model,
+          provider: requestedLlmConfig.provider,
+        });
+        finishAutomationRunForTask(payload.automationRunId, {
+          status: "succeeded",
+          output: result.path,
+        });
+        emitTaskTraceEvent(sender, {
+          taskId: id,
+          type: "task-done",
+          timestamp: new Date().toISOString(),
+          detail: {
+            status: "completed",
+            modality: "image",
+            outputPath: result.path,
+          },
+        });
+        void appendPattern({
+          kind: "task",
+          ts: new Date().toISOString(),
+          taskId: id,
+          status: "completed",
+          durationMs: Date.now() - taskStartMs,
+        });
+        if (!sender.isDestroyed()) {
+          sender.send("ai:stream-done", { id, ...streamRoute });
+        }
+        return { id, status: "completed" };
+      }
+
+      const result = await createVideoJobForConfig(
+        {
+          llmConfigId: resolvedLlmConfigId,
+          sessionId: mediaSessionId,
+          prompt: payload.prompt,
+          signal: controller.signal,
+        },
+        sender,
+      );
+      if ("error" in result) throw new Error(result.error);
+
+      const part: VideoJobPart = {
+        type: "video-job",
+        jobId: result.jobId,
+        status: "queued",
+        prompt: result.prompt,
+        configId: result.configId,
+        modelId: result.modelId,
+      };
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-media", { id, ...streamRoute, part });
+      }
+      updateTask(id, {
+        status: "completed",
+        result: `Video job queued: ${result.jobId}`,
+        completedAt: new Date().toISOString(),
+        modelId: requestedLlmConfig.model,
+        provider: requestedLlmConfig.provider,
+      });
+      finishAutomationRunForTask(payload.automationRunId, {
+        status: "succeeded",
+        output: result.jobId,
+      });
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "task-done",
+        timestamp: new Date().toISOString(),
+        detail: {
+          status: "completed",
+          modality: "video",
+          jobId: result.jobId,
+        },
+      });
+      void appendPattern({
+        kind: "task",
+        ts: new Date().toISOString(),
+        taskId: id,
+        status: "completed",
+        durationMs: Date.now() - taskStartMs,
+      });
+      if (!sender.isDestroyed()) {
+        sender.send("ai:stream-done", { id, ...streamRoute });
+      }
+      return { id, status: "completed" };
+    }
+
     const llmSelection = selectAvailableChatLlmConfig(payload.llmConfigId);
     const llmConfig = llmSelection.config;
     const resolvedLlmConfigId = llmConfig.id;
 
-    // Phase 1 守卫:只有 "chat" modality 走 agent 循环。图像/视频配置
-    // 使用不同的 provider API(例如 MiniMax /v1/image_generation、
-    // /v1/video_generation),将在 Phase 2/3 接入。没有这个检查的话,
-    // 图像/视频模型名会被转发到 /v1/chat/completions,上游会返回令人
-    // 困惑的 "unknown model" 错误。
-    if (llmConfig?.modality && llmConfig.modality !== "chat") {
-      throw new Error(
-        `此 LLM 配置的 modality 是 "${llmConfig.modality}"，聊天路径只支持 "chat"。${
-          llmConfig.modality === "image" ? "图像生成" : "视频生成"
-        }尚未接入（Phase 2/3 待实现）。请改用 chat 模型，或等待后续版本。`,
-      );
-    }
-
-    const { model, adapter } =
+    const { model, adapter, generationOptions, providerOptions } =
       getModelAndAdapterByConfigId(resolvedLlmConfigId);
 
     emitTaskTraceEvent(sender, {
@@ -564,8 +696,6 @@ const handleTaskExecutionInner = async (
     const useMessagesMode = (convertedHistory?.length ?? 0) > 0;
 
     // ── AgentLoop 驱动 + IPC 转译 ──────────────────────────
-    const providerOptions = adapter.buildProviderOptions();
-
     // Watchdog 贯穿整个 agent 运行过程。
     const watchdog = new StreamWatchdog({
       taskId: id,
@@ -690,6 +820,9 @@ const handleTaskExecutionInner = async (
       systemPrompt,
       history: useMessagesMode ? convertedHistory : undefined,
       providerOptions,
+      temperature: generationOptions.temperature,
+      topP: generationOptions.topP,
+      maxOutputTokens: generationOptions.maxOutputTokens,
       signal: controller.signal,
       agentId: id,
       hooks: { reflect: reflectHook },

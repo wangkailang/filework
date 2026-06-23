@@ -894,6 +894,70 @@ type RootTranslation = {
 	 */
 	llmConfig_model: string
 	/**
+	 * A​d​v​a​n​c​e​d​ ​o​p​t​i​o​n​s
+	 */
+	llmConfig_advancedOptions: string
+	/**
+	 * P​r​o​v​i​d​e​r​ ​d​e​f​a​u​l​t
+	 */
+	llmConfig_providerDefault: string
+	/**
+	 * T​e​m​p​e​r​a​t​u​r​e
+	 */
+	llmConfig_temperature: string
+	/**
+	 * T​o​p​ ​P
+	 */
+	llmConfig_topP: string
+	/**
+	 * M​a​x​ ​o​u​t​p​u​t​ ​t​o​k​e​n​s
+	 */
+	llmConfig_maxOutputTokens: string
+	/**
+	 * R​e​a​s​o​n​i​n​g​ ​e​f​f​o​r​t
+	 */
+	llmConfig_reasoningEffort: string
+	/**
+	 * N​o​n​e
+	 */
+	llmConfig_reasoningEffortNone: string
+	/**
+	 * M​i​n​i​m​a​l
+	 */
+	llmConfig_reasoningEffortMinimal: string
+	/**
+	 * L​o​w
+	 */
+	llmConfig_reasoningEffortLow: string
+	/**
+	 * M​e​d​i​u​m
+	 */
+	llmConfig_reasoningEffortMedium: string
+	/**
+	 * H​i​g​h
+	 */
+	llmConfig_reasoningEffortHigh: string
+	/**
+	 * E​x​t​r​a​ ​h​i​g​h
+	 */
+	llmConfig_reasoningEffortXHigh: string
+	/**
+	 * T​h​e​ ​s​e​l​e​c​t​e​d​ ​m​o​d​e​l​ ​d​o​e​s​ ​n​o​t​ ​s​u​p​p​o​r​t​ ​r​e​a​s​o​n​i​n​g​ ​e​f​f​o​r​t​.
+	 */
+	llmConfig_reasoningEffortUnsupported: string
+	/**
+	 * T​e​m​p​e​r​a​t​u​r​e​ ​m​u​s​t​ ​b​e​ ​b​e​t​w​e​e​n​ ​0​ ​a​n​d​ ​2
+	 */
+	llmConfig_temperatureInvalid: string
+	/**
+	 * T​o​p​ ​P​ ​m​u​s​t​ ​b​e​ ​b​e​t​w​e​e​n​ ​0​ ​a​n​d​ ​1
+	 */
+	llmConfig_topPInvalid: string
+	/**
+	 * M​a​x​ ​o​u​t​p​u​t​ ​t​o​k​e​n​s​ ​m​u​s​t​ ​b​e​ ​a​ ​p​o​s​i​t​i​v​e​ ​i​n​t​e​g​e​r
+	 */
+	llmConfig_maxOutputTokensInvalid: string
+	/**
 	 * D​e​f​a​u​l​t
 	 */
 	llmConfig_default: string
@@ -3398,6 +3462,70 @@ export type TranslationFunctions = {
 	 * Model
 	 */
 	llmConfig_model: () => LocalizedString
+	/**
+	 * Advanced options
+	 */
+	llmConfig_advancedOptions: () => LocalizedString
+	/**
+	 * Provider default
+	 */
+	llmConfig_providerDefault: () => LocalizedString
+	/**
+	 * Temperature
+	 */
+	llmConfig_temperature: () => LocalizedString
+	/**
+	 * Top P
+	 */
+	llmConfig_topP: () => LocalizedString
+	/**
+	 * Max output tokens
+	 */
+	llmConfig_maxOutputTokens: () => LocalizedString
+	/**
+	 * Reasoning effort
+	 */
+	llmConfig_reasoningEffort: () => LocalizedString
+	/**
+	 * None
+	 */
+	llmConfig_reasoningEffortNone: () => LocalizedString
+	/**
+	 * Minimal
+	 */
+	llmConfig_reasoningEffortMinimal: () => LocalizedString
+	/**
+	 * Low
+	 */
+	llmConfig_reasoningEffortLow: () => LocalizedString
+	/**
+	 * Medium
+	 */
+	llmConfig_reasoningEffortMedium: () => LocalizedString
+	/**
+	 * High
+	 */
+	llmConfig_reasoningEffortHigh: () => LocalizedString
+	/**
+	 * Extra high
+	 */
+	llmConfig_reasoningEffortXHigh: () => LocalizedString
+	/**
+	 * The selected model does not support reasoning effort.
+	 */
+	llmConfig_reasoningEffortUnsupported: () => LocalizedString
+	/**
+	 * Temperature must be between 0 and 2
+	 */
+	llmConfig_temperatureInvalid: () => LocalizedString
+	/**
+	 * Top P must be between 0 and 1
+	 */
+	llmConfig_topPInvalid: () => LocalizedString
+	/**
+	 * Max output tokens must be a positive integer
+	 */
+	llmConfig_maxOutputTokensInvalid: () => LocalizedString
 	/**
 	 * Default
 	 */

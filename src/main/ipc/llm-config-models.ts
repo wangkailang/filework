@@ -67,11 +67,15 @@ export function inferLlmModelCapabilities(
   const isGpt5 = lowerId.includes("gpt-5");
   const isMini = lowerId.includes("mini");
   const isReasoningModel =
-    (isGpt5 && !isMini) || lowerId.includes("o1") || lowerId.includes("o3");
+    (isGpt5 && !isMini) ||
+    lowerId.includes("o1") ||
+    lowerId.includes("o3") ||
+    lowerId.includes("o4") ||
+    lowerId.includes("o5");
 
   return {
     preferredApi: isGpt5 && !isMini ? "responses" : "chat_completions",
-    supportsReasoning: isReasoningModel ? true : null,
+    supportsReasoning: isReasoningModel,
     supportsTools: true,
     supportsVision:
       lowerId.includes("vision") ||

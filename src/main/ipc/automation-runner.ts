@@ -201,9 +201,8 @@ const createDefaultAgentRun: AutomationRunAgent = async function* (
   try {
     const workspacePath = executionWorkspace.workspacePath;
     const workspace = new LocalWorkspace(workspacePath);
-    const { model, adapter, modelId } = getModelAndAdapterByConfigId(
-      run.modelId ?? undefined,
-    );
+    const { model, modelId, generationOptions, providerOptions } =
+      getModelAndAdapterByConfigId(run.modelId ?? undefined);
     const isGitWorkspace = isGitBackedWorkspace(workspace);
     const workspaceMemory = await readWorkspaceMemory(workspace);
     const systemPrompt = buildAgentSystemPrompt({
@@ -227,7 +226,10 @@ const createDefaultAgentRun: AutomationRunAgent = async function* (
       model,
       tools: toolRegistry,
       systemPrompt,
-      providerOptions: adapter.buildProviderOptions(),
+      providerOptions,
+      temperature: generationOptions.temperature,
+      topP: generationOptions.topP,
+      maxOutputTokens: generationOptions.maxOutputTokens,
       agentId: run.id,
       hooks: { beforeToolCall: headlessBeforeToolCall },
       classifyError: (err) => {
