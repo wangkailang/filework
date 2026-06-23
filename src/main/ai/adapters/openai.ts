@@ -89,11 +89,21 @@ export class OpenAIAdapter implements ProviderAdapter {
       : openai(config.model);
   }
 
-  buildProviderOptions() {
+  buildProviderOptions(config?: ProviderConfig) {
     // 禁用并行工具调用,使 `createPlan` 调用无法与其他工具在同一步骤中批处理
     // —— 这样它的「等待审批」才能真正暂停整个循环,而不会让同级工具
     //(如 webSearch 等)在未经审批的情况下执行。
-    return { openai: { parallelToolCalls: false } };
+    const shouldSendReasoningEffort =
+      Boolean(config?.reasoningEffort) &&
+      config?.modelCapabilities?.supportsReasoning !== false;
+    return {
+      openai: {
+        parallelToolCalls: false,
+        ...(shouldSendReasoningEffort && {
+          reasoningEffort: config?.reasoningEffort,
+        }),
+      },
+    };
   }
 
   extractCacheMetrics(

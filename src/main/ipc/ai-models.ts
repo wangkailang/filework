@@ -6,10 +6,12 @@
  * 对应的 model + adapter 组合。
  */
 
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import {
   createModelWithAdapter,
   getAdapter,
   type ProviderAdapter,
+  type ProviderConfig,
 } from "../ai/adapters";
 import { classifyError } from "../ai/error-classifier";
 import { getLlmConfig, getLlmConfigs, type LlmConfig } from "../db";
@@ -20,13 +22,23 @@ export interface LlmConfigSelection {
   fallbackFromConfigId: string | null;
 }
 
-export function isAvailableChatLlmConfig(config: LlmConfig): boolean {
+export interface LlmGenerationOptions {
+  maxOutputTokens?: number;
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+}
+
+export function isAvailableLlmConfig(config: LlmConfig): boolean {
   return (
     config.enabled !== false &&
-    config.modality === "chat" &&
     config.lastCheckStatus === "success" &&
     config.modelAvailable !== false
   );
+}
+
+export function isAvailableChatLlmConfig(config: LlmConfig): boolean {
+  return config.modality === "chat" && isAvailableLlmConfig(config);
 }
 
 /**
@@ -68,7 +80,17 @@ export function selectAvailableChatLlmConfig(
 export const getModelAndAdapterByConfigId = (configId?: string) => {
   const { config } = selectAvailableChatLlmConfig(configId);
 
-  const { provider, apiKey, baseUrl, apiPath, model: modelId } = config;
+  const {
+    provider,
+    apiKey,
+    baseUrl,
+    apiPath,
+    model: modelId,
+    temperature,
+    topP,
+    maxOutputTokens,
+    reasoningEffort,
+  } = config;
   console.log(
     "[AI] provider:",
     provider,
@@ -90,25 +112,40 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
       ? "https://api.minimaxi.com/v1"
       : baseUrl;
 
+  const providerConfig: ProviderConfig = {
+    provider,
+    apiKey: apiKey || "",
+    resolveApiKey:
+      provider === "github-copilot"
+        ? async (options?: { forceRefresh?: boolean }) => {
+            const token = await getFreshGithubCopilotSessionToken({
+              configId: config.id,
+              forceRefresh: options?.forceRefresh,
+            });
+            return token.apiToken;
+          }
+        : undefined,
+    baseUrl: resolvedBaseUrl,
+    apiPath,
+    model: modelId,
+    reasoningEffort,
+    modelCapabilities: config.modelCapabilities,
+  };
+  const modelWithAdapter = createModelWithAdapter(providerConfig);
+  const generationOptions: LlmGenerationOptions = {
+    ...(temperature !== null && temperature !== undefined && { temperature }),
+    ...(topP !== null && topP !== undefined && { topP }),
+    ...(maxOutputTokens !== null &&
+      maxOutputTokens !== undefined && { maxOutputTokens }),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  };
+
   return {
-    ...createModelWithAdapter({
-      provider,
-      apiKey: apiKey || "",
-      resolveApiKey:
-        provider === "github-copilot"
-          ? async (options) => {
-              const token = await getFreshGithubCopilotSessionToken({
-                configId: config.id,
-                forceRefresh: options?.forceRefresh,
-              });
-              return token.apiToken;
-            }
-          : undefined,
-      baseUrl: resolvedBaseUrl,
-      apiPath,
-      model: modelId,
-      modelCapabilities: config.modelCapabilities,
-    }),
+    ...modelWithAdapter,
+    generationOptions,
+    providerOptions: modelWithAdapter.adapter.buildProviderOptions(
+      providerConfig,
+    ) as ProviderOptions,
     modelId,
     configId: config.id,
   };

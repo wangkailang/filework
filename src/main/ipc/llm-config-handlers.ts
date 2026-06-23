@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import type { LlmConfig, LlmModality } from "../db";
+import type { LlmConfig, LlmModality, LlmReasoningEffort } from "../db";
 import {
   createLlmConfig,
   deleteLlmConfig,
@@ -36,6 +36,10 @@ interface CreatePayload {
   baseUrl?: string;
   apiPath?: string;
   model?: string;
+  temperature?: number | null;
+  topP?: number | null;
+  maxOutputTokens?: number | null;
+  reasoningEffort?: LlmReasoningEffort | null;
   modality?: LlmModality;
   enabled?: boolean;
   isDefault?: boolean;
@@ -49,6 +53,10 @@ interface UpdatePayload {
   baseUrl?: string;
   apiPath?: string | null;
   model?: string;
+  temperature?: number | null;
+  topP?: number | null;
+  maxOutputTokens?: number | null;
+  reasoningEffort?: LlmReasoningEffort | null;
   modality?: LlmModality;
   enabled?: boolean;
   isDefault?: boolean;
@@ -65,6 +73,59 @@ type LlmConfigResult = LlmConfig | { error: string };
 type GithubCopilotSessionToken = Awaited<
   ReturnType<typeof getFreshGithubCopilotSessionToken>
 >;
+const REASONING_EFFORTS: LlmReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+function isValidNumberRange(
+  value: number | null | undefined,
+  min: number,
+  max: number,
+): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (Number.isFinite(value) && value >= min && value <= max)
+  );
+}
+
+function isValidPositiveInteger(value: number | null | undefined): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (Number.isInteger(value) && value > 0)
+  );
+}
+
+function validateGenerationOptionsPayload(
+  data: Pick<
+    CreatePayload,
+    "maxOutputTokens" | "reasoningEffort" | "temperature" | "topP"
+  >,
+): string | null {
+  if (!isValidNumberRange(data.temperature, 0, 2)) {
+    return "temperature must be between 0 and 2";
+  }
+  if (!isValidNumberRange(data.topP, 0, 1)) {
+    return "topP must be between 0 and 1";
+  }
+  if (!isValidPositiveInteger(data.maxOutputTokens)) {
+    return "maxOutputTokens must be a positive integer";
+  }
+  if (
+    data.reasoningEffort !== undefined &&
+    data.reasoningEffort !== null &&
+    !REASONING_EFFORTS.includes(data.reasoningEffort)
+  ) {
+    return "reasoningEffort is invalid";
+  }
+  return null;
+}
 
 function formatLlmConnectionCheckMessage(
   result: LlmConnectionTestResult,
@@ -207,6 +268,8 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
   if (data.modality && !["chat", "image", "video"].includes(data.modality)) {
     return `Invalid modality: ${data.modality}`;
   }
+  const generationOptionsError = validateGenerationOptionsPayload(data);
+  if (generationOptionsError) return generationOptionsError;
 
   return null;
 }
@@ -454,6 +517,10 @@ export const registerLlmConfigHandlers = () => {
         baseUrl: data.baseUrl ?? null,
         apiPath: data.apiPath?.trim() || null,
         model,
+        temperature: data.temperature ?? null,
+        topP: data.topP ?? null,
+        maxOutputTokens: data.maxOutputTokens ?? null,
+        reasoningEffort: data.reasoningEffort ?? null,
         modality: data.modality ?? "chat",
         enabled: data.enabled ?? true,
         isDefault: data.isDefault ?? false,
@@ -482,6 +549,11 @@ export const registerLlmConfigHandlers = () => {
             return {
               error: "apiPath must start with / and end with /chat/completions",
             };
+          }
+          const generationOptionsError =
+            validateGenerationOptionsPayload(updates);
+          if (generationOptionsError) {
+            return { error: generationOptionsError };
           }
           updateLlmConfig(id, updates);
         }

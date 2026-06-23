@@ -96,6 +96,10 @@ export const initDatabase = async () => {
       base_url TEXT,
       api_path TEXT,
       model TEXT NOT NULL,
+      temperature REAL,
+      top_p REAL,
+      max_output_tokens INTEGER,
+      reasoning_effort TEXT,
       modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
       is_default INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
@@ -598,6 +602,18 @@ export const initDatabase = async () => {
   if (!llmCols.some((c) => c.name === "auth_metadata")) {
     sqlite.exec("ALTER TABLE llm_configs ADD COLUMN auth_metadata TEXT");
   }
+  if (!llmCols.some((c) => c.name === "temperature")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN temperature REAL");
+  }
+  if (!llmCols.some((c) => c.name === "top_p")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN top_p REAL");
+  }
+  if (!llmCols.some((c) => c.name === "max_output_tokens")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN max_output_tokens INTEGER");
+  }
+  if (!llmCols.some((c) => c.name === "reasoning_effort")) {
+    sqlite.exec("ALTER TABLE llm_configs ADD COLUMN reasoning_effort TEXT");
+  }
   const llmConfigsSql = (
     sqlite
       .prepare(
@@ -618,6 +634,10 @@ export const initDatabase = async () => {
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
+            temperature REAL,
+            top_p REAL,
+            max_output_tokens INTEGER,
+            reasoning_effort TEXT,
             modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
             is_default INTEGER NOT NULL DEFAULT 0,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -627,8 +647,9 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, temperature, top_p, max_output_tokens, reasoning_effort, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
             SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
+                   temperature, top_p, max_output_tokens, reasoning_effort,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -670,6 +691,10 @@ export const initDatabase = async () => {
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
+            temperature REAL,
+            top_p REAL,
+            max_output_tokens INTEGER,
+            reasoning_effort TEXT,
             modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
             is_default INTEGER NOT NULL DEFAULT 0,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -679,8 +704,9 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, temperature, top_p, max_output_tokens, reasoning_effort, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
             SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
+                   temperature, top_p, max_output_tokens, reasoning_effort,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -720,6 +746,10 @@ export const initDatabase = async () => {
             base_url TEXT,
             api_path TEXT,
             model TEXT NOT NULL,
+            temperature REAL,
+            top_p REAL,
+            max_output_tokens INTEGER,
+            reasoning_effort TEXT,
             modality TEXT NOT NULL DEFAULT 'chat' CHECK(modality IN ('chat','image','video')),
             is_default INTEGER NOT NULL DEFAULT 0,
             enabled INTEGER NOT NULL DEFAULT 1,
@@ -729,8 +759,9 @@ export const initDatabase = async () => {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
+          INSERT INTO llm_configs_new (id, name, provider, api_key, auth_metadata, base_url, api_path, model, temperature, top_p, max_output_tokens, reasoning_effort, modality, is_default, enabled, last_checked_at, last_check_status, last_check_message, created_at, updated_at)
             SELECT id, name, provider, api_key, auth_metadata, base_url, api_path, model,
+                   temperature, top_p, max_output_tokens, reasoning_effort,
                    COALESCE(modality, 'chat'),
                    is_default,
                    COALESCE(enabled, 1),
@@ -2286,6 +2317,13 @@ export type LlmProvider =
 export type LlmModality = "chat" | "image" | "video";
 export type LlmCheckStatus = "success" | "error";
 export type LlmModelPreferredApi = "chat_completions" | "responses";
+export type LlmReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 
 export interface LlmModelCapabilities {
   preferredApi: LlmModelPreferredApi;
@@ -2302,6 +2340,10 @@ export interface LlmConfig {
   baseUrl: string | null;
   apiPath: string | null;
   model: string;
+  temperature: number | null;
+  topP: number | null;
+  maxOutputTokens: number | null;
+  reasoningEffort: LlmReasoningEffort | null;
   /** 该配置的产出类型。为向后兼容默认 "chat"。 */
   modality: LlmModality;
   isDefault: boolean;
@@ -2351,6 +2393,10 @@ function mapRowToLlmConfig(
     baseUrl: row.baseUrl,
     apiPath: row.apiPath,
     model: row.model,
+    temperature: row.temperature ?? null,
+    topP: row.topP ?? null,
+    maxOutputTokens: row.maxOutputTokens ?? null,
+    reasoningEffort: (row.reasoningEffort as LlmReasoningEffort | null) ?? null,
     modality: row.modality,
     isDefault: row.isDefault,
     enabled: row.enabled,
@@ -2416,6 +2462,10 @@ export const createLlmConfig = (
     | "modality"
     | "apiPath"
     | "enabled"
+    | "temperature"
+    | "topP"
+    | "maxOutputTokens"
+    | "reasoningEffort"
     | "lastCheckedAt"
     | "lastCheckStatus"
     | "lastCheckMessage"
@@ -2423,6 +2473,10 @@ export const createLlmConfig = (
     apiPath?: string | null;
     authMetadata?: string | null;
     enabled?: boolean;
+    temperature?: number | null;
+    topP?: number | null;
+    maxOutputTokens?: number | null;
+    reasoningEffort?: LlmReasoningEffort | null;
     lastCheckedAt?: string | null;
     lastCheckStatus?: LlmCheckStatus | null;
     lastCheckMessage?: string | null;
@@ -2447,6 +2501,10 @@ export const createLlmConfig = (
       baseUrl: config.baseUrl ?? null,
       apiPath: config.apiPath ?? null,
       model: config.model,
+      temperature: config.temperature ?? null,
+      topP: config.topP ?? null,
+      maxOutputTokens: config.maxOutputTokens ?? null,
+      reasoningEffort: config.reasoningEffort ?? null,
       modality,
       isDefault: config.isDefault,
       enabled: config.enabled ?? true,
@@ -2466,6 +2524,10 @@ export const createLlmConfig = (
     baseUrl: config.baseUrl ?? null,
     apiPath: config.apiPath ?? null,
     model: config.model,
+    temperature: config.temperature ?? null,
+    topP: config.topP ?? null,
+    maxOutputTokens: config.maxOutputTokens ?? null,
+    reasoningEffort: config.reasoningEffort ?? null,
     modality,
     isDefault: config.isDefault,
     enabled: config.enabled ?? true,
@@ -2551,6 +2613,13 @@ export const updateLlmConfig = (
   if (updates.baseUrl !== undefined) mapped.baseUrl = updates.baseUrl;
   if (updates.apiPath !== undefined) mapped.apiPath = updates.apiPath;
   if (updates.model !== undefined) mapped.model = updates.model;
+  if (updates.temperature !== undefined)
+    mapped.temperature = updates.temperature;
+  if (updates.topP !== undefined) mapped.topP = updates.topP;
+  if (updates.maxOutputTokens !== undefined)
+    mapped.maxOutputTokens = updates.maxOutputTokens;
+  if (updates.reasoningEffort !== undefined)
+    mapped.reasoningEffort = updates.reasoningEffort;
   if (updates.modality !== undefined) mapped.modality = updates.modality;
   if (updates.isDefault !== undefined) mapped.isDefault = updates.isDefault;
   if (updates.enabled !== undefined) mapped.enabled = updates.enabled;

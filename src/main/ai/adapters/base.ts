@@ -21,6 +21,7 @@ export interface ProviderConfig {
   baseUrl?: string | null;
   apiPath?: string | null;
   model: string;
+  reasoningEffort?: string | null;
   modelCapabilities?: {
     preferredApi?: "chat_completions" | "responses" | null;
     supportsReasoning?: boolean | null;
@@ -49,7 +50,7 @@ export interface ProviderAdapter {
   createModel(config: ProviderConfig): LanguageModel;
 
   /** 构建 provider 特有的选项(例如 prompt 缓存 headers) */
-  buildProviderOptions(): Record<string, JSONObject>;
+  buildProviderOptions(config?: ProviderConfig): Record<string, JSONObject>;
 
   /** 在流式响应完成后,从 provider 元数据中提取缓存指标 */
   extractCacheMetrics(

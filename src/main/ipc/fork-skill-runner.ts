@@ -137,7 +137,7 @@ export const createForkSkillRunner = (
     } else {
       resolved = getModelAndAdapterByConfigId(llmConfigId);
     }
-    const { model, adapter, modelId } = resolved;
+    const { model, modelId, generationOptions, providerOptions } = resolved;
 
     // ── 每次调用的组件 ─────────────────────────────────────────────
     const workspace = new LocalWorkspace(opts.workspacePath);
@@ -218,7 +218,10 @@ export const createForkSkillRunner = (
       tools: registryTools,
       systemPrompt: `${opts.systemPrompt}\n\nCurrent workspace: ${opts.workspacePath}`,
       history: opts.history,
-      providerOptions: adapter.buildProviderOptions(),
+      providerOptions,
+      temperature: generationOptions.temperature,
+      topP: generationOptions.topP,
+      maxOutputTokens: generationOptions.maxOutputTokens,
       signal: childController.signal,
       agentId: taskId,
       maxStepsPerTurn:

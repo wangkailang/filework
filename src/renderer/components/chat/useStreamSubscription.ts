@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   ErrorPart,
   ImageGalleryPart,
+  ImagePart,
   MessagePart,
   PlanMessagePart,
   ReasoningPart,
@@ -26,6 +27,7 @@ import type {
   ToolPart,
   UsagePart,
   VideoGalleryPart,
+  VideoJobPart,
 } from "./types";
 
 // Cap displayed gallery to keep DOM weight in check; remote image grids
@@ -376,6 +378,14 @@ export function useStreamSubscription({
         } else {
           parts.push({ type: "text", text: delta });
         }
+        return parts;
+      });
+    });
+
+    const offMedia = window.filework.onStreamMedia(({ id, part }) => {
+      if (!canRouteTask(id)) return;
+      updateParts(id, (parts) => {
+        parts.push(part as ImagePart | VideoJobPart);
         return parts;
       });
     });
@@ -1063,6 +1073,7 @@ export function useStreamSubscription({
       offStart();
       offSkillActivated();
       offDelta();
+      offMedia();
       offReasoning();
       offReasoningEnd();
       offToolCall();

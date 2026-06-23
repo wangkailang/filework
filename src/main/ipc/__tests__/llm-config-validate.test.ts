@@ -128,6 +128,60 @@ describe("validateLlmConfigPayload — OpenAI Compatible provider", () => {
 
     expect(err).toMatch(/apiPath/);
   });
+
+  it("accepts advanced generation options inside safe ranges", () => {
+    const err = validateLlmConfigPayload({
+      name: "OpenRouter",
+      provider: "custom",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-4o-mini",
+      temperature: 0.2,
+      topP: 0.9,
+      maxOutputTokens: 4096,
+      reasoningEffort: "medium",
+    });
+
+    expect(err).toBeNull();
+  });
+
+  it("rejects invalid advanced generation option ranges", () => {
+    expect(
+      validateLlmConfigPayload({
+        name: "OpenRouter",
+        provider: "custom",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+        temperature: 2.5,
+      }),
+    ).toMatch(/temperature/);
+    expect(
+      validateLlmConfigPayload({
+        name: "OpenRouter",
+        provider: "custom",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+        topP: -0.1,
+      }),
+    ).toMatch(/topP/);
+    expect(
+      validateLlmConfigPayload({
+        name: "OpenRouter",
+        provider: "custom",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+        maxOutputTokens: 0,
+      }),
+    ).toMatch(/maxOutputTokens/);
+    expect(
+      validateLlmConfigPayload({
+        name: "OpenRouter",
+        provider: "custom",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+        reasoningEffort: "extreme" as never,
+      }),
+    ).toMatch(/reasoningEffort/);
+  });
 });
 
 describe("validateLlmConfigPayload — GitHub Copilot provider", () => {

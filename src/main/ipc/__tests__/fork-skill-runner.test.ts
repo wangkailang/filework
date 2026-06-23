@@ -44,7 +44,9 @@ vi.mock("../approval-hook", () => ({
 
 const getModelAndAdapterByConfigId = vi.fn((..._args: unknown[]) => ({
   model: {} as never,
-  adapter: { buildProviderOptions: () => ({}) } as never,
+  adapter: {} as never,
+  generationOptions: {},
+  providerOptions: {},
 }));
 vi.mock("../ai-models", () => ({
   getModelAndAdapterByConfigId: (arg?: string) =>
@@ -478,7 +480,9 @@ describe("createForkSkillRunner", () => {
     });
     getModelAndAdapterByConfigId.mockImplementationOnce(() => ({
       model: {} as never,
-      adapter: { buildProviderOptions: () => ({}) } as never,
+      adapter: {} as never,
+      generationOptions: {},
+      providerOptions: {},
     }));
 
     const sender = fakeSender();

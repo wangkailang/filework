@@ -39,6 +39,10 @@ function makeConfig(overrides: Partial<LlmConfig> = {}): LlmConfig {
     lastCheckedAt: "2026-06-22T07:00:00.000Z",
     lastCheckStatus: "success" as const,
     lastCheckMessage: "ok",
+    temperature: 0.2,
+    topP: 0.9,
+    maxOutputTokens: 8192,
+    reasoningEffort: "medium",
     modelAvailable: true,
     modelCapabilities: {
       preferredApi: "responses" as const,
@@ -107,7 +111,7 @@ describe("ai-models LLM config selection", () => {
     dbMock.getLlmConfigs.mockReturnValue([selected]);
     adapterMock.createModelWithAdapter.mockReturnValue({
       model: "model",
-      adapter: "adapter",
+      adapter: { buildProviderOptions: () => ({}) },
     });
 
     const result = getModelAndAdapterByConfigId("selected");
@@ -120,5 +124,30 @@ describe("ai-models LLM config selection", () => {
         modelCapabilities: selected.modelCapabilities,
       }),
     );
+  });
+
+  it("returns advanced generation options from the selected config", () => {
+    const selected = makeConfig({
+      id: "selected",
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 4096,
+      reasoningEffort: "high",
+    });
+    dbMock.getLlmConfig.mockReturnValue(selected);
+    dbMock.getLlmConfigs.mockReturnValue([selected]);
+    adapterMock.createModelWithAdapter.mockReturnValue({
+      model: "model",
+      adapter: { buildProviderOptions: () => ({}) },
+    });
+
+    const result = getModelAndAdapterByConfigId("selected");
+
+    expect(result.generationOptions).toEqual({
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 4096,
+      reasoningEffort: "high",
+    });
   });
 });

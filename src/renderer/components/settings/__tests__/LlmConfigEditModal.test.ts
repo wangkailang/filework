@@ -4,6 +4,7 @@ import {
   formatLlmModelOptionLabel,
   getGithubCopilotAuthStepStates,
   getLlmProviderFieldPolicy,
+  getLlmReasoningEffortAvailability,
   getLlmSelectedModelAvailability,
   getVisibleLlmModelOptions,
   shouldShowGithubCopilotAuthFlow,
@@ -99,6 +100,45 @@ describe("getLlmProviderFieldPolicy", () => {
     );
     expect(
       getLlmSelectedModelAvailability("openai", refreshedModels, "gpt-5.5"),
+    ).toBe("unknown");
+  });
+
+  it("detects when refreshed model metadata does not support reasoning effort", () => {
+    const refreshedModels = [
+      {
+        value: "gpt-4o-mini",
+        label: "GPT-4o mini",
+        capabilities: {
+          preferredApi: "chat_completions" as const,
+          supportsReasoning: false,
+          supportsTools: true,
+          supportsVision: true,
+        },
+      },
+      {
+        value: "gpt-5.5",
+        label: "GPT-5.5",
+        capabilities: {
+          preferredApi: "responses" as const,
+          supportsReasoning: true,
+          supportsTools: true,
+          supportsVision: null,
+        },
+      },
+    ];
+
+    expect(
+      getLlmReasoningEffortAvailability(
+        "custom",
+        refreshedModels,
+        "gpt-4o-mini",
+      ),
+    ).toBe("unsupported");
+    expect(
+      getLlmReasoningEffortAvailability("custom", refreshedModels, "gpt-5.5"),
+    ).toBe("supported");
+    expect(
+      getLlmReasoningEffortAvailability("custom", [], "future-model"),
     ).toBe("unknown");
   });
 

@@ -143,11 +143,19 @@ export async function convertToCoreMessages(
         }
         case "tool": {
           const tp = part as ToolPart;
+          const normalizedInput = normalizeToolInput(tp.args);
+          if (!normalizedInput.ok) {
+            textParts.push({
+              type: "text",
+              text: buildMalformedToolCallText(tp),
+            });
+            break;
+          }
           toolCallParts.push({
             type: "tool-call",
             toolCallId: tp.toolCallId,
             toolName: tp.toolName,
-            input: tp.args,
+            input: normalizedInput.input,
           });
           toolResults.push({
             toolCallId: tp.toolCallId,
@@ -196,6 +204,40 @@ export async function convertToCoreMessages(
   }
 
   return result;
+}
+
+function normalizeToolInput(
+  args: unknown,
+): { ok: true; input: unknown } | { ok: false } {
+  if (typeof args !== "string") {
+    return { ok: true, input: args };
+  }
+
+  try {
+    return { ok: true, input: JSON.parse(args) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function buildMalformedToolCallText(part: ToolPart): string {
+  const error = extractToolError(part.result);
+  const prefix = `Skipped malformed ${part.toolName} tool call from prior history`;
+  return error ? `${prefix}: ${error}` : `${prefix}.`;
+}
+
+function extractToolError(result: unknown): string | null {
+  const raw =
+    result != null && typeof result === "object" && "error" in result
+      ? (result as { error?: unknown }).error
+      : typeof result === "string"
+        ? result
+        : null;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+
+  const withoutRawPayload = raw.replace(/\s*Text:\s*[\s\S]*$/u, "").trim();
+  const trimmed = withoutRawPayload.replace(/[:：.。]+$/u, "");
+  return trimmed.length > 300 ? `${trimmed.slice(0, 300)}...` : trimmed;
 }
 
 /**

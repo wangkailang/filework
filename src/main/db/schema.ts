@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const workspaces = sqliteTable("workspaces", {
   id: text("id").primaryKey(),
@@ -305,6 +305,10 @@ export const llmConfigs = sqliteTable("llm_configs", {
   baseUrl: text("base_url"),
   apiPath: text("api_path"),
   model: text("model").notNull(),
+  temperature: real("temperature"),
+  topP: real("top_p"),
+  maxOutputTokens: integer("max_output_tokens"),
+  reasoningEffort: text("reasoning_effort"),
   /**
    * 该配置产出的内容类型。旧数据行默认为 "chat"。image/video 模态会绕过
    * agent loop,改由专用客户端处理(见 src/main/ai/minimax/*)。

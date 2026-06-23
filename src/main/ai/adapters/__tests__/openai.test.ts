@@ -63,6 +63,32 @@ describe("OpenAIAdapter API selection", () => {
   });
 });
 
+describe("OpenAIAdapter provider options", () => {
+  it("omits reasoning effort when the selected model is known not to support reasoning", () => {
+    const adapter = new OpenAIAdapter();
+
+    expect(
+      adapter.buildProviderOptions({
+        provider: "custom",
+        apiKey: "test-key",
+        baseUrl: "https://api.example.com/v1",
+        model: "gpt-4o-mini",
+        reasoningEffort: "high",
+        modelCapabilities: {
+          preferredApi: "chat_completions",
+          supportsReasoning: false,
+          supportsTools: true,
+          supportsVision: true,
+        },
+      }),
+    ).toEqual({
+      openai: {
+        parallelToolCalls: false,
+      },
+    });
+  });
+});
+
 describe("OpenAIAdapter GitHub Copilot fetch", () => {
   it("overrides Authorization with a fresh Copilot session token", async () => {
     const providerFetch = vi.fn<typeof fetch>(
