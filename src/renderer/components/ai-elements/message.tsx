@@ -305,6 +305,200 @@ function ChatTableCell({
   );
 }
 
+function ChatParagraph({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"p">) {
+  return (
+    <p
+      {...props}
+      className={cn("my-2 leading-7 text-foreground/95", className)}
+    />
+  );
+}
+
+function ChatHeading1({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h1">) {
+  return (
+    <h1
+      {...props}
+      data-chat-heading="h1"
+      className={cn(
+        "mt-5 mb-2 text-[1.35rem] leading-snug font-semibold tracking-normal text-foreground",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHeading2({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h2">) {
+  return (
+    <h2
+      {...props}
+      data-chat-heading="h2"
+      className={cn(
+        "mt-4 mb-2 text-[1.18rem] leading-snug font-semibold tracking-normal text-foreground",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHeading3({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h3">) {
+  return (
+    <h3
+      {...props}
+      data-chat-heading="h3"
+      className={cn(
+        "mt-3.5 mb-1.5 text-[1.05rem] leading-snug font-semibold tracking-normal text-foreground",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHeading4({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h4">) {
+  return (
+    <h4
+      {...props}
+      data-chat-heading="h4"
+      className={cn(
+        "mt-3 mb-1 text-[0.98rem] leading-snug font-semibold tracking-normal text-foreground",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHeading5({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h5">) {
+  return (
+    <h5
+      {...props}
+      data-chat-heading="h5"
+      className={cn(
+        "mt-3 mb-1 text-[0.92rem] leading-snug font-semibold tracking-normal text-foreground/95",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHeading6({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"h6">) {
+  return (
+    <h6
+      {...props}
+      data-chat-heading="h6"
+      className={cn(
+        "mt-3 mb-1 text-[0.86rem] leading-snug font-semibold tracking-normal text-muted-foreground",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatUnorderedList({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"ul">) {
+  return (
+    <ul
+      {...props}
+      className={cn("my-2.5 list-disc space-y-1 pl-5 leading-7", className)}
+    />
+  );
+}
+
+function ChatOrderedList({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"ol">) {
+  return (
+    <ol
+      {...props}
+      className={cn("my-2.5 list-decimal space-y-1 pl-5 leading-7", className)}
+    />
+  );
+}
+
+function ChatListItem({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"li">) {
+  return (
+    <li
+      {...props}
+      className={cn(
+        "pl-1 text-foreground/95 marker:text-muted-foreground [&>p]:my-1 [&>ol]:my-1 [&>ul]:my-1",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatBlockquote({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"blockquote">) {
+  return (
+    <blockquote
+      {...props}
+      className={cn(
+        "my-3 border-l-2 border-border-strong/70 pl-3 text-muted-foreground [&>p]:my-1.5",
+        className,
+      )}
+    />
+  );
+}
+
+function ChatHorizontalRule({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"hr">) {
+  return <hr {...props} className={cn("my-4 border-border/55", className)} />;
+}
+
+function ChatStrong({
+  className,
+  node: _node,
+  ...props
+}: MarkdownElementProps<"strong">) {
+  return (
+    <strong
+      {...props}
+      className={cn("font-semibold text-foreground", className)}
+    />
+  );
+}
+
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => {
     // Built per-render so each <a> can call useLinkRouter (a hook).
@@ -318,13 +512,26 @@ export const MessageResponse = memo(
         tr: ChatTableRow,
         th: ChatTableHeaderCell,
         td: ChatTableCell,
+        p: ChatParagraph,
+        h1: ChatHeading1,
+        h2: ChatHeading2,
+        h3: ChatHeading3,
+        h4: ChatHeading4,
+        h5: ChatHeading5,
+        h6: ChatHeading6,
+        ul: ChatUnorderedList,
+        ol: ChatOrderedList,
+        li: ChatListItem,
+        blockquote: ChatBlockquote,
+        hr: ChatHorizontalRule,
+        strong: ChatStrong,
       }),
       [],
     );
     return (
       <Streamdown
         className={cn(
-          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          "size-full break-words text-[15px] leading-7 text-foreground/95 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           className,
         )}
         plugins={streamdownPlugins}

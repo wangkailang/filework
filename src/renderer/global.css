@@ -5,88 +5,81 @@
 @source "../../../node_modules/streamdown/dist/*.js";
 
 /* ════════════════════════════════════════════════════════════════
-   Monokai 工作台设计系统 —— 暗色为默认,浅色为同调变体
-   规范见 content/spec/design-system.md
+   Neutral Agent Console —— Geist-like neutral surfaces + blue focus.
+   Color is reserved for state, focus, and links.
    ════════════════════════════════════════════════════════════════ */
 @theme {
-  /* Monokai classic: ink, chalk, acid green, hot pink, amber, cyan */
-  --color-background: #272822;
-  --color-foreground: #f8f8f2;
+  --color-background: #0a0a0a;
+  --color-foreground: #ededed;
 
-  /* 表面分层 */
-  --color-surface: #2f302a; /* 面板:rail / dock */
-  --color-surface-sunken: #1f201b; /* 内凹输入,比面板更暗 */
-  --color-card: #33342d;
-  --color-card-foreground: #f8f8f2;
-  --color-popover: #33342d;
-  --color-popover-foreground: #f8f8f2;
-  --color-secondary: #3b3c34;
-  --color-secondary-foreground: #f8f8f2;
-  --color-muted: #3a3b33;
-  --color-muted-foreground: #c9c4b5;
-  --color-accent: #414238; /* hover / 选中底 */
-  --color-accent-foreground: #f8f8f2;
+  /* Neutral surface ladder */
+  --color-surface: #111111;
+  --color-surface-sunken: #050505;
+  --color-card: #171717;
+  --color-card-foreground: #ededed;
+  --color-popover: #1a1a1a;
+  --color-popover-foreground: #ededed;
+  --color-secondary: #1f1f1f;
+  --color-secondary-foreground: #ededed;
+  --color-muted: #1a1a1a;
+  --color-muted-foreground: #a0a0a0;
+  --color-accent: #292929;
+  --color-accent-foreground: #ededed;
 
-  /* 信号主色:沿用默认电光紫,Monokai 绿保留给成功/文档语义 */
-  --color-primary: #a78bfa;
-  --color-primary-foreground: #1a1033;
-  --color-primary-bright: #c4b5fd;
+  --color-primary: #006efe;
+  --color-primary-foreground: #ffffff;
+  --color-primary-bright: #47a8ff;
 
-  /* 边框三档(发丝边为精密感的关键) */
-  --color-border: #4a4b40;
-  --color-border-strong: #5c5d50;
-  --color-border-faint: #35362f;
-  --color-input: #4a4b40;
-  --color-ring: #a78bfa;
+  --color-border: #2e2e2e;
+  --color-border-strong: #454545;
+  --color-border-faint: #1f1f1f;
+  --color-input: #2e2e2e;
+  --color-ring: #47a8ff;
   --color-scrollbar-track: transparent;
-  --color-scrollbar-thumb: #6a6b60;
-  --color-scrollbar-thumb-hover: #818276;
+  --color-scrollbar-thumb: #454545;
+  --color-scrollbar-thumb-hover: #878787;
 
-  --color-destructive: #f92672;
+  --color-destructive: #e2162a;
   --color-destructive-foreground: #ffffff;
 
-  /* ★ 状态系统:Agent 状态语义全局统一 */
-  --color-status-idle: #8f8b7e;
-  --color-status-running: #a6e22e;
-  --color-status-await: #fd971f;
-  --color-status-await-foreground: #1f201b;
-  --color-status-success: #a6e22e;
-  --color-status-error: #f92672;
+  --color-status-idle: #878787;
+  --color-status-running: #0090ff;
+  --color-status-await: #ed9a00;
+  --color-status-await-foreground: #000000;
+  --color-status-success: #00ac3a;
+  --color-status-error: #f13242;
 
-  /* 文件类型色(Monokai 语义色) */
-  --color-file-folder: #fd971f;
-  --color-file-code: #66d9ef;
-  --color-file-doc: #a6e22e;
-  --color-file-image: #ae81ff;
-  --color-file-data: #e6db74;
-  --color-ai-thinking: #66d9ef;
-  --color-ai-success: #a6e22e;
+  /* File metadata stays quiet; content type is secondary to task state. */
+  --color-file-folder: #a0a0a0;
+  --color-file-code: #878787;
+  --color-file-doc: #878787;
+  --color-file-image: #a0a0a0;
+  --color-file-data: #878787;
+  --color-ai-thinking: #0090ff;
+  --color-ai-success: #00ac3a;
 
-  /* 圆角:收紧到精密档 */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 9px;
-  --radius-xl: 10px;
+  --radius-xs: 2px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
   --radius-2xl: 12px;
-  --radius-3xl: 14px;
+  --radius-3xl: 16px;
   --radius-4xl: 16px;
 
-  /* 字体:mono 为共同主角(路径/工具/分支/数字/状态/代码) */
+  /* Prefer Geist when available; fall back to system faces. */
   --font-sans:
-    "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    "Geist", "Geist Sans", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono:
+    "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* 机械感缓动:快进、稳定落位、不弹跳 */
+  /* Short, utility-first motion. */
   --ease-snap: cubic-bezier(0.2, 0, 0, 1);
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* 入场:消息逐条浮起 */
-  --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  /* 状态灯脉冲 / telemetry 扫描光线 / 迷你均衡器 */
-  --animate-ping-ring: ping-ring 1.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-  --animate-scan: scan 2.2s linear infinite;
+  --animate-rise: rise 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-ping-ring: ping-ring 1.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
   --animate-eq: eq 1s cubic-bezier(0.2, 0, 0, 1) infinite;
 }
 
@@ -108,14 +101,6 @@
   100% {
     transform: scale(2.1);
     opacity: 0;
-  }
-}
-@keyframes scan {
-  from {
-    left: -30%;
-  }
-  to {
-    left: 100%;
   }
 }
 @keyframes eq {
@@ -141,7 +126,15 @@ body {
   overflow: hidden;
 }
 
-/* Native scrollbars:thin rounded thumb, themed for Monokai dark/light. */
+.dark {
+  color-scheme: dark;
+}
+
+.light {
+  color-scheme: light;
+}
+
+/* Native scrollbars: thin neutral thumb, aligned with the active theme. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
@@ -171,14 +164,15 @@ body {
 .surface-sunken {
   background: var(--color-surface-sunken);
   box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px rgba(0, 0, 0, 0.36),
     inset 0 0 0 1px var(--color-border);
 }
 /* 聚焦时内描边转主色 */
 .surface-sunken:focus-within {
   box-shadow:
-    inset 0 1px 3px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px var(--color-ring);
+    inset 0 1px 2px rgba(0, 0, 0, 0.36),
+    inset 0 0 0 1px var(--color-ring),
+    0 0 0 1px color-mix(in oklab, var(--color-ring) 28%, transparent);
 }
 .light .surface-sunken {
   box-shadow:
@@ -220,18 +214,12 @@ body {
   margin-inline: 1px 3px;
   padding: 0.1rem 0.46rem 0.1rem 0.36rem;
   border: 1px solid
-    color-mix(in oklab, var(--color-primary) 22%, var(--color-border));
+    color-mix(in oklab, var(--color-primary) 12%, var(--color-border));
   border-radius: calc(var(--radius-sm) + 2px);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--color-primary) 5%, var(--color-muted)),
-      color-mix(in oklab, var(--color-primary) 2%, var(--color-muted))
-    ),
-    var(--color-muted);
+  background: var(--color-muted);
   color: color-mix(
     in oklab,
-    var(--color-primary-bright) 38%,
+    var(--color-primary-bright) 24%,
     var(--color-muted-foreground)
   );
   font-family: var(--font-sans);
@@ -239,10 +227,8 @@ body {
   font-weight: 500;
   letter-spacing: 0;
   line-height: 1.36;
-  box-shadow:
-    0 1px 1px color-mix(in oklab, var(--color-background) 32%, transparent),
-    inset 0 0 0 1px
-    color-mix(in oklab, var(--color-border-faint) 72%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--color-border-faint) 70%, transparent);
   white-space: nowrap;
   vertical-align: 0.05em;
 }
@@ -272,71 +258,65 @@ body {
 }
 
 .light .prompt-skill-mention {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--color-primary) 4%, var(--color-muted)),
-      color-mix(in oklab, var(--color-primary) 2%, var(--color-muted))
-    ),
-    var(--color-muted);
+  background: var(--color-muted);
   color: color-mix(
     in oklab,
-    var(--color-primary) 42%,
+    var(--color-primary) 24%,
     var(--color-muted-foreground)
   );
 }
 
-/* ─── Light theme(Monokai 浅色:暖纸底 + 加深语义色保对比) ─── */
+/* ─── Light theme: same neutral ladder, higher surface brightness. ─── */
 .light {
-  --color-background: #fbfaf3;
-  --color-foreground: #272822;
+  --color-background: #ffffff;
+  --color-foreground: #171717;
 
-  --color-surface: #f0eddf;
-  --color-surface-sunken: #fffdf6;
-  --color-card: #fffdf6;
-  --color-card-foreground: #272822;
-  --color-popover: #fffdf6;
-  --color-popover-foreground: #272822;
-  --color-secondary: #e7e3d3;
-  --color-secondary-foreground: #272822;
-  --color-muted: #ede9dc;
-  --color-muted-foreground: #6b675d;
-  --color-accent: #e2ead1;
-  --color-accent-foreground: #272822;
+  --color-surface: #fafafa;
+  --color-surface-sunken: #f2f2f2;
+  --color-card: #ffffff;
+  --color-card-foreground: #171717;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #171717;
+  --color-secondary: #f2f2f2;
+  --color-secondary-foreground: #171717;
+  --color-muted: #ebebeb;
+  --color-muted-foreground: #666666;
+  --color-accent: #f2f2f2;
+  --color-accent-foreground: #171717;
 
-  --color-primary: #7c3aed;
+  --color-primary: #006bff;
   --color-primary-foreground: #ffffff;
-  --color-primary-bright: #8b5cf6;
+  --color-primary-bright: #0059ec;
 
-  --color-border: #d8d1bb;
-  --color-border-strong: #c1b99f;
-  --color-border-faint: #ebe5d5;
-  --color-input: #d8d1bb;
-  --color-ring: #7c3aed;
+  --color-border: #e6e6e6;
+  --color-border-strong: #c9c9c9;
+  --color-border-faint: #ebebeb;
+  --color-input: #e6e6e6;
+  --color-ring: #006bff;
   --color-scrollbar-track: transparent;
-  --color-scrollbar-thumb: #b9b09a;
-  --color-scrollbar-thumb-hover: #9f967f;
+  --color-scrollbar-thumb: #c9c9c9;
+  --color-scrollbar-thumb-hover: #8f8f8f;
 
-  --color-destructive: #c2185b;
+  --color-destructive: #ea001d;
   --color-destructive-foreground: #ffffff;
 
-  --color-status-idle: #837d6f;
-  --color-status-running: #557d00;
-  --color-status-await: #a65f00;
+  --color-status-idle: #8f8f8f;
+  --color-status-running: #006bff;
+  --color-status-await: #aa4d00;
   --color-status-await-foreground: #ffffff;
-  --color-status-success: #267a3e;
-  --color-status-error: #c2185b;
+  --color-status-success: #28a948;
+  --color-status-error: #d8001b;
 
-  --color-file-folder: #a65f00;
-  --color-file-code: #007a8a;
-  --color-file-doc: #557d00;
-  --color-file-image: #7b4acb;
-  --color-file-data: #8a6f00;
-  --color-ai-thinking: #007a8a;
-  --color-ai-success: #267a3e;
+  --color-file-folder: #7d7d7d;
+  --color-file-code: #7d7d7d;
+  --color-file-doc: #7d7d7d;
+  --color-file-image: #7d7d7d;
+  --color-file-data: #7d7d7d;
+  --color-ai-thinking: #006bff;
+  --color-ai-success: #28a948;
 }
 
-/* sonner toast —— 跟随 Monokai token,自动适配明暗;错误/成功仅描边着色 */
+/* sonner toast: follow neutral tokens; errors/success only tint the edge. */
 [data-sonner-toaster] {
   --normal-bg: var(--color-popover);
   --normal-text: var(--color-popover-foreground);
@@ -344,10 +324,14 @@ body {
 }
 [data-sonner-toast] {
   font-size: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.02),
+    0 8px 16px -4px rgba(0, 0, 0, 0.18);
 }
 .light [data-sonner-toast] {
-  box-shadow: 0 12px 30px rgba(80, 70, 40, 0.16);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.02),
+    0 8px 16px -4px rgba(0, 0, 0, 0.08);
 }
 [data-sonner-toast][data-type="error"] {
   --normal-border: var(--color-status-error);

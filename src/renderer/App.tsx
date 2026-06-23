@@ -110,6 +110,7 @@ export const App = () => {
   const [dockFilePath, setDockFilePath] = useState<string | null>(null);
   const [dockWidth, setDockWidth] = useState<number>(getInitialDockWidth);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [diffBaseBranch, setDiffBaseBranch] = useState<string | null>(null);
   const [automationInitialView, setAutomationInitialView] = useState<
     "tasks" | "triage"
   >("tasks");
@@ -388,6 +389,7 @@ export const App = () => {
     }
     const ref: WorkspaceRef = { kind: "local", path };
     resetDock();
+    setDiffBaseBranch(null);
     try {
       const resolved = await resolveWorkspace(ref);
       setWorkspace(resolved);
@@ -405,6 +407,7 @@ export const App = () => {
     try {
       const resolved = await resolveWorkspace(ref);
       resetDock();
+      setDiffBaseBranch(null);
       setWorkspace(resolved);
       recordRecent(ref, workspaceRefLabel(ref));
     } catch (err) {
@@ -510,6 +513,7 @@ export const App = () => {
                   currentBranch={workspace.currentBranch}
                   isGitRepo={workspace.isGitRepo}
                   branchForChip={branchForChip}
+                  diffBaseBranch={diffBaseBranch}
                   diffInvalidator={diffInvalidator}
                   diffOpen={dockOpen && dockTab === "diff"}
                   railTab={railTab}
@@ -563,7 +567,9 @@ export const App = () => {
                         setDockSubagent((s) => (s ? { ...s, childTaskId } : s))
                       }
                       workspaceRoot={workspace.localPath}
-                      currentBranch={workspace.currentBranch}
+                      currentBranch={branchForChip}
+                      diffBaseBranch={diffBaseBranch}
+                      onDiffBaseBranchChange={setDiffBaseBranch}
                       diffInvalidator={diffInvalidator}
                       isGitRepo={workspace.isGitRepo}
                       automationInitialView={automationInitialView}

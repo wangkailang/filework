@@ -2,7 +2,7 @@ import { parseHTML } from "linkedom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatSession } from "../types";
+import type { ChatMessage, ChatSession } from "../types";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -55,8 +55,8 @@ const createFileworkMock = () => ({
   forkChatSession: vi.fn(),
   getActiveTask: vi.fn(() => Promise.resolve(null)),
   getActiveTasks: vi.fn(() => Promise.resolve([])),
-  getChatHistory: vi.fn(() => Promise.resolve([])),
-  getChatSessions: vi.fn(() => Promise.resolve([])),
+  getChatHistory: vi.fn(() => Promise.resolve([] as ChatMessage[])),
+  getChatSessions: vi.fn(() => Promise.resolve([] as ChatSession[])),
   llmConfig: {
     get: vi.fn(),
     list: vi.fn(() => Promise.resolve([] as unknown[])),
@@ -114,6 +114,7 @@ describe("useChatSession", () => {
   let root: Root | null = null;
   let latest: ChatSessionValue | null = null;
   let filework: ReturnType<typeof createFileworkMock>;
+  let animationCallbacks: FrameRequestCallback[];
   let localStorageMock: {
     getItem: ReturnType<typeof vi.fn>;
     removeItem: ReturnType<typeof vi.fn>;
@@ -129,7 +130,16 @@ describe("useChatSession", () => {
     };
 
     filework = createFileworkMock();
-    Object.assign(window, { filework, localStorage: localStorageMock });
+    animationCallbacks = [];
+    Object.assign(window, {
+      cancelAnimationFrame: vi.fn(),
+      filework,
+      localStorage: localStorageMock,
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        animationCallbacks.push(callback);
+        return animationCallbacks.length;
+      }),
+    });
     vi.stubGlobal("window", window);
     vi.stubGlobal("document", document);
     vi.stubGlobal("HTMLElement", window.HTMLElement);
@@ -151,6 +161,14 @@ describe("useChatSession", () => {
     root = null;
     latest = null;
   });
+
+  const flushAnimationFrame = async () => {
+    const callbacks = animationCallbacks.splice(0);
+    await act(async () => {
+      for (const callback of callbacks) callback(16);
+      await Promise.resolve();
+    });
+  };
 
   it("marks a manually triggered automation session immediately in the local session list", async () => {
     const createdSession: ChatSession = {
@@ -280,6 +298,8 @@ describe("useChatSession", () => {
       await latest?.handleSubmit({ text: "画一张图" });
     });
 
+    await flushAnimationFrame();
+
     expect(filework.executeTask).toHaveBeenCalledWith(
       expect.objectContaining({
         llmConfigId: "image-cfg",
@@ -288,6 +308,75 @@ describe("useChatSession", () => {
     );
     expect(filework.media.generateImage).not.toHaveBeenCalled();
     expect(filework.media.createVideoJob).not.toHaveBeenCalled();
+  });
+
+  it("defers task execution until after the submit UI has updated", async () => {
+    filework.getChatSessions.mockResolvedValue([
+      {
+        id: "session-existing",
+        workspacePath: "/workspace",
+        title: "已有对话",
+        createdAt: "2026-06-23T10:00:00.000Z",
+        updatedAt: "2026-06-23T10:00:00.000Z",
+      },
+    ]);
+    filework.getChatHistory.mockResolvedValue([
+      {
+        id: "user-old",
+        sessionId: "session-existing",
+        role: "user",
+        content: "旧问题",
+        timestamp: "2026-06-23T10:00:00.000Z",
+      },
+      {
+        id: "assistant-old",
+        sessionId: "session-existing",
+        role: "assistant",
+        content: "旧回答",
+        parts: [{ type: "text", text: "旧回答" }],
+        timestamp: "2026-06-23T10:00:01.000Z",
+      },
+    ]);
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await latest?.handleSubmit({ text: "新问题" });
+    });
+
+    expect(latest?.input).toBe("");
+    expect(latest?.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(filework.executeTask).not.toHaveBeenCalled();
+
+    await flushAnimationFrame();
+
+    expect(filework.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantMessageId: latest?.messages[3].id,
+        history: expect.arrayContaining([
+          expect.objectContaining({ content: "旧问题", role: "user" }),
+          expect.objectContaining({ content: "新问题", role: "user" }),
+        ]),
+        prompt: "新问题",
+        sessionId: "session-existing",
+      }),
+    );
   });
 
   it("routes video configs through executeTask instead of direct media IPC", async () => {
@@ -335,6 +424,8 @@ describe("useChatSession", () => {
     await act(async () => {
       await latest?.handleSubmit({ text: "生成视频" });
     });
+
+    await flushAnimationFrame();
 
     expect(filework.executeTask).toHaveBeenCalledWith(
       expect.objectContaining({

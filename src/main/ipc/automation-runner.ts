@@ -239,6 +239,8 @@ const createDefaultAgentRun: AutomationRunAgent = async function* (
           retryable: c.retryable,
           maxRetries: c.maxRetries,
           backoffMs: c.backoffMs,
+          userMessage: c.userMessage,
+          recoveryActions: c.recoveryActions,
         };
       },
       maxWallMs: 30 * 60_000,

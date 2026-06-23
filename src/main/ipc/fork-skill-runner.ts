@@ -237,6 +237,8 @@ export const createForkSkillRunner = (
           retryable: c.retryable,
           maxRetries: c.maxRetries,
           backoffMs: c.backoffMs,
+          userMessage: c.userMessage,
+          recoveryActions: c.recoveryActions,
         };
       },
     });
@@ -313,9 +315,13 @@ export const createForkSkillRunner = (
             // 子 agent 的失败由批次的 ai:subagent-report 承载,不污染主任务
             // 的 ai:stream-error。仅 legacy fork 技能路径转发 error 到主 UI。
             if (ev.status === "failed" && !isSubagent) {
-              const cls = classifyError(
-                new Error(ev.error?.message ?? "Subagent failed"),
-              );
+              const cls = ev.error
+                ? {
+                    type: ev.error.type,
+                    userMessage: ev.error.message,
+                    recoveryActions: ev.error.recoveryActions,
+                  }
+                : classifyError(new Error("Subagent failed"));
               const errorMsg =
                 cls.userMessage ?? ev.error?.message ?? "Unknown error";
               if (!sender.isDestroyed()) {

@@ -9,6 +9,23 @@ import {
 } from "../message";
 
 describe("MessageResponse", () => {
+  it("renders markdown headings with compact chat typography", () => {
+    const html = renderToStaticMarkup(
+      <MessageResponse>
+        {
+          "## 第二步：重写引擎\n\n现在继续更新 levels.ts。\n\n- 写入文件\n- 运行检查"
+        }
+      </MessageResponse>,
+    );
+
+    expect(html).toContain('data-chat-heading="h2"');
+    expect(html).toContain("text-[1.18rem]");
+    expect(html).toContain("leading-7");
+    expect(html).toContain("list-disc");
+    expect(html).not.toContain("text-4xl");
+    expect(html).not.toContain("text-3xl");
+  });
+
   it("renders markdown tables with compact chat table styling", () => {
     const html = renderToStaticMarkup(
       <MessageResponse>

@@ -12,6 +12,8 @@
 export type ErrorType =
   | "auth"
   | "billing"
+  | "quota_exceeded"
+  | "unsupported_model"
   | "rate_limit"
   | "context_overflow"
   | "server_error"
@@ -112,6 +114,24 @@ const ERROR_DEFAULTS: Record<
     userMessage: "API 账户余额不足，请前往对应平台充值后重试",
     recoveryActions: ["settings"],
   },
+  quota_exceeded: {
+    type: "quota_exceeded",
+    retryable: false,
+    shouldCompress: false,
+    maxRetries: 0,
+    backoffMs: 0,
+    userMessage: "当前模型额度已用尽，请切换到其他模型或稍后重试",
+    recoveryActions: ["settings"],
+  },
+  unsupported_model: {
+    type: "unsupported_model",
+    retryable: false,
+    shouldCompress: false,
+    maxRetries: 0,
+    backoffMs: 0,
+    userMessage: "当前模型不支持当前接口，请切换到可用模型后重试",
+    recoveryActions: ["settings"],
+  },
   rate_limit: {
     type: "rate_limit",
     retryable: true,
@@ -168,6 +188,137 @@ const ERROR_DEFAULTS: Record<
   },
 };
 
+type ErrorContext = {
+  combinedMsg: string;
+  headers: Record<string, string>;
+  url: string;
+};
+
+const toRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+
+const stringifyValue = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (Array.isArray(value)) return value.map(stringifyValue).join(", ");
+  return "";
+};
+
+const tryParseJson = (value: string): unknown | null => {
+  const trimmed = value.trim();
+  if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const collectErrorContext = (error: unknown): ErrorContext => {
+  const chunks: string[] = [];
+  const headers: Record<string, string> = {};
+  let url = "";
+  const seen = new Set<unknown>();
+
+  const visit = (value: unknown, depth: number) => {
+    if (depth > 4 || seen.has(value)) return;
+    const record = toRecord(value);
+    if (!record) {
+      const text = stringifyValue(value);
+      if (text) chunks.push(text);
+      return;
+    }
+    seen.add(value);
+
+    if (value instanceof Error) {
+      chunks.push(value.message, value.name);
+    }
+
+    for (const key of ["message", "name", "statusCode", "responseBody"]) {
+      const text = stringifyValue(record[key]);
+      if (text) chunks.push(text);
+    }
+
+    const responseBody = stringifyValue(record.responseBody);
+    if (responseBody) {
+      const parsedBody = tryParseJson(responseBody);
+      if (parsedBody) visit(parsedBody, depth + 1);
+    }
+
+    const nextUrl = stringifyValue(record.url);
+    if (nextUrl && !url) url = nextUrl;
+
+    const responseHeaders = toRecord(record.responseHeaders);
+    if (responseHeaders) {
+      for (const [key, raw] of Object.entries(responseHeaders)) {
+        const text = stringifyValue(raw);
+        if (!text) continue;
+        headers[key.toLowerCase()] = text;
+        chunks.push(`${key}: ${text}`);
+      }
+    }
+
+    visit(record.lastError, depth + 1);
+    visit(record.cause, depth + 1);
+    visit(record.data, depth + 1);
+    visit(record.error, depth + 1);
+  };
+
+  visit(error, 0);
+  return { combinedMsg: chunks.filter(Boolean).join(" "), headers, url };
+};
+
+const getRetryAfterSeconds = (
+  headers: Record<string, string>,
+): number | null => {
+  const raw =
+    headers["x-ratelimit-user-retry-after"] ??
+    headers["x-ratelimit-quota-exceeded-retry-after"] ??
+    headers["retry-after"];
+  if (!raw) return null;
+  const seconds = Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+};
+
+const formatApproxDuration = (totalSeconds: number): string => {
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  if (days > 0) return hours > 0 ? `${days} 天 ${hours} 小时` : `${days} 天`;
+  if (hours > 0)
+    return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+  if (minutes > 0) return `${minutes} 分钟`;
+  return `${Math.max(1, totalSeconds)} 秒`;
+};
+
+const providerNameFromUrl = (url: string): string =>
+  /githubcopilot|copilot/i.test(url) ? "GitHub Copilot" : "当前模型";
+
+const buildQuotaExceededMessage = (context: ErrorContext): string => {
+  const retryAfterSeconds = getRetryAfterSeconds(context.headers);
+  const waitText = retryAfterSeconds
+    ? `服务端建议等待约 ${formatApproxDuration(retryAfterSeconds)} 后再试。`
+    : "";
+  return `${providerNameFromUrl(context.url)} 额度已用尽。${waitText}请切换到其他模型，或等额度恢复后重试。`;
+};
+
+const extractUnsupportedModelName = (message: string): string | null => {
+  const quoted = message.match(/\bmodel\s+"([^"]+)"/i)?.[1];
+  if (quoted) return quoted;
+  return message.match(/\bmodel\s+([^\s"']+)/i)?.[1] ?? null;
+};
+
+const buildUnsupportedModelMessage = (context: ErrorContext): string => {
+  const model = extractUnsupportedModelName(context.combinedMsg);
+  const modelText = model ? `模型 "${model}"` : "当前模型";
+  return `${modelText} 不支持当前接口。请在设置中切换到模型列表里的可用模型，或刷新模型列表后重试。`;
+};
+
 /**
  * 将 API 错误分类为带有恢复提示的结构化类型。
  *
@@ -176,16 +327,33 @@ const ERROR_DEFAULTS: Record<
  */
 export function classifyError(error: unknown): ClassifiedError {
   const err = error instanceof Error ? error : new Error(String(error));
+  const context = collectErrorContext(error);
 
   // 构造一个包含 message、name 和状态码的合并字符串,
   // 以便各匹配规则能命中其中任意一项。
-  const statusCode =
-    typeof (error as Record<string, unknown>)?.statusCode === "number"
-      ? String((error as Record<string, unknown>).statusCode)
-      : "";
-  const combinedMsg = [err.message, err.name, statusCode]
-    .filter(Boolean)
-    .join(" ");
+  const combinedMsg = context.combinedMsg || [err.message, err.name].join(" ");
+
+  if (
+    /\bquota[_\s-]?exceeded\b/i.test(combinedMsg) ||
+    context.headers["x-ratelimit-exceeded"] === "quota_exceeded"
+  ) {
+    return {
+      ...ERROR_DEFAULTS.quota_exceeded,
+      userMessage: buildQuotaExceededMessage(context),
+      originalError: err,
+    };
+  }
+
+  if (
+    /unsupported_api_for_model/i.test(combinedMsg) ||
+    /not accessible via the \/chat\/completions endpoint/i.test(combinedMsg)
+  ) {
+    return {
+      ...ERROR_DEFAULTS.unsupported_model,
+      userMessage: buildUnsupportedModelMessage(context),
+      originalError: err,
+    };
+  }
 
   for (const { test, type } of STATUS_PATTERNS) {
     if (test(combinedMsg)) {

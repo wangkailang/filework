@@ -57,6 +57,8 @@ export const ContextDock = ({
   onSelectSubagentChild,
   workspaceRoot,
   currentBranch,
+  diffBaseBranch,
+  onDiffBaseBranchChange,
   diffInvalidator,
   isGitRepo,
   automationInitialView = "tasks",
@@ -79,6 +81,8 @@ export const ContextDock = ({
   onSelectSubagentChild?: (childTaskId: string) => void;
   workspaceRoot: string;
   currentBranch?: string | null;
+  diffBaseBranch?: string | null;
+  onDiffBaseBranchChange?: (branch: string) => void;
   diffInvalidator: number;
   /** 非 git 项目隐藏「差异」标签与内容(网页面板对所有工作区可用)。 */
   isGitRepo: boolean;
@@ -296,6 +300,8 @@ export const ContextDock = ({
               <BranchDiffPanel
                 workspaceRoot={workspaceRoot}
                 currentBranch={currentBranch}
+                baseBranch={diffBaseBranch}
+                onBaseBranchChange={onDiffBaseBranchChange}
                 invalidator={diffInvalidator}
               />
             </TabsContent>

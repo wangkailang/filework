@@ -11,7 +11,14 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
@@ -84,6 +91,7 @@ import type {
   AttachmentPart,
   BatchApprovalEntry,
   BatchApprovalPart,
+  ChatMessage,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -127,6 +135,96 @@ const CopyMessageAction = ({ content }: { content: string }) => {
   );
 };
 
+type ChatMessageRowProps = {
+  forkLabel: string;
+  isLast: boolean;
+  isLoading: boolean;
+  msg: ChatMessage;
+  onForkSession: (messageId: string) => void;
+  renderAssistantParts: (parts: MessagePart[]) => ReactNode;
+};
+
+const ChatMessageRow = memo(
+  function ChatMessageRow({
+    forkLabel,
+    isLast,
+    isLoading,
+    msg,
+    onForkSession,
+    renderAssistantParts,
+  }: ChatMessageRowProps) {
+    const userAttachments =
+      msg.role === "user"
+        ? ((msg.parts?.filter((p) => p.type === "attachment") as
+            | AttachmentPart[]
+            | undefined) ?? [])
+        : [];
+    const assistantParts =
+      msg.role === "assistant" ? (msg.parts ?? migrateToParts(msg)) : [];
+    const visibleAssistantParts = isLast
+      ? assistantParts
+      : assistantParts.filter((part) => part.type !== "error");
+
+    if (msg.role === "assistant" && visibleAssistantParts.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="animate-rise">
+        {msg.role === "user" ? (
+          <MessageActionFrame from="user">
+            <Message from="user" className="w-fit max-w-full">
+              <MessageContent>
+                {userAttachments.length > 0 && (
+                  <AttachmentList attachments={userAttachments} />
+                )}
+                <MessageSkillText text={collapseBlankLines(msg.content)} />
+              </MessageContent>
+            </Message>
+            {!isLoading && (
+              <MessageActions
+                className={`${messageActionsHoverClass} justify-end`}
+              >
+                <CopyMessageAction content={msg.content} />
+                <MessageAction
+                  onClick={() => onForkSession(msg.id)}
+                  label={forkLabel}
+                >
+                  <GitBranch className="size-3" />
+                </MessageAction>
+              </MessageActions>
+            )}
+          </MessageActionFrame>
+        ) : (
+          <div className="group">
+            <Message from="assistant">
+              <MessageContent>
+                {renderAssistantParts(visibleAssistantParts)}
+              </MessageContent>
+            </Message>
+            {msg.content.trim().length > 0 && (
+              <MessageActions
+                className={
+                  isLast
+                    ? undefined
+                    : "opacity-0 group-hover:opacity-100 transition-opacity"
+                }
+              >
+                <CopyMessageAction content={msg.content} />
+              </MessageActions>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.msg === next.msg &&
+    prev.isLast === next.isLast &&
+    prev.isLoading === next.isLoading &&
+    prev.forkLabel === next.forkLabel,
+);
+
 const formatTokens = (n: number | null): string => {
   if (n == null) return "-";
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -164,6 +262,14 @@ const getErrorTypeLabels = (
 ): Record<string, { label: string; hint: string }> => ({
   auth: { label: LL.errorType_auth(), hint: LL.errorType_authHint() },
   billing: { label: LL.errorType_billing(), hint: LL.errorType_billingHint() },
+  quota_exceeded: {
+    label: LL.errorType_quotaExceeded(),
+    hint: LL.errorType_quotaExceededHint(),
+  },
+  unsupported_model: {
+    label: LL.errorType_unsupportedModel(),
+    hint: LL.errorType_unsupportedModelHint(),
+  },
   rate_limit: {
     label: LL.errorType_rateLimit(),
     hint: LL.errorType_rateLimitHint(),
@@ -197,6 +303,8 @@ const fallbackRecoveryActions = (errorType?: string): RecoveryAction[] => {
   switch (errorType) {
     case "auth":
     case "billing":
+    case "quota_exceeded":
+    case "unsupported_model":
       return ["settings"];
     case "context_overflow":
       return ["new_chat"];
@@ -214,6 +322,9 @@ const RECOVERY_ACTION_ICONS: Record<RecoveryAction, typeof RefreshCw> = {
   settings: Settings,
   new_chat: MessageSquarePlus,
 };
+
+const shouldUseErrorMessageAsHint = (errorType?: string): boolean =>
+  errorType === "quota_exceeded" || errorType === "unsupported_model";
 
 const getRecoveryLabels = (
   LL: TranslationFunctions,
@@ -956,13 +1067,18 @@ export const ChatPanel = ({
         const labels = errPart.errorType
           ? ERROR_TYPE_LABELS[errPart.errorType]
           : undefined;
+        const hint = shouldUseErrorMessageAsHint(errPart.errorType)
+          ? errPart.message
+          : labels
+            ? labels.hint
+            : errPart.message;
         const actions: RecoveryAction[] =
           errPart.recoveryActions ?? fallbackRecoveryActions(errPart.errorType);
         return (
           <ErrorBanner
             key={`error-${errPart.message}`}
             label={labels ? labels.label : LL.chat_error()}
-            hint={labels ? labels.hint : errPart.message}
+            hint={hint}
             actions={actions}
             chat={chat}
             className="my-1"
@@ -1191,66 +1307,17 @@ export const ChatPanel = ({
             </ConversationEmptyState>
           ) : (
             <>
-              {chat.messages.map((msg, index) => {
-                const userAttachments =
-                  msg.role === "user"
-                    ? ((msg.parts?.filter((p) => p.type === "attachment") as
-                        | AttachmentPart[]
-                        | undefined) ?? [])
-                    : [];
-                return (
-                  <div key={msg.id} className="animate-rise">
-                    {msg.role === "user" ? (
-                      <MessageActionFrame from="user">
-                        <Message from="user" className="w-fit max-w-full">
-                          <MessageContent>
-                            {userAttachments.length > 0 && (
-                              <AttachmentList attachments={userAttachments} />
-                            )}
-                            <MessageSkillText
-                              text={collapseBlankLines(msg.content)}
-                            />
-                          </MessageContent>
-                        </Message>
-                        {!chat.isLoading && (
-                          <MessageActions
-                            className={`${messageActionsHoverClass} justify-end`}
-                          >
-                            <CopyMessageAction content={msg.content} />
-                            <MessageAction
-                              onClick={() => chat.handleForkSession(msg.id)}
-                              label={LL.chat_forkHere()}
-                            >
-                              <GitBranch className="size-3" />
-                            </MessageAction>
-                          </MessageActions>
-                        )}
-                      </MessageActionFrame>
-                    ) : (
-                      <div className="group">
-                        <Message from="assistant">
-                          <MessageContent>
-                            {renderAssistantParts(
-                              msg.parts ?? migrateToParts(msg),
-                            )}
-                          </MessageContent>
-                        </Message>
-                        {msg.content.trim().length > 0 && (
-                          <MessageActions
-                            className={
-                              index === chat.messages.length - 1
-                                ? undefined
-                                : "opacity-0 group-hover:opacity-100 transition-opacity"
-                            }
-                          >
-                            <CopyMessageAction content={msg.content} />
-                          </MessageActions>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {chat.messages.map((msg, index) => (
+                <ChatMessageRow
+                  key={msg.id}
+                  forkLabel={LL.chat_forkHere()}
+                  isLast={index === chat.messages.length - 1}
+                  isLoading={chat.isLoading}
+                  msg={msg}
+                  onForkSession={chat.handleForkSession}
+                  renderAssistantParts={renderAssistantParts}
+                />
+              ))}
               {/* Working indicator: hidden while the model actively produces
                   visible output (the growing text is its own feedback), shown
                   with an elapsed timer once the stream goes silent for a beat
@@ -1323,6 +1390,11 @@ export const ChatPanel = ({
                   const labels = chat.lastError.type
                     ? ERROR_TYPE_LABELS[chat.lastError.type]
                     : undefined;
+                  const hint = shouldUseErrorMessageAsHint(chat.lastError.type)
+                    ? chat.lastError.message
+                    : labels
+                      ? labels.hint
+                      : chat.lastError.message;
                   const actions: RecoveryAction[] =
                     (chat.lastError.recoveryActions as
                       | RecoveryAction[]
@@ -1331,7 +1403,7 @@ export const ChatPanel = ({
                   return (
                     <ErrorBanner
                       label={labels ? labels.label : LL.chat_error()}
-                      hint={labels ? labels.hint : chat.lastError.message}
+                      hint={hint}
                       actions={actions}
                       chat={chat}
                       className="mx-4 my-2"
@@ -1371,7 +1443,7 @@ export const ChatPanel = ({
       </Conversation>
 
       <div className="px-6 py-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-3xl mx-auto">
           <PromptInput
             onSubmit={chat.handleSubmit}
             attachments={pendingAttachments}

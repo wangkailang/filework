@@ -8,10 +8,12 @@ const promptInputSource = readFileSync(
 );
 
 describe("PromptInput skill command theme", () => {
-  it("uses the purple primary token for the selected slash skill row", () => {
-    expect(promptInputSource).toContain("bg-primary/15");
+  it("uses restrained primary accents for the selected slash skill row", () => {
+    expect(promptInputSource).toContain("bg-primary/10");
     expect(promptInputSource).toContain("var(--color-primary)");
+    expect(promptInputSource).toContain("ring-primary/20");
     expect(promptInputSource).not.toContain("bg-accent text-accent-foreground");
+    expect(promptInputSource).not.toContain("transition-all");
   });
 
   it("keeps inserted skill chips compact and exposes metadata on hover", () => {

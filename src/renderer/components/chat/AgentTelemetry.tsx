@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 
-// Agent 运行状态 —— 与设计系统状态系统一一对应(见 content/spec/design-system.md)
 export type AgentState = "idle" | "running" | "awaiting" | "error";
 
 const STATE_META: Record<
@@ -24,9 +23,8 @@ interface AgentTelemetryProps {
 }
 
 /**
- * ★ 设计签名:Agent telemetry 状态条 —— 像任务控制台读数。
- * 常驻对话区顶部,把「Agent 在干嘛 / 要不要我批」提成一眼可读的状态。
- * 只显示状态 + 当前动作 + 运行耗时;不堆 token/模型读数。运行态由脉冲灯 + 扫描光体现。
+ * Neutral status strip: keep the agent state visible without turning the whole
+ * chat surface into a decorative console.
  */
 export const AgentTelemetry = ({
   state,
@@ -67,7 +65,7 @@ export const AgentTelemetry = ({
   return (
     <div
       className={cn(
-        "relative flex h-[34px] shrink-0 items-center gap-3.5 overflow-hidden border-b border-border-faint bg-gradient-to-b from-surface to-background pr-16 font-mono text-[11px] tracking-wide",
+        "relative flex h-[34px] shrink-0 items-center gap-3.5 overflow-hidden border-b border-border-faint bg-surface pr-16 font-mono text-[11px] tracking-wide",
         // 左栏折叠 → 让开左上角浮动展开按钮;否则正常左内边距
         reserveLeft ? "pl-12" : "pl-3.5",
       )}
@@ -82,7 +80,7 @@ export const AgentTelemetry = ({
           style={{ background: meta.color, color: meta.color }}
         >
           {meta.pulse && (
-            <span className="absolute inset-[-3px] rounded-full border border-current animate-ping-ring" />
+            <span className="absolute inset-[-3px] rounded-full border border-current opacity-45 animate-ping-ring" />
           )}
         </span>
         {stateLabel[state]}
@@ -98,11 +96,6 @@ export const AgentTelemetry = ({
         <span className="ml-auto tabular-nums text-muted-foreground">
           {timeStr}
         </span>
-      )}
-
-      {/* running 扫描光线 */}
-      {meta.running && (
-        <span className="pointer-events-none absolute bottom-0 left-0 h-px w-[30%] animate-scan bg-gradient-to-r from-transparent via-primary to-transparent" />
       )}
     </div>
   );

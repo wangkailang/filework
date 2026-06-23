@@ -421,6 +421,12 @@ const ja: Translation = {
   errorType_billing: "残高不足",
   errorType_billingHint:
     "APIアカウントの残高が不足しています。プラットフォームでチャージしてください",
+  errorType_quotaExceeded: "クォータ上限到達",
+  errorType_quotaExceededHint:
+    "このモデルのクォータを使い切りました。別のモデルに切り替えるか、後でもう一度お試しください",
+  errorType_unsupportedModel: "モデル利用不可",
+  errorType_unsupportedModelHint:
+    "このモデルは現在の API に対応していません。利用可能なモデルに切り替えて再試行してください",
   errorType_rateLimit: "レート制限超過",
   errorType_rateLimitHint:
     "リクエスト頻度が高すぎます。自動リトライしましたが失敗しました",

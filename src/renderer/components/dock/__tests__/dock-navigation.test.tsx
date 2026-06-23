@@ -1,6 +1,10 @@
 import { parseHTML } from "linkedom";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const branchDiffPanelState = vi.hoisted(() => ({
+  props: [] as Array<Record<string, unknown>>,
+}));
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -22,7 +26,10 @@ vi.mock("../../../i18n/i18n-react", () => ({
 }));
 
 vi.mock("../../branch-diff/BranchDiffPanel", () => ({
-  BranchDiffPanel: () => <div data-branch-diff-panel="true" />,
+  BranchDiffPanel: (props: Record<string, unknown>) => {
+    branchDiffPanelState.props.push(props);
+    return <div data-branch-diff-panel="true" />;
+  },
 }));
 
 vi.mock("../../browser/BrowserPanel", () => ({
@@ -71,6 +78,10 @@ const installDom = () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  branchDiffPanelState.props = [];
 });
 
 describe("dock navigation chrome", () => {
@@ -191,5 +202,37 @@ describe("dock navigation chrome", () => {
     expect(html).toContain('data-dock-tab="automations"');
     expect(html).toContain("自动化");
     expect(html).toContain('data-automations-dock-panel="true"');
+  });
+
+  it("passes the selected diff base and active branch into the diff panel", () => {
+    renderToStaticMarkup(
+      <ContextDock
+        mode="split"
+        width={420}
+        activeTab="diff"
+        onTabChange={vi.fn()}
+        onClose={vi.fn()}
+        onWidthChange={vi.fn()}
+        onCommitWidth={vi.fn()}
+        railWidth={256}
+        railCollapsed={false}
+        filePath={null}
+        url={null}
+        subagentSel={null}
+        workspaceRoot="/tmp/workspace"
+        currentBranch="feature/current"
+        diffBaseBranch="pc-test"
+        onDiffBaseBranchChange={vi.fn()}
+        diffInvalidator={0}
+        isGitRepo={true}
+      />,
+    );
+
+    expect(branchDiffPanelState.props.at(-1)).toMatchObject({
+      baseBranch: "pc-test",
+      currentBranch: "feature/current",
+      onBaseBranchChange: expect.any(Function),
+      workspaceRoot: "/tmp/workspace",
+    });
   });
 });
