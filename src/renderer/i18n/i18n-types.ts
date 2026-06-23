@@ -1532,6 +1532,22 @@ type RootTranslation = {
 	 */
 	errorType_billingHint: string
 	/**
+	 * Q​u​o​t​a​ ​E​x​h​a​u​s​t​e​d
+	 */
+	errorType_quotaExceeded: string
+	/**
+	 * T​h​i​s​ ​m​o​d​e​l​ ​q​u​o​t​a​ ​h​a​s​ ​b​e​e​n​ ​e​x​h​a​u​s​t​e​d​.​ ​S​w​i​t​c​h​ ​t​o​ ​a​n​o​t​h​e​r​ ​m​o​d​e​l​ ​o​r​ ​t​r​y​ ​a​g​a​i​n​ ​l​a​t​e​r
+	 */
+	errorType_quotaExceededHint: string
+	/**
+	 * M​o​d​e​l​ ​U​n​a​v​a​i​l​a​b​l​e
+	 */
+	errorType_unsupportedModel: string
+	/**
+	 * T​h​i​s​ ​m​o​d​e​l​ ​d​o​e​s​ ​n​o​t​ ​s​u​p​p​o​r​t​ ​t​h​e​ ​c​u​r​r​e​n​t​ ​A​P​I​.​ ​S​w​i​t​c​h​ ​t​o​ ​a​n​ ​a​v​a​i​l​a​b​l​e​ ​m​o​d​e​l​ ​a​n​d​ ​t​r​y​ ​a​g​a​i​n
+	 */
+	errorType_unsupportedModelHint: string
+	/**
 	 * R​a​t​e​ ​L​i​m​i​t​e​d
 	 */
 	errorType_rateLimit: string
@@ -4090,6 +4106,22 @@ export type TranslationFunctions = {
 	 * API account balance insufficient, please top up on the provider platform
 	 */
 	errorType_billingHint: () => LocalizedString
+	/**
+	 * Quota Exhausted
+	 */
+	errorType_quotaExceeded: () => LocalizedString
+	/**
+	 * This model quota has been exhausted. Switch to another model or try again later
+	 */
+	errorType_quotaExceededHint: () => LocalizedString
+	/**
+	 * Model Unavailable
+	 */
+	errorType_unsupportedModel: () => LocalizedString
+	/**
+	 * This model does not support the current API. Switch to an available model and try again
+	 */
+	errorType_unsupportedModelHint: () => LocalizedString
 	/**
 	 * Rate Limited
 	 */

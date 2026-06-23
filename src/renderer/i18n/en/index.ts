@@ -428,6 +428,12 @@ const en: BaseTranslation = {
   errorType_billing: "Insufficient Balance",
   errorType_billingHint:
     "API account balance insufficient, please top up on the provider platform",
+  errorType_quotaExceeded: "Quota Exhausted",
+  errorType_quotaExceededHint:
+    "This model quota has been exhausted. Switch to another model or try again later",
+  errorType_unsupportedModel: "Model Unavailable",
+  errorType_unsupportedModelHint:
+    "This model does not support the current API. Switch to an available model and try again",
   errorType_rateLimit: "Rate Limited",
   errorType_rateLimitHint:
     "Request rate too high, auto-retried but still failed",

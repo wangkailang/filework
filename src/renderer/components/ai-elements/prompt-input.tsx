@@ -597,7 +597,7 @@ export const PromptInputRichEditor = ({
                     className={cn(
                       "min-w-0 gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                       selected
-                        ? "bg-primary/15 text-popover-foreground shadow-[inset_2px_0_0_var(--color-primary)] ring-1 ring-primary/25"
+                        ? "bg-primary/10 text-popover-foreground shadow-[inset_2px_0_0_var(--color-primary)] ring-1 ring-primary/20"
                         : "text-popover-foreground hover:bg-muted/70",
                     )}
                     onMouseDown={(event) => event.preventDefault()}
@@ -608,7 +608,7 @@ export const PromptInputRichEditor = ({
                       className={cn(
                         "inline-flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
                         selected
-                          ? "border-primary/45 bg-primary/15 text-primary-bright"
+                          ? "border-primary/35 bg-primary/10 text-primary-bright"
                           : "border-border-faint bg-muted text-muted-foreground",
                       )}
                     >
@@ -724,7 +724,7 @@ export const PromptInputSubmit = ({
       type={isActive ? "button" : "submit"}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center rounded-md p-2 transition-all",
+        "inline-flex items-center justify-center rounded-md p-2 transition-[color,background-color,box-shadow,transform]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         isActive
@@ -771,7 +771,7 @@ export const PromptInputAttachButton = ({
     disabled={disabled}
     aria-label={ariaLabel}
     className={cn(
-      "inline-flex items-center justify-center rounded-md p-2 transition-all active:scale-95",
+      "inline-flex items-center justify-center rounded-md p-2 transition-[color,background-color,box-shadow,transform] active:scale-95",
       "text-muted-foreground hover:text-foreground hover:bg-accent",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
       "disabled:opacity-50 disabled:cursor-not-allowed",

@@ -833,6 +833,8 @@ const handleTaskExecutionInner = async (
           retryable: c.retryable,
           maxRetries: c.maxRetries,
           backoffMs: c.backoffMs,
+          userMessage: c.userMessage,
+          recoveryActions: c.recoveryActions,
         };
       },
     });
@@ -964,9 +966,13 @@ const handleTaskExecutionInner = async (
             }
 
             if (ev.status === "failed") {
-              const cls = classifyError(
-                new Error(ev.error?.message ?? "Unknown error"),
-              );
+              const cls = ev.error
+                ? {
+                    type: ev.error.type,
+                    userMessage: ev.error.message,
+                    recoveryActions: ev.error.recoveryActions,
+                  }
+                : classifyError(new Error("Unknown error"));
               const errorMsg =
                 cls.userMessage || ev.error?.message || "Unknown error";
               updateTask(id, {

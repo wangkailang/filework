@@ -74,6 +74,14 @@ type AutomationChatPromptCopy = {
   workspacePaths: string;
 };
 
+const scheduleAfterPaint = (callback: () => void) => {
+  if (typeof window !== "undefined" && window.requestAnimationFrame) {
+    window.requestAnimationFrame(() => callback());
+    return;
+  }
+  setTimeout(callback, 0);
+};
+
 const buildAutomationChatPrompt = (
   run: AutomationRunRecordForChat,
   automation?: AutomationRecordForChat,
@@ -399,14 +407,6 @@ export function useChatSession(
       );
     }
 
-    const history = withBoth
-      .filter((m) => m.id !== assistantId)
-      .map(({ role, content, parts }) => ({
-        role,
-        content,
-        parts: parts?.filter((p) => p.type !== "plan"),
-      }));
-
     if (stream.connectionTimeoutRef.current)
       clearTimeout(stream.connectionTimeoutRef.current);
     stream.connectionTimeoutRef.current = setTimeout(() => {
@@ -446,45 +446,61 @@ export function useChatSession(
 
     // The agent decides whether to call createPlan — it has the full task
     // context that a regex-based IPC gate could not see.
-    window.filework
-      .executeTask({
-        prompt: userMessage.content,
-        workspacePath,
-        workspaceRefJson,
-        sessionId,
-        assistantMessageId: assistantId,
-        llmConfigId: selectedLlmConfigId || undefined,
-        history,
-      })
-      .catch((error: unknown) => {
-        if (stream.streamAssistantIdRef.current !== assistantId) return;
-        const errMsg =
-          error instanceof Error ? error.message : LL.chat_unknownError();
-        const errorPart: MessagePart = {
-          type: "error",
-          message: errMsg,
-        };
-        crud.setLastError({ message: errMsg });
-        crud.setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === assistantId);
-          if (idx === -1) return prev;
-          const updated = [...prev];
-          updated[idx] = {
-            ...updated[idx],
-            content: errMsg,
-            parts: [errorPart],
-          };
-          if (crud.activeSessionIdRef.current) {
-            crud.debouncedSave(updated, crud.activeSessionIdRef.current);
-          }
-          return updated;
+    scheduleAfterPaint(() => {
+      const history: Array<{
+        role: ChatMessage["role"];
+        content: string;
+        parts: MessagePart[] | undefined;
+      }> = [];
+      for (const { id, role, content, parts } of withBoth) {
+        if (id === assistantId) continue;
+        history.push({
+          role,
+          content,
+          parts: parts?.filter((p) => p.type !== "plan"),
         });
-        stream.setIsLoading(false);
-        stream.setRetryInfo(null);
-        stream.streamTaskIdRef.current = null;
-        stream.streamAssistantIdRef.current = null;
-        clearSessionRunStateBySession(sessionId);
-      });
+      }
+
+      window.filework
+        .executeTask({
+          prompt: userMessage.content,
+          workspacePath,
+          workspaceRefJson,
+          sessionId,
+          assistantMessageId: assistantId,
+          llmConfigId: selectedLlmConfigId || undefined,
+          history,
+        })
+        .catch((error: unknown) => {
+          if (stream.streamAssistantIdRef.current !== assistantId) return;
+          const errMsg =
+            error instanceof Error ? error.message : LL.chat_unknownError();
+          const errorPart: MessagePart = {
+            type: "error",
+            message: errMsg,
+          };
+          crud.setLastError({ message: errMsg });
+          crud.setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === assistantId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              content: errMsg,
+              parts: [errorPart],
+            };
+            if (crud.activeSessionIdRef.current) {
+              crud.debouncedSave(updated, crud.activeSessionIdRef.current);
+            }
+            return updated;
+          });
+          stream.setIsLoading(false);
+          stream.setRetryInfo(null);
+          stream.streamTaskIdRef.current = null;
+          stream.streamAssistantIdRef.current = null;
+          clearSessionRunStateBySession(sessionId);
+        });
+    });
   };
 
   const handleTriggerAutomationRun = useCallback(

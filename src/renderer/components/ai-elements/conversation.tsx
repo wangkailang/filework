@@ -152,7 +152,7 @@ export const ConversationContent = ({
       )}
       {...props}
     >
-      <div className="space-y-4 max-w-2xl mx-auto">{children}</div>
+      <div className="space-y-4 max-w-3xl mx-auto">{children}</div>
     </div>
   );
 };

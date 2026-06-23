@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const globalCss = readFileSync(resolve(__dirname, "../../global.css"), "utf8");
 
 describe("global scrollbar theme", () => {
-  it("uses Monokai theme tokens for native scrollbars", () => {
+  it("uses neutral theme tokens for native scrollbars", () => {
     expect(globalCss).toContain("scrollbar-color:");
     expect(globalCss).toContain("::-webkit-scrollbar-thumb");
     expect(globalCss).toContain("var(--color-scrollbar-thumb)");
@@ -14,13 +14,20 @@ describe("global scrollbar theme", () => {
 });
 
 describe("global primary theme", () => {
-  it("keeps the default primary accent purple in both dark and light themes", () => {
-    expect(globalCss).toContain("--color-primary: #a78bfa;");
-    expect(globalCss).toContain("--color-primary-bright: #c4b5fd;");
-    expect(globalCss).toContain("--color-ring: #a78bfa;");
-    expect(globalCss).toContain("--color-primary: #7c3aed;");
-    expect(globalCss).toContain("--color-primary-bright: #8b5cf6;");
-    expect(globalCss).toContain("--color-ring: #7c3aed;");
+  it("uses a neutral Geist-like palette with blue as the only primary accent", () => {
+    expect(globalCss).toContain("Neutral Agent Console");
+    expect(globalCss).toContain("--color-background: #0a0a0a;");
+    expect(globalCss).toContain("--color-foreground: #ededed;");
+    expect(globalCss).toContain("--color-surface: #111111;");
+    expect(globalCss).toContain("--color-card: #171717;");
+    expect(globalCss).toContain("--color-primary: #006efe;");
+    expect(globalCss).toContain("--color-primary-bright: #47a8ff;");
+    expect(globalCss).toContain("--color-ring: #47a8ff;");
+    expect(globalCss).toContain("--color-primary: #006bff;");
+    expect(globalCss).toContain("--color-primary-bright: #0059ec;");
+    expect(globalCss).not.toContain("#a78bfa");
+    expect(globalCss).not.toContain("#f92672");
+    expect(globalCss).not.toContain("#a6e22e");
   });
 
   it("keeps inserted skill chips visually subdued", () => {

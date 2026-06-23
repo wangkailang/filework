@@ -420,6 +420,38 @@ describe("AgentLoop", () => {
     expect(end.error?.message).toBe("boom");
   });
 
+  it("preserves classifier user message and recovery actions on failed agent_end", async () => {
+    scriptedRuns.push({
+      parts: [{ type: "start-step" }],
+      throwAfter: new Error("Failed after 3 attempts. Last error:"),
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      classifyError: () => ({
+        backoffMs: 0,
+        maxRetries: 0,
+        recoveryActions: ["settings"],
+        retryable: false,
+        type: "quota_exceeded",
+        userMessage: "GitHub Copilot 额度已用尽。请切换到其他模型。",
+      }),
+    });
+
+    const events = await collect(loop, "p");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("failed");
+    expect(end.error).toMatchObject({
+      message: "GitHub Copilot 额度已用尽。请切换到其他模型。",
+      recoveryActions: ["settings"],
+      type: "quota_exceeded",
+    });
+  });
+
   it("invokes reflect hook and loops when verdict=retry", async () => {
     scriptedRuns.push({
       parts: [

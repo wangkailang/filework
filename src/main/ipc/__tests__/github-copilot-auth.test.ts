@@ -175,4 +175,40 @@ describe("github copilot device auth", () => {
       }),
     );
   });
+
+  it("filters GitHub Copilot models that are not usable for chat", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { id: "gpt-5.4-mini", name: "GPT-5.4 mini" },
+              { id: "gpt-5.5", name: "GPT-5.5" },
+              {
+                id: "embedding-model",
+                capabilities: { type: "embeddings" },
+              },
+              {
+                id: "disabled-chat-model",
+                model_picker_enabled: false,
+              },
+              { id: "claude-sonnet-4.6" },
+            ],
+          }),
+        ),
+    );
+
+    const result = await fetchGithubCopilotModels(
+      {
+        apiToken: "copilot-token",
+        baseUrl: "https://api.githubcopilot.com",
+      },
+      fetchImpl,
+    );
+
+    expect(result.map((model) => model.value)).toEqual([
+      "gpt-5.5",
+      "claude-sonnet-4.6",
+    ]);
+  });
 });

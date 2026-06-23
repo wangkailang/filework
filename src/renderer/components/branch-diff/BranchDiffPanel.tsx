@@ -38,6 +38,10 @@ interface BranchDiffPanelProps {
   /** Current checked-out branch. Threaded into the hook so a
    *  BranchSwitcher checkout invalidates the cache immediately. */
   currentBranch?: string | null;
+  /** Controlled compare base owned by the dock host so close/reopen keeps it. */
+  baseBranch?: string | null;
+  /** Called when the user selects a new compare base. */
+  onBaseBranchChange?: (branch: string) => void;
   /** Bump to force a refetch from outside (eg after a tool finishes). */
   invalidator?: number;
 }
@@ -49,14 +53,29 @@ interface BranchDiffPanelProps {
 export function BranchDiffPanel({
   workspaceRoot,
   currentBranch,
+  baseBranch: controlledBaseBranch,
+  onBaseBranchChange,
   invalidator,
 }: BranchDiffPanelProps) {
   const { LL } = useI18nContext();
 
-  // 可选对比基线:用户未手动选过时(null)落到 pickDefaultBase。
+  // 可选对比基线:优先使用 dock host 传入的受控值;未受控时保留本地 state。
   const [branches, setBranches] = useState<string[]>([]);
-  const [pickedBase, setPickedBase] = useState<string | null>(null);
-  const baseBranch = pickedBase ?? pickDefaultBase(branches, currentBranch);
+  const [uncontrolledBase, setUncontrolledBase] = useState<string | null>(null);
+  const baseBranch =
+    controlledBaseBranch ??
+    uncontrolledBase ??
+    pickDefaultBase(branches, currentBranch);
+  const handleBaseBranchChange = useCallback(
+    (branch: string) => {
+      if (onBaseBranchChange) {
+        onBaseBranchChange(branch);
+      } else {
+        setUncontrolledBase(branch);
+      }
+    },
+    [onBaseBranchChange],
+  );
 
   // 拉取本地分支列表(远程工作区也克隆在本地,故统一走 local.listBranches)。
   // currentBranch 变化(切换/提交后)重新拉取,使列表保持最新。
@@ -145,7 +164,7 @@ export function BranchDiffPanel({
             value={baseBranch}
             branches={branches}
             currentBranch={currentBranch}
-            onChange={setPickedBase}
+            onChange={handleBaseBranchChange}
             label={LL.branch_diff_compareBase()}
           />
         )}

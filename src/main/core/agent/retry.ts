@@ -14,6 +14,10 @@ export interface ClassifiedRetryError {
   maxRetries: number;
   /** 基础退避时长(毫秒);每次尝试翻倍。 */
   backoffMs: number;
+  /** 面向用户的提示文案。IPC 层分类器可选择提供。 */
+  userMessage?: string;
+  /** UI 可渲染的恢复操作。IPC 层分类器可选择提供。 */
+  recoveryActions?: string[];
 }
 
 export type ErrorClassifier = (err: unknown) => ClassifiedRetryError;

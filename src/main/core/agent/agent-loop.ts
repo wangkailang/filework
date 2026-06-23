@@ -621,11 +621,16 @@ export class AgentLoop {
         });
       } else {
         const status: AgentEndStatus = isAbort ? "cancelled" : "failed";
+        const classified =
+          status === "failed" ? this.cfg.classifyError?.(err) : undefined;
         const errorPayload: ClassifiedAgentError | undefined =
           status === "failed"
             ? {
-                message: err instanceof Error ? err.message : String(err),
-                type: "unknown",
+                message:
+                  classified?.userMessage ||
+                  (err instanceof Error ? err.message : String(err)),
+                recoveryActions: classified?.recoveryActions,
+                type: classified?.type ?? "unknown",
               }
             : undefined;
         emit({

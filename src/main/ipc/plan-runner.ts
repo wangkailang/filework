@@ -224,6 +224,8 @@ export const executePlan = async ({
             retryable: c.retryable,
             maxRetries: c.maxRetries,
             backoffMs: c.backoffMs,
+            userMessage: c.userMessage,
+            recoveryActions: c.recoveryActions,
           };
         },
       });

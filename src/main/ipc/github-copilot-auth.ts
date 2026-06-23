@@ -141,6 +141,51 @@ function readModelLimit(
   return null;
 }
 
+function isGithubCopilotChatModel(rawModel: Record<string, unknown>): boolean {
+  if (rawModel.model_picker_enabled === false || rawModel.enabled === false) {
+    return false;
+  }
+
+  const modelId = typeof rawModel.id === "string" ? rawModel.id.trim() : "";
+  if (/^gpt-5\.\d+-mini$/i.test(modelId)) {
+    return false;
+  }
+
+  const capabilities = isRecord(rawModel.capabilities)
+    ? rawModel.capabilities
+    : null;
+  const type =
+    typeof capabilities?.type === "string"
+      ? capabilities.type.toLowerCase()
+      : null;
+  if (type && !["chat", "chat_completion", "chat_completions"].includes(type)) {
+    return false;
+  }
+
+  const supportedEndpoints = [
+    rawModel.supported_endpoints,
+    rawModel.endpoints,
+    capabilities?.supported_endpoints,
+    capabilities?.endpoints,
+  ].find((value): value is unknown[] => Array.isArray(value));
+  if (supportedEndpoints) {
+    const endpoints = supportedEndpoints
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.toLowerCase());
+    if (
+      endpoints.length > 0 &&
+      !endpoints.some(
+        (endpoint) =>
+          endpoint.includes("chat") || endpoint.includes("response"),
+      )
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function inferGithubCopilotModelCapabilities(
   modelId: string,
 ): GithubCopilotModelCapabilities {
@@ -228,6 +273,7 @@ function parseGithubCopilotModels(body: unknown): GithubCopilotModelOption[] {
 
   for (const rawModel of rawModels) {
     if (!isRecord(rawModel) || typeof rawModel.id !== "string") continue;
+    if (!isGithubCopilotChatModel(rawModel)) continue;
     const value = rawModel.id.trim();
     if (!value || seen.has(value)) continue;
     const label =

@@ -407,6 +407,11 @@ const zhCN: Translation = {
   errorType_authHint: "API 密钥无效或已过期，请在设置中检查配置",
   errorType_billing: "余额不足",
   errorType_billingHint: "API 账户余额不足，请前往对应平台充值后重试",
+  errorType_quotaExceeded: "额度已用尽",
+  errorType_quotaExceededHint: "当前模型额度已用尽，请切换到其他模型或稍后重试",
+  errorType_unsupportedModel: "模型不可用",
+  errorType_unsupportedModelHint:
+    "当前模型不支持当前接口，请切换到可用模型后重试",
   errorType_rateLimit: "频率超限",
   errorType_rateLimitHint: "请求频率过高，已自动重试但仍然失败",
   errorType_contextOverflow: "上下文过长",

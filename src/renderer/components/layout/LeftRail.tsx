@@ -60,9 +60,9 @@ const isAutomationSession = (session: {
 export const LeftRail = ({
   workspacePath,
   workspaceRef,
-  currentBranch,
   isGitRepo,
   branchForChip,
+  diffBaseBranch,
   diffInvalidator,
   diffOpen,
   railTab,
@@ -86,6 +86,7 @@ export const LeftRail = ({
   /** 非 git 项目不展示 diff 入口,并跳过分支 diff 探测。 */
   isGitRepo: boolean;
   branchForChip: string | null;
+  diffBaseBranch?: string | null;
   diffInvalidator: number;
   diffOpen: boolean;
   railTab: RailTab;
@@ -110,11 +111,12 @@ export const LeftRail = ({
   widthRef.current = width;
 
   // 分支 diff 摘要(用于 diff 开关上的 +/- 徽标)。便宜:hook 有缓存,
-  // currentBranch 变化会 bust 缓存。
+  // branchForChip 变化会 bust 缓存,且远程工作区也能覆盖到。
   const { data: diffSummary } = useBranchDiff({
     // 非 git 项目:path 传空,hook 在 fetchNow 处直接短路,不发起 git diff 探测。
     path: isGitRepo ? workspacePath : undefined,
-    currentBranch,
+    baseBranch: diffBaseBranch ?? undefined,
+    currentBranch: branchForChip,
     invalidator: diffInvalidator,
   });
 
@@ -201,7 +203,7 @@ export const LeftRail = ({
     >
       {label}
       {railTab === tab && (
-        <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-primary shadow-[0_0_8px_var(--color-primary)] animate-in fade-in-0 duration-200" />
+        <span className="absolute inset-x-4 -bottom-px h-px rounded-full bg-foreground animate-in fade-in-0 duration-150" />
       )}
     </button>
   );
@@ -284,7 +286,7 @@ export const LeftRail = ({
           <button
             type="button"
             onClick={chat.handleNewChat}
-            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
+            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition-[color,background-color,border-color,transform] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
             title={LL.session_newChat()}
           >
             <MessageSquarePlus className="size-4" />
@@ -396,7 +398,7 @@ export const RailExpandButton = ({ onClick }: { onClick: () => void }) => {
       type="button"
       onClick={onClick}
       title={LL.sidebar_expand()}
-      className="titlebar-no-drag absolute left-2 top-1 z-[60] flex h-[34px] items-center rounded-md px-1.5 transition-all hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
+      className="titlebar-no-drag absolute left-2 top-0 z-[60] flex h-[34px] w-12 items-center justify-center rounded-md transition-[background-color,box-shadow,transform] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
     >
       <PanelLeftOpen className="size-4 text-muted-foreground" />
     </button>
