@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { truncateTitle } from "./helpers";
+import { isSelectableLlmConfig } from "./ModelSelector";
 import {
   clearSessionRunState,
   clearSessionUnreadState,
@@ -119,12 +120,24 @@ export function useChatSession(
     validatedConfigRef.current = true;
     window.filework.llmConfig
       .list()
-      .then((configs: { id: string }[]) => {
-        if (!configs.some((c) => c.id === selectedLlmConfigId)) {
-          setSelectedLlmConfigId(null);
-          localStorage.removeItem("filework-selected-llm-config");
-        }
-      })
+      .then(
+        (
+          configs: {
+            id: string;
+            enabled?: boolean;
+            lastCheckStatus?: "success" | "error" | null;
+          }[],
+        ) => {
+          if (
+            !configs.some(
+              (c) => c.id === selectedLlmConfigId && isSelectableLlmConfig(c),
+            )
+          ) {
+            setSelectedLlmConfigId(null);
+            localStorage.removeItem("filework-selected-llm-config");
+          }
+        },
+      )
       .catch(() => {});
   }, [selectedLlmConfigId]);
 

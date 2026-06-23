@@ -297,10 +297,13 @@ export const llmConfigs = sqliteTable("llm_configs", {
       "custom",
       "minimax",
       "xiaomi",
+      "github-copilot",
     ],
   }).notNull(),
   apiKey: text("api_key"),
+  authMetadata: text("auth_metadata"),
   baseUrl: text("base_url"),
+  apiPath: text("api_path"),
   model: text("model").notNull(),
   /**
    * 该配置产出的内容类型。旧数据行默认为 "chat"。image/video 模态会绕过
@@ -312,6 +315,25 @@ export const llmConfigs = sqliteTable("llm_configs", {
   isDefault: integer("is_default", { mode: "boolean" })
     .notNull()
     .default(false),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  lastCheckedAt: text("last_checked_at"),
+  lastCheckStatus: text("last_check_status", {
+    enum: ["success", "error"],
+  }),
+  lastCheckMessage: text("last_check_message"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const llmModelCatalog = sqliteTable("llm_model_catalog", {
+  id: text("id").primaryKey(),
+  configId: text("config_id").notNull(),
+  modelId: text("model_id").notNull(),
+  label: text("label").notNull(),
+  capabilities: text("capabilities").notNull(),
+  contextWindow: integer("context_window"),
+  maxOutputTokens: integer("max_output_tokens"),
+  fetchedAt: text("fetched_at").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

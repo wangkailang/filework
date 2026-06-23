@@ -1047,11 +1047,14 @@ const api = {
         | "ollama"
         | "custom"
         | "minimax"
-        | "xiaomi";
+        | "xiaomi"
+        | "github-copilot";
       apiKey?: string;
       baseUrl?: string;
+      apiPath?: string;
       model: string;
       modality?: "chat" | "image" | "video";
+      enabled?: boolean;
       isDefault?: boolean;
     }) => ipcRenderer.invoke("llm-config:create", data),
     update: (
@@ -1065,14 +1068,62 @@ const api = {
           | "ollama"
           | "custom"
           | "minimax"
-          | "xiaomi";
+          | "xiaomi"
+          | "github-copilot";
         apiKey?: string;
         baseUrl?: string;
+        apiPath?: string | null;
         model?: string;
         modality?: "chat" | "image" | "video";
+        enabled?: boolean;
         isDefault?: boolean;
       },
     ) => ipcRenderer.invoke("llm-config:update", { id, ...data }),
+    test: (id: string) => ipcRenderer.invoke("llm-config:test", { id }),
+    startGithubCopilotAuth: () =>
+      ipcRenderer.invoke("llm-config:copilot:start"),
+    completeGithubCopilotAuth: (data: {
+      deviceCode: string;
+      name?: string;
+      model?: string;
+      configId?: string;
+    }) => ipcRenderer.invoke("llm-config:copilot:complete", data),
+    listGithubCopilotModels: (
+      id: string,
+    ): Promise<
+      | Array<{
+          value: string;
+          label: string;
+          capabilities?: {
+            preferredApi?: "chat_completions" | "responses" | null;
+            supportsReasoning?: boolean | null;
+            supportsTools?: boolean | null;
+            supportsVision?: boolean | null;
+          };
+          contextWindow?: number | null;
+          maxOutputTokens?: number | null;
+        }>
+      | { error: string }
+    > => ipcRenderer.invoke("llm-config:copilot:models", { id }),
+    listModels: (
+      id: string,
+    ): Promise<
+      | Array<{
+          value: string;
+          label: string;
+          capabilities?: {
+            preferredApi?: "chat_completions" | "responses" | null;
+            supportsReasoning?: boolean | null;
+            supportsTools?: boolean | null;
+            supportsVision?: boolean | null;
+          };
+          contextWindow?: number | null;
+          maxOutputTokens?: number | null;
+        }>
+      | { error: string }
+    > => ipcRenderer.invoke("llm-config:models", { id }),
+    disconnectGithubCopilot: (id: string) =>
+      ipcRenderer.invoke("llm-config:copilot:disconnect", { id }),
     delete: (id: string) => ipcRenderer.invoke("llm-config:delete", { id }),
   },
 

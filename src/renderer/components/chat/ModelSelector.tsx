@@ -18,6 +18,21 @@ interface LlmConfig {
   provider: string;
   model: string;
   modality?: Modality;
+  enabled?: boolean;
+  lastCheckStatus?: "success" | "error" | null;
+  modelAvailable?: boolean | null;
+  modelCapabilities?: {
+    preferredApi: "chat_completions" | "responses";
+    supportsReasoning: boolean | null;
+    supportsTools: boolean | null;
+    supportsVision: boolean | null;
+  } | null;
+}
+
+export interface SelectableLlmConfig {
+  enabled?: boolean;
+  lastCheckStatus?: "success" | "error" | null;
+  modelAvailable?: boolean | null;
 }
 
 interface ModelSelectorProps {
@@ -31,6 +46,20 @@ const MODALITY_LABELS: Record<Modality, string> = {
   image: "Image",
   video: "Video",
 };
+
+export function isSelectableLlmConfig(config: SelectableLlmConfig): boolean {
+  return (
+    config.enabled !== false &&
+    config.lastCheckStatus === "success" &&
+    config.modelAvailable !== false
+  );
+}
+
+export function getSelectableLlmConfigs<T extends SelectableLlmConfig>(
+  configs: T[],
+): T[] {
+  return configs.filter(isSelectableLlmConfig);
+}
 
 export const ModelSelector = ({
   selectedConfigId,
@@ -50,12 +79,13 @@ export const ModelSelector = ({
   }, [loadConfigs]);
 
   const grouped = useMemo(() => {
+    const selectableConfigs = getSelectableLlmConfigs(configs);
     const groups: Record<Modality, LlmConfig[]> = {
       chat: [],
       image: [],
       video: [],
     };
-    for (const c of configs) {
+    for (const c of selectableConfigs) {
       groups[c.modality ?? "chat"].push(c);
     }
     return MODALITY_ORDER.filter((m) => groups[m].length > 0).map((m) => ({
@@ -64,11 +94,26 @@ export const ModelSelector = ({
     }));
   }, [configs]);
 
-  if (configs.length <= 1) return null;
+  const selectableConfigs = getSelectableLlmConfigs(configs);
 
-  const selected = configs.find((c) => c.id === selectedConfigId) || configs[0];
+  if (selectableConfigs.length <= 1) return null;
+
+  const selected =
+    selectableConfigs.find((c) => c.id === selectedConfigId) ||
+    selectableConfigs[0];
   const selectedModality = selected?.modality ?? "chat";
   const hasMultipleModalities = grouped.length > 1;
+
+  const getModelCapabilityHint = (config: LlmConfig): string | null => {
+    const capabilities = config.modelCapabilities;
+    if (!capabilities) return null;
+    const parts: string[] = [];
+    if (capabilities.preferredApi === "responses") parts.push("Responses");
+    if (capabilities.supportsReasoning) parts.push("Reasoning");
+    if (capabilities.supportsTools) parts.push("Tools");
+    if (capabilities.supportsVision) parts.push("Vision");
+    return parts.length > 0 ? parts.join(" · ") : null;
+  };
 
   return (
     <Select
@@ -110,6 +155,9 @@ export const ModelSelector = ({
                     <div className="truncate">{c.name}</div>
                     <div className="truncate text-muted-foreground">
                       {c.provider} · {c.model}
+                      {getModelCapabilityHint(c)
+                        ? ` · ${getModelCapabilityHint(c)}`
+                        : ""}
                     </div>
                   </div>
                 </div>

@@ -12,19 +12,63 @@ import {
   type ProviderAdapter,
 } from "../ai/adapters";
 import { classifyError } from "../ai/error-classifier";
-import { getDefaultLlmConfig, getLlmConfig } from "../db";
+import { getLlmConfig, getLlmConfigs, type LlmConfig } from "../db";
+import { getFreshGithubCopilotSessionToken } from "./github-copilot-session";
+
+export interface LlmConfigSelection {
+  config: LlmConfig;
+  fallbackFromConfigId: string | null;
+}
+
+export function isAvailableChatLlmConfig(config: LlmConfig): boolean {
+  return (
+    config.enabled !== false &&
+    config.modality === "chat" &&
+    config.lastCheckStatus === "success" &&
+    config.modelAvailable !== false
+  );
+}
+
+/**
+ * 选择当前任务可用的聊天 LLM 配置。
+ *
+ * 优先使用用户显式选择的配置；若该配置已停用、测试失败、模型目录显示不可用，
+ * 则按最近更新顺序回退到其它已测试成功的 chat 配置。
+ */
+export function selectAvailableChatLlmConfig(
+  configId?: string,
+): LlmConfigSelection {
+  const configs = getLlmConfigs();
+  const requestedConfig = configId
+    ? (getLlmConfig(configId) ?? null)
+    : (configs.find((config) => config.isDefault && config.enabled) ?? null);
+
+  if (requestedConfig && isAvailableChatLlmConfig(requestedConfig)) {
+    return { config: requestedConfig, fallbackFromConfigId: null };
+  }
+
+  const fallbackConfig = configs.find(
+    (config) =>
+      config.id !== requestedConfig?.id && isAvailableChatLlmConfig(config),
+  );
+  if (fallbackConfig) {
+    return {
+      config: fallbackConfig,
+      fallbackFromConfigId: requestedConfig?.id ?? configId ?? null,
+    };
+  }
+
+  throw new Error("没有可用的聊天 LLM 配置，请先在设置中启用并测试连接成功。");
+}
 
 /**
  * 根据配置 ID 同时获取 model 及其 provider 适配器。
  * 适配器提供 provider 专属的选项与元数据提取能力。
  */
 export const getModelAndAdapterByConfigId = (configId?: string) => {
-  const config = configId ? getLlmConfig(configId) : getDefaultLlmConfig();
-  if (!config) {
-    throw new Error("所选 LLM 配置不存在");
-  }
+  const { config } = selectAvailableChatLlmConfig(configId);
 
-  const { provider, apiKey, baseUrl, model: modelId } = config;
+  const { provider, apiKey, baseUrl, apiPath, model: modelId } = config;
   console.log(
     "[AI] provider:",
     provider,
@@ -50,10 +94,23 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     ...createModelWithAdapter({
       provider,
       apiKey: apiKey || "",
+      resolveApiKey:
+        provider === "github-copilot"
+          ? async (options) => {
+              const token = await getFreshGithubCopilotSessionToken({
+                configId: config.id,
+                forceRefresh: options?.forceRefresh,
+              });
+              return token.apiToken;
+            }
+          : undefined,
       baseUrl: resolvedBaseUrl,
+      apiPath,
       model: modelId,
+      modelCapabilities: config.modelCapabilities,
     }),
     modelId,
+    configId: config.id,
   };
 };
 
