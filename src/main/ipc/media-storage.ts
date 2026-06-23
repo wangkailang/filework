@@ -35,6 +35,29 @@ export interface SavedMedia {
   shortId: string;
 }
 
+const decodeDataUrl = (url: string): Uint8Array | null => {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/i.exec(url);
+  if (!match) return null;
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] ?? "";
+  return isBase64
+    ? new Uint8Array(Buffer.from(payload, "base64"))
+    : new Uint8Array(Buffer.from(decodeURIComponent(payload), "utf8"));
+};
+
+const writeGeneratedMedia = async (
+  bytes: Uint8Array,
+  sessionId: string,
+  ext: string,
+): Promise<SavedMedia> => {
+  const shortId = crypto.randomBytes(4).toString("hex");
+  const dir = join(GENERATED_ROOT, sessionId || "default");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `${tsSlug()}-${shortId}.${ext}`);
+  await writeFile(path, bytes);
+  return { path, shortId };
+};
+
 /**
  * 下载一个媒体 URL 并持久化到
  * `~/.filework/generated/{sessionId}/{ts}-{shortId}.{ext}`。
@@ -48,17 +71,17 @@ export const saveMediaToDisk = async (
   sessionId: string,
   ext: string,
 ): Promise<SavedMedia> => {
+  const dataBytes = decodeDataUrl(url);
+  if (dataBytes) {
+    return writeGeneratedMedia(dataBytes, sessionId, ext);
+  }
+
   const resp = await fetchFn(url);
   if (!resp.ok) {
     throw new Error(`download HTTP ${resp.status}`);
   }
   const bytes = new Uint8Array(await resp.arrayBuffer());
-  const shortId = crypto.randomBytes(4).toString("hex");
-  const dir = join(GENERATED_ROOT, sessionId || "default");
-  await mkdir(dir, { recursive: true });
-  const path = join(dir, `${tsSlug()}-${shortId}.${ext}`);
-  await writeFile(path, bytes);
-  return { path, shortId };
+  return writeGeneratedMedia(bytes, sessionId, ext);
 };
 
 export interface SavedAttachment {

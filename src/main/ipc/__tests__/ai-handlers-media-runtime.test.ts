@@ -172,7 +172,10 @@ vi.mock("../workspace-memory-handlers", () => ({
   registerWorkspaceMemoryHandlers: vi.fn(),
 }));
 
-function makeMediaConfig(modality: "image" | "video") {
+function makeMediaConfig(
+  modality: "chat" | "image" | "video",
+  overrides: Record<string, unknown> = {},
+) {
   return {
     apiKey: "sk-test",
     apiPath: null,
@@ -196,6 +199,7 @@ function makeMediaConfig(modality: "image" | "video") {
     temperature: null,
     topP: null,
     updatedAt: "2026-06-23T09:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -266,6 +270,72 @@ describe("ai:executeTask media modality routing", () => {
     ]);
     expect(sent.map(([channel]) => channel)).toContain("ai:stream-done");
     expect(sent.map(([channel]) => channel)).not.toContain("ai:stream-error");
+  });
+
+  it("routes saved custom gpt-image configs through media runtime even if the stored modality is chat", async () => {
+    const config = makeMediaConfig("chat", {
+      apiPath: "/v1/chat/completions",
+      baseUrl: "https://gateway.example.com",
+      id: "custom-gpt-image-cfg",
+      model: "gpt-image-2",
+      name: "custom gpt-image",
+      provider: "custom",
+    });
+    dbMock.getLlmConfig.mockReturnValue(config);
+    dbMock.getLlmConfigs.mockReturnValue([config]);
+    mediaRuntimeMock.generateImageForConfig.mockResolvedValue({
+      configId: "custom-gpt-image-cfg",
+      imageId: "image-2",
+      modelId: "gpt-image-2",
+      path: "/tmp/generated/gpt-image.png",
+      prompt: "生成一张图",
+    });
+
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:executeTask");
+    expect(handler).toBeTypeOf("function");
+
+    const sent: Array<[string, unknown]> = [];
+    const sender = {
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn((channel: string, payload: unknown) => {
+        sent.push([channel, payload]);
+      }),
+    };
+
+    const result = await handler?.(
+      { sender },
+      {
+        assistantMessageId: "assistant-3",
+        llmConfigId: "custom-gpt-image-cfg",
+        prompt: "生成一张图",
+        sessionId: "session-3",
+        workspacePath: "/tmp/workspace",
+      },
+    );
+
+    expect(result).toMatchObject({ status: "completed" });
+    expect(mediaRuntimeMock.generateImageForConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llmConfigId: "custom-gpt-image-cfg",
+        prompt: "生成一张图",
+        sessionId: "session-3",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(sent).toContainEqual([
+      "ai:stream-media",
+      expect.objectContaining({
+        assistantMessageId: "assistant-3",
+        part: expect.objectContaining({
+          imageId: "image-2",
+          path: "/tmp/generated/gpt-image.png",
+          type: "image",
+        }),
+        sessionId: "session-3",
+      }),
+    ]);
   });
 
   it("routes video configs through media runtime and streams a video-job part", async () => {

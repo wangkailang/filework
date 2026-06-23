@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { supportsLlmProviderModality } from "../../shared/llm-modalities";
 import type { LlmConfig, LlmModality, LlmReasoningEffort } from "../db";
 import {
   createLlmConfig,
@@ -67,6 +68,18 @@ interface CompleteGithubCopilotPayload {
   name?: string;
   model?: string;
   configId?: string;
+}
+
+interface ListModelsDraftPayload {
+  provider?: Provider;
+  apiKey?: string | null;
+  baseUrl?: string | null;
+  apiPath?: string | null;
+}
+
+interface ListModelsPayload {
+  id?: string;
+  draft?: ListModelsDraftPayload;
 }
 
 type LlmConfigResult = LlmConfig | { error: string };
@@ -141,6 +154,20 @@ function formatLlmConnectionCheckMessage(
     `${diagnostics.method} ${diagnostics.url}`,
     `${status} · ${diagnostics.durationMs}ms · ${diagnostics.model}`,
   ].join("\n");
+}
+
+function validateOptionalChatCompletionsApiPath(
+  apiPath: string | null | undefined,
+): string | null {
+  const trimmed = apiPath?.trim();
+  if (
+    trimmed &&
+    (!trimmed.startsWith("/") ||
+      !trimmed.toLowerCase().endsWith("/chat/completions"))
+  ) {
+    return "apiPath must start with / and end with /chat/completions";
+  }
+  return null;
 }
 
 function cacheLlmModelCatalog(
@@ -255,18 +282,17 @@ export function validateLlmConfigPayload(data: CreatePayload): string | null {
     }
   }
 
-  if (data.apiPath !== undefined && data.apiPath.trim() !== "") {
-    const apiPath = data.apiPath.trim();
-    if (
-      !apiPath.startsWith("/") ||
-      !apiPath.toLowerCase().endsWith("/chat/completions")
-    ) {
-      return "apiPath must start with / and end with /chat/completions";
-    }
-  }
+  const apiPathError = validateOptionalChatCompletionsApiPath(data.apiPath);
+  if (apiPathError) return apiPathError;
 
   if (data.modality && !["chat", "image", "video"].includes(data.modality)) {
     return `Invalid modality: ${data.modality}`;
+  }
+  if (
+    data.modality &&
+    !supportsLlmProviderModality(data.provider, data.modality)
+  ) {
+    return `Provider "${data.provider}" does not support "${data.modality}" modality`;
   }
   const generationOptionsError = validateGenerationOptionsPayload(data);
   if (generationOptionsError) return generationOptionsError;
@@ -477,6 +503,37 @@ export async function listLlmModelsForConfig(
   return models;
 }
 
+export async function listLlmModels(
+  payload: ListModelsPayload,
+): Promise<LlmModelOption[] | { error: string }> {
+  if (payload.id) {
+    return listLlmModelsForConfig(payload.id);
+  }
+
+  const draft = payload.draft;
+  if (!draft) {
+    return { error: "Model discovery requires an id or draft config" };
+  }
+  if (draft.provider !== "custom") {
+    return {
+      error: "Draft model discovery only supports OpenAI-compatible configs",
+    };
+  }
+
+  const baseUrl = draft.baseUrl?.trim();
+  if (!baseUrl) {
+    return { error: "baseUrl is required for model discovery" };
+  }
+  const apiPathError = validateOptionalChatCompletionsApiPath(draft.apiPath);
+  if (apiPathError) return { error: apiPathError };
+
+  return fetchOpenAICompatibleModels({
+    apiKey: draft.apiKey?.trim() || null,
+    apiPath: draft.apiPath?.trim() || null,
+    baseUrl,
+  });
+}
+
 export const registerLlmConfigHandlers = () => {
   ipcMain.handle("llm-config:list", async () => {
     try {
@@ -538,16 +595,19 @@ export const registerLlmConfigHandlers = () => {
         if (Object.keys(updates).length > 0) {
           if (
             updates.apiPath !== undefined &&
-            updates.apiPath !== null &&
-            updates.apiPath.trim() !== "" &&
-            (!updates.apiPath.trim().startsWith("/") ||
-              !updates.apiPath
-                .trim()
-                .toLowerCase()
-                .endsWith("/chat/completions"))
+            validateOptionalChatCompletionsApiPath(updates.apiPath)
           ) {
             return {
               error: "apiPath must start with / and end with /chat/completions",
+            };
+          }
+          if (
+            updates.provider &&
+            updates.modality &&
+            !supportsLlmProviderModality(updates.provider, updates.modality)
+          ) {
+            return {
+              error: `Provider "${updates.provider}" does not support "${updates.modality}" modality`,
             };
           }
           const generationOptionsError =
@@ -596,9 +656,9 @@ export const registerLlmConfigHandlers = () => {
 
   ipcMain.handle(
     "llm-config:models",
-    async (_event, payload: { id: string }) => {
+    async (_event, payload: ListModelsPayload) => {
       try {
-        return await listLlmModelsForConfig(payload.id);
+        return await listLlmModels(payload);
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }

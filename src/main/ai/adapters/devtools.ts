@@ -10,14 +10,94 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import { type LanguageModel, wrapLanguageModel } from "ai";
 
+const DEVTOOLS_GENERATIONS_LOG_PATH = ".devtools/generations.json";
+const DEVTOOLS_GENERATIONS_LOG_MAX_BYTES = 100 * 1024 * 1024;
+
+type DevtoolsState =
+  | { enabled: true }
+  | {
+      enabled: false;
+      message?: string;
+      reason:
+        | "generations-log-too-large"
+        | "generations-log-unavailable"
+        | "not-opted-in"
+        | "production";
+    };
+
+type ResolveDevtoolsStateOptions = {
+  cwd?: string;
+  env?: {
+    FILEWORK_AI_DEVTOOLS?: string;
+    NODE_ENV?: string;
+  };
+};
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function resolveDevtoolsState({
+  cwd = process.cwd(),
+  env = process.env,
+}: ResolveDevtoolsStateOptions = {}): DevtoolsState {
+  if (env.NODE_ENV === "production") {
+    return { enabled: false, reason: "production" };
+  }
+  if (env.FILEWORK_AI_DEVTOOLS !== "1") {
+    return { enabled: false, reason: "not-opted-in" };
+  }
+
+  const logPath = join(cwd, DEVTOOLS_GENERATIONS_LOG_PATH);
+  try {
+    const stats = statSync(logPath);
+    if (!stats.isFile() || stats.size <= DEVTOOLS_GENERATIONS_LOG_MAX_BYTES) {
+      return { enabled: true };
+    }
+
+    return {
+      enabled: false,
+      message:
+        `[ai-devtools] 已禁用: ${DEVTOOLS_GENERATIONS_LOG_PATH} 当前 ${formatMegabytes(stats.size)}, ` +
+        `超过 100MB 阈值。请先清理旧日志: rm -f ${DEVTOOLS_GENERATIONS_LOG_PATH}, ` +
+        "再重新运行 pnpm dev:devtools。",
+      reason: "generations-log-too-large",
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return { enabled: true };
+    }
+
+    return {
+      enabled: false,
+      message:
+        `[ai-devtools] 已禁用: 无法读取 ${DEVTOOLS_GENERATIONS_LOG_PATH} (${code ?? "unknown"}). ` +
+        "请检查或清理该文件后重新运行 pnpm dev:devtools。",
+      reason: "generations-log-unavailable",
+    };
+  }
+}
+
+let disabledWarning: string | null = null;
+
+function warnDisabledOnce(message: string): void {
+  if (disabledWarning === message) return;
+  disabledWarning = message;
+  console.warn(message);
+}
+
 function devtoolsEnabled(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.FILEWORK_AI_DEVTOOLS === "1"
-  );
+  const state = resolveDevtoolsState();
+  if (!state.enabled && state.message) {
+    warnDisabledOnce(state.message);
+  }
+  return state.enabled;
 }
 
 // 每个 devToolsMiddleware() 实例 = devtools 里的一个独立 run。为让「一个用户任务」
@@ -74,3 +154,8 @@ export function maybeWrapWithDevtools(model: LanguageModel): LanguageModel {
   announceOnce();
   return wrapLanguageModel({ model, middleware: resolveMiddleware() });
 }
+
+export const __test__ = {
+  DEVTOOLS_GENERATIONS_LOG_MAX_BYTES,
+  resolveDevtoolsState,
+};

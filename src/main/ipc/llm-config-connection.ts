@@ -1,4 +1,8 @@
-import { resolveOpenAICompatibleChatCompletionsUrl } from "../ai/adapters/openai-compatible-url";
+import {
+  resolveOpenAICompatibleBaseUrl,
+  resolveOpenAICompatibleChatCompletionsUrl,
+} from "../ai/adapters/openai-compatible-url";
+import { resolveMinimaxBaseUrl } from "../ai/minimax/chat-base-url";
 import { getProviderFetch } from "../ai/provider-fetch";
 import type { LlmConfig, LlmProvider } from "../db";
 
@@ -41,6 +45,10 @@ function defaultBaseUrlForProvider(provider: LlmProvider): string | null {
   return DEFAULT_OPENAI_BASE_URLS[provider] ?? null;
 }
 
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
 function readProviderErrorMessage(status: number, body: string): string {
   if (!body.trim()) return `HTTP ${status}`;
   try {
@@ -55,6 +63,29 @@ function readProviderErrorMessage(status: number, body: string): string {
     return message ? `HTTP ${status}: ${message}` : `HTTP ${status}`;
   } catch {
     return `HTTP ${status}: ${body.slice(0, 240)}`;
+  }
+}
+
+function readSuccessfulMediaProbeError(
+  config: LlmConnectionConfig,
+  body: string,
+): string | null {
+  if (config.provider !== "minimax" || config.modality === "chat") return null;
+  if (!body.trim()) return null;
+  try {
+    const parsed = JSON.parse(body) as {
+      base_resp?: {
+        status_code?: number;
+        status_msg?: string;
+      };
+    };
+    const code = parsed.base_resp?.status_code;
+    if (typeof code !== "number" || code === 0) return null;
+    return `MiniMax media probe failed (${code}): ${
+      parsed.base_resp?.status_msg || "unknown error"
+    }`;
+  } catch {
+    return null;
   }
 }
 
@@ -91,6 +122,69 @@ function buildOpenAICompatibleRequest(config: LlmConnectionConfig): {
   };
 }
 
+function buildOpenAICompatibleImageRequest(config: LlmConnectionConfig): {
+  body: Record<string, unknown>;
+  headers: Record<string, string>;
+  url: string;
+} {
+  const baseUrl = config.baseUrl || defaultBaseUrlForProvider(config.provider);
+  const resolvedBaseUrl = resolveOpenAICompatibleBaseUrl(
+    baseUrl,
+    config.apiPath,
+  );
+  if (!resolvedBaseUrl) {
+    throw new Error("baseUrl is required");
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  return {
+    url: `${trimTrailingSlashes(resolvedBaseUrl)}/images/generations`,
+    headers,
+    body: {
+      model: config.model,
+      n: 1,
+      prompt: "ping",
+    },
+  };
+}
+
+function buildMinimaxMediaRequest(
+  config: LlmConnectionConfig,
+  modality: "image" | "video",
+): {
+  body: Record<string, unknown>;
+  headers: Record<string, string>;
+  url: string;
+} {
+  const baseUrl = resolveMinimaxBaseUrl(config.baseUrl);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  return {
+    url: `${baseUrl}/${modality === "image" ? "image_generation" : "video_generation"}`,
+    headers,
+    body:
+      modality === "image"
+        ? {
+            model: config.model,
+            n: 1,
+            prompt: "ping",
+            response_format: "url",
+          }
+        : {
+            model: config.model,
+            prompt: "ping",
+          },
+  };
+}
+
 function buildAnthropicRequest(config: LlmConnectionConfig): {
   body: Record<string, unknown>;
   headers: Record<string, string>;
@@ -116,6 +210,27 @@ function buildAnthropicRequest(config: LlmConnectionConfig): {
 }
 
 function buildConnectionRequest(config: LlmConnectionConfig) {
+  if (config.modality === "image") {
+    if (config.provider === "minimax") {
+      return buildMinimaxMediaRequest(config, "image");
+    }
+    if (config.provider === "custom" || config.provider === "openai") {
+      return buildOpenAICompatibleImageRequest(config);
+    }
+    throw new Error(
+      `Connection test does not support ${config.provider} image models`,
+    );
+  }
+
+  if (config.modality === "video") {
+    if (config.provider === "minimax") {
+      return buildMinimaxMediaRequest(config, "video");
+    }
+    throw new Error(
+      `Connection test does not support ${config.provider} video models`,
+    );
+  }
+
   if (config.provider === "anthropic") {
     return buildAnthropicRequest(config);
   }
@@ -126,13 +241,6 @@ export async function testLlmConfigConnection(
   config: LlmConnectionConfig,
   fetchImpl: FetchLike = getProviderFetch() as FetchLike,
 ): Promise<LlmConnectionTestResult> {
-  if (config.modality !== "chat") {
-    return {
-      status: "error",
-      message: "Connection test currently supports chat models only",
-    };
-  }
-
   try {
     const request = buildConnectionRequest(config);
     const startedAt = Date.now();
@@ -149,6 +257,7 @@ export async function testLlmConfigConnection(
       headers: request.headers,
       body: JSON.stringify(request.body),
     });
+    const responseText = await response.text();
     const diagnostics: LlmConnectionDiagnostics = {
       ...baseDiagnostics,
       durationMs: Math.max(0, Date.now() - startedAt),
@@ -156,12 +265,19 @@ export async function testLlmConfigConnection(
     };
 
     if (response.ok) {
+      const mediaProbeError = readSuccessfulMediaProbeError(
+        config,
+        responseText,
+      );
+      if (mediaProbeError) {
+        return { status: "error", message: mediaProbeError, diagnostics };
+      }
       return { status: "success", message: "Connection OK", diagnostics };
     }
 
     return {
       status: "error",
-      message: readProviderErrorMessage(response.status, await response.text()),
+      message: readProviderErrorMessage(response.status, responseText),
       diagnostics,
     };
   } catch (error) {

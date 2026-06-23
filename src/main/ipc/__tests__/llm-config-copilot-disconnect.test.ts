@@ -3,6 +3,7 @@ import {
   completeGithubCopilotConnection,
   disconnectGithubCopilotConfig,
   listGithubCopilotModelsForConfig,
+  listLlmModels,
   listLlmModelsForConfig,
   testLlmConfigById,
 } from "../llm-config-handlers";
@@ -284,6 +285,54 @@ describe("GitHub Copilot LLM config connection lifecycle", () => {
       ],
       expect.any(String),
     );
+  });
+
+  it("fetches OpenAI-compatible models from an unsaved draft config", async () => {
+    modelMock.fetchOpenAICompatibleModels.mockResolvedValue([
+      {
+        value: "openai/gpt-4o-mini",
+        label: "GPT-4o mini",
+        capabilities: {
+          preferredApi: "chat_completions",
+          supportsReasoning: null,
+          supportsTools: true,
+          supportsVision: true,
+        },
+        contextWindow: 128000,
+        maxOutputTokens: 16384,
+      },
+    ]);
+
+    const result = await listLlmModels({
+      draft: {
+        provider: "custom",
+        apiKey: "sk-draft",
+        baseUrl: "https://gateway.example.com",
+        apiPath: "/v1/chat/completions",
+      },
+    });
+
+    expect(result).toEqual([
+      {
+        value: "openai/gpt-4o-mini",
+        label: "GPT-4o mini",
+        capabilities: {
+          preferredApi: "chat_completions",
+          supportsReasoning: null,
+          supportsTools: true,
+          supportsVision: true,
+        },
+        contextWindow: 128000,
+        maxOutputTokens: 16384,
+      },
+    ]);
+    expect(dbMock.getLlmConfig).not.toHaveBeenCalled();
+    expect(dbMock.replaceLlmModelCatalog).not.toHaveBeenCalled();
+    expect(modelMock.fetchOpenAICompatibleModels).toHaveBeenCalledWith({
+      apiKey: "sk-draft",
+      apiPath: "/v1/chat/completions",
+      baseUrl: "https://gateway.example.com",
+    });
   });
 
   it("refreshes OpenAI-compatible model catalogs after successful connection tests", async () => {

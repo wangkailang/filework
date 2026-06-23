@@ -11,6 +11,10 @@ const imageClientMock = vi.hoisted(() => ({
   generateImage: vi.fn(),
 }));
 
+const openAICompatibleImageClientMock = vi.hoisted(() => ({
+  generateOpenAICompatibleImage: vi.fn(),
+}));
+
 const videoClientMock = vi.hoisted(() => ({
   submitVideo: vi.fn(),
 }));
@@ -29,6 +33,11 @@ vi.mock("../../db", () => dbMock);
 
 vi.mock("../../ai/minimax/image-client", () => imageClientMock);
 
+vi.mock(
+  "../../ai/openai-compatible/image-client",
+  () => openAICompatibleImageClientMock,
+);
+
 vi.mock("../../ai/minimax/video-client", () => videoClientMock);
 
 vi.mock("../media-job-watcher", () => watcherMock);
@@ -42,14 +51,19 @@ import {
   generateImageForConfig,
 } from "../media-runtime";
 
-function makeConfig(modality: "image" | "video") {
+function makeConfig(
+  modality: "chat" | "image" | "video",
+  overrides: Record<string, unknown> = {},
+) {
   return {
     apiKey: "sk-test",
+    apiPath: null,
     baseUrl: "https://api.minimax.io/v1",
     id: `${modality}-cfg`,
     modality,
     model: `${modality}-model`,
     provider: "minimax",
+    ...overrides,
   };
 }
 
@@ -101,6 +115,96 @@ describe("media-runtime", () => {
       "session-1",
       "png",
     );
+  });
+
+  it("generates and stores image output for an OpenAI-compatible image config", async () => {
+    const signal = new AbortController().signal;
+    dbMock.getLlmConfig.mockReturnValue(
+      makeConfig("image", {
+        apiPath: "/v1/chat/completions",
+        baseUrl: "https://gateway.example.com",
+        id: "custom-image-cfg",
+        model: "gpt-image-2",
+        provider: "custom",
+      }),
+    );
+    openAICompatibleImageClientMock.generateOpenAICompatibleImage.mockResolvedValue(
+      {
+        imageUrls: ["data:image/png;base64,aW1hZ2U="],
+      },
+    );
+    storageMock.saveMediaToDisk.mockResolvedValue({
+      path: "/tmp/generated/openai-image.png",
+      shortId: "img-2",
+    });
+
+    const result = await generateImageForConfig({
+      llmConfigId: "custom-image-cfg",
+      prompt: "生成一张图",
+      sessionId: "session-2",
+      signal,
+    });
+
+    expect(result).toEqual({
+      configId: "custom-image-cfg",
+      imageId: "img-2",
+      modelId: "gpt-image-2",
+      path: "/tmp/generated/openai-image.png",
+      prompt: "生成一张图",
+    });
+    expect(
+      openAICompatibleImageClientMock.generateOpenAICompatibleImage,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "sk-test",
+        apiPath: "/v1/chat/completions",
+        baseUrl: "https://gateway.example.com",
+        model: "gpt-image-2",
+        prompt: "生成一张图",
+        signal,
+      }),
+    );
+    expect(imageClientMock.generateImage).not.toHaveBeenCalled();
+    expect(storageMock.saveMediaToDisk).toHaveBeenCalledWith(
+      expect.any(Function),
+      "data:image/png;base64,aW1hZ2U=",
+      "session-2",
+      "png",
+    );
+  });
+
+  it("treats saved custom gpt-image configs as image generation even if their stored modality is chat", async () => {
+    dbMock.getLlmConfig.mockReturnValue(
+      makeConfig("chat", {
+        apiPath: "/v1/chat/completions",
+        baseUrl: "https://gateway.example.com",
+        id: "legacy-gpt-image-cfg",
+        model: "gpt-image-2",
+        provider: "custom",
+      }),
+    );
+    openAICompatibleImageClientMock.generateOpenAICompatibleImage.mockResolvedValue(
+      {
+        imageUrls: ["data:image/png;base64,aW1hZ2U="],
+      },
+    );
+    storageMock.saveMediaToDisk.mockResolvedValue({
+      path: "/tmp/generated/openai-image.png",
+      shortId: "img-3",
+    });
+
+    const result = await generateImageForConfig({
+      llmConfigId: "legacy-gpt-image-cfg",
+      prompt: "生成一张图",
+      sessionId: "session-3",
+    });
+
+    expect(result).toMatchObject({
+      configId: "legacy-gpt-image-cfg",
+      imageId: "img-3",
+      modelId: "gpt-image-2",
+      path: "/tmp/generated/openai-image.png",
+    });
   });
 
   it("creates a video job and cancels the shared watcher controller", async () => {

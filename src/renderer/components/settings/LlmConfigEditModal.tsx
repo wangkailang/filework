@@ -6,6 +6,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  coerceLlmProviderModality,
+  getSupportedLlmModalitiesForProvider,
+} from "../../../shared/llm-modalities";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
@@ -210,6 +214,55 @@ export function getLlmReasoningEffortAvailability(
     : "supported";
 }
 
+export type LlmModelRefreshRequest =
+  | { id: string }
+  | {
+      draft: {
+        provider: "custom";
+        apiKey?: string | null;
+        baseUrl: string;
+        apiPath?: string | null;
+      };
+    };
+
+export function getLlmModelRefreshRequest({
+  copilotConnected,
+  editingId,
+  form,
+}: {
+  copilotConnected: boolean;
+  editingId: string | null;
+  form: Pick<FormData, "apiKey" | "apiPath" | "baseUrl" | "provider">;
+}): LlmModelRefreshRequest | null {
+  if (form.provider === "github-copilot") {
+    return copilotConnected && editingId ? { id: editingId } : null;
+  }
+
+  if (form.provider !== "custom") return null;
+  if (editingId) return { id: editingId };
+
+  const baseUrl = form.baseUrl.trim();
+  if (!baseUrl) return null;
+
+  const apiPath = form.apiPath.trim();
+  if (
+    apiPath &&
+    (!apiPath.startsWith("/") ||
+      !apiPath.toLowerCase().endsWith("/chat/completions"))
+  ) {
+    return null;
+  }
+
+  return {
+    draft: {
+      provider: "custom",
+      apiKey: form.apiKey.trim() || null,
+      baseUrl,
+      apiPath: apiPath || null,
+    },
+  };
+}
+
 export function shouldShowGithubCopilotAuthFlow(
   provider: Provider,
   isEditing: boolean,
@@ -242,6 +295,7 @@ export interface LlmProviderFieldPolicy {
   showBaseUrl: boolean;
   requireBaseUrl: boolean;
   showApiPath: boolean;
+  supportedModalities: Modality[];
   supportsImageVideo: boolean;
   baseUrlPlaceholder: string;
   apiPathPlaceholder: string;
@@ -267,7 +321,10 @@ export function getLlmProviderFieldPolicy(
     requireBaseUrl ||
     ["openai", "anthropic", "deepseek", "minimax"].includes(provider);
   const showApiPath = provider === "custom" || provider === "github-copilot";
-  const supportsImageVideo = provider === "minimax";
+  const supportedModalities = getSupportedLlmModalitiesForProvider(
+    provider,
+  ) as Modality[];
+  const supportsImageVideo = supportedModalities.some((m) => m !== "chat");
   const baseUrlPlaceholder =
     provider === "ollama"
       ? "http://localhost:11434"
@@ -290,6 +347,7 @@ export function getLlmProviderFieldPolicy(
     showBaseUrl,
     requireBaseUrl,
     showApiPath,
+    supportedModalities,
     supportsImageVideo,
     baseUrlPlaceholder,
     apiPathPlaceholder: "/chat/completions",
@@ -391,11 +449,11 @@ export const LlmConfigEditModal = ({
     null,
   );
 
-  const loadLlmModels = useCallback(async (configId: string) => {
+  const loadLlmModels = useCallback(async (request: LlmModelRefreshRequest) => {
     setModelRefreshBusy(true);
     setModelRefreshError(null);
     try {
-      const result = await window.filework.llmConfig.listModels(configId);
+      const result = await window.filework.llmConfig.listModels(request);
       if ("error" in result) {
         setModelRefreshError(result.error);
         return;
@@ -460,7 +518,7 @@ export const LlmConfigEditModal = ({
 
   useEffect(() => {
     if (!editingDiscoverableModelConfigId) return;
-    void loadLlmModels(editingDiscoverableModelConfigId);
+    void loadLlmModels({ id: editingDiscoverableModelConfigId });
   }, [editingDiscoverableModelConfigId, loadLlmModels]);
 
   const validate = (): boolean => {
@@ -529,7 +587,7 @@ export const LlmConfigEditModal = ({
       topP: parseOptionalNumber(form.topP),
       maxOutputTokens: parseOptionalNumber(form.maxOutputTokens),
       reasoningEffort: form.reasoningEffort || null,
-      modality: form.modality,
+      modality: coerceLlmProviderModality(form.provider, form.modality),
       enabled: form.enabled,
     };
     if (editing) {
@@ -695,6 +753,11 @@ export const LlmConfigEditModal = ({
     refreshedModelOptions,
     selectedModelValue,
   );
+  const modelRefreshRequest = getLlmModelRefreshRequest({
+    copilotConnected,
+    editingId: editing?.id ?? null,
+    form,
+  });
   const reasoningEffortDisabled = reasoningEffortAvailability === "unsupported";
   const showCopilotAuthFlow = shouldShowGithubCopilotAuthFlow(
     form.provider,
@@ -784,10 +847,7 @@ export const LlmConfigEditModal = ({
                   apiKey: "",
                   baseUrl: "",
                   apiPath: "",
-                  // Reset modality whenever the new provider can't do image/video.
-                  modality: getLlmProviderFieldPolicy(next).supportsImageVideo
-                    ? form.modality
-                    : "chat",
+                  modality: coerceLlmProviderModality(next, form.modality),
                 };
                 setForm(
                   next === "github-copilot"
@@ -828,7 +888,9 @@ export const LlmConfigEditModal = ({
                 }
                 className={inputCls}
               >
-                {MODALITIES.map((m) => (
+                {MODALITIES.filter((m) =>
+                  fieldPolicy.supportedModalities.includes(m.value),
+                ).map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>
@@ -921,23 +983,21 @@ export const LlmConfigEditModal = ({
               >
                 {LL.llmConfig_model()}
               </label>
-              {(form.provider === "custom" ||
-                (form.provider === "github-copilot" && copilotConnected)) &&
-                editing && (
-                  <button
-                    type="button"
-                    onClick={() => void loadLlmModels(editing.id)}
-                    disabled={modelRefreshBusy}
-                    title={LL.llmConfig_refreshModels()}
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60"
-                  >
-                    <RefreshCw
-                      size={12}
-                      className={modelRefreshBusy ? "animate-spin" : undefined}
-                    />
-                    {LL.llmConfig_refreshModels()}
-                  </button>
-                )}
+              {modelRefreshRequest && (
+                <button
+                  type="button"
+                  onClick={() => void loadLlmModels(modelRefreshRequest)}
+                  disabled={modelRefreshBusy}
+                  title={LL.llmConfig_refreshModels()}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+                >
+                  <RefreshCw
+                    size={12}
+                    className={modelRefreshBusy ? "animate-spin" : undefined}
+                  />
+                  {LL.llmConfig_refreshModels()}
+                </button>
+              )}
             </div>
             {form.provider === "github-copilot" ? (
               <select
