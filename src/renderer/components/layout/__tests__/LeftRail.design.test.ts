@@ -13,4 +13,11 @@ describe("LeftRail design", () => {
     expect(leftRailSource).not.toContain("transition-all");
     expect(leftRailSource).toContain("bg-foreground");
   });
+
+  it("aligns the collapsed expand button with the telemetry row", () => {
+    expect(leftRailSource).toContain("absolute left-2 top-0");
+    expect(leftRailSource).toContain(
+      "h-[34px] w-12 items-center justify-center",
+    );
+  });
 });

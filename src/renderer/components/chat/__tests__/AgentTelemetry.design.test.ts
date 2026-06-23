@@ -15,4 +15,10 @@ describe("AgentTelemetry design", () => {
     expect(telemetrySource).not.toContain("animate-scan");
     expect(telemetrySource).not.toContain("bg-gradient-to-r");
   });
+
+  it("keeps collapsed rail telemetry labels visually centered", () => {
+    expect(telemetrySource).toContain("h-[34px]");
+    expect(telemetrySource).toContain('reserveLeft ? "pl-16" : "pl-3.5"');
+    expect(telemetrySource).toContain("uppercase leading-none");
+  });
 });

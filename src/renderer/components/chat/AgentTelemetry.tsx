@@ -67,12 +67,12 @@ export const AgentTelemetry = ({
       className={cn(
         "relative flex h-[34px] shrink-0 items-center gap-3.5 overflow-hidden border-b border-border-faint bg-surface pr-16 font-mono text-[11px] tracking-wide",
         // 左栏折叠 → 让开左上角浮动展开按钮;否则正常左内边距
-        reserveLeft ? "pl-12" : "pl-3.5",
+        reserveLeft ? "pl-16" : "pl-3.5",
       )}
     >
       {/* 状态灯 + 状态词 */}
       <span
-        className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.07em] transition-colors duration-300"
+        className="flex items-center gap-1.5 font-semibold uppercase leading-none tracking-[0.07em] transition-colors duration-300"
         style={{ color: meta.color }}
       >
         <span
@@ -88,12 +88,14 @@ export const AgentTelemetry = ({
 
       {/* 当前动作 */}
       {action && (
-        <span className="min-w-0 truncate text-primary">{action}</span>
+        <span className="min-w-0 truncate leading-none text-primary">
+          {action}
+        </span>
       )}
 
       {/* 右侧:仅保留运行耗时 */}
       {meta.running && (
-        <span className="ml-auto tabular-nums text-muted-foreground">
+        <span className="ml-auto tabular-nums leading-none text-muted-foreground">
           {timeStr}
         </span>
       )}

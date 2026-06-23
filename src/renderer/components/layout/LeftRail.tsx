@@ -398,7 +398,7 @@ export const RailExpandButton = ({ onClick }: { onClick: () => void }) => {
       type="button"
       onClick={onClick}
       title={LL.sidebar_expand()}
-      className="titlebar-no-drag absolute left-2 top-1 z-[60] flex h-[34px] items-center rounded-md px-1.5 transition-[background-color,box-shadow,transform] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
+      className="titlebar-no-drag absolute left-2 top-0 z-[60] flex h-[34px] w-12 items-center justify-center rounded-md transition-[background-color,box-shadow,transform] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
     >
       <PanelLeftOpen className="size-4 text-muted-foreground" />
     </button>
