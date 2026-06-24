@@ -15,6 +15,7 @@ import {
 import type {
   AttachmentPart,
   ChatMessage,
+  ChatSession,
   ClarificationPart,
   MessagePart,
 } from "./types";
@@ -58,8 +59,10 @@ type AutomationRunRecordForChat = {
   automationId: string;
   automationTitle: string;
   chatSessionId: string | null;
+  errorMessage?: string | null;
   id: string;
   modelId: string | null;
+  output?: string | null;
   prompt: string;
   trigger: "manual" | "scheduled";
   workspacePaths: string[] | null;
@@ -108,6 +111,13 @@ const buildAutomationChatPrompt = (
   return lines.join("\n");
 };
 
+const buildAutomationRunDetailContent = (
+  run: AutomationRunRecordForChat,
+): string =>
+  run.output?.trim() ||
+  run.errorMessage?.trim() ||
+  "No output was captured for this automation run.";
+
 export function useChatSession(
   workspacePath: string,
   workspaceRefJson?: string,
@@ -120,6 +130,8 @@ export function useChatSession(
   const [sessionRunStates, setSessionRunStates] = useState<SessionRunStateMap>(
     {},
   );
+  const [transientAutomationRun, setTransientAutomationRun] =
+    useState<NonNullable<ChatSession["automationRun"]> | null>(null);
 
   // Validate persisted LLM config ID on mount
   const validatedConfigRef = useRef(false);
@@ -349,12 +361,17 @@ export function useChatSession(
 
     setInput("");
 
+    const shouldStartFreshFromTransient =
+      !crud.activeSessionId && transientAutomationRun !== null;
+    const baseMessages = shouldStartFreshFromTransient ? [] : crud.messages;
+    if (shouldStartFreshFromTransient) setTransientAutomationRun(null);
+
     let sessionId = crud.activeSessionId;
     if (!sessionId) {
       sessionId = await crud.createNewSession();
     }
 
-    const isFirstMessage = crud.messages.length === 0;
+    const isFirstMessage = baseMessages.length === 0;
 
     const attachmentParts: AttachmentPart[] = attachments.map((a) => ({
       type: "attachment",
@@ -385,7 +402,7 @@ export function useChatSession(
       parts: [],
     };
 
-    const withBoth = [...crud.messages, userMessage, assistantMessage];
+    const withBoth = [...baseMessages, userMessage, assistantMessage];
     crud.setMessages(withBoth);
     crud.debouncedSave(withBoth, sessionId);
     stream.setIsLoading(true);
@@ -645,16 +662,54 @@ export function useChatSession(
   );
 
   const handleOpenAutomationRun = useCallback(
-    (run: AutomationRunRecordForChat) => {
-      if (!run.chatSessionId) return false;
+    async (run: AutomationRunRecordForChat) => {
+      const existingSessionId =
+        run.chatSessionId ??
+        crud.sessions.find((session) => session.automationRun?.id === run.id)
+          ?.id ??
+        null;
+      if (existingSessionId) {
+        stream.detachFromTask();
+        setTransientAutomationRun(null);
+        setSessionRunStates((prev) =>
+          clearSessionUnreadState(prev, existingSessionId),
+        );
+        crud.handleSelectSession(existingSessionId, false);
+        return true;
+      }
+
+      const assistantId = run.assistantMessageId ?? crypto.randomUUID();
+      const transientSessionId = `automation-run:${run.id}`;
+      const title = run.automationTitle;
+      const now = new Date().toISOString();
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        sessionId: transientSessionId,
+        role: "user",
+        content: buildAutomationChatPrompt(run),
+        timestamp: now,
+      };
+      const assistantContent = buildAutomationRunDetailContent(run);
+      const assistantMessage: ChatMessage = {
+        id: assistantId,
+        sessionId: transientSessionId,
+        role: "assistant",
+        content: assistantContent,
+        timestamp: now,
+        parts: [{ type: "text", text: assistantContent }],
+      };
+      const messages = [userMessage, assistantMessage];
+
       stream.detachFromTask();
-      setSessionRunStates((prev) =>
-        clearSessionUnreadState(prev, run.chatSessionId ?? ""),
-      );
-      crud.handleSelectSession(run.chatSessionId, false);
+      setTransientAutomationRun({
+        automationId: run.automationId,
+        id: run.id,
+        title,
+      });
+      crud.showTransientMessages(messages);
       return true;
     },
-    [crud.handleSelectSession, stream.detachFromTask],
+    [crud, stream.detachFromTask],
   );
 
   const handleApproval = (toolCallId: string, approved: boolean) => {
@@ -833,11 +888,13 @@ export function useChatSession(
   // 能 bail-out(顶栏 / 左栏会话列表不随 messages 逐 token 重渲)。
   const handleNewChat = useCallback(() => {
     stream.detachFromTask();
+    setTransientAutomationRun(null);
     crud.handleNewChat(false);
   }, [crud.handleNewChat, stream.detachFromTask]);
   const handleSelectSession = useCallback(
     (id: string) => {
       stream.detachFromTask();
+      setTransientAutomationRun(null);
       setSessionRunStates((prev) => clearSessionUnreadState(prev, id));
       crud.handleSelectSession(id, false);
     },
@@ -877,6 +934,7 @@ export function useChatSession(
   return {
     sessions: crud.sessions,
     activeSessionId: crud.activeSessionId,
+    transientAutomationRun,
     sessionRunStates,
     activeSessionRunState,
     messages: crud.messages,

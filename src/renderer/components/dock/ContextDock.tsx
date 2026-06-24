@@ -62,6 +62,7 @@ export const ContextDock = ({
   diffInvalidator,
   isGitRepo,
   automationInitialView = "tasks",
+  onAutomationRunDetailsOpenedAsChat,
   automationViewRevision = 0,
 }: {
   mode: DockMode;
@@ -87,6 +88,7 @@ export const ContextDock = ({
   /** 非 git 项目隐藏「差异」标签与内容(网页面板对所有工作区可用)。 */
   isGitRepo: boolean;
   automationInitialView?: "tasks" | "triage";
+  onAutomationRunDetailsOpenedAsChat?: () => void;
   automationViewRevision?: number;
 }) => {
   const { LL } = useI18nContext();
@@ -287,6 +289,7 @@ export const ContextDock = ({
           >
             <AutomationsDockPanel
               initialView={automationInitialView}
+              onOpenChatDetails={onAutomationRunDetailsOpenedAsChat}
               viewRevision={automationViewRevision}
             />
           </TabsContent>

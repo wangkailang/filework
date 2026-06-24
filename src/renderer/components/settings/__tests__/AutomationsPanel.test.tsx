@@ -344,6 +344,59 @@ describe("AutomationsPanel", () => {
     expect(html).toContain('disabled=""');
   });
 
+  it("does not highlight task rows for the active automation chat session", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        activeAutomationId="auto-2"
+        initialAutomations={[
+          automationRecord({ id: "auto-1", title: "First automation" }),
+          automationRecord({ id: "auto-2", title: "Active automation" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Active automation");
+    expect(html).not.toContain('data-automation-current="true"');
+  });
+
+  it("highlights only the active automation run for the active chat session", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        activeAutomationId="auto-2"
+        activeAutomationRunId="run-2"
+        initialView="triage"
+        initialAutomations={[
+          automationRecord({ id: "auto-2", title: "Active automation" }),
+        ]}
+        initialRuns={[
+          {
+            ...automationRunRecord(),
+            automationId: "auto-2",
+            automationTitle: "Older active automation run",
+            id: "run-1",
+          },
+          {
+            ...automationRunRecord(),
+            automationId: "auto-2",
+            automationTitle: "Active automation",
+            id: "run-2",
+          },
+        ]}
+      />,
+    );
+    const { document } = parseHTML(`<div>${html}</div>`);
+
+    const activeRows = Array.from(
+      document.querySelectorAll('[data-automation-current="true"]'),
+    );
+    const activeRow = activeRows[0];
+
+    expect(activeRows).toHaveLength(1);
+    expect(activeRow?.getAttribute("data-automation-id")).toBe("auto-2");
+    expect(activeRow?.textContent).toContain("Active automation");
+    expect(activeRow?.textContent).not.toContain("Older active automation run");
+  });
+
   it("renders recent automation runs for triage without inline details", () => {
     const html = renderToStaticMarkup(
       <AutomationsPanel
@@ -396,6 +449,21 @@ describe("AutomationsPanel", () => {
     expect(html).toContain("查看详情");
     expect(html).toContain('data-automation-run-detail-mode="preview"');
     expect(html).not.toContain("Command failed");
+  });
+
+  it("opens headless scheduled run details in chat when a chat opener is available", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsPanel
+        initialView="triage"
+        initialAutomations={[automationRecord()]}
+        initialRuns={[automationRunRecord()]}
+        onOpenRunDetails={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("查看详情");
+    expect(html).toContain('data-automation-run-detail-mode="chat"');
+    expect(html).not.toContain('data-automation-run-detail-mode="preview"');
   });
 
   it("renders chat-backed run details as an open-in-chat target", () => {

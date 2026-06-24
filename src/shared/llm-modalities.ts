@@ -36,3 +36,17 @@ export function isImageGenerationModelId(model: string): boolean {
     /^gpt-image(?:-|$)/.test(lastSegment) || /^dall-e(?:-|$)/.test(lastSegment)
   );
 }
+
+export function getDisplayLlmConfigModality(config: {
+  provider: string;
+  model: string;
+  modality?: SharedLlmModality;
+}): SharedLlmModality {
+  if (
+    (config.provider === "custom" || config.provider === "openai") &&
+    isImageGenerationModelId(config.model)
+  ) {
+    return "image";
+  }
+  return config.modality ?? "chat";
+}

@@ -16,3 +16,13 @@ export const beginPlanExecution = (plan: PlanView): PlanView => {
     ),
   };
 };
+
+export const cancelPlanExecution = (plan: PlanView): PlanView => ({
+  ...plan,
+  status: "cancelled",
+  steps: plan.steps.map((step) =>
+    step.status === "running" || step.status === "pending"
+      ? { ...step, status: "skipped" }
+      : step,
+  ),
+});

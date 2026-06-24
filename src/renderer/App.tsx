@@ -25,6 +25,7 @@ import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
 import TypesafeI18n from "./i18n/i18n-react";
 import type { Locales } from "./i18n/i18n-types";
 import { loadAllLocales } from "./i18n/i18n-util.sync";
+import { shouldRefreshFileTreeForToolResult } from "./lib/workspace-refresh";
 import {
   decodeRef,
   encodeRef,
@@ -96,6 +97,7 @@ export const App = () => {
   // 每当破坏性工具执行完成时自增;branch-diff hook 以此作为失效信号,
   // 使停靠区的 Diff 标签能反映写入后的实际状态,而无需等待 30 秒 TTL。
   const [diffInvalidator, setDiffInvalidator] = useState(0);
+  const [fileTreeInvalidator, setFileTreeInvalidator] = useState(0);
 
   // 左栏
   const [railTab, setRailTab] = useState<RailTab>("chats");
@@ -314,9 +316,12 @@ export const App = () => {
       "createDirectory",
       "runCommand",
     ]);
-    const off = window.filework.onStreamToolResult(({ toolName }) => {
+    const off = window.filework.onStreamToolResult(({ toolName, result }) => {
       if (DESTRUCTIVE.has(toolName)) {
         setDiffInvalidator((n) => n + 1);
+      }
+      if (shouldRefreshFileTreeForToolResult(toolName, result)) {
+        setFileTreeInvalidator((n) => n + 1);
       }
     });
     return () => {
@@ -448,6 +453,9 @@ export const App = () => {
     setDockTab("automations");
     setDockOpen(true);
   };
+  const openAutomationRunInChat = () => {
+    setRailTab("chats");
+  };
 
   if (isRestoring) {
     return (
@@ -515,6 +523,7 @@ export const App = () => {
                   branchForChip={branchForChip}
                   diffBaseBranch={diffBaseBranch}
                   diffInvalidator={diffInvalidator}
+                  fileTreeInvalidator={fileTreeInvalidator}
                   diffOpen={dockOpen && dockTab === "diff"}
                   railTab={railTab}
                   onRailTabChange={setRailTab}
@@ -573,6 +582,9 @@ export const App = () => {
                       diffInvalidator={diffInvalidator}
                       isGitRepo={workspace.isGitRepo}
                       automationInitialView={automationInitialView}
+                      onAutomationRunDetailsOpenedAsChat={
+                        openAutomationRunInChat
+                      }
                       automationViewRevision={automationViewRevision}
                     />
                   )}

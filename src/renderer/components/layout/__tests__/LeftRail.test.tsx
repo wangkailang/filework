@@ -11,12 +11,19 @@ const branchDiffState = vi.hoisted(() => ({
   calls: [] as Array<Record<string, unknown>>,
 }));
 
+const fileTreePanelState = vi.hoisted(() => ({
+  props: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock("../ChatHistoryPanel", () => ({
   ChatHistoryPanel: () => <div data-chat-history-panel="true" />,
 }));
 
 vi.mock("../FileTreePanel", () => ({
-  FileTreePanel: () => <div data-file-tree-panel="true" />,
+  FileTreePanel: (props: Record<string, unknown>) => {
+    fileTreePanelState.props.push(props);
+    return <div data-file-tree-panel="true" />;
+  },
 }));
 
 vi.mock("../../skills/SkillsModal", () => ({
@@ -65,6 +72,7 @@ describe("LeftRail", () => {
     chatState.sessions = [];
     chatState.activeSessionId = null;
     branchDiffState.calls = [];
+    fileTreePanelState.props = [];
   });
 
   it("does not clip the branch switcher dropdown from the meta row", () => {
@@ -223,6 +231,40 @@ describe("LeftRail", () => {
       currentBranch: "feature/current",
       invalidator: 3,
       path: "/tmp/repo",
+    });
+  });
+
+  it("passes file tree refresh invalidator to the mounted file tree", () => {
+    renderToStaticMarkup(
+      <LeftRail
+        workspacePath="/tmp/repo"
+        workspaceRef={{ kind: "local", path: "/tmp/repo" }}
+        currentBranch="main"
+        isGitRepo={true}
+        branchForChip="main"
+        diffInvalidator={0}
+        fileTreeInvalidator={7}
+        diffOpen={false}
+        railTab="files"
+        onRailTabChange={vi.fn()}
+        onSelectFile={vi.fn()}
+        width={256}
+        collapsed={false}
+        onWidthChange={vi.fn()}
+        onCommitWidth={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+        onToggleDiff={vi.fn()}
+        onBranchSwitched={vi.fn()}
+        onCloseWorkspace={vi.fn()}
+        automationsOpen={false}
+        onOpenAutomations={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+
+    expect(fileTreePanelState.props.at(-1)).toMatchObject({
+      refreshToken: 7,
+      workspacePath: "/tmp/repo",
     });
   });
 });

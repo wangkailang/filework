@@ -15,6 +15,7 @@ import {
   createReflectionGate,
   defaultRules,
   emptyAssistantWithTools,
+  incompleteCreatePlanExecution,
   missingFinalAnswer,
   pdfParseFailure,
   prematureConcession,
@@ -157,6 +158,57 @@ describe("emptyAssistantWithTools 规则", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("incompleteCreatePlanExecution 规则", () => {
+  it("createPlan 要求继续执行但没有任何文本时 retry", () => {
+    const v = incompleteCreatePlanExecution(
+      mkTurn({
+        toolCalls: [
+          {
+            name: "createPlan",
+            success: true,
+            result: {
+              recorded: true,
+              approved: true,
+              continueExecution: true,
+              nextInstruction: "Continue executing the approved plan now.",
+            },
+          },
+        ],
+        finalText: "",
+        endReason: "stop",
+      }),
+    );
+
+    expect(v?.kind).toBe("retry");
+    if (v?.kind === "retry") {
+      expect(v.feedback).toMatch(/继续执行计划/);
+      expect(v.forceNoTools).toBeUndefined();
+    }
+  });
+
+  it("createPlan 已无未完成工作时弃权", () => {
+    expect(
+      incompleteCreatePlanExecution(
+        mkTurn({
+          toolCalls: [
+            {
+              name: "createPlan",
+              success: true,
+              result: { continueExecution: false },
+            },
+          ],
+          finalText: "",
+          endReason: "stop",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("defaultRules 默认启用 createPlan 继续执行护栏", () => {
+    expect(defaultRules()).toContain(incompleteCreatePlanExecution);
   });
 });
 
@@ -310,20 +362,22 @@ describe("prematureConcession 规则", () => {
 describe("builtinRules 顺序", () => {
   it("按优先级顺序包含全部规则", () => {
     const rules = builtinRules();
-    expect(rules).toHaveLength(4);
+    expect(rules).toHaveLength(5);
     expect(rules[0]).toBe(pdfParseFailure);
     expect(rules[1]).toBe(toolDeniedSequence);
-    expect(rules[2]).toBe(emptyAssistantWithTools);
-    expect(rules[3]).toBe(prematureConcession);
+    expect(rules[2]).toBe(incompleteCreatePlanExecution);
+    expect(rules[3]).toBe(emptyAssistantWithTools);
+    expect(rules[4]).toBe(prematureConcession);
   });
 });
 
 describe("defaultRules 规则集", () => {
   it("排除 emptyAssistantWithTools 以避免误报", () => {
     const rules = defaultRules();
-    expect(rules).toHaveLength(3);
+    expect(rules).toHaveLength(4);
     expect(rules).toContain(pdfParseFailure);
     expect(rules).toContain(toolDeniedSequence);
+    expect(rules).toContain(incompleteCreatePlanExecution);
     expect(rules).toContain(prematureConcession);
     expect(rules).not.toContain(emptyAssistantWithTools);
   });

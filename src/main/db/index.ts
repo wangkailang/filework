@@ -1848,6 +1848,34 @@ export const markAutomationRunHandled = (
   return updated;
 };
 
+export const attachAutomationRunChatSession = (
+  id: string,
+  input: {
+    assistantMessageId?: string | null;
+    chatSessionId: string;
+    now?: Date;
+  },
+): AutomationRunRecord => {
+  const existing = getAutomationRun(id);
+  if (!existing) throw new Error(`Automation run not found: ${id}`);
+  const now = (input.now ?? new Date()).toISOString();
+  db.update(schema.automationRuns)
+    .set({
+      assistantMessageId:
+        input.assistantMessageId ?? existing.assistantMessageId,
+      chatSessionId: input.chatSessionId,
+      updatedAt: now,
+    })
+    .where(eq(schema.automationRuns.id, id))
+    .run();
+  const updated = getAutomationRun(id);
+  if (!updated)
+    throw new Error(
+      `Automation run not found after chat session attach: ${id}`,
+    );
+  return updated;
+};
+
 export const cancelAutomationRun = (
   id: string,
   input: { now?: Date } = {},
@@ -2140,9 +2168,12 @@ export const createCredential = (input: {
   label: string;
   token: string;
   scopes?: string[] | null;
+  host?: string | null;
 }): Credential => {
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
+  const lastTestedHost =
+    input.kind === "gitlab_pat" ? (input.host ?? null) : null;
   db.insert(schema.credentials)
     .values({
       id,
@@ -2151,6 +2182,7 @@ export const createCredential = (input: {
       encryptedToken: encrypt(input.token),
       scopes: input.scopes ? JSON.stringify(input.scopes) : null,
       createdAt,
+      lastTestedHost,
     })
     .run();
   return {
@@ -2162,7 +2194,7 @@ export const createCredential = (input: {
     lastTestedAt: null,
     testStatus: null,
     lastTestError: null,
-    lastTestedHost: null,
+    lastTestedHost,
   };
 };
 

@@ -265,6 +265,17 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("## Workspace Memory");
     expect(prompt).toContain("package manager: pnpm");
     expect(prompt).toMatch(/Trust the Workspace Memory above/);
+    expect(prompt).not.toContain("updateMemory");
+  });
+
+  it("with memory tools enabled, includes updateMemory guidance", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      workspaceMemory: "- package manager: pnpm\n- tests live in __tests__",
+      enableMemoryTools: true,
+    });
+    expect(prompt).toContain("## Workspace Memory");
+    expect(prompt).toContain("updateMemory");
   });
 
   it("treats blank/whitespace-only memory as absent (no section injected)", () => {

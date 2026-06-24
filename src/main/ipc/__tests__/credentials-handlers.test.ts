@@ -40,11 +40,13 @@ vi.mock("../../db", () => ({
     label,
     token,
     scopes,
+    host,
   }: {
-    kind: "github_pat";
+    kind: "github_pat" | "gitlab_pat";
     label: string;
     token: string;
     scopes?: string[] | null;
+    host?: string | null;
   }) => {
     const id = `cred-${dbState.credentials.length + 1}`;
     const createdAt = new Date().toISOString();
@@ -55,8 +57,19 @@ vi.mock("../../db", () => ({
       token,
       scopes: scopes ?? null,
       createdAt,
+      lastTestedHost: host ?? null,
     });
-    return { id, kind, label, scopes: scopes ?? null, createdAt };
+    return {
+      id,
+      kind,
+      label,
+      scopes: scopes ?? null,
+      createdAt,
+      lastTestedAt: null,
+      testStatus: null,
+      lastTestError: null,
+      lastTestedHost: host ?? null,
+    };
   },
   updateCredential: ({
     id,
@@ -298,6 +311,19 @@ describe("credentials handlers", () => {
     })) as { kind: string; label: string };
     expect(created.kind).toBe("gitlab_pat");
     expect(created.label).toBe("self-hosted");
+  });
+
+  it("create records a GitLab host when supplied", async () => {
+    const create = handlers.get("credentials:create");
+    const created = (await create?.(null, {
+      kind: "gitlab_pat",
+      label: "self-hosted",
+      token: "glpat-X",
+      host: "https://gitlab.example.com/",
+    })) as { lastTestedHost: string | null };
+
+    expect(created.lastTestedHost).toBe("gitlab.example.com");
+    expect(dbState.credentials[0]?.lastTestedHost).toBe("gitlab.example.com");
   });
 
   it("test pings GitLab /api/v4/user when kind=gitlab_pat with custom host", async () => {

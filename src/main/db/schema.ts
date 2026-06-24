@@ -91,9 +91,8 @@ export const credentials = sqliteTable("credentials", {
   /** testStatus === "error" 时的友好错误描述。 */
   lastTestError: text("last_test_error"),
   /**
-   * 最近一次成功测试所针对的 host —— 驱动 gitlab_pat 自建实例的自动重测。
-   * 在用户至少执行一次手动测试前为 NULL(手动测试会从 GitLab 连接流程中
-   * 写入该 host)。
+   * GitLab 凭据最近关联的 host —— 来自连接流程输入或成功测试结果,
+   * 驱动 gitlab_pat 自建实例的自动重测。
    */
   lastTestedHost: text("last_tested_host"),
 });

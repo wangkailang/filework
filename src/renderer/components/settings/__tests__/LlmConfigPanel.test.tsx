@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { TooltipProvider } from "../../ui/tooltip";
 import {
   buildLlmConfigStatusTooltip,
+  getLlmConfigModalityBadge,
   LlmConfigStatusIndicator,
 } from "../LlmConfigPanel";
 
@@ -48,5 +49,27 @@ describe("LlmConfigStatusIndicator", () => {
         "zh-CN",
       ),
     ).toEqual(["连接正常", `测试于 ${formattedCheckedAt}`]);
+  });
+});
+
+describe("getLlmConfigModalityBadge", () => {
+  it("shows IMAGE for legacy custom gpt-image configs saved as chat", () => {
+    expect(
+      getLlmConfigModalityBadge({
+        provider: "custom",
+        model: "gpt-image-2",
+        modality: "chat",
+      }),
+    ).toBe("image");
+  });
+
+  it("does not show a badge for regular chat configs", () => {
+    expect(
+      getLlmConfigModalityBadge({
+        provider: "custom",
+        model: "gpt-5.5",
+        modality: "chat",
+      }),
+    ).toBeNull();
   });
 });

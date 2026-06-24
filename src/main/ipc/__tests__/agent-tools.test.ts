@@ -9,17 +9,25 @@
 import type { WebContents } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildAgentToolRegistry } from "../agent-tools";
 import {
+  buildAgentToolRegistry,
+  shouldEnableMemoryToolsForPrompt,
+} from "../agent-tools";
+import {
+  approvedInlinePlanTasks,
   drainClarificationResolver,
   drainClarificationsForTask,
+  drainPlanResolver,
   pendingClarifications,
+  pendingPlanApprovals,
 } from "../ai-task-control";
 
 // 双重保险:在测试之间保持模块级 Map 干净,避免某个忘记 drain 的
 // 用例污染下一个用例。
 afterEach(() => {
   pendingClarifications.clear();
+  pendingPlanApprovals.clear();
+  approvedInlinePlanTasks.clear();
 });
 
 describe("askClarification tool — blocks until user answers", () => {
@@ -170,6 +178,69 @@ describe("askClarification tool — blocks until user answers", () => {
   });
 });
 
+describe("createPlan tool — approval resumes execution", () => {
+  type CreatePlanToolLike = {
+    execute: (
+      args: {
+        goal: string;
+        steps: Array<{
+          action: string;
+          description?: string;
+          status?: "pending" | "running" | "completed" | "failed" | "skipped";
+        }>;
+      },
+      ctx: unknown,
+    ) => Promise<unknown>;
+  };
+
+  const setupCreatePlanTool = (taskId: string) => {
+    const sendSpy = vi.fn();
+    const sender = {
+      isDestroyed: () => false,
+      send: sendSpy,
+    } as unknown as WebContents;
+    const registry = buildAgentToolRegistry({ sender, taskId });
+    const tool = registry.get("createPlan") as CreatePlanToolLike | undefined;
+    return { tool, sendSpy };
+  };
+
+  it("returns an explicit continue instruction after the user approves the draft plan", async () => {
+    const taskId = "task-plan-approval";
+    const { tool, sendSpy } = setupCreatePlanTool(taskId);
+    if (!tool) throw new Error("createPlan tool was not registered");
+
+    const callPromise = tool.execute(
+      {
+        goal: "Solve the puzzle",
+        steps: [
+          { action: "Enumerate distributions" },
+          { action: "Analyze guarantees" },
+        ],
+      },
+      {} as unknown,
+    );
+
+    expect(sendSpy).toHaveBeenCalledWith("ai:stream-plan", {
+      id: taskId,
+      plan: expect.objectContaining({
+        status: "draft",
+        steps: [
+          expect.objectContaining({ status: "pending" }),
+          expect.objectContaining({ status: "pending" }),
+        ],
+      }),
+    });
+
+    drainPlanResolver(taskId, true);
+
+    await expect(callPromise).resolves.toMatchObject({
+      approved: true,
+      continueExecution: true,
+      nextInstruction: expect.stringMatching(/continue.*plan/i),
+    });
+  });
+});
+
 describe("spawnSubagent tool — 注册门控与递归防护", () => {
   const sender = {
     isDestroyed: () => false,
@@ -244,5 +315,69 @@ describe("automation_update tool — 注册入口", () => {
       workspacePath: "/ws",
     });
     expect(registry.has("automation_update")).toBe(false);
+  });
+});
+
+describe("memory tools — 仅在显式记忆意图下注册", () => {
+  const sender = {
+    isDestroyed: () => false,
+    send: vi.fn(),
+  } as unknown as WebContents;
+
+  it("普通 chat 默认不注册 updateMemory / clearMemory", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "memory-ordinary",
+      workspacePath: "/ws",
+    });
+
+    expect(registry.has("updateMemory")).toBe(false);
+    expect(registry.has("clearMemory")).toBe(false);
+  });
+
+  it("显式要求记住内容时才开启 memory 工具", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "memory-explicit",
+      workspacePath: "/ws",
+      enableMemoryTools: shouldEnableMemoryToolsForPrompt(
+        "记住我在这个项目里偏好 pnpm test",
+      ),
+    });
+
+    expect(registry.has("updateMemory")).toBe(true);
+    expect(registry.has("clearMemory")).toBe(true);
+  });
+
+  it("中文自然表达“帮我记住”也会开启 memory 工具", () => {
+    expect(shouldEnableMemoryToolsForPrompt("帮我记住我偏好用中文回复")).toBe(
+      true,
+    );
+  });
+
+  it("显式 allowedTools 仍可按白名单注册 updateMemory", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "memory-allowed-tools",
+      allowedTools: ["updateMemory"],
+      workspacePath: "/ws",
+    });
+
+    expect(registry.has("updateMemory")).toBe(true);
+    expect(registry.has("clearMemory")).toBe(false);
+  });
+
+  it("普通旅行规划不被误判为记忆意图", () => {
+    expect(
+      shouldEnableMemoryToolsForPrompt(
+        "帮我规划 3 天东京自由行：必去 5 个地方、推荐住宿区域、每天行程、预算估算",
+      ),
+    ).toBe(false);
+  });
+
+  it("讨论 update memory 误触发问题本身不启用 memory 工具", () => {
+    expect(
+      shouldEnableMemoryToolsForPrompt("不应该触发 update memory tool"),
+    ).toBe(false);
   });
 });

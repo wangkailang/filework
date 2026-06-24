@@ -6,6 +6,7 @@ import {
   type AutomationRunTriageStatus,
   type AutomationScheduleKind,
   type AutomationType,
+  attachAutomationRunChatSession,
   cancelAutomationRun,
   cleanupAutomationRuns,
   createAutomation,
@@ -57,6 +58,12 @@ type AutomationCleanupRunsPayload = {
 
 type AutomationPrepareChatRunPayload = {
   assistantMessageId: string;
+  id: string;
+  sessionId: string;
+};
+
+type AutomationAttachRunChatSessionPayload = {
+  assistantMessageId?: string | null;
   id: string;
   sessionId: string;
 };
@@ -182,6 +189,18 @@ export const registerAutomationsHandlers = () => {
     "automations:listRunEvents",
     async (_event, payload: { id: string }) =>
       listAutomationRunEvents(requireId(payload)),
+  );
+
+  ipcMain.handle(
+    "automations:attachRunChatSession",
+    async (_event, payload: AutomationAttachRunChatSessionPayload) => {
+      const id = requireId(payload);
+      if (!payload.sessionId?.trim()) throw new Error("sessionId is required");
+      return attachAutomationRunChatSession(id, {
+        assistantMessageId: trimOrNull(payload.assistantMessageId),
+        chatSessionId: payload.sessionId.trim(),
+      });
+    },
   );
 
   ipcMain.handle(

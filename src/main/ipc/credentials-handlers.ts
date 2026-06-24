@@ -8,7 +8,7 @@
  */
 
 import { ipcMain } from "electron";
-
+import { normalizeGitLabHost } from "../core/workspace/git-credentials";
 import {
   type CredentialKind,
   createCredential,
@@ -85,6 +85,7 @@ export const registerCredentialsHandlers = () => {
         label: string;
         token: string;
         scopes?: string[];
+        host?: string;
       },
     ) => {
       if (!payload?.token || typeof payload.token !== "string") {
@@ -93,11 +94,18 @@ export const registerCredentialsHandlers = () => {
       if (!payload.label) {
         throw new Error("label is required");
       }
+      const host =
+        payload.kind === "gitlab_pat" &&
+        typeof payload.host === "string" &&
+        payload.host.trim()
+          ? normalizeGitLabHost(payload.host)
+          : undefined;
       return createCredential({
         kind: payload.kind,
         label: payload.label,
         token: payload.token,
         scopes: payload.scopes ?? null,
+        host,
       });
     },
   );

@@ -27,6 +27,7 @@ export function useSessionCrud(workspacePath: string) {
   const activeSessionIdRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const messagesBySessionRef = useRef(new Map<string, ChatMessage[]>());
+  const transientMessagesPendingRef = useRef(false);
   // Set by createNewSession() so the load-history effect below skips the
   // disk fetch on activation — the local caller (e.g. the chat submit
   // handler) has just put messages into state but the JSONL file hasn't
@@ -150,6 +151,10 @@ export function useSessionCrud(workspacePath: string) {
 
   useEffect(() => {
     if (!activeSessionId) {
+      if (transientMessagesPendingRef.current) {
+        transientMessagesPendingRef.current = false;
+        return;
+      }
       messagesRef.current = [];
       setMessagesState([]);
       return;
@@ -208,6 +213,7 @@ export function useSessionCrud(workspacePath: string) {
 
   const createNewSession = useCallback(async (): Promise<string> => {
     flushPendingSave();
+    transientMessagesPendingRef.current = false;
     const session: ChatSession =
       await window.filework.createChatSession(workspacePath);
     // Flag the load-history effect to skip the disk read on activation —
@@ -227,6 +233,7 @@ export function useSessionCrud(workspacePath: string) {
       // first message submit (useChatSession.ts). Otherwise an empty
       // ".jsonl" file leaks into the sidebar.
       flushPendingSave();
+      transientMessagesPendingRef.current = false;
       setActiveSessionId(null);
       messagesRef.current = [];
       setMessagesState([]);
@@ -240,6 +247,7 @@ export function useSessionCrud(workspacePath: string) {
     (sessionId: string, _isLoading?: boolean) => {
       if (sessionId === activeSessionId) return;
       flushPendingSave();
+      transientMessagesPendingRef.current = false;
       setActiveSessionId(sessionId);
       setLastUsage(null);
       setLastError(null);
@@ -264,6 +272,7 @@ export function useSessionCrud(workspacePath: string) {
         if (remaining.length > 0) {
           setActiveSessionId(remaining[0].id);
         } else {
+          transientMessagesPendingRef.current = false;
           setActiveSessionId(null);
           messagesRef.current = [];
           setMessagesState([]);
@@ -289,6 +298,19 @@ export function useSessionCrud(workspacePath: string) {
       });
     },
     [sessions],
+  );
+
+  const showTransientMessages = useCallback(
+    (nextMessages: ChatMessage[]) => {
+      flushPendingSave();
+      transientMessagesPendingRef.current = true;
+      setActiveSessionId(null);
+      messagesRef.current = nextMessages;
+      setMessagesState(nextMessages);
+      setLastUsage(null);
+      setLastError(null);
+    },
+    [flushPendingSave],
   );
 
   const handleForkSession = useCallback(
@@ -320,6 +342,7 @@ export function useSessionCrud(workspacePath: string) {
     messages,
     setMessages,
     updateSessionMessages,
+    showTransientMessages,
     lastUsage,
     setLastUsage,
     lastError,
