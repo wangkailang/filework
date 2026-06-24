@@ -1034,6 +1034,12 @@ const api = {
       ipcRenderer.invoke("automations:continueRun", { id }),
     listRunEvents: (id: string): Promise<AutomationRunEventRecord[]> =>
       ipcRenderer.invoke("automations:listRunEvents", { id }),
+    attachRunChatSession: (payload: {
+      assistantMessageId?: string | null;
+      id: string;
+      sessionId: string;
+    }): Promise<AutomationRunRecord> =>
+      ipcRenderer.invoke("automations:attachRunChatSession", payload),
     markRunHandled: (id: string): Promise<AutomationRunRecord> =>
       ipcRenderer.invoke("automations:markRunHandled", { id }),
     cancelRun: (id: string): Promise<AutomationRunRecord> =>
@@ -1410,6 +1416,7 @@ const api = {
       label: string;
       token: string;
       scopes?: string[];
+      host?: string;
     }) => ipcRenderer.invoke("credentials:create", payload),
     update: (
       id: string,

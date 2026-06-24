@@ -213,20 +213,26 @@ export const resolveModelName = (modelName?: string): string =>
  *
  * 有记忆:贴出记忆,并让模型就其覆盖范围信任、未覆盖处仍可探索。
  * 无记忆:返回空串,不在系统提示词里常驻任何「请落盘」的催写语
- * (那会给每个无关任务都加料,违背最小化)。「何时/记什么」的指引改放
- * 在 `updateMemory` 工具的 description 里(L2 按需关注),与 git 指引的
- * 两层做法一致 —— 见 `buildGitPrinciples` / `buildGitRunCommandProtocol`。
+ * (那会给每个无关任务都加料,违背最小化)。只有 memory 工具实际开启时,
+ * 才补充如何更新记忆的指引。
  */
 export const buildWorkspaceMemoryGuidance = (
   workspaceMemory?: string | null,
+  options: { enableMemoryTools?: boolean } = {},
 ): string => {
   if (!workspaceMemory?.trim()) return "";
-  return [
+  const lines = [
     "## Workspace Memory (consult before exploring)",
     workspaceMemory.trim(),
     "",
-    "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. Each item is shown as `- [key] fact`. To correct or extend it, call `updateMemory` and REUSE the matching [key] so the entry is updated in place rather than duplicated; use forget=true to drop one.",
-  ].join("\n");
+    "Trust the Workspace Memory above for what it actually covers: answer from it and don't re-derive facts it already states. Only explore the filesystem for things it does not cover. Each item is shown as `- [key] fact`.",
+  ];
+  if (options.enableMemoryTools) {
+    lines.push(
+      "To correct or extend Workspace Memory, call `updateMemory` and REUSE the matching [key] so the entry is updated in place rather than duplicated; use forget=true to drop one.",
+    );
+  }
+  return lines.join("\n");
 };
 
 interface BuildAgentSystemPromptOptions {
@@ -255,6 +261,8 @@ interface BuildAgentSystemPromptOptions {
    * 无记忆文件时为 undefined/null。见 `core/workspace/workspace-memory.ts`。
    */
   workspaceMemory?: string | null;
+  /** 当前任务是否实际暴露 updateMemory / clearMemory 工具。 */
+  enableMemoryTools?: boolean;
 }
 
 /**
@@ -272,6 +280,7 @@ export const buildAgentSystemPrompt = ({
   modelName,
   isGitWorkspace,
   workspaceMemory,
+  enableMemoryTools,
 }: BuildAgentSystemPromptOptions): string => {
   const sections: string[] = [
     AGENT_IDENTITY,
@@ -281,7 +290,9 @@ export const buildAgentSystemPrompt = ({
     `Current workspace: ${workspacePath}`,
   ];
 
-  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory);
+  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory, {
+    enableMemoryTools,
+  });
   if (memoryGuidance) sections.push("", memoryGuidance);
   sections.push("", OPERATING_PRINCIPLES);
 
@@ -397,6 +408,8 @@ interface BuildPlanStepSystemPromptOptions {
    * 而非重新探索。
    */
   workspaceMemory?: string | null;
+  /** 当前计划步骤是否实际暴露 updateMemory / clearMemory 工具。 */
+  enableMemoryTools?: boolean;
 }
 
 /** 构建用于计划执行的单步系统提示词。 */
@@ -409,8 +422,11 @@ export const buildPlanStepSystemPrompt = ({
   modelName,
   isGitWorkspace,
   workspaceMemory,
+  enableMemoryTools,
 }: BuildPlanStepSystemPromptOptions): string => {
-  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory);
+  const memoryGuidance = buildWorkspaceMemoryGuidance(workspaceMemory, {
+    enableMemoryTools,
+  });
   const memoryBlock = memoryGuidance ? `\n\n${memoryGuidance}` : "";
   const skillPrompt = skill
     ? `\n\n## Active Skill: ${skill.name}\n${skill.systemPrompt ?? ""}`

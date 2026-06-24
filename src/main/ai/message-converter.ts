@@ -1,4 +1,6 @@
+import { basename } from "node:path";
 import type { ModelMessage, UserContent } from "ai";
+import type { ImagePart } from "../core/session/message-parts";
 import {
   type AttachmentHistoryEntry,
   buildUserContentWithAttachments,
@@ -44,6 +46,7 @@ export type MessagePart =
   | ReasoningPart
   | ToolPart
   | PlanMessagePart
+  | ImagePart
   | AttachmentHistoryEntry;
 
 /**
@@ -68,6 +71,7 @@ const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
  *   (见 `attachments.ts`)
  * - assistant TextPart → { role: "assistant", content: [{ type: "text", text }] }
  * - assistant ToolPart → assistant 的 tool-call 内容 part + 独立的 tool 角色消息
+ * - assistant ImagePart → 合成 user image 内容,使后续模型可复用生成图
  * - PlanMessagePart → 忽略
  * - ToolPart 缺少 result → 使用占位文本
  * - 保留消息的时间先后顺序
@@ -124,6 +128,7 @@ export async function convertToCoreMessages(
       toolName: string;
       result: unknown;
     }> = [];
+    const generatedImages: ImagePart[] = [];
 
     for (const part of msg.parts) {
       switch (part.type) {
@@ -164,6 +169,11 @@ export async function convertToCoreMessages(
           });
           break;
         }
+        case "image": {
+          const ip = part as ImagePart;
+          if (ip.path) generatedImages.push(ip);
+          break;
+        }
         // "plan" 及其他任何未知类型均被忽略
         default:
           break;
@@ -201,9 +211,48 @@ export async function convertToCoreMessages(
         })),
       });
     }
+
+    for (const image of generatedImages) {
+      const content = await buildGeneratedImageUserContent(
+        image,
+        opts?.providerId,
+      );
+      result.push({
+        role: "user",
+        content: content as unknown as UserContent,
+      });
+    }
   }
 
   return result;
+}
+
+async function buildGeneratedImageUserContent(
+  image: ImagePart,
+  providerId?: string,
+) {
+  const name = basename(image.path) || `${image.imageId || "generated"}.png`;
+  return await buildUserContentWithAttachments(
+    [
+      "A previous assistant turn generated an image.",
+      image.prompt ? `Prompt: ${image.prompt}` : null,
+      `Saved file path: ${image.path}`,
+      "If the user asks to reuse or apply this image, use this exact local file path or inspect the attached image.",
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n"),
+    [
+      {
+        type: "attachment",
+        path: image.path,
+        name,
+        mimeType: "image/png",
+        size: 0,
+        kind: "image",
+      },
+    ],
+    providerId,
+  );
 }
 
 function normalizeToolInput(

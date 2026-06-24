@@ -46,6 +46,7 @@ const createFileworkMock = () => ({
   approveToolCall: vi.fn(),
   approveToolCallBatch: vi.fn(),
   automations: {
+    attachRunChatSession: vi.fn(),
     prepareChatRun: vi.fn(),
   },
   cancelPlan: vi.fn(),
@@ -221,6 +222,55 @@ describe("useChatSession", () => {
       },
       id: "session-manual",
       title: "每日 Filework commit 改动统计",
+    });
+  });
+
+  it("shows scheduled automation run details as transient chat without creating a session", async () => {
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+
+    const opened = await act(async () =>
+      latest?.handleOpenAutomationRun({
+        assistantMessageId: null,
+        automationId: "auto-1",
+        automationTitle: "每日 AI 行业热点资讯推送",
+        chatSessionId: null,
+        id: "run-scheduled",
+        modelId: null,
+        output: "今日 AI 热点摘要",
+        prompt: "搜索 AI 热门内容",
+        trigger: "scheduled",
+        workspacePaths: ["/workspace"],
+      }),
+    );
+
+    expect(opened).toBe(true);
+    expect(filework.createChatSession).not.toHaveBeenCalled();
+    expect(filework.automations.attachRunChatSession).not.toHaveBeenCalled();
+    expect(filework.updateChatSession).not.toHaveBeenCalled();
+    expect(filework.saveChatHistory).not.toHaveBeenCalled();
+    expect(latest?.activeSessionId).toBeNull();
+    expect(latest?.sessions).toHaveLength(0);
+    expect(latest?.messages).toEqual([
+      expect.objectContaining({
+        content: expect.stringContaining("run-scheduled"),
+        role: "user",
+      }),
+      expect.objectContaining({
+        content: "今日 AI 热点摘要",
+        role: "assistant",
+      }),
+    ]);
+    expect(latest?.transientAutomationRun).toEqual({
+      automationId: "auto-1",
+      id: "run-scheduled",
+      title: "每日 AI 行业热点资讯推送",
     });
   });
 

@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   convertToCoreMessages,
@@ -310,6 +314,57 @@ describe("convertToCoreMessages", () => {
     if (assistant.role === "assistant" && Array.isArray(assistant.content)) {
       const types = assistant.content.map((p) => p.type);
       expect(types).toEqual(["reasoning", "text", "tool-call"]);
+    }
+  });
+
+  it("replays assistant-generated images as reusable visual context", async () => {
+    const dir = join(tmpdir(), `fw-generated-image-${randomUUID()}`);
+    await mkdir(dir, { recursive: true });
+    const imagePath = join(dir, "generated.png");
+    await writeFile(imagePath, new Uint8Array([137, 80, 78, 71]));
+
+    try {
+      const history: HistoryMessage[] = [
+        {
+          role: "assistant",
+          content: "",
+          parts: [
+            {
+              type: "image",
+              path: imagePath,
+              prompt: "SaaS cache strategy diagram",
+              configId: "gpt-image-2",
+              imageId: "img-1",
+              modelId: "gpt-image-2",
+            },
+          ],
+        },
+      ];
+
+      const result = await convertToCoreMessages(history, {
+        providerId: "anthropic",
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].role).toBe("user");
+      if (result[0].role === "user" && Array.isArray(result[0].content)) {
+        expect(result[0].content).toEqual([
+          {
+            type: "text",
+            text: expect.stringContaining(imagePath),
+          },
+          {
+            type: "image",
+            image: expect.any(Uint8Array),
+            mediaType: "image/png",
+          },
+        ]);
+        expect(result[0].content[0]).toMatchObject({
+          text: expect.stringContaining("SaaS cache strategy diagram"),
+        });
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

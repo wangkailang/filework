@@ -124,6 +124,25 @@ export const emptyAssistantWithTools: ReflectionRule = (turn) => {
   return null;
 };
 
+export const incompleteCreatePlanExecution: ReflectionRule = (turn) => {
+  if (turn.finalText.trim().length > 0) return null;
+  const shouldContinuePlan = turn.toolCalls.some((call) => {
+    if (call.name !== "createPlan" || !call.success) return false;
+    const result =
+      call.result != null && typeof call.result === "object"
+        ? (call.result as Record<string, unknown>)
+        : null;
+    return result?.continueExecution === true;
+  });
+  if (!shouldContinuePlan) return null;
+
+  return {
+    kind: "retry",
+    feedback:
+      "createPlan 已获批准或已更新,并要求继续执行计划,但你没有继续推进任何步骤。请继续执行计划中的下一个 pending/running 步骤；完成关键进展后再调用 createPlan 更新状态,不要直接结束本轮。",
+  };
+};
+
 // 必须与 src/eval/gaia/scorer.ts:126 中的 `FINAL_ANSWER_RE` 保持同步。
 // "有效"的 FINAL ANSWER 行是指 scorer 能从中提取出非空载荷的行 —— 因此
 // 本规则的接受/拒绝逻辑与 scorer 实际评分时的判定对称。改一处必改两处。
@@ -215,7 +234,12 @@ export const prematureConcession: ReflectionRule = (turn) => {
  * always-on use.
  */
 export function defaultRules(): ReflectionRule[] {
-  return [pdfParseFailure, toolDeniedSequence, prematureConcession];
+  return [
+    pdfParseFailure,
+    toolDeniedSequence,
+    incompleteCreatePlanExecution,
+    prematureConcession,
+  ];
 }
 
 /** Full rule set — opt-in via skill frontmatter `reflect: true`. */
@@ -223,6 +247,7 @@ export function builtinRules(): ReflectionRule[] {
   return [
     pdfParseFailure,
     toolDeniedSequence,
+    incompleteCreatePlanExecution,
     emptyAssistantWithTools,
     prematureConcession,
   ];

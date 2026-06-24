@@ -78,7 +78,7 @@ describe("finalizePartsForSettledTask", () => {
     });
   });
 
-  it("completes an executing plan and skips steps that never received progress updates", () => {
+  it("marks an executing plan failed when the task ends before pending steps start", () => {
     const parts: MessagePart[] = [
       {
         type: "plan",
@@ -111,8 +111,57 @@ describe("finalizePartsForSettledTask", () => {
     expect(finalized[0]).toMatchObject({
       type: "plan",
       plan: {
-        status: "completed",
+        status: "failed",
         steps: [{ status: "completed" }, { status: "skipped" }],
+      },
+    });
+  });
+
+  it("clears running and pending steps when an executing plan is cancelled", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "plan",
+        plan: {
+          id: "inline-task-1",
+          goal: "Generate cache diagram",
+          status: "executing",
+          steps: [
+            {
+              id: 1,
+              action: "Read cache chapter",
+              description: "",
+              status: "running",
+              subSteps: [
+                { label: "Open issue", status: "done" },
+                { label: "Extract cache details", status: "pending" },
+              ],
+            },
+            {
+              id: 2,
+              action: "Create SVG",
+              description: "",
+              status: "pending",
+            },
+          ],
+        },
+      },
+    ];
+
+    const finalized = finalizePartsForSettledTask(parts, {
+      status: "cancelled",
+    });
+
+    expect(finalized[0]).toMatchObject({
+      type: "plan",
+      plan: {
+        status: "cancelled",
+        steps: [
+          {
+            status: "skipped",
+            subSteps: [{ status: "done" }, { status: "pending" }],
+          },
+          { status: "skipped" },
+        ],
       },
     });
   });

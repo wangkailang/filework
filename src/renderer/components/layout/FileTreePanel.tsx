@@ -1,6 +1,6 @@
 // 文件树面板:由 Sidebar 抽出。懒加载子目录 + 根目录不可访问的错误横幅。
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import {
   FileTree,
@@ -43,9 +43,11 @@ const classifyListError = (err: unknown): ListError => {
 
 export const FileTreePanel = ({
   workspacePath,
+  refreshToken = 0,
   onSelectFile,
 }: {
   workspacePath: string;
+  refreshToken?: number;
   onSelectFile: (path: string) => void;
 }) => {
   const { LL } = useI18nContext();
@@ -56,6 +58,8 @@ export const FileTreePanel = ({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
   const [rootError, setRootError] = useState<ListError | null>(null);
+  const expandedPathsRef = useRef(expandedPaths);
+  expandedPathsRef.current = expandedPaths;
 
   const handleSelect = useCallback(
     (path: string) => {
@@ -70,8 +74,8 @@ export const FileTreePanel = ({
     [files, childrenMap, onSelectFile],
   );
 
-  useEffect(() => {
-    const loadFiles = async () => {
+  const reloadTree = useCallback(
+    async (_refreshToken?: number) => {
       try {
         const entries = await window.filework.listDirectory(workspacePath);
         setFiles(entries);
@@ -79,10 +83,24 @@ export const FileTreePanel = ({
       } catch (err) {
         setFiles([]);
         setRootError(classifyListError(err));
+        return;
       }
-    };
-    loadFiles();
-  }, [workspacePath]);
+      const newChildrenMap: Record<string, FileInfo[]> = {};
+      for (const path of expandedPathsRef.current) {
+        try {
+          newChildrenMap[path] = await window.filework.listDirectory(path);
+        } catch {
+          newChildrenMap[path] = [];
+        }
+      }
+      setChildrenMap(newChildrenMap);
+    },
+    [workspacePath],
+  );
+
+  useEffect(() => {
+    void reloadTree(refreshToken);
+  }, [reloadTree, refreshToken]);
 
   const handleExpandedChange = useCallback(
     async (newExpanded: Set<string>) => {
@@ -102,25 +120,8 @@ export const FileTreePanel = ({
   );
 
   const handleRefresh = useCallback(async () => {
-    try {
-      const entries = await window.filework.listDirectory(workspacePath);
-      setFiles(entries);
-      setRootError(null);
-    } catch (err) {
-      setFiles([]);
-      setRootError(classifyListError(err));
-      return;
-    }
-    const newChildrenMap: Record<string, FileInfo[]> = {};
-    for (const path of expandedPaths) {
-      try {
-        newChildrenMap[path] = await window.filework.listDirectory(path);
-      } catch {
-        newChildrenMap[path] = [];
-      }
-    }
-    setChildrenMap(newChildrenMap);
-  }, [workspacePath, expandedPaths]);
+    await reloadTree();
+  }, [reloadTree]);
 
   const handleGrantAccess = useCallback(() => {
     window.filework.openFilesAndFoldersSettings();

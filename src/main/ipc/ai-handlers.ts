@@ -76,7 +76,10 @@ import {
   wrapWithSecurityBoundary,
 } from "../skills-runtime";
 import type { UnifiedSkill } from "../skills-runtime/types";
-import { buildAgentToolRegistry } from "./agent-tools";
+import {
+  buildAgentToolRegistry,
+  shouldEnableMemoryToolsForPrompt,
+} from "./agent-tools";
 import {
   getModelAndAdapterByConfigId,
   isAvailableLlmConfig,
@@ -747,6 +750,7 @@ const handleTaskExecutionInner = async (
     // 读取工作目录记忆（AGENTS.md / CLAUDE.md），注入系统提示词，
     // 让 Agent 复用已知事实、避免重复探索目录。
     const workspaceMemory = await readWorkspaceMemory(workspace);
+    const enableMemoryTools = shouldEnableMemoryToolsForPrompt(payload.prompt);
 
     const systemPrompt =
       buildAgentSystemPrompt({
@@ -757,6 +761,7 @@ const handleTaskExecutionInner = async (
         modelName: llmConfig?.model,
         isGitWorkspace,
         workspaceMemory,
+        enableMemoryTools,
       }) + skillPrompt;
 
     console.log(
@@ -787,6 +792,7 @@ const handleTaskExecutionInner = async (
       workspacePath: workspace.root,
       currentThreadId: payload.sessionId,
       parentAllowedSkills,
+      enableMemoryTools,
     });
     const beforeToolCall = buildApprovalHook({
       sender,

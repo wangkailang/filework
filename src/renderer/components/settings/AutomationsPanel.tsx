@@ -121,6 +121,8 @@ interface AutomationDraft {
 }
 
 interface AutomationsPanelProps {
+  activeAutomationId?: string | null;
+  activeAutomationRunId?: string | null;
   initialAutomations?: AutomationRecord[];
   initialRuns?: AutomationRunRecord[];
   initialView?: AutomationView;
@@ -1253,6 +1255,7 @@ const AutomationRunRowContent = ({
 );
 
 export const AutomationsPanel = ({
+  activeAutomationRunId,
   initialAutomations,
   initialRuns,
   initialView = "tasks",
@@ -1616,6 +1619,7 @@ export const AutomationsPanel = ({
               const startedAt = formatDateTime(run.startedAt, locale);
               const completedAt = formatDateTime(run.completedAt, locale);
               const retryAt = formatDateTime(run.nextRetryAt, locale);
+              const isCurrent = activeAutomationRunId === run.id;
               const canCancel =
                 run.status === "queued" ||
                 run.status === "running" ||
@@ -1649,15 +1653,22 @@ export const AutomationsPanel = ({
               return (
                 <div
                   key={run.id}
+                  data-automation-id={run.automationId}
+                  data-automation-current={isCurrent ? "true" : undefined}
+                  data-automation-run-id={run.id}
                   data-automation-run-status={run.status}
                   data-automation-run-triage={run.triageStatus}
                   data-automation-run-chat-session-id={
                     run.chatSessionId ?? undefined
                   }
                   data-automation-run-layout="compact"
-                  className="grid gap-3 border-border px-3 py-2.5 transition-colors hover:bg-accent/40 not-last:border-b md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
+                  className={`grid gap-3 border-border px-3 py-2.5 transition-colors hover:bg-accent/40 not-last:border-b md:grid-cols-[minmax(0,1fr)_auto] md:items-start ${
+                    isCurrent
+                      ? "ring-1 ring-primary/40 shadow-[inset_3px_0_0_var(--color-primary)]"
+                      : ""
+                  }`}
                 >
-                  {run.chatSessionId && onOpenRunDetails ? (
+                  {onOpenRunDetails ? (
                     <button
                       type="button"
                       onClick={() => onOpenRunDetails?.(run)}
@@ -1776,6 +1787,7 @@ export const AutomationsPanel = ({
         return (
           <div
             key={automation.id}
+            data-automation-id={automation.id}
             data-automation-running={isRunning ? "true" : undefined}
             data-automation-enabled={automation.enabled ? "true" : "false"}
             className={`flex items-center gap-3 border-border px-3 py-3 transition-colors not-last:border-b ${status.rowClass}`}
@@ -1996,6 +2008,7 @@ export const AutomationsPanel = ({
               return (
                 <div
                   key={automation.id}
+                  data-automation-id={automation.id}
                   data-automation-running={isRunning ? "true" : undefined}
                   data-automation-enabled={
                     automation.enabled ? "true" : "false"

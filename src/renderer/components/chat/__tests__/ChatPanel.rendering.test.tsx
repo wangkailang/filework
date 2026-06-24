@@ -161,7 +161,10 @@ vi.mock("../../settings/WorkspaceMemoryModal", () => ({
 
 import { ChatPanel } from "../ChatPanel";
 
-const createChatState = (messages: ChatMessage[]) => ({
+const createChatState = (
+  messages: ChatMessage[],
+  overrides: Record<string, unknown> = {},
+) => ({
   activeSessionId: "session-1",
   activeSkill: null,
   handleBatchApproval: vi.fn(),
@@ -184,6 +187,7 @@ const createChatState = (messages: ChatMessage[]) => ({
   setInput: vi.fn(),
   setLastError: vi.fn(),
   setSelectedLlmConfigId: vi.fn(),
+  ...overrides,
 });
 
 describe("ChatPanel message rendering", () => {
@@ -290,6 +294,34 @@ describe("ChatPanel message rendering", () => {
     expect(text).toContain("7 天 17 小时");
     expect(text).toContain("设置");
     expect(text).not.toContain("切换模型");
+  });
+
+  it("hides assistant copy actions while chat is generating", async () => {
+    const assistant: ChatMessage = {
+      id: "assistant-generating",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "生成中的回答",
+      parts: [{ type: "text", text: "生成中的回答" }],
+      timestamp: "2026-06-23T11:04:00.000Z",
+    };
+
+    chatState.value = createChatState([assistant], { isLoading: true });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "生成中的回答",
+    );
+    expect(document.querySelector('button[aria-label="复制"]')).toBeNull();
+
+    chatState.value = createChatState([assistant], { isLoading: false });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.querySelector('button[aria-label="复制"]')).not.toBeNull();
   });
 
   it("hides older error banners after the user continues chatting", async () => {

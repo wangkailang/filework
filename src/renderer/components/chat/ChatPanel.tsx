@@ -164,6 +164,7 @@ const ChatMessageRow = memo(
     const visibleAssistantParts = isLast
       ? assistantParts
       : assistantParts.filter((part) => part.type !== "error");
+    const showAssistantCopyAction = !isLoading && msg.content.trim().length > 0;
 
     if (msg.role === "assistant" && visibleAssistantParts.length === 0) {
       return null;
@@ -202,7 +203,7 @@ const ChatMessageRow = memo(
                 {renderAssistantParts(visibleAssistantParts)}
               </MessageContent>
             </Message>
-            {msg.content.trim().length > 0 && (
+            {showAssistantCopyAction && (
               <MessageActions
                 className={
                   isLast

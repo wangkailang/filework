@@ -64,6 +64,7 @@ export const LeftRail = ({
   branchForChip,
   diffBaseBranch,
   diffInvalidator,
+  fileTreeInvalidator,
   diffOpen,
   railTab,
   onRailTabChange,
@@ -88,6 +89,7 @@ export const LeftRail = ({
   branchForChip: string | null;
   diffBaseBranch?: string | null;
   diffInvalidator: number;
+  fileTreeInvalidator?: number;
   diffOpen: boolean;
   railTab: RailTab;
   onRailTabChange: (t: RailTab) => void;
@@ -333,6 +335,7 @@ export const LeftRail = ({
             <FileTreePanel
               key={`${workspacePath}:${branchForChip ?? ""}`}
               workspacePath={workspacePath}
+              refreshToken={fileTreeInvalidator}
               onSelectFile={onSelectFile}
             />
           </div>

@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { getDisplayLlmConfigModality } from "../../../shared/llm-modalities";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { Locales } from "../../i18n/i18n-types";
 import { ConfirmDialog } from "../ui/confirm-dialog";
@@ -58,6 +59,13 @@ export function buildLlmConfigStatusTooltip(
     lines.push(LL.llmConfig_lastTestedAt({ when: checkedAt }));
   }
   return lines;
+}
+
+export function getLlmConfigModalityBadge(
+  config: Pick<LlmConfig, "model" | "modality" | "provider">,
+): "image" | "video" | null {
+  const modality = getDisplayLlmConfigModality(config);
+  return modality === "chat" ? null : modality;
 }
 
 export const LlmConfigStatusIndicator = ({
@@ -199,6 +207,7 @@ export const LlmConfigPanel = () => {
       <div className="space-y-2">
         {configs.map((c) => {
           const statusTitle = buildLlmConfigStatusTooltip(c, LL, locale);
+          const modalityBadge = getLlmConfigModalityBadge(c);
           return (
             <div
               key={c.id}
@@ -217,9 +226,9 @@ export const LlmConfigPanel = () => {
                     <span className="truncate text-sm text-foreground">
                       {c.name}
                     </span>
-                    {c.modality && c.modality !== "chat" && (
+                    {modalityBadge && (
                       <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                        {c.modality}
+                        {modalityBadge}
                       </span>
                     )}
                   </div>

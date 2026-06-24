@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { isImageGenerationModelId } from "../../../shared/llm-modalities";
+import { getDisplayLlmConfigModality } from "../../../shared/llm-modalities";
 import {
   Select,
   SelectContent,
@@ -48,6 +48,8 @@ const MODALITY_LABELS: Record<Modality, string> = {
   video: "Video",
 };
 
+export { getDisplayLlmConfigModality };
+
 export function isSelectableLlmConfig(config: SelectableLlmConfig): boolean {
   return (
     config.enabled !== false &&
@@ -60,20 +62,6 @@ export function getSelectableLlmConfigs<T extends SelectableLlmConfig>(
   configs: T[],
 ): T[] {
   return configs.filter(isSelectableLlmConfig);
-}
-
-export function getDisplayLlmConfigModality(config: {
-  provider: string;
-  model: string;
-  modality?: Modality;
-}): Modality {
-  if (
-    (config.provider === "custom" || config.provider === "openai") &&
-    isImageGenerationModelId(config.model)
-  ) {
-    return "image";
-  }
-  return config.modality ?? "chat";
 }
 
 export const ModelSelector = ({

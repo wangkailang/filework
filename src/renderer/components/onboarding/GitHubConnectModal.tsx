@@ -10,10 +10,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { WorkspaceRef } from "../../types/workspace-ref";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import { AddRepositoryTokenDialog } from "./AddRepositoryTokenDialog";
 
 interface CredentialSummary {
   id: string;
-  kind: "github_pat";
+  kind: "github_pat" | "gitlab_pat";
   label: string;
   scopes: string[] | null;
   createdAt: string;
@@ -50,7 +51,7 @@ export const GitHubConnectModal = ({ onCancel, onConfirm }: Props) => {
   const [newLabel, setNewLabel] = useState("");
   const [newToken, setNewToken] = useState("");
   const [creating, setCreating] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [addTokenOpen, setAddTokenOpen] = useState(false);
 
   const [repos, setRepos] = useState<RepoSummary[]>([]);
   const [reposLoading, setReposLoading] = useState(false);
@@ -65,11 +66,18 @@ export const GitHubConnectModal = ({ onCancel, onConfirm }: Props) => {
     window.filework.credentials
       .list()
       .then((list: CredentialSummary[]) => {
-        setCredentials(list);
-        if (list.length === 0) setShowAddForm(true);
+        const githubOnly = list.filter((c) => c.kind === "github_pat");
+        setCredentials(githubOnly);
+        if (githubOnly.length === 0) setAddTokenOpen(true);
       })
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  const closeAddTokenDialog = () => {
+    setAddTokenOpen(false);
+    setNewLabel("");
+    setNewToken("");
+  };
 
   const handleCreateCredential = async () => {
     if (!newToken.trim() || !newLabel.trim()) return;
@@ -83,9 +91,7 @@ export const GitHubConnectModal = ({ onCancel, onConfirm }: Props) => {
       });
       setCredentials((prev) => [...prev, created]);
       setCredentialId(created.id);
-      setNewLabel("");
-      setNewToken("");
-      setShowAddForm(false);
+      closeAddTokenDialog();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -211,81 +217,14 @@ export const GitHubConnectModal = ({ onCancel, onConfirm }: Props) => {
                 </div>
               )}
 
-              {!showAddForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(true)}
-                  className="flex items-center gap-1.5 text-sm text-primary hover:underline"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add new token
-                </button>
-              ) : (
-                <div className="space-y-2 border border-border rounded-lg p-3">
-                  <div>
-                    <label
-                      htmlFor="cred-label"
-                      className="block text-xs font-medium text-foreground mb-1"
-                    >
-                      Label
-                    </label>
-                    <input
-                      id="cred-label"
-                      type="text"
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="e.g. work account"
-                      className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="cred-token"
-                      className="block text-xs font-medium text-foreground mb-1"
-                    >
-                      Personal Access Token
-                    </label>
-                    <input
-                      id="cred-token"
-                      type="password"
-                      value={newToken}
-                      onChange={(e) => setNewToken(e.target.value)}
-                      placeholder="ghp_… or github_pat_…"
-                      className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background font-mono"
-                    />
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Needs <code>repo</code> scope (or fine-grained{" "}
-                      <code>Contents: Read</code> for read-only).
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleCreateCredential}
-                      disabled={
-                        creating || !newToken.trim() || !newLabel.trim()
-                      }
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {creating && <Loader2 className="w-3 h-3 animate-spin" />}
-                      Save token
-                    </button>
-                    {credentials.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddForm(false);
-                          setNewLabel("");
-                          setNewToken("");
-                        }}
-                        className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setAddTokenOpen(true)}
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add new token
+              </button>
             </div>
           )}
 
@@ -431,6 +370,26 @@ export const GitHubConnectModal = ({ onCancel, onConfirm }: Props) => {
           )}
         </div>
       </DialogContent>
+      <AddRepositoryTokenDialog
+        open={addTokenOpen}
+        title="Add GitHub token"
+        labelId="cred-label"
+        tokenId="cred-token"
+        tokenPlaceholder="ghp_… or github_pat_…"
+        helper={
+          <>
+            Needs <code>repo</code> scope (or fine-grained{" "}
+            <code>Contents: Read</code> for read-only).
+          </>
+        }
+        label={newLabel}
+        token={newToken}
+        creating={creating}
+        onLabelChange={setNewLabel}
+        onTokenChange={setNewToken}
+        onSave={handleCreateCredential}
+        onCancel={closeAddTokenDialog}
+      />
     </Dialog>
   );
 };

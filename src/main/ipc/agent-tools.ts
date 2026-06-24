@@ -68,6 +68,11 @@ interface BuildAgentToolRegistryOptions {
   /** 设置后限定为此 allow-list(skill 的 `allowed-tools` frontmatter)。 */
   allowedTools?: string[];
   /**
+   * 仅当用户明确要求记住 / 清理记忆时开启 memory 工具。默认关闭,
+   * 避免普通咨询任务把一次性结果写入持久记忆。
+   */
+  enableMemoryTools?: boolean;
+  /**
    * 解析后的 LLM 标识 —— 流入 L2 git 协议的 `Co-Authored-By` trailer
    * (当 `isGitWorkspace` 为 true 时嵌入 `runCommand` 的描述)。
    * 回落为 "filework-agent"。
@@ -103,6 +108,39 @@ interface BuildAgentToolRegistryOptions {
    */
   parentAllowedSkills?: string[];
 }
+
+export const shouldEnableMemoryToolsForPrompt = (prompt: string): boolean => {
+  const normalized = prompt.trim().toLowerCase();
+  if (!normalized) return false;
+  if (
+    /(不要|别|无需|不需要|不应该).{0,12}(记住|保存|写入|更新|记忆|memory)/i.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+
+  const explicitChineseMemoryIntent =
+    /(请|帮我|替我)?\s*(记住|记一下|记下来|保存|存下|存一下|写入|加入|放进|更新到|记录到).{0,24}(记忆|memory|workspace memory|工作区记忆|用户记忆)/i.test(
+      normalized,
+    ) ||
+    /(清空|清理|重置|删除|忘记|移除).{0,16}(记忆|memory|workspace memory|工作区记忆|用户记忆)/i.test(
+      normalized,
+    ) ||
+    /^(请|帮我|替我)?\s*(记住|记一下|记下来)/i.test(normalized);
+
+  const explicitEnglishMemoryIntent =
+    /^(please\s+)?remember\s+(this|that|my|our)\b/i.test(normalized) ||
+    /\b(save|store|add|write|record)\b.{0,24}\b(to|in|into)\b.{0,12}\b(memory|workspace memory|user memory)\b/i.test(
+      normalized,
+    ) ||
+    /^(please\s+)?update\s+(workspace\s+|user\s+)?memory\b/i.test(normalized) ||
+    /\b(clear|reset|delete|forget|remove)\b.{0,16}\b(memory|workspace memory|user memory)\b/i.test(
+      normalized,
+    );
+
+  return explicitChineseMemoryIntent || explicitEnglishMemoryIntent;
+};
 
 /**
  * 模块级依赖,在应用启动时注入一次(对应 `ai-handlers.ts` 中的
@@ -269,7 +307,9 @@ const createPlanTool = (
     "learn more.",
     "FIRST call (initial plan, all steps pending) pauses until the user clicks",
     "「开始」 — the tool returns once approved; on rejection the call fails and",
-    "you should stop. Subsequent status-update calls do NOT pause — call again",
+    "you should stop. After approval, continue executing the approved plan",
+    "immediately; do not treat publishing the plan as the final answer.",
+    "Subsequent status-update calls do NOT pause — call again",
     "with the (possibly refined) step list and updated `status` fields as you",
     "progress (pending → running → completed).",
     "Skip this tool only for 1-2 step asks where plain narration is enough.",
@@ -301,6 +341,18 @@ const createPlanTool = (
       .describe("Ordered list of steps. Re-send the full list to update."),
   }),
   execute: async ({ goal, steps }) => {
+    const hasOpenWork = steps.some((step) => {
+      const status = step.status ?? "pending";
+      return (
+        status !== "completed" && status !== "failed" && status !== "skipped"
+      );
+    });
+    const continuation = {
+      continueExecution: hasOpenWork,
+      nextInstruction: hasOpenWork
+        ? "Continue executing the approved plan now. Work through the next pending or running step before giving a final answer."
+        : "All plan steps are marked terminal. Provide the final answer now.",
+    };
     const alreadyApproved = approvedInlinePlanTasks.has(taskId);
     const plan = {
       id: makeInlinePlanId(taskId),
@@ -318,7 +370,7 @@ const createPlanTool = (
     }
 
     if (alreadyApproved) {
-      return { recorded: true, stepCount: steps.length };
+      return { recorded: true, stepCount: steps.length, ...continuation };
     }
 
     // 首次调用:暂停,直到用户通过 ai:approvePlan / ai:rejectPlan
@@ -333,7 +385,12 @@ const createPlanTool = (
         pendingPlanApprovals.delete(taskId);
         if (approved) {
           approvedInlinePlanTasks.add(taskId);
-          resolve({ recorded: true, approved: true, stepCount: steps.length });
+          resolve({
+            recorded: true,
+            approved: true,
+            stepCount: steps.length,
+            ...continuation,
+          });
         } else {
           reject(new Error("User rejected the plan"));
         }
@@ -595,6 +652,7 @@ export const buildAgentToolRegistry = ({
   sender,
   taskId,
   allowedTools,
+  enableMemoryTools,
   modelName,
   isGitWorkspace,
   enableSubagent,
@@ -607,6 +665,12 @@ export const buildAgentToolRegistry = ({
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
     !allowedTools || allowedTools.includes(name);
+  const isExplicitlyAllowed = (name: string): boolean =>
+    allowedTools?.includes(name) ?? false;
+  const canUseMemoryTools =
+    enableMemoryTools === true ||
+    isExplicitlyAllowed("updateMemory") ||
+    isExplicitlyAllowed("clearMemory");
 
   const gitProtocol = isGitWorkspace
     ? buildGitRunCommandProtocol(modelName ?? "filework-agent")
@@ -637,13 +701,13 @@ export const buildAgentToolRegistry = ({
     registry.register(createPlanTool(sender, taskId));
   }
 
-  // 工作目录记忆：允许 Agent 把可复用事实写入 AGENTS.md，后续任务直接读取。
-  if (allow("updateMemory")) {
+  // 工作区记忆：只在显式记忆意图或 tool 白名单中注册,避免普通任务落持久记忆。
+  if (canUseMemoryTools && allow("updateMemory")) {
     registry.register(updateMemoryTool);
   }
 
   // 一次性清空记忆(user / workspace / all)—— 对应「清理 memory」等指令。
-  if (allow("clearMemory")) {
+  if (canUseMemoryTools && allow("clearMemory")) {
     registry.register(clearMemoryTool);
   }
 

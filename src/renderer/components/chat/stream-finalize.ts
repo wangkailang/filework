@@ -1,4 +1,5 @@
 import type { ApprovalState } from "../../../main/core/session/message-parts";
+import { cancelPlanExecution } from "./plan-progress";
 import type {
   BatchApprovalPart,
   MessagePart,
@@ -42,10 +43,13 @@ export const finalizePartsForSettledTask = (
       if (options.status === "cancelled") {
         return {
           type: "plan",
-          plan: { ...planPart.plan, status: "cancelled" as const },
+          plan: cancelPlanExecution(planPart.plan),
         };
       }
 
+      const hadPendingSteps = planPart.plan.steps.some(
+        (step) => step.status === "pending",
+      );
       const steps = planPart.plan.steps.map((step) => {
         if (step.status === "running") {
           return {
@@ -66,9 +70,10 @@ export const finalizePartsForSettledTask = (
         type: "plan",
         plan: {
           ...planPart.plan,
-          status: steps.some((step) => step.status === "failed")
-            ? ("failed" as const)
-            : ("completed" as const),
+          status:
+            steps.some((step) => step.status === "failed") || hadPendingSteps
+              ? ("failed" as const)
+              : ("completed" as const),
           steps,
         },
       };

@@ -142,6 +142,24 @@ vi.mock("../../db", () => ({
     });
     return row;
   }),
+  attachAutomationRunChatSession: vi.fn(
+    (
+      id,
+      input: {
+        assistantMessageId?: string | null;
+        chatSessionId: string;
+      },
+    ) => {
+      const row = dbState.runs.find((run) => run.id === id);
+      if (!row) throw new Error(`Automation run not found: ${id}`);
+      Object.assign(row, {
+        assistantMessageId: input.assistantMessageId ?? row.assistantMessageId,
+        chatSessionId: input.chatSessionId,
+        updatedAt: new Date("2026-06-18T02:10:00.000Z").toISOString(),
+      });
+      return row;
+    },
+  ),
 }));
 
 vi.mock("../automation-service", () => ({
@@ -399,6 +417,50 @@ describe("automations handlers", () => {
       status: "queued",
       taskId: null,
       trigger: "manual",
+    });
+  });
+
+  it("attaches an existing scheduled automation run to a chat session", async () => {
+    const attachRunChatSession = handlers.get(
+      "automations:attachRunChatSession",
+    );
+    if (!attachRunChatSession) throw new Error("automation handler missing");
+    dbState.runs.push({
+      id: "run-scheduled-1",
+      automationId: "auto-1",
+      automationTitle: "Daily repo check",
+      trigger: "scheduled",
+      status: "succeeded",
+      triageStatus: "handled",
+      needsActionReason: null,
+      chatSessionId: null,
+      assistantMessageId: null,
+      taskId: null,
+      prompt: "Check repo",
+      workspacePaths: ["/workspace"],
+      threadId: null,
+      modelId: null,
+      output: "Repo is healthy",
+      errorMessage: null,
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      createdAt: "2026-06-18T03:00:00.000Z",
+      updatedAt: "2026-06-18T03:01:00.000Z",
+      startedAt: "2026-06-18T03:00:05.000Z",
+      completedAt: "2026-06-18T03:01:00.000Z",
+    });
+
+    await expect(
+      attachRunChatSession(null, {
+        assistantMessageId: "assistant-detail",
+        id: "run-scheduled-1",
+        sessionId: "session-detail",
+      }),
+    ).resolves.toMatchObject({
+      assistantMessageId: "assistant-detail",
+      chatSessionId: "session-detail",
+      id: "run-scheduled-1",
     });
   });
 

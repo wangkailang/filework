@@ -10,6 +10,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { WorkspaceRef } from "../../types/workspace-ref";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import { AddRepositoryTokenDialog } from "./AddRepositoryTokenDialog";
 
 interface CredentialSummary {
   id: string;
@@ -17,6 +18,7 @@ interface CredentialSummary {
   label: string;
   scopes: string[] | null;
   createdAt: string;
+  lastTestedHost?: string | null;
 }
 
 interface ProjectSummary {
@@ -41,6 +43,17 @@ interface Props {
 
 type Step = "credential" | "project" | "branch";
 
+export const buildGitLabCredentialCreatePayload = (input: {
+  label: string;
+  token: string;
+  host: string;
+}) => ({
+  kind: "gitlab_pat" as const,
+  label: input.label.trim(),
+  token: input.token.trim(),
+  host: input.host.trim(),
+});
+
 export const GitLabConnectModal = ({ onCancel, onConfirm }: Props) => {
   const [host, setHost] = useState("gitlab.com");
   const [credentials, setCredentials] = useState<CredentialSummary[]>([]);
@@ -51,7 +64,7 @@ export const GitLabConnectModal = ({ onCancel, onConfirm }: Props) => {
   const [newLabel, setNewLabel] = useState("");
   const [newToken, setNewToken] = useState("");
   const [creating, setCreating] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [addTokenOpen, setAddTokenOpen] = useState(false);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
@@ -69,27 +82,37 @@ export const GitLabConnectModal = ({ onCancel, onConfirm }: Props) => {
       .list()
       .then((list: CredentialSummary[]) => {
         const gitlabOnly = list.filter((c) => c.kind === "gitlab_pat");
+        const rememberedHost = gitlabOnly.find(
+          (c) => c.lastTestedHost,
+        )?.lastTestedHost;
         setCredentials(gitlabOnly);
-        if (gitlabOnly.length === 0) setShowAddForm(true);
+        if (rememberedHost) setHost(rememberedHost);
+        if (gitlabOnly.length === 0) setAddTokenOpen(true);
       })
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  const closeAddTokenDialog = () => {
+    setAddTokenOpen(false);
+    setNewLabel("");
+    setNewToken("");
+  };
 
   const handleCreateCredential = async () => {
     if (!newToken.trim() || !newLabel.trim()) return;
     setCreating(true);
     setError(null);
     try {
-      const created = await window.filework.credentials.create({
-        kind: "gitlab_pat",
-        label: newLabel.trim(),
-        token: newToken.trim(),
-      });
+      const created = await window.filework.credentials.create(
+        buildGitLabCredentialCreatePayload({
+          label: newLabel,
+          token: newToken,
+          host,
+        }),
+      );
       setCredentials((prev) => [...prev, created]);
       setCredentialId(created.id);
-      setNewLabel("");
-      setNewToken("");
-      setShowAddForm(false);
+      closeAddTokenDialog();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -241,81 +264,14 @@ export const GitLabConnectModal = ({ onCancel, onConfirm }: Props) => {
                 </div>
               )}
 
-              {!showAddForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(true)}
-                  className="flex items-center gap-1.5 text-sm text-primary hover:underline"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add new token
-                </button>
-              ) : (
-                <div className="space-y-2 border border-border rounded-lg p-3">
-                  <div>
-                    <label
-                      htmlFor="gl-cred-label"
-                      className="block text-xs font-medium text-foreground mb-1"
-                    >
-                      Label
-                    </label>
-                    <input
-                      id="gl-cred-label"
-                      type="text"
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="e.g. work account"
-                      className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="gl-cred-token"
-                      className="block text-xs font-medium text-foreground mb-1"
-                    >
-                      Personal Access Token
-                    </label>
-                    <input
-                      id="gl-cred-token"
-                      type="password"
-                      value={newToken}
-                      onChange={(e) => setNewToken(e.target.value)}
-                      placeholder="glpat-…"
-                      className="w-full px-2 py-1.5 text-sm rounded-md border border-border bg-background font-mono"
-                    />
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Needs <code>api</code> scope (or <code>read_api</code> +
-                      <code>write_repository</code> for fine-grained).
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleCreateCredential}
-                      disabled={
-                        creating || !newToken.trim() || !newLabel.trim()
-                      }
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {creating && <Loader2 className="w-3 h-3 animate-spin" />}
-                      Save token
-                    </button>
-                    {credentials.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddForm(false);
-                          setNewLabel("");
-                          setNewToken("");
-                        }}
-                        className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setAddTokenOpen(true)}
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add new token
+              </button>
             </div>
           )}
 
@@ -461,6 +417,26 @@ export const GitLabConnectModal = ({ onCancel, onConfirm }: Props) => {
           )}
         </div>
       </DialogContent>
+      <AddRepositoryTokenDialog
+        open={addTokenOpen}
+        title="Add GitLab token"
+        labelId="gl-cred-label"
+        tokenId="gl-cred-token"
+        tokenPlaceholder="glpat-…"
+        helper={
+          <>
+            Needs <code>api</code> scope (or <code>read_api</code> +{" "}
+            <code>write_repository</code> for fine-grained).
+          </>
+        }
+        label={newLabel}
+        token={newToken}
+        creating={creating}
+        onLabelChange={setNewLabel}
+        onTokenChange={setNewToken}
+        onSave={handleCreateCredential}
+        onCancel={closeAddTokenDialog}
+      />
     </Dialog>
   );
 };

@@ -15,6 +15,7 @@ type ChatSessionLiteValue = Pick<
   ChatSessionValue,
   | "sessions"
   | "activeSessionId"
+  | "transientAutomationRun"
   | "sessionRunStates"
   | "activeSessionRunState"
   | "selectedLlmConfigId"
@@ -45,6 +46,7 @@ export const ChatSessionProvider = ({
     () => ({
       sessions: value.sessions,
       activeSessionId: value.activeSessionId,
+      transientAutomationRun: value.transientAutomationRun,
       sessionRunStates: value.sessionRunStates,
       activeSessionRunState: value.activeSessionRunState,
       selectedLlmConfigId: value.selectedLlmConfigId,
@@ -60,6 +62,7 @@ export const ChatSessionProvider = ({
     [
       value.sessions,
       value.activeSessionId,
+      value.transientAutomationRun,
       value.sessionRunStates,
       value.activeSessionRunState,
       value.selectedLlmConfigId,
