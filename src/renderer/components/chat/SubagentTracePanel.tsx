@@ -44,14 +44,22 @@ function findBatch(
   return undefined;
 }
 
-function TracePart({ part }: { part: MessagePart }) {
+function TracePart({
+  part,
+  workspacePath,
+}: {
+  part: MessagePart;
+  workspacePath?: string;
+}) {
   if (part.type === "text" && part.text) {
     // MessageResponse(Streamdown)带 `size-full`(height:100%)。在定高的
     // overflow-auto 容器里直接渲染会让每段文本撑满高度并向下溢出、压住后续
     // 内容(两层叠加)。包一层 auto 高度的 div,让 100% 解析为内容高度。
     return (
       <div className="text-sm">
-        <MessageResponse>{part.text}</MessageResponse>
+        <MessageResponse workspacePath={workspacePath}>
+          {part.text}
+        </MessageResponse>
       </div>
     );
   }
@@ -92,10 +100,12 @@ export function SubagentTracePanel({
   batchId,
   childTaskId,
   onSelectChild,
+  workspacePath,
 }: {
   batchId: string;
   childTaskId: string;
   onSelectChild?: (childTaskId: string) => void;
+  workspacePath?: string;
 }) {
   const { LL } = useI18nContext();
   const { messages } = useChatSessionContext();
@@ -176,6 +186,7 @@ export function SubagentTracePanel({
               // biome-ignore lint/suspicious/noArrayIndexKey: 过程 parts 仅追加、不重排,index 稳定
               key={i}
               part={p}
+              workspacePath={workspacePath}
             />
           ))
         )}

@@ -335,6 +335,7 @@ export const ContextDock = ({
                 batchId={subagentSel.batchId}
                 childTaskId={subagentSel.childTaskId}
                 onSelectChild={onSelectSubagentChild}
+                workspacePath={workspaceRoot}
               />
             </TabsContent>
           )}

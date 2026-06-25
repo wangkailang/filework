@@ -867,37 +867,53 @@ function WriteDiff({
       : null;
   const displayedHunks = hunks ?? statOnlyHunks;
   return (
-    <div className="px-3 py-2 text-xs">
+    <div
+      data-write-file-diff="true"
+      className="overflow-hidden bg-surface-sunken text-xs"
+    >
       {/* +N -M 已在外层头部那行展示;body 直接放 hunks,不再额外加"差异"标题。 */}
       {isNew && (
         <div
-          className={cn("mb-1 text-[10px] tracking-normal", TOOL_SUCCESS_TEXT)}
+          className={cn(
+            "border-border-faint border-b px-3 py-1.5 text-[10px] tracking-normal",
+            TOOL_SUCCESS_TEXT,
+          )}
         >
           {LL.tool_summary_new_file()}
         </div>
       )}
       {statOnlyHunks && (
-        <div className="mb-1 text-[11px] text-muted-foreground/75">
+        <div className="border-border-faint border-b px-3 py-1.5 text-[11px] text-muted-foreground/75">
           {LL.preview_diff_details_unavailable()}
         </div>
       )}
       {displayedHunks ? (
-        <div className="overflow-x-auto font-mono text-[11px] leading-5">
-          {displayedHunks.map((h, i) => (
-            <DiffHunkView
-              // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
-              key={`${i}-${h.value.slice(0, 8)}`}
-              hunk={h}
-              collapseContext={!isNew}
-            />
-          ))}
+        <div
+          data-write-file-diff-code="true"
+          className="max-h-72 overflow-auto bg-surface-sunken font-mono text-[11px] leading-5"
+        >
+          <div className="min-w-full">
+            {displayedHunks.map((h, i) => (
+              <DiffHunkView
+                // biome-ignore lint/suspicious/noArrayIndexKey: diff hunks have no stable id; position is the identity
+                key={`${i}-${h.value.slice(0, 8)}`}
+                hunk={h}
+                collapseContext={!isNew}
+                density="branch"
+              />
+            ))}
+          </div>
         </div>
       ) : (
         // 编辑 + 无任何 diff 来源:老实展示该次写入的内容本身,不谎称新建、
         // 不伪造全增。完整 +/- 统计在头部那行。
-        <div className="overflow-x-auto font-mono text-[11px] leading-5 opacity-75">
+        <div
+          data-write-file-diff-code="true"
+          className="max-h-72 overflow-auto bg-surface-sunken font-mono text-[11px] leading-5 opacity-75"
+        >
           <DiffHunkView
             collapseContext={false}
+            density="branch"
             hunk={{
               kind: "context",
               value: content,
@@ -907,13 +923,13 @@ function WriteDiff({
         </div>
       )}
       {statOnlyHunks && content.length > 0 && (
-        <div className="mt-2">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground/65">
+        <div className="border-border-faint border-t">
+          <div className="border-border-faint border-b px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/65">
             {LL.preview_written_snapshot_label()}
           </div>
           <pre
             data-written-snapshot="true"
-            className="max-h-80 overflow-auto rounded-md border border-border/35 bg-muted/10 p-2 font-mono text-[11px] leading-5 text-muted-foreground/95 whitespace-pre-wrap break-all"
+            className="max-h-48 overflow-auto bg-surface-sunken p-3 font-mono text-[11px] leading-5 text-muted-foreground/95 whitespace-pre-wrap break-all"
           >
             {content}
           </pre>
