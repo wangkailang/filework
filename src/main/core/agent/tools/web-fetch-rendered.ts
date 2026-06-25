@@ -12,6 +12,7 @@ import { z } from "zod/v4";
 import { searchText } from "../../../ai/text-search";
 import { fetchRenderedHtml } from "../../../ipc/hidden-browser";
 import type { ToolDefinition } from "../tool-registry";
+import { projectWebFetchModelOutput } from "./model-output";
 import { extractReadable } from "./web-extract";
 
 const inputSchema = z.object({
@@ -55,6 +56,12 @@ export const buildWebFetchRenderedTool = (): ToolDefinition => ({
     "Like `webFetch` but renders the URL in a real Chromium window first, so JS-hydrated content lands in the HTML. Slower (typically 2-4s) and capped at 2 parallel calls — use only when `webFetch` returned empty/thin markdown.",
   safety: "safe",
   inputSchema,
+  toModelOutput: ({ input, output }) =>
+    projectWebFetchModelOutput({
+      input: input as z.infer<typeof inputSchema>,
+      output,
+      toolName: "webFetchRendered",
+    }),
   execute: async (args, ctx) => {
     const {
       url,

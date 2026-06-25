@@ -549,6 +549,8 @@ const ja: Translation = {
   branch_diff_compareBase: "比較対象",
   branch_diff_filterFiles: "ファイルを絞り込み...",
   branch_diff_toggleTree: "ファイルツリー",
+  branch_diff_singleFileHint:
+    "差分ファイルを1件ずつ表示します。左側のファイル一覧から切り替えてください。",
   branch_diff_ahead: "未プッシュ {0}",
   branch_diff_behind: "{0} 遅れ",
   branch_diff_uncommitted: "未コミット {0}",

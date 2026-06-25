@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   ChevronDown,
-  ChevronRight,
   FilePlus,
   FileText,
   FileX,
@@ -10,13 +9,6 @@ import type { ReactNode } from "react";
 import type { GitFileDiff } from "../../../main/core/git-diff/types";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
-import {
-  InlineCitationCard,
-  InlineCitationCardBody,
-  InlineCitationCardTrigger,
-  InlineCitationQuote,
-  InlineCitationSource,
-} from "../ai-elements/inline-citation";
 import { DiffHunkView } from "../ai-elements/preview/DiffHunkView";
 
 interface BranchDiffFileCardProps {
@@ -29,23 +21,35 @@ interface BranchDiffFileCardProps {
 export function BranchDiffFileCard({
   file,
   LL,
-  defaultOpen = false,
+  defaultOpen = true,
 }: BranchDiffFileCardProps) {
   const StatusIcon = pickStatusIcon(file.status);
 
   return (
-    <InlineCitationCard
-      defaultOpen={defaultOpen}
+    <details
+      data-branch-diff-file="true"
+      open={defaultOpen}
       className={cn(
-        "group",
-        file.status === "deleted" && "border-red-500/30 bg-red-500/5",
+        "group overflow-hidden border-y border-border-faint bg-surface text-xs",
+        "first:border-t-0",
+        file.status === "deleted" && "bg-status-error/5",
       )}
     >
-      <InlineCitationCardTrigger>
-        <ExpansionChevron />
-        <StatusIcon className="size-3 shrink-0 text-muted-foreground" />
+      <summary
+        className={cn(
+          "flex min-h-8 cursor-pointer list-none items-center gap-2 border-b border-border-faint bg-card/70 px-2 py-1.5",
+          "text-muted-foreground transition-colors hover:bg-accent/45",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "[&::-webkit-details-marker]:hidden",
+        )}
+      >
+        <ChevronDown
+          className="size-3 shrink-0 transition-transform group-open:rotate-0 -rotate-90"
+          aria-hidden="true"
+        />
+        <StatusIcon className="size-3.5 shrink-0 text-muted-foreground" />
         {file.oldPath ? (
-          <span className="font-mono truncate flex items-center gap-1 min-w-0">
+          <span className="flex min-w-0 items-center gap-1 truncate font-mono">
             <span className="truncate text-muted-foreground/80">
               {file.oldPath}
             </span>
@@ -55,31 +59,13 @@ export function BranchDiffFileCard({
         ) : (
           <span className="font-mono truncate">{file.path}</span>
         )}
-        <span className="ml-auto font-mono whitespace-nowrap text-[10px]">
+        <span className="ml-auto whitespace-nowrap font-mono text-[11px]">
           <Badge file={file} />
         </span>
-      </InlineCitationCardTrigger>
+      </summary>
 
-      <InlineCitationCardBody>
-        <InlineCitationSource
-          title={file.path}
-          url={file.oldPath ? `← ${file.oldPath}` : undefined}
-          description={describe(file, LL)}
-        />
-        {renderQuote(file, LL)}
-      </InlineCitationCardBody>
-    </InlineCitationCard>
-  );
-}
-
-function ExpansionChevron() {
-  // Hide/show the chevron based on the parent card's data-state attribute
-  // (set by InlineCitationCard). Avoids a second open-state subscription.
-  return (
-    <>
-      <ChevronRight className="size-3 shrink-0 text-muted-foreground group-data-[state=open]:hidden" />
-      <ChevronDown className="size-3 shrink-0 text-muted-foreground hidden group-data-[state=open]:block" />
-    </>
+      <div className="bg-surface-sunken">{renderQuote(file, LL)}</div>
+    </details>
   );
 }
 
@@ -95,34 +81,27 @@ function Badge({ file }: { file: GitFileDiff }): ReactNode {
   );
 }
 
-function describe(file: GitFileDiff, LL: TranslationFunctions): string {
-  if (file.status === "added") {
-    return `${LL.tool_summary_new_file()} · +${file.added}`;
-  }
-  if (file.status === "deleted") return `deleted · -${file.removed}`;
-  if (file.status === "renamed")
-    return `renamed · +${file.added} -${file.removed}`;
-  return `+${file.added} -${file.removed}`;
-}
-
 function renderQuote(file: GitFileDiff, LL: TranslationFunctions): ReactNode {
   if (file.isBinary) {
     return (
-      <div className="text-muted-foreground italic">
+      <div className="px-3 py-2 text-muted-foreground italic">
         ({LL.tool_diff_label()}) {LL.preview_binary_skipped()}
       </div>
     );
   }
   if (file.hunks.length === 0) {
     return (
-      <div className="text-muted-foreground italic">
+      <div className="px-3 py-2 text-muted-foreground italic">
         {LL.preview_no_changes()}
       </div>
     );
   }
   return (
     <>
-      <InlineCitationQuote className="overflow-x-auto rounded-md border-l-0 bg-background/40 px-0 pl-0 font-mono text-[11px] leading-5 not-italic">
+      <div
+        data-branch-diff-code="true"
+        className="overflow-x-auto font-mono text-[12px] leading-6"
+      >
         <div className="min-w-full">
           {file.hunks.map((h, i) => (
             <DiffHunkView
@@ -130,12 +109,13 @@ function renderQuote(file: GitFileDiff, LL: TranslationFunctions): ReactNode {
               key={`${i}-${h.value.slice(0, 8)}`}
               hunk={h}
               collapseContext={true}
+              density="branch"
             />
           ))}
         </div>
-      </InlineCitationQuote>
+      </div>
       {file.truncated && (
-        <div className="mt-1 px-2 text-muted-foreground italic">
+        <div className="border-t border-border-faint px-3 py-2 text-muted-foreground italic">
           {LL.preview_diff_truncated()}
         </div>
       )}

@@ -77,6 +77,43 @@ describe("buildWebFetchTool", () => {
     expect(out.truncated).toBe(false);
   });
 
+  it("projects a compact model-visible web fetch result", async () => {
+    const tool = buildWebFetchTool({
+      fetchImpl: (async () => fakeResponse("")) as never,
+    });
+    const projected = await tool.toModelOutput?.({
+      toolCallId: "fetch-1",
+      input: { url: "https://example.com/article" },
+      output: {
+        status: 200,
+        statusText: "OK",
+        url: "https://example.com/article",
+        contentType: "text/html",
+        title: "A very useful article",
+        excerpt: "Short description",
+        markdown: `${"main body ".repeat(2000)}secret-tail`,
+        raw: "",
+        images: Array.from({ length: 20 }, (_, i) => ({
+          url: `https://example.com/${i}.png`,
+        })),
+        videos: [],
+        meta: { siteName: "Example" },
+        structuredData: [{ very: "large" }],
+        truncated: true,
+      },
+    });
+
+    expect(projected).toMatchObject({ type: "text" });
+    const value = (projected as { value: string }).value;
+    expect(value).toContain("webFetch https://example.com/article");
+    expect(value).toContain("Status: 200 OK");
+    expect(value).toContain("Title: A very useful article");
+    expect(value).toContain("Images: 20");
+    expect(value).not.toContain("secret-tail");
+    expect(value).not.toContain("structuredData");
+    expect(value.length).toBeLessThan(13_000);
+  });
+
   it("将非 HTML 正文(raw)截断到 maxBytes", async () => {
     const big = "a".repeat(500);
     const fetchImpl = vi.fn(async () =>

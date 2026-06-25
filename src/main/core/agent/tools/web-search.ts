@@ -12,6 +12,7 @@
 import { z } from "zod/v4";
 
 import type { ToolDefinition } from "../tool-registry";
+import { projectWebSearchModelOutput } from "./model-output";
 
 export interface WebSearchDeps {
   fetchImpl: typeof fetch;
@@ -107,6 +108,11 @@ export const buildWebSearchTool = (deps: WebSearchDeps): ToolDefinition => ({
     "Search the web. Returns ranked URLs, snippets, an optional synthesized answer, and optional images.",
   safety: "safe",
   inputSchema,
+  toModelOutput: ({ input, output }) =>
+    projectWebSearchModelOutput({
+      input: input as z.infer<typeof inputSchema>,
+      output,
+    }),
   execute: async (args, ctx) => {
     const {
       query,

@@ -556,6 +556,8 @@ const en: BaseTranslation = {
   branch_diff_compareBase: "Compare against",
   branch_diff_filterFiles: "Filter files...",
   branch_diff_toggleTree: "File tree",
+  branch_diff_singleFileHint:
+    "Showing one changed file at a time. Select a file on the left to switch.",
   branch_diff_ahead: "{0} unpushed",
   branch_diff_behind: "{0} behind",
   branch_diff_uncommitted: "{0} uncommitted",

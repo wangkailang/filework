@@ -35,6 +35,12 @@ vi.mock("../../../i18n/i18n-react", () => ({
 import { useChatSession } from "../useChatSession";
 
 type ChatSessionValue = ReturnType<typeof useChatSession>;
+type ActiveTaskMock = {
+  taskId: string;
+  sessionId?: string;
+  assistantMessageId?: string;
+  streamEventCount: number;
+};
 
 const noop = () => undefined;
 const off = () => noop;
@@ -54,7 +60,10 @@ const createFileworkMock = () => ({
   deleteChatSession: vi.fn(),
   executeTask: vi.fn(() => Promise.resolve()),
   forkChatSession: vi.fn(),
-  getActiveTask: vi.fn(() => Promise.resolve(null)),
+  getActiveTask: vi.fn(
+    (_sessionId?: string): Promise<ActiveTaskMock | null> =>
+      Promise.resolve(null),
+  ),
   getActiveTasks: vi.fn(() => Promise.resolve([])),
   getChatHistory: vi.fn(() => Promise.resolve([] as ChatMessage[])),
   getChatSessions: vi.fn(() => Promise.resolve([] as ChatSession[])),
@@ -83,6 +92,11 @@ const createFileworkMock = () => ({
   onStreamDelta: vi.fn(off),
   onStreamDone: vi.fn(off),
   onStreamError: vi.fn(off),
+  onStreamEvent: vi.fn(
+    (
+      _callback: (data: { id: string; channel: string; index: number }) => void,
+    ) => noop,
+  ),
   onStreamMedia: vi.fn(off),
   onStreamPlan: vi.fn(off),
   onStreamReasoning: vi.fn(off),
@@ -427,6 +441,89 @@ describe("useChatSession", () => {
         sessionId: "session-existing",
       }),
     );
+  });
+
+  it("reattaches a running task from the next unseen stream event after session switching", async () => {
+    let streamEventCallback:
+      | ((data: { id: string; channel: string; index: number }) => void)
+      | null = null;
+    filework.onStreamEvent.mockImplementation((callback) => {
+      streamEventCallback = callback;
+      return noop;
+    });
+    filework.getChatSessions.mockResolvedValue([
+      {
+        id: "session-reconnect",
+        workspacePath: "/workspace",
+        title: "重连会话",
+        createdAt: "2026-06-23T11:00:00.000Z",
+        updatedAt: "2026-06-23T11:00:00.000Z",
+      },
+      {
+        id: "session-other",
+        workspacePath: "/workspace",
+        title: "另一个会话",
+        createdAt: "2026-06-23T11:01:00.000Z",
+        updatedAt: "2026-06-23T11:01:00.000Z",
+      },
+    ]);
+    filework.getChatHistory.mockResolvedValue([]);
+    filework.getActiveTask.mockImplementation((sessionId?: string) =>
+      Promise.resolve(
+        sessionId === "session-reconnect"
+          ? {
+              assistantMessageId: "assistant-reconnect",
+              sessionId,
+              streamEventCount: 10,
+              taskId: "task-reconnect",
+            }
+          : null,
+      ),
+    );
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(filework.reattachTask).toHaveBeenCalledWith("task-reconnect", 0);
+
+    act(() => {
+      streamEventCallback?.({
+        channel: "ai:stream-delta",
+        id: "task-reconnect",
+        index: 5,
+      });
+    });
+
+    act(() => {
+      latest?.handleSelectSession("session-other");
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      latest?.handleSelectSession("session-reconnect");
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(filework.reattachTask).toHaveBeenLastCalledWith("task-reconnect", 6);
   });
 
   it("routes video configs through executeTask instead of direct media IPC", async () => {

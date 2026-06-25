@@ -11,6 +11,7 @@
  * 参数校验由每个工具自己的 `inputSchema`(一个 `z.ZodType`)负责。
  */
 
+import type { ToolResultOutput } from "@ai-sdk/provider-utils";
 import type { Tool, ToolExecutionOptions } from "ai";
 import { tool as defineAiTool } from "ai";
 import type { z } from "zod/v4";
@@ -54,6 +55,22 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   description: string;
   inputSchema: z.ZodType<TInput>;
   /**
+   * Optional schema for the raw tool output. When present, the AI SDK can
+   * validate UI/tool-result parts while the model-facing projection remains
+   * controlled by toModelOutput.
+   */
+  outputSchema?: z.ZodType<TOutput>;
+  /**
+   * Project the raw tool output down to the content that should be fed back to
+   * the model. Useful for rich or large outputs where the UI/trace wants full
+   * data but the model only needs a summary.
+   */
+  toModelOutput?: (options: {
+    toolCallId: string;
+    input: TInput;
+    output: TOutput;
+  }) => ToolResultOutput | PromiseLike<ToolResultOutput>;
+  /**
    * `safe` 工具无条件执行。`destructive` 工具在执行前
    * 会(在配置了的情况下)经由 `beforeToolCall` 路由。
    */
@@ -66,6 +83,17 @@ export interface ToolDeniedResult {
   denied: true;
   reason: string;
 }
+
+export interface ToolObservedResult {
+  toolName: string;
+  toolCallId: string;
+  args: unknown;
+  rawOutput: unknown;
+}
+
+export type ToolResultObserver = (
+  result: ToolObservedResult,
+) => void | Promise<void>;
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
@@ -105,6 +133,7 @@ export class ToolRegistry {
     ctxFactory: (call: { toolName: string; toolCallId: string }) => ToolContext;
     beforeToolCall?: BeforeToolCallHook;
     planGate?: PlanGateHook;
+    onToolResult?: ToolResultObserver;
   }): Record<string, Tool> {
     const result: Record<string, Tool> = {};
     for (const def of this.tools.values()) {
@@ -122,11 +151,16 @@ export class ToolRegistry {
       }) => ToolContext;
       beforeToolCall?: BeforeToolCallHook;
       planGate?: PlanGateHook;
+      onToolResult?: ToolResultObserver;
     },
   ): Tool {
     return defineAiTool({
       description: def.description,
       inputSchema: def.inputSchema,
+      ...(def.outputSchema !== undefined && { outputSchema: def.outputSchema }),
+      ...(def.toModelOutput !== undefined && {
+        toModelOutput: def.toModelOutput,
+      }),
       execute: async (args: unknown, execOpts: ToolExecutionOptions) => {
         const ctx = opts.ctxFactory({
           toolName: def.name,
@@ -169,7 +203,22 @@ export class ToolRegistry {
         // 通用来源上限:在任何工具的结果进入模型上下文之前对其设界,
         // 使得任何工具(内置 / web / MCP)都无法撑爆消费它的
         // 那个步骤。参见 cap-tool-result.ts。
-        return capToolResult(await def.execute(args as never, ctx));
+        const rawOutput = await def.execute(args as never, ctx);
+        await opts.onToolResult?.({
+          toolName: def.name,
+          toolCallId: execOpts.toolCallId,
+          args,
+          rawOutput,
+        });
+
+        // Tools that opt into a declared output schema or toModelOutput are
+        // intentionally exposing their raw output to downstream UI/trace
+        // consumers. The model-facing payload can still be minimized by
+        // toModelOutput, which the AI SDK applies after execute resolves.
+        if (def.outputSchema !== undefined || def.toModelOutput !== undefined) {
+          return rawOutput;
+        }
+        return capToolResult(rawOutput);
       },
     });
   }

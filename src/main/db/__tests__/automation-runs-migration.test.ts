@@ -178,4 +178,20 @@ describe("automation run migrations", () => {
 
     expect(sqliteMock.state.widenedCopilotProvider).toBe(true);
   });
+
+  it("adds task runtime binding columns for existing databases", async () => {
+    const { initDatabase } = await import("../index");
+
+    await expect(initDatabase()).resolves.toBeUndefined();
+
+    expect(sqliteMock.state.execCalls.join("\n")).toContain(
+      "ALTER TABLE tasks ADD COLUMN session_id TEXT",
+    );
+    expect(sqliteMock.state.execCalls.join("\n")).toContain(
+      "ALTER TABLE tasks ADD COLUMN assistant_message_id TEXT",
+    );
+    expect(sqliteMock.state.execCalls.join("\n")).toContain(
+      "ALTER TABLE tasks ADD COLUMN updated_at TEXT",
+    );
+  });
 });

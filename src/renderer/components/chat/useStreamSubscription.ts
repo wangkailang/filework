@@ -257,6 +257,7 @@ export function useStreamSubscription({
   // 上次「流式期间」落盘的时间戳,用于节流。重连已由主进程事件日志重放权威负责,
   // 故流式落盘只为进程崩溃兜底,无需每个停顿都全量重写会话文件 —— 限到每 ~5s 一次。
   const lastStreamSaveRef = useRef(new Map<string, number>());
+  const streamEventCursorRef = useRef(new Map<string, number>());
   const pendingStopRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -279,6 +280,14 @@ export function useStreamSubscription({
 
     const canRouteTask = (taskId: string): boolean =>
       taskId === streamTaskIdRef.current || taskRoutesRef.current.has(taskId);
+
+    const offStreamEvent = window.filework.onStreamEvent(({ id, index }) => {
+      const nextIndex = index + 1;
+      const previous = streamEventCursorRef.current.get(id) ?? 0;
+      if (nextIndex > previous) {
+        streamEventCursorRef.current.set(id, nextIndex);
+      }
+    });
 
     const offStart = window.filework.onStreamStart(
       ({ id, sessionId, assistantMessageId }) => {
@@ -639,6 +648,7 @@ export function useStreamSubscription({
         onTaskSettled?.(id);
         taskRoutesRef.current.delete(id);
         lastStreamSaveRef.current.delete(id);
+        streamEventCursorRef.current.delete(id);
 
         console.log("[Stream Done] Cleaning up taskId:", id);
         if (isAttachedTask && connectionTimeoutRef.current) {
@@ -765,6 +775,7 @@ export function useStreamSubscription({
         onTaskSettled?.(id);
         taskRoutesRef.current.delete(id);
         lastStreamSaveRef.current.delete(id);
+        streamEventCursorRef.current.delete(id);
 
         if (isAttachedTask && connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
@@ -1072,6 +1083,7 @@ export function useStreamSubscription({
     return () => {
       offStart();
       offSkillActivated();
+      offStreamEvent();
       offDelta();
       offMedia();
       offReasoning();
@@ -1164,7 +1176,8 @@ export function useStreamSubscription({
       setIsLoading(true);
       // 触发重连:主进程重放录制事件(零缺口重建)并把后续流重定向到本窗口。
       // 纯刷新(webContents 不变)时重定向是无害 no-op;重放仍消除刷新窗口期缺口。
-      void window.filework.reattachTask(active.taskId);
+      const startIndex = streamEventCursorRef.current.get(active.taskId) ?? 0;
+      void window.filework.reattachTask(active.taskId, startIndex);
     },
     [onTaskStarted, setMessages],
   );

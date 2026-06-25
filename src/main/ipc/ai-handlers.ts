@@ -223,9 +223,18 @@ const handleTaskExecutionInner = async (
     send: (channel: string, ...args: unknown[]) => {
       // 录制每条流事件 —— 重连时按序重放重建消息(零缺口)。所有发送(含
       // agent-tools / approval-batcher)都走此包装器,故录制天然集中且完整。
-      recordTaskEvent(id, channel, args[0]);
+      const recordedEvent = recordTaskEvent(id, channel, args[0]);
       const t = getActiveTaskTarget(id) ?? originalSender;
-      if (!t.isDestroyed()) t.send(channel, ...args);
+      if (!t.isDestroyed()) {
+        if (recordedEvent) {
+          t.send("ai:stream-event", {
+            id,
+            channel,
+            index: recordedEvent.index,
+          });
+        }
+        t.send(channel, ...args);
+      }
     },
     isDestroyed: () =>
       (getActiveTaskTarget(id) ?? originalSender).isDestroyed(),
@@ -240,6 +249,9 @@ const handleTaskExecutionInner = async (
     filesAffected: null,
     createdAt: now,
     completedAt: null,
+    sessionId: payload.sessionId ?? null,
+    assistantMessageId: payload.assistantMessageId ?? null,
+    updatedAt: now,
   });
 
   const controller = new AbortController();
@@ -1557,24 +1569,36 @@ export const registerAIHandlers = () => {
   // handler 重建消息,零缺口),再把后续流的投递目标重定向到该窗口。重放直接发往
   // event.sender(不经录制包装器,故不会二次录制);两步同步执行,其间 agent loop
   // 无法插入新发送,因此重放快照[0..N] 与后续 live[N+1..] 严丝合缝、不重不漏。
-  ipcMain.handle("ai:reattachTask", (event, taskId?: string) => {
-    if (!taskId) return false;
-    const target = event.sender;
-    if (!target.isDestroyed()) {
-      for (const e of getTaskEvents(taskId)) {
-        // 跳过「已解决」的澄清请求 —— 它的答案存在持久化的 part(answeredOption)上、
-        // 不作为流事件回传,故重放会把已答问题重现成可再次点击的待答卡。仍挂起的
-        // 澄清(clarificationId 还在 pending 表里)才需要重放,让用户看到并作答。
-        if (e.channel === "ai:stream-clarification") {
-          const cid = (e.payload as { clarificationId?: string })
-            ?.clarificationId;
-          if (!cid || !pendingClarifications.has(cid)) continue;
+  ipcMain.handle(
+    "ai:reattachTask",
+    (event, taskId?: string, startIndex?: number) => {
+      if (!taskId) return false;
+      const target = event.sender;
+      const replayStart =
+        typeof startIndex === "number" && Number.isFinite(startIndex)
+          ? Math.max(0, Math.floor(startIndex))
+          : 0;
+      if (!target.isDestroyed()) {
+        for (const e of getTaskEvents(taskId, replayStart)) {
+          // 跳过「已解决」的澄清请求 —— 它的答案存在持久化的 part(answeredOption)上、
+          // 不作为流事件回传,故重放会把已答问题重现成可再次点击的待答卡。仍挂起的
+          // 澄清(clarificationId 还在 pending 表里)才需要重放,让用户看到并作答。
+          if (e.channel === "ai:stream-clarification") {
+            const cid = (e.payload as { clarificationId?: string })
+              ?.clarificationId;
+            if (!cid || !pendingClarifications.has(cid)) continue;
+          }
+          target.send("ai:stream-event", {
+            id: taskId,
+            channel: e.channel,
+            index: e.index,
+          });
+          target.send(e.channel, e.payload);
         }
-        target.send(e.channel, e.payload);
       }
-    }
-    return redirectActiveTask(taskId, target);
-  });
+      return redirectActiveTask(taskId, target);
+    },
+  );
 
   /**
    * 用用户的回复来解决一个挂起的 askClarification。渲染层把按钮点击

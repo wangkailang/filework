@@ -19,6 +19,9 @@ export const tasks = sqliteTable("tasks", {
   filesAffected: text("files_affected"),
   createdAt: text("created_at").notNull(),
   completedAt: text("completed_at"),
+  sessionId: text("session_id"),
+  assistantMessageId: text("assistant_message_id"),
+  updatedAt: text("updated_at"),
   // 用量统计字段
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),

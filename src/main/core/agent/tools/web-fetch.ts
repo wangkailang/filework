@@ -15,6 +15,7 @@ import {
 } from "../../../ai/pdf-text";
 import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
+import { projectWebFetchModelOutput } from "./model-output";
 import { extractReadable } from "./web-extract";
 
 export interface WebFetchDeps {
@@ -127,6 +128,12 @@ export const buildWebFetchTool = (deps: WebFetchDeps): ToolDefinition => {
       "This is a plain HTTP fetch — it does NOT run JavaScript. If the page needs JS/session rendering (search-result pages, SPAs, dynamic `.aspx`/query pages) or the body comes back looking like a generic landing/home page instead of the resource you asked for, retry with `webFetchRendered`. Do not infer data from an empty or wrong page — switch tools or keep searching. If the URL 404s or the resource is gone, retry it through the Wayback Machine (`https://web.archive.org/web/2023/<url>`, or drop the year for the latest snapshot) before concluding it's unavailable — government, legal, and historical documents are very often preserved there.",
     safety: "safe",
     inputSchema,
+    toModelOutput: ({ input, output }) =>
+      projectWebFetchModelOutput({
+        input: input as z.infer<typeof inputSchema>,
+        output,
+        toolName: "webFetch",
+      }),
     execute: async (args, ctx) => {
       const {
         url,

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type IpcHandler = (...args: unknown[]) => unknown;
+type RecordedStreamEventFixture = {
+  channel: string;
+  index: number;
+  payload: unknown;
+};
 
 const ipcHandlers = vi.hoisted(() => new Map<string, IpcHandler>());
 
@@ -31,7 +36,12 @@ const taskControlMock = vi.hoisted(() => ({
   getActiveTaskForSession: vi.fn(),
   getActiveTasks: vi.fn(() => []),
   getActiveTaskTarget: vi.fn(() => null),
-  getTaskEvents: vi.fn(() => []),
+  getTaskEvents: vi.fn(
+    (
+      _taskId?: string,
+      _startIndex?: number,
+    ): RecordedStreamEventFixture[] => [],
+  ),
   manualStopFlags: new Map<string, boolean>(),
   pendingApprovals: new Map<string, (approved: boolean) => void>(),
   pendingClarifications: new Map<string, unknown>(),
@@ -209,6 +219,14 @@ describe("ai:executeTask media modality routing", () => {
     vi.clearAllMocks();
     taskControlMock.abortControllers.clear();
     dbMock.listSkillTrust.mockReturnValue([]);
+    let eventIndex = 0;
+    taskControlMock.recordTaskEvent.mockImplementation(
+      (_taskId: string, channel: string, payload: unknown) => ({
+        channel,
+        index: eventIndex++,
+        payload,
+      }),
+    );
   });
 
   it("routes image configs through media runtime and streams an image part", async () => {
@@ -248,6 +266,30 @@ describe("ai:executeTask media modality routing", () => {
     );
 
     expect(result).toMatchObject({ status: "completed" });
+    expect(dbMock.addTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistantMessageId: "assistant-1",
+        sessionId: "session-1",
+        status: "running",
+        updatedAt: expect.any(String),
+      }),
+    );
+    const streamStart = sent.find(([channel]) => channel === "ai:stream-start");
+    const taskId =
+      streamStart &&
+      typeof streamStart[1] === "object" &&
+      streamStart[1] !== null &&
+      "id" in streamStart[1]
+        ? String(streamStart[1].id)
+        : null;
+    expect(sent).toContainEqual([
+      "ai:stream-event",
+      {
+        channel: "ai:stream-media",
+        id: taskId,
+        index: 1,
+      },
+    ]);
     expect(mediaRuntimeMock.generateImageForConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         llmConfigId: "image-cfg",
@@ -270,6 +312,49 @@ describe("ai:executeTask media modality routing", () => {
     ]);
     expect(sent.map(([channel]) => channel)).toContain("ai:stream-done");
     expect(sent.map(([channel]) => channel)).not.toContain("ai:stream-error");
+  });
+
+  it("emits stream event metadata before replayed events on reattach", async () => {
+    taskControlMock.getTaskEvents.mockReturnValue([
+      {
+        channel: "ai:stream-delta",
+        index: 3,
+        payload: { delta: "replayed", id: "task-replay" },
+      },
+    ]);
+    taskControlMock.redirectActiveTask.mockReturnValue(true);
+
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:reattachTask");
+    expect(handler).toBeTypeOf("function");
+
+    const sent: Array<[string, unknown]> = [];
+    const sender = {
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn((channel: string, payload: unknown) => {
+        sent.push([channel, payload]);
+      }),
+    };
+
+    const result = await handler?.({ sender }, "task-replay", 3);
+
+    expect(result).toBe(true);
+    expect(taskControlMock.getTaskEvents).toHaveBeenCalledWith(
+      "task-replay",
+      3,
+    );
+    expect(sent).toEqual([
+      [
+        "ai:stream-event",
+        {
+          channel: "ai:stream-delta",
+          id: "task-replay",
+          index: 3,
+        },
+      ],
+      ["ai:stream-delta", { delta: "replayed", id: "task-replay" }],
+    ]);
   });
 
   it("routes saved custom gpt-image configs through media runtime even if the stored modality is chat", async () => {

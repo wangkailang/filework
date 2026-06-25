@@ -260,6 +260,101 @@ describe("JsonlSessionStore", () => {
     });
   });
 
+  describe("appendMessagePart", () => {
+    it("appends a persisted error part to an existing assistant message", async () => {
+      const s = await store.createSession("/ws", "Interrupted chat");
+      await store.saveMessages(s.id, "/ws", [
+        {
+          id: "user-1",
+          sessionId: s.id,
+          role: "user",
+          content: "start a long task",
+          timestamp: "2026-06-25T00:59:00.000Z",
+        },
+        {
+          id: "assistant-1",
+          sessionId: s.id,
+          role: "assistant",
+          content: "partial output",
+          timestamp: "2026-06-25T00:59:01.000Z",
+          parts: [{ type: "text", text: "partial output" }],
+        },
+      ]);
+
+      const appended = await store.appendMessagePart(
+        s.id,
+        "assistant-1",
+        {
+          type: "error",
+          message: "Task interrupted",
+          errorType: "interrupted",
+          recoveryActions: ["retry", "new_chat"],
+        },
+        { timestamp: "2026-06-25T01:00:00.000Z" },
+      );
+
+      expect(appended).toBe(true);
+      const messages = await store.getMessages(s.id);
+      expect(messages[1].parts).toEqual([
+        { type: "text", text: "partial output" },
+        {
+          type: "error",
+          message: "Task interrupted",
+          errorType: "interrupted",
+          recoveryActions: ["retry", "new_chat"],
+        },
+      ]);
+
+      const [listed] = await store.listSessions("/ws");
+      expect(listed.updatedAt).toBe("2026-06-25T01:00:00.000Z");
+    });
+
+    it("fills empty assistant content when appending a recovery part", async () => {
+      const s = await store.createSession("/ws", "Empty assistant");
+      await store.saveMessages(s.id, "/ws", [
+        {
+          id: "assistant-1",
+          sessionId: s.id,
+          role: "assistant",
+          content: "",
+          timestamp: "2026-06-25T00:59:01.000Z",
+          parts: [],
+        },
+      ]);
+
+      await store.appendMessagePart(
+        s.id,
+        "assistant-1",
+        {
+          type: "error",
+          message: "Task interrupted",
+          errorType: "interrupted",
+        },
+        {
+          contentFallback: "Task interrupted",
+          timestamp: "2026-06-25T01:00:00.000Z",
+        },
+      );
+
+      const [message] = await store.getMessages(s.id);
+      expect(message.content).toBe("Task interrupted");
+    });
+
+    it("returns false when the target message is missing", async () => {
+      const s = await store.createSession("/ws");
+      await seedMessage(s.id, "/ws");
+
+      await expect(
+        store.appendMessagePart(
+          s.id,
+          "missing",
+          { type: "error", message: "Task interrupted" },
+          { timestamp: "2026-06-25T01:00:00.000Z" },
+        ),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe("deleteSession", () => {
     it("removes the file and the session disappears from the list", async () => {
       const s = await store.createSession("/ws");

@@ -1,5 +1,5 @@
-// Diff 右侧文件树:把变更文件按目录组织成可折叠的树,带筛选框。点击文件
-// 联动左侧 diff 列表滚动定位。单子目录链会合并显示(src/renderer 这种)。
+// Diff 左侧文件树:把变更文件按目录组织成可折叠的树,带筛选框。点击文件
+// 切换右侧单文件 diff。单子目录链会合并显示(src/renderer 这种)。
 import {
   ChevronDown,
   ChevronRight,
@@ -120,7 +120,10 @@ export function BranchDiffFileTree({
     });
 
   return (
-    <div className="flex w-60 shrink-0 flex-col border-l border-border bg-background">
+    <div
+      data-branch-diff-file-tree="true"
+      className="flex w-60 shrink-0 flex-col border-r border-border bg-card/50"
+    >
       <div className="border-b border-border p-2">
         <input
           type="text"
@@ -171,6 +174,7 @@ function TreeRow({
       <button
         type="button"
         onClick={() => onSelect(node.path)}
+        data-branch-diff-tree-file="true"
         style={pad}
         title={node.path}
         className={cn(
