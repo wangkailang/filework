@@ -73,7 +73,7 @@ function TracePart({
         ? inv.result
         : JSON.stringify(inv.result, null, 2);
     return (
-      <Tool defaultOpen={inv.state === "output-error"}>
+      <Tool defaultOpen={false}>
         <ToolHeader toolName={inv.toolName} state={inv.state} />
         <ToolContent>
           <ToolInput input={inv.args} />

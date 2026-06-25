@@ -708,7 +708,7 @@ export const ChatPanel = ({
     return (
       <Tool
         key={inv.toolCallId}
-        defaultOpen={inv.state === "output-error"}
+        defaultOpen={false}
         forceOpen={inv.approval?.state === "approval-requested"}
       >
         <ToolHeader
