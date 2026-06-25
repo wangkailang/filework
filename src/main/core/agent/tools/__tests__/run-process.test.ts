@@ -65,6 +65,19 @@ describe("run process tools", () => {
     expect(result.hint).toEqual(expect.stringContaining("runProcess"));
   });
 
+  it("adds a quoting hint for POSIX sh unexpected-token syntax errors", async () => {
+    const result = (await toolByName("runCommand").execute(
+      {
+        command:
+          "printf '%s\\n' 'sh: 1: Syntax error: \"(\" unexpected' >&2; exit 2",
+      },
+      ctx,
+    )) as Record<string, unknown>;
+
+    expect(result.success).toBe(false);
+    expect(result.hint).toEqual(expect.stringContaining("runProcess"));
+  });
+
   it("adds a host-network hint for GitHub release asset TLS failures", async () => {
     const result = (await toolByName("runCommand").execute(
       {

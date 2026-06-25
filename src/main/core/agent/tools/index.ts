@@ -565,7 +565,9 @@ function shellSyntaxHint(result: {
   stderr: string;
 }): string | undefined {
   const output = `${result.stderr}\n${result.stdout}`;
-  if (!/syntax error near unexpected token/i.test(output)) return undefined;
+  if (!/syntax error.*(unexpected|near unexpected token)/i.test(output)) {
+    return undefined;
+  }
   return "The shell parsed an unquoted special character, often from a path containing spaces or parentheses. Prefer runProcess with executable/args, or set cwd to the target directory and pass a relative path.";
 }
 
