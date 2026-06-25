@@ -116,6 +116,20 @@ describe("MessageResponse", () => {
     expect(html).toContain('data-streamdown="inline-code"');
   });
 
+  it("does not make bare filenames clickable without directory context", () => {
+    const html = renderToStaticMarkup(
+      <MessageResponse workspacePath="/workspace/project">
+        {"检查 `file-path-chip.tsx` 和 [message.tsx](message.tsx)。"}
+      </MessageResponse>,
+    );
+
+    expect(html).not.toContain('data-chat-file-path="true"');
+    expect(html).not.toContain('data-file-full-path="/workspace/project/');
+    expect(html).toContain(
+      '<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-sm" data-streamdown="inline-code">file-path-chip.tsx</code>',
+    );
+  });
+
   it("dispatches open-file when an inline file path chip is clicked", async () => {
     const opened: string[] = [];
     window.addEventListener("filework:open-file", (event) => {

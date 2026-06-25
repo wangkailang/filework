@@ -128,10 +128,11 @@ export const getFilePathInfo = (
 
   if (!hasRecognizedFileShape(path)) return null;
 
+  const absolute = isAbsolutePath(path);
   const hasPathSeparator = /[\\/]/.test(path);
-  if (!hasPathSeparator && !workspacePath && !isAbsolutePath(path)) return null;
+  if (!absolute && !hasPathSeparator) return null;
 
-  const fullPath = isAbsolutePath(path)
+  const fullPath = absolute
     ? path
     : workspacePath
       ? joinWorkspacePath(workspacePath, path)
