@@ -6,6 +6,7 @@
  */
 
 import type { WebContents } from "electron";
+import type { RunEventLog, RunEventRecord } from "../core/run/event-log";
 import { cancelBatchesForTask } from "./approval-batcher";
 
 /** 按任务 ID 存储活跃的 AbortController，用于中止流式生成 */
@@ -22,6 +23,11 @@ export const abortControllers = new Map<string, AbortController>();
  */
 /** 一条已发出的流事件(原样录制,供重连时按序重放重建消息)。 */
 export interface RecordedStreamEvent {
+  /**
+   * 任务内单调递增的事件序号。渲染层可在重连时传 startIndex,
+   * 只回放尚未观察到的后缀。
+   */
+  index: number;
   channel: string;
   payload: unknown;
 }
@@ -43,13 +49,23 @@ export interface ActiveTaskInfo {
    * snapshot-on-reconnect)。任务结束由 cleanupTask 连同整条记录一起清除。
    */
   events: RecordedStreamEvent[];
+  /** 任务内已观察到的流事件总数。内存缓存可截断,该计数不可回退。 */
+  eventCount: number;
 }
 export const activeTasks = new Map<string, ActiveTaskInfo>();
 
+let runEventLog: RunEventLog | null = null;
+
+export const setRunEventLog = (log: RunEventLog | null): void => {
+  runEventLog = log;
+};
+
+export const setRunEventLogForTesting = setRunEventLog;
+
 export const registerActiveTask = (
-  info: Omit<ActiveTaskInfo, "events">,
+  info: Omit<ActiveTaskInfo, "events" | "eventCount">,
 ): void => {
-  activeTasks.set(info.taskId, { ...info, events: [] });
+  activeTasks.set(info.taskId, { ...info, events: [], eventCount: 0 });
 };
 
 /**
@@ -64,15 +80,77 @@ export const recordTaskEvent = (
   taskId: string,
   channel: string,
   payload: unknown,
-): void => {
+): RecordedStreamEvent | null => {
   const t = activeTasks.get(taskId);
-  if (!t || t.events.length >= MAX_RECORDED_EVENTS_PER_TASK) return;
-  t.events.push({ channel, payload });
+  if (!t) return null;
+  const event: RecordedStreamEvent = {
+    index: t.eventCount,
+    channel,
+    payload,
+  };
+  t.eventCount += 1;
+  if (t.events.length < MAX_RECORDED_EVENTS_PER_TASK) {
+    t.events.push(event);
+  }
+  if (runEventLog) {
+    try {
+      runEventLog.appendEvent({
+        taskId,
+        sessionId: t.sessionId,
+        assistantMessageId: t.assistantMessageId,
+        ...event,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn(
+        "[Task Control] Failed to persist run stream event:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return event;
 };
 
+const toRecordedStreamEvent = (event: RunEventRecord): RecordedStreamEvent => ({
+  index: event.index,
+  channel: event.channel,
+  payload: event.payload,
+});
+
 /** 取任务已录制的事件序列(供重连重放);无则空数组。 */
-export const getTaskEvents = (taskId: string): RecordedStreamEvent[] =>
-  activeTasks.get(taskId)?.events ?? [];
+export const getTaskEvents = (
+  taskId: string,
+  startIndex = 0,
+): RecordedStreamEvent[] => {
+  if (runEventLog) {
+    try {
+      const persisted = runEventLog.readEvents(taskId, startIndex);
+      if (persisted.length > 0) return persisted.map(toRecordedStreamEvent);
+    } catch (err) {
+      console.warn(
+        "[Task Control] Failed to read persisted run stream events:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  const events = activeTasks.get(taskId)?.events ?? [];
+  if (startIndex <= 0) return events;
+  return events.filter((event) => event.index >= startIndex);
+};
+
+const getRecordedEventCount = (task: ActiveTaskInfo): number => {
+  if (runEventLog) {
+    try {
+      return Math.max(task.eventCount, runEventLog.getEventCount(task.taskId));
+    } catch (err) {
+      console.warn(
+        "[Task Control] Failed to count persisted run stream events:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return task.eventCount;
+};
 
 /** 重连时把任务的流投递目标重定向到新 webContents(关窗重开 / 跨窗口)。 */
 export const redirectActiveTask = (
@@ -99,6 +177,7 @@ export const getActiveTaskForSession = (
   taskId: string;
   sessionId?: string;
   assistantMessageId?: string;
+  streamEventCount: number;
 } | null => {
   for (const t of activeTasks.values()) {
     if (t.sessionId === sessionId) {
@@ -106,6 +185,7 @@ export const getActiveTaskForSession = (
         taskId: t.taskId,
         sessionId: t.sessionId,
         assistantMessageId: t.assistantMessageId,
+        streamEventCount: getRecordedEventCount(t),
       };
     }
   }
@@ -116,6 +196,7 @@ export interface ActiveTaskSnapshot {
   taskId: string;
   sessionId?: string;
   assistantMessageId?: string;
+  streamEventCount: number;
 }
 
 /** 返回全部活跃任务的可序列化快照,供会话列表恢复/展示运行态。 */
@@ -124,6 +205,7 @@ export const getActiveTasks = (): ActiveTaskSnapshot[] =>
     taskId: t.taskId,
     sessionId: t.sessionId,
     assistantMessageId: t.assistantMessageId,
+    streamEventCount: getRecordedEventCount(t),
   }));
 
 /** 按任务 ID 存储手动停止标志，用于强制中止流式生成 */
@@ -306,6 +388,17 @@ export const cleanupTask = (taskId: string): void => {
 
   // 从重连登记表移除 —— 任务已结束,刷新后不应再尝试重挂。
   activeTasks.delete(taskId);
+
+  if (runEventLog) {
+    try {
+      runEventLog.deleteTask(taskId);
+    } catch (err) {
+      console.warn(
+        "[Task Cleanup] Failed to delete persisted run stream events:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 
   // 清理手动停止标志
   manualStopFlags.delete(taskId);

@@ -11,6 +11,7 @@ import { z } from "zod/v4";
 
 import { searchText } from "../../../ai/text-search";
 import type { ToolDefinition } from "../tool-registry";
+import { projectWebFetchModelOutput } from "./model-output";
 import type { ArticleMeta } from "./web-extract";
 
 export interface WebScrapeDeps {
@@ -96,6 +97,12 @@ export const buildWebScrapeTool = (deps: WebScrapeDeps): ToolDefinition => ({
     "Scrape a URL via Firecrawl (anti-bot + JS rendering + captcha bypass, server-side). Costs Firecrawl quota — use only when `webFetch` and `webFetchRendered` both failed. Returns markdown + `meta`; `images`/`videos`/`structuredData` come back empty.",
   safety: "safe",
   inputSchema,
+  toModelOutput: ({ input, output }) =>
+    projectWebFetchModelOutput({
+      input: input as z.infer<typeof inputSchema>,
+      output,
+      toolName: "webScrape",
+    }),
   execute: async (args, ctx) => {
     const { url, formats, query } = args as z.infer<typeof inputSchema>;
     const token = await deps.resolveFirecrawlToken();

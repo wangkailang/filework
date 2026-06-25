@@ -82,6 +82,39 @@ describe("buildWebScrapeTool", () => {
     expect(body.formats).toEqual(["markdown"]);
   });
 
+  it("projects compact model-visible scrape output", async () => {
+    const tool = buildWebScrapeTool({
+      fetchImpl: vi.fn() as never,
+      resolveFirecrawlToken: async () => "fc-test",
+    });
+    const projected = await tool.toModelOutput?.({
+      toolCallId: "scrape-1",
+      input: { url: "https://example.com/blocked-page" },
+      output: {
+        status: 200,
+        url: "https://example.com/blocked-page",
+        title: "Blocked Page",
+        excerpt: "Rendered by Firecrawl",
+        markdown: `${"scraped body ".repeat(2000)}markdown-tail`,
+        html: `${"<div>noisy</div>".repeat(2000)}html-tail`,
+        meta: { siteName: "Example" },
+        images: [],
+        videos: [],
+        structuredData: [{ noisy: true }],
+      },
+    });
+
+    expect(projected).toMatchObject({ type: "text" });
+    const value = (projected as { value: string }).value;
+    expect(value).toContain("webScrape https://example.com/blocked-page");
+    expect(value).toContain("Title: Blocked Page");
+    expect(value).toContain("Images: 0");
+    expect(value).not.toContain("markdown-tail");
+    expect(value).not.toContain("html-tail");
+    expect(value).not.toContain("structuredData");
+    expect(value.length).toBeLessThan(13_000);
+  });
+
   it("throws when Firecrawl returns non-ok", async () => {
     const fetchImpl = vi.fn(
       async () =>

@@ -49,7 +49,10 @@ export const initDatabase = async () => {
       result TEXT,
       files_affected TEXT,
       created_at TEXT NOT NULL,
-      completed_at TEXT
+      completed_at TEXT,
+      session_id TEXT,
+      assistant_message_id TEXT,
+      updated_at TEXT
     );
     CREATE TABLE IF NOT EXISTS task_trace_events (
       id TEXT PRIMARY KEY,
@@ -532,12 +535,22 @@ export const initDatabase = async () => {
   const taskColumns = sqlite.pragma("table_info(tasks)") as {
     name: string;
   }[];
-  if (!taskColumns.some((c) => c.name === "input_tokens")) {
+  const taskColumnNames = new Set(taskColumns.map((column) => column.name));
+  if (!taskColumnNames.has("input_tokens")) {
     sqlite.exec("ALTER TABLE tasks ADD COLUMN input_tokens INTEGER");
     sqlite.exec("ALTER TABLE tasks ADD COLUMN output_tokens INTEGER");
     sqlite.exec("ALTER TABLE tasks ADD COLUMN total_tokens INTEGER");
     sqlite.exec("ALTER TABLE tasks ADD COLUMN model_id TEXT");
     sqlite.exec("ALTER TABLE tasks ADD COLUMN provider TEXT");
+  }
+  if (!taskColumnNames.has("session_id")) {
+    sqlite.exec("ALTER TABLE tasks ADD COLUMN session_id TEXT");
+  }
+  if (!taskColumnNames.has("assistant_message_id")) {
+    sqlite.exec("ALTER TABLE tasks ADD COLUMN assistant_message_id TEXT");
+  }
+  if (!taskColumnNames.has("updated_at")) {
+    sqlite.exec("ALTER TABLE tasks ADD COLUMN updated_at TEXT");
   }
 
   // 迁移:task_trace_events 表缺失时创建(旧版数据库)
@@ -821,6 +834,9 @@ interface Task {
   filesAffected: string | null;
   createdAt: string;
   completedAt: string | null;
+  sessionId?: string | null;
+  assistantMessageId?: string | null;
+  updatedAt?: string | null;
   // 用量追踪
   inputTokens?: number | null;
   outputTokens?: number | null;
@@ -1000,6 +1016,9 @@ export const addTask = (task: Task) => {
       filesAffected: task.filesAffected,
       createdAt: task.createdAt,
       completedAt: task.completedAt,
+      sessionId: task.sessionId ?? null,
+      assistantMessageId: task.assistantMessageId ?? null,
+      updatedAt: task.updatedAt ?? task.createdAt,
     })
     .run();
 };
@@ -1023,6 +1042,9 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
     mapped.filesAffected = updates.filesAffected;
   if (updates.completedAt !== undefined)
     mapped.completedAt = updates.completedAt;
+  if (updates.sessionId !== undefined) mapped.sessionId = updates.sessionId;
+  if (updates.assistantMessageId !== undefined)
+    mapped.assistantMessageId = updates.assistantMessageId;
   if (updates.inputTokens !== undefined)
     mapped.inputTokens = updates.inputTokens;
   if (updates.outputTokens !== undefined)
@@ -1031,6 +1053,11 @@ export const updateTask = (id: string, updates: Partial<Task>) => {
     mapped.totalTokens = updates.totalTokens;
   if (updates.modelId !== undefined) mapped.modelId = updates.modelId;
   if (updates.provider !== undefined) mapped.provider = updates.provider;
+  if (updates.updatedAt !== undefined) {
+    mapped.updatedAt = updates.updatedAt;
+  } else if (Object.keys(mapped).length > 0) {
+    mapped.updatedAt = new Date().toISOString();
+  }
   db.update(schema.tasks).set(mapped).where(eq(schema.tasks.id, id)).run();
 };
 

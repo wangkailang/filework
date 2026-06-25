@@ -96,6 +96,40 @@ describe("buildWebSearchTool", () => {
     expect(body.max_results).toBe(2);
   });
 
+  it("projects compact model-visible search results", async () => {
+    const tool = buildWebSearchTool({
+      fetchImpl: vi.fn() as never,
+      resolveTavilyToken: async () => "tvly-test",
+    });
+    const projected = await tool.toModelOutput?.({
+      toolCallId: "search-1",
+      input: { query: "latest model news", maxResults: 20 },
+      output: {
+        answer: "A concise answer",
+        results: Array.from({ length: 12 }, (_, i) => ({
+          title: `Result ${i}`,
+          url: `https://example.com/${i}`,
+          snippet: `${"long snippet ".repeat(100)}tail-${i}`,
+          score: 1 - i / 20,
+        })),
+        images: Array.from({ length: 30 }, (_, i) => ({
+          url: `https://images.example.com/${i}.jpg`,
+          description: `${"image description ".repeat(100)}tail-${i}`,
+        })),
+      },
+    });
+
+    expect(projected).toMatchObject({ type: "text" });
+    const value = (projected as { value: string }).value;
+    expect(value).toContain("webSearch latest model news");
+    expect(value).toContain("Answer: A concise answer");
+    expect(value).toContain("1. Result 0");
+    expect(value).toContain("Images: 30");
+    expect(value).not.toContain("Result 11");
+    expect(value).not.toContain("tail-0");
+    expect(value.length).toBeLessThan(10_000);
+  });
+
   it("passes Tavily recency params through to the API body (topic/days/timeRange/dates)", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ answer: null, results: [] }),

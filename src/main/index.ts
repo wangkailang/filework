@@ -25,13 +25,16 @@ import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
 import { setProviderFetch } from "./ai/provider-fetch";
 import { killAllShells } from "./core/agent/shells";
+import { JsonlRunEventLog } from "./core/run/event-log";
+import { recoverInterruptedRunEventLogs } from "./core/run/recovery";
 import { JsonlSessionStore } from "./core/session/jsonl-store";
 import { cleanupLegacyAtRefCache } from "./core/workspace/clone-cache";
 import { ensureAskpassScript } from "./core/workspace/git-credentials";
 import { stopAllHeadWatchers } from "./core/workspace/head-watcher";
-import { getSetting, initDatabase } from "./db";
+import { getSetting, initDatabase, updateTask } from "./db";
 import { setAgentRegistryDeps } from "./ipc/agent-tools";
 import { registerAIHandlers, setWorkspaceFactoryDeps } from "./ipc/ai-handlers";
+import { setRunEventLog } from "./ipc/ai-task-control";
 import { registerAttachmentHandlers } from "./ipc/attachment-handlers";
 import { setAutomationRunNotificationClickHandler } from "./ipc/automation-notifications";
 import {
@@ -70,6 +73,7 @@ import { initSkillDiscovery } from "./skills-runtime";
 import { parseRange } from "./utils/http-range";
 
 let mainWindow: BrowserWindow | null = null;
+const RUN_EVENT_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 // 开发模式下抑制 Electron 安全警告(Vite HMR 需要 unsafe-eval)
 if (process.env.ELECTRON_RENDERER_URL) {
@@ -317,6 +321,46 @@ app.whenReady().then(async () => {
   const sessionStore = new JsonlSessionStore(
     join(homedir(), ".filework", "sessions"),
   );
+  const runEventLog = new JsonlRunEventLog(
+    join(homedir(), ".filework", "run-events"),
+  );
+  try {
+    const recovered = await recoverInterruptedRunEventLogs(runEventLog, {
+      updateTask,
+      appendInterruptedMessage: async ({
+        sessionId,
+        assistantMessageId,
+        message,
+        timestamp,
+      }) => {
+        await sessionStore.appendMessagePart(
+          sessionId,
+          assistantMessageId,
+          {
+            type: "error",
+            message,
+            errorType: "interrupted",
+            recoveryActions: ["retry", "new_chat"],
+          },
+          { contentFallback: message, timestamp },
+        );
+      },
+    });
+    if (recovered.length > 0) {
+      console.warn(
+        `[Main] Marked ${recovered.filter((run) => !run.terminal).length} interrupted run(s) after previous shutdown; cleaned ${recovered.length} residual run event log(s).`,
+      );
+    }
+    runEventLog.pruneOlderThan(
+      new Date(Date.now() - RUN_EVENT_LOG_RETENTION_MS),
+    );
+  } catch (err) {
+    console.warn(
+      "[Main] Failed to recover or prune run event logs:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+  setRunEventLog(runEventLog);
 
   // M7: 在任何 git 调用之前写入 GIT_ASKPASS 辅助脚本。
   // token 通过 env 提供,绝不嵌入 .git/config 的 URL 中。

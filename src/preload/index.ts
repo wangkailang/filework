@@ -226,17 +226,19 @@ const api = {
     taskId: string;
     sessionId?: string;
     assistantMessageId?: string;
+    streamEventCount: number;
   } | null> => ipcRenderer.invoke("ai:getActiveTask", sessionId),
   getActiveTasks: (): Promise<
     Array<{
       taskId: string;
       sessionId?: string;
       assistantMessageId?: string;
+      streamEventCount: number;
     }>
   > => ipcRenderer.invoke("ai:getActiveTasks"),
   /** 重连:把任务的流重定向到当前窗口(关窗重开 → 新 webContents)。 */
-  reattachTask: (taskId: string): Promise<boolean> =>
-    ipcRenderer.invoke("ai:reattachTask", taskId),
+  reattachTask: (taskId: string, startIndex?: number): Promise<boolean> =>
+    ipcRenderer.invoke("ai:reattachTask", taskId, startIndex),
   stopGeneration: (taskId: string) =>
     ipcRenderer.invoke("ai:stopGeneration", { taskId }),
 
@@ -422,6 +424,20 @@ const api = {
   },
 
   // AI 流式事件
+  onStreamEvent: (
+    callback: (data: { id: string; channel: string; index: number }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        channel: string;
+        index: number;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-event", handler);
+    return () => ipcRenderer.removeListener("ai:stream-event", handler);
+  },
   onStreamStart: (
     callback: (data: {
       id: string;

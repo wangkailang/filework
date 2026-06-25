@@ -337,6 +337,38 @@ export class JsonlSessionStore {
     );
   }
 
+  async appendMessagePart(
+    sessionId: string,
+    messageId: string,
+    part: MessagePart,
+    options: { contentFallback?: string; timestamp?: string } = {},
+  ): Promise<boolean> {
+    const loc = await this.locate(sessionId);
+    if (!loc) return false;
+
+    const records = await this.readAllRecords(loc.filePath);
+    const sessionLine = records[0];
+    if (!sessionLine || sessionLine.kind !== "session") return false;
+
+    const message = records.find(
+      (record): record is MessageLine =>
+        record.kind === "message" && record.id === messageId,
+    );
+    if (!message) return false;
+
+    message.parts = [
+      ...(message.parts ?? []),
+      ...stripTransientPreview([part]),
+    ];
+    if (!message.content && options.contentFallback) {
+      message.content = options.contentFallback;
+    }
+    sessionLine.updatedAt = options.timestamp ?? new Date().toISOString();
+
+    await this.atomicWrite(loc.filePath, renderRecords(records));
+    return true;
+  }
+
   // ─── 原子写入辅助(也供迁移逻辑使用) ────────────────────────────
 
   /**

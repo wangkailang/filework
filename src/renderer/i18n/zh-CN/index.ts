@@ -528,6 +528,7 @@ const zhCN: Translation = {
   branch_diff_compareBase: "对比基线",
   branch_diff_filterFiles: "筛选文件...",
   branch_diff_toggleTree: "文件树",
+  branch_diff_singleFileHint: "每次只显示一个差异文件,点击左侧文件列表切换",
   branch_diff_ahead: "未推送 {0}",
   branch_diff_behind: "落后 {0}",
   branch_diff_uncommitted: "未提交 {0}",

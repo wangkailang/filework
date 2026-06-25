@@ -1971,6 +1971,10 @@ type RootTranslation = {
 	 */
 	branch_diff_toggleTree: string
 	/**
+	 * S​h​o​w​i​n​g​ ​o​n​e​ ​c​h​a​n​g​e​d​ ​f​i​l​e​ ​a​t​ ​a​ ​t​i​m​e​.​ ​S​e​l​e​c​t​ ​a​ ​f​i​l​e​ ​o​n​ ​t​h​e​ ​l​e​f​t​ ​t​o​ ​s​w​i​t​c​h​.
+	 */
+	branch_diff_singleFileHint: string
+	/**
 	 * {​0​}​ ​u​n​p​u​s​h​e​d
 	 * @param {unknown} 0
 	 */
@@ -4522,6 +4526,10 @@ export type TranslationFunctions = {
 	 * File tree
 	 */
 	branch_diff_toggleTree: () => LocalizedString
+	/**
+	 * Showing one changed file at a time. Select a file on the left to switch.
+	 */
+	branch_diff_singleFileHint: () => LocalizedString
 	/**
 	 * {0} unpushed
 	 */

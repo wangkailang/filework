@@ -1,11 +1,6 @@
-import { GitBranch, PanelRight, RefreshCw } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { GitBranch, PanelLeft, RefreshCw } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import type { GitFileDiff } from "../../../main/core/git-diff/types";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import {
@@ -106,7 +101,7 @@ export function BranchDiffPanel({
     invalidator,
   });
 
-  // 文件树:可收起(持久化),点击文件滚动定位到左侧对应卡片并高亮。
+  // 文件树:可收起(持久化),点击文件切换右侧单文件 diff。
   const [treeCollapsed, setTreeCollapsed] = useState<boolean>(
     () => localStorage.getItem("filework-diff-tree-collapsed") === "1",
   );
@@ -118,23 +113,30 @@ export function BranchDiffPanel({
     });
   }, []);
   const [activePath, setActivePath] = useState<string | null>(null);
-  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const registerRef = (path: string, el: HTMLDivElement | null) => {
-    if (el) cardRefs.current.set(path, el);
-    else cardRefs.current.delete(path);
-  };
   const handleSelectFile = (path: string) => {
     setActivePath(path);
-    cardRefs.current
-      .get(path)
-      ?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
   const hasFiles = !!data && !data.notAvailable && data.files.length > 0;
+  useEffect(() => {
+    if (!data || data.notAvailable || data.files.length === 0) {
+      if (activePath !== null) setActivePath(null);
+      return;
+    }
+    if (!activePath || !data.files.some((file) => file.path === activePath)) {
+      setActivePath(data.files[0]?.path ?? null);
+    }
+  }, [data, activePath]);
+
+  const activeFile =
+    data && !data.notAvailable && data.files.length > 0
+      ? (data.files.find((file) => file.path === activePath) ?? data.files[0])
+      : null;
+  const effectiveActivePath = activeFile?.path ?? null;
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+    <div className="flex h-full w-full flex-col bg-surface-sunken">
+      <header className="flex min-h-10 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium">
             {data?.headBranch
@@ -185,7 +187,7 @@ export function BranchDiffPanel({
             title={LL.branch_diff_toggleTree()}
             aria-pressed={!treeCollapsed}
           >
-            <PanelRight
+            <PanelLeft
               className={cn(
                 "size-3.5",
                 treeCollapsed ? "text-muted-foreground" : "text-primary",
@@ -195,18 +197,18 @@ export function BranchDiffPanel({
         )}
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="flex-1 space-y-1.5 overflow-y-auto p-3">
-          {renderBody({ data, loading, error, LL, registerRef, activePath })}
-        </div>
+      <div className="flex min-h-0 flex-1 bg-surface-sunken">
         {hasFiles && !treeCollapsed && data && (
           <BranchDiffFileTree
             files={data.files}
-            activePath={activePath}
+            activePath={effectiveActivePath}
             onSelect={handleSelectFile}
             filterPlaceholder={LL.branch_diff_filterFiles()}
           />
         )}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          {renderBody({ data, loading, error, LL, activeFile })}
+        </div>
       </div>
     </div>
   );
@@ -302,10 +304,8 @@ interface BodyArgs {
   loading: boolean;
   error: string | null;
   LL: ReturnType<typeof useI18nContext>["LL"];
-  /** 注册/注销每个文件卡片的 DOM 节点,供文件树点击时滚动定位。 */
-  registerRef: (path: string, el: HTMLDivElement | null) => void;
-  /** 当前在文件树中选中的文件路径(用于卡片高亮)。 */
-  activePath: string | null;
+  /** 当前选中的单个文件。 */
+  activeFile: GitFileDiff | null;
 }
 
 function renderBody({
@@ -313,8 +313,7 @@ function renderBody({
   loading,
   error,
   LL,
-  registerRef,
-  activePath,
+  activeFile,
 }: BodyArgs): ReactNode {
   if (loading && !data) {
     return <div className="text-xs text-muted-foreground italic">…</div>;
@@ -366,22 +365,20 @@ function renderBody({
   return (
     <>
       {data.truncated && (
-        <div className="text-xs text-amber-400 mb-1">
-          {LL.preview_diff_truncated()}
+        <div
+          data-branch-diff-single-file-hint="true"
+          className="border-b border-border-faint bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+        >
+          {LL.branch_diff_singleFileHint()}
         </div>
       )}
-      {data.files.map((f) => (
-        <div
-          key={`${f.status}-${f.path}`}
-          ref={(el) => registerRef(f.path, el)}
-          className={cn(
-            "scroll-mt-2 rounded-md",
-            activePath === f.path && "ring-1 ring-primary/40",
-          )}
-        >
-          <BranchDiffFileCard file={f} LL={LL} />
-        </div>
-      ))}
+      {activeFile && (
+        <BranchDiffFileCard
+          key={`${activeFile.status}-${activeFile.path}`}
+          file={activeFile}
+          LL={LL}
+        />
+      )}
     </>
   );
 }

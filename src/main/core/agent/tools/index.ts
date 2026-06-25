@@ -31,6 +31,10 @@ import {
   isDeliverableCommand,
   parseTestStats,
 } from "./command-classify";
+import {
+  projectCommandModelOutput,
+  projectReadFileModelOutput,
+} from "./model-output";
 import { emptyTrash, listTrash, moveToTrash, restoreFromTrash } from "./trash";
 
 // ---------------------------------------------------------------------------
@@ -329,6 +333,8 @@ const readFileTool: ToolDefinition<{ path: string }, string> = {
   description: "Read the text content of a file",
   safety: "safe",
   inputSchema: pathSchema,
+  toModelOutput: ({ input, output }) =>
+    projectReadFileModelOutput({ input, output }),
   execute: async (args, ctx) => {
     const rel = await resolveRel(ctx.workspace, args.path);
     const content = await ctx.workspace.fs.readFile(rel);
@@ -546,6 +552,8 @@ function runCommandTool(
     description: parts.join("\n\n"),
     safety: "destructive",
     inputSchema: runCommandSchema,
+    toModelOutput: ({ input, output }) =>
+      projectCommandModelOutput({ input, output }),
     execute: async (args, ctx) => {
       const cwdRel = args.cwd
         ? await resolveRel(ctx.workspace, args.cwd)
@@ -617,6 +625,8 @@ const readShellOutputTool: ToolDefinition<
     "Read incremental stdout/stderr from a background shell. Returns only output produced since the previous call (per-stream offset is server-maintained). Use to poll a dev server until you see the ready marker like `Local: http://localhost:PORT`.",
   safety: "safe",
   inputSchema: readShellOutputSchema,
+  toModelOutput: ({ input, output }) =>
+    projectCommandModelOutput({ input, output, label: "readShellOutput" }),
   execute: async (args) => {
     const result = readShell(args.shellId);
     if (!result) {

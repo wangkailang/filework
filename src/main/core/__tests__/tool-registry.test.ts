@@ -199,5 +199,61 @@ describe("ToolRegistry", () => {
       };
       expect(result.reason).toBe("Tool call denied");
     });
+
+    it("keeps raw tool output observable while projecting model-visible output", async () => {
+      const reg = new ToolRegistry();
+      const observed = vi.fn();
+      const rawOutput = {
+        rows: [
+          { id: "alpha", secret: "full row A" },
+          { id: "beta", secret: "full row B" },
+        ],
+        total: 2,
+      };
+
+      reg.register({
+        name: "queryRows",
+        description: "Query rows",
+        safety: "safe",
+        inputSchema: z.object({ table: z.string() }),
+        outputSchema: z.object({
+          rows: z.array(z.object({ id: z.string(), secret: z.string() })),
+          total: z.number(),
+        }),
+        execute: async () => rawOutput,
+        toModelOutput: ({ output }) => ({
+          type: "text",
+          value: `Returned ${output.total} rows.`,
+        }),
+      });
+
+      const sdkTools = reg.toAiSdkTools({
+        ctxFactory: () => stubCtx(),
+        onToolResult: observed,
+      });
+      const exec = sdkTools.queryRows.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+
+      const result = await exec({ table: "customers" }, { toolCallId: "q1" });
+      expect(result).toEqual(rawOutput);
+      expect(observed).toHaveBeenCalledWith({
+        toolName: "queryRows",
+        toolCallId: "q1",
+        args: { table: "customers" },
+        rawOutput,
+      });
+
+      const modelOutput = await sdkTools.queryRows.toModelOutput?.({
+        toolCallId: "q1",
+        input: { table: "customers" },
+        output: rawOutput,
+      });
+      expect(modelOutput).toEqual({
+        type: "text",
+        value: "Returned 2 rows.",
+      });
+    });
   });
 });
