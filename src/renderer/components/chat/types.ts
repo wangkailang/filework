@@ -65,6 +65,7 @@ export interface ChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
+  lastActiveBranch?: string | null;
   automationRun?: {
     id: string;
     automationId: string;

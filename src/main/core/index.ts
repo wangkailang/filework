@@ -52,6 +52,7 @@ export {
   moveFileTool,
   readFileTool,
   runCommandTool,
+  runProcessTool,
   type WorkspaceEntryLike,
   writeFileTool,
 } from "./agent/tools";

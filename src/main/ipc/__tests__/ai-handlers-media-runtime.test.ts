@@ -53,6 +53,8 @@ const taskControlMock = vi.hoisted(() => ({
   toolCallToTaskMap: new Map<string, string>(),
 }));
 
+const agentLoopRunMock = vi.hoisted(() => vi.fn());
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: vi.fn((channel: string, handler: IpcHandler) => {
@@ -96,9 +98,11 @@ vi.mock("../../ai/task-trace-store", () => ({
 }));
 
 vi.mock("../../core/agent/agent-loop", () => ({
-  AgentLoop: vi.fn(() => {
-    throw new Error("AgentLoop should not run for media modalities");
-  }),
+  AgentLoop: vi.fn(
+    class {
+      run = agentLoopRunMock;
+    },
+  ),
 }));
 
 vi.mock("../../core/workspace/workspace-memory", () => ({
@@ -143,7 +147,47 @@ vi.mock("../../skills-runtime", () => ({
 }));
 
 vi.mock("../agent-tools", () => ({
-  buildAgentToolRegistry: vi.fn(),
+  buildAgentToolRegistry: vi.fn(() => ({
+    toAiSdkTools: vi.fn(() => ({})),
+  })),
+  shouldEnableMemoryToolsForPrompt: vi.fn(() => false),
+}));
+
+vi.mock("../ai-models", () => ({
+  getModelAndAdapterByConfigId: vi.fn(() => ({
+    adapter: { extractCacheMetrics: vi.fn(() => ({})) },
+    generationOptions: {},
+    model: "chat-model",
+    providerOptions: {},
+  })),
+  isAvailableLlmConfig: vi.fn(() => true),
+  selectAvailableChatLlmConfig: vi.fn(() => ({
+    config: {
+      apiKey: "sk-test",
+      apiPath: null,
+      baseUrl: "https://api.openai.com",
+      createdAt: "2026-06-23T09:00:00.000Z",
+      enabled: true,
+      id: "chat-cfg",
+      isDefault: false,
+      lastCheckedAt: "2026-06-23T09:00:00.000Z",
+      lastCheckMessage: "ok",
+      lastCheckStatus: "success",
+      maxOutputTokens: null,
+      modality: "chat",
+      model: "chat-model",
+      modelAvailable: true,
+      modelCapabilities: null,
+      modelCatalogFetchedAt: null,
+      name: "chat config",
+      provider: "openai",
+      reasoningEffort: null,
+      temperature: null,
+      topP: null,
+      updatedAt: "2026-06-23T09:00:00.000Z",
+    },
+    fallbackFromConfigId: null,
+  })),
 }));
 
 vi.mock("../ai-plan-handlers", () => ({
@@ -217,6 +261,9 @@ describe("ai:executeTask media modality routing", () => {
   beforeEach(() => {
     ipcHandlers.clear();
     vi.clearAllMocks();
+    agentLoopRunMock.mockImplementation(() => {
+      throw new Error("AgentLoop run was not configured for this test");
+    });
     taskControlMock.abortControllers.clear();
     dbMock.listSkillTrust.mockReturnValue([]);
     let eventIndex = 0;
@@ -225,6 +272,68 @@ describe("ai:executeTask media modality routing", () => {
         channel,
         index: eventIndex++,
         payload,
+      }),
+    );
+  });
+
+  it("stores parent plus subagent token usage for chat tasks", async () => {
+    agentLoopRunMock.mockImplementation(async function* () {
+      yield {
+        type: "tool_execution_end" as const,
+        agentId: "parent-task",
+        toolCallId: "tool-spawn",
+        toolName: "spawnSubagent",
+        result: {
+          success: true,
+          reports: [
+            {
+              usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+            },
+            {
+              usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
+            },
+          ],
+        },
+        success: true,
+        durationMs: 0,
+      };
+      yield {
+        type: "agent_end" as const,
+        agentId: "parent-task",
+        status: "completed",
+        finalText: "Done",
+        totalUsage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      };
+    });
+
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:executeTask");
+    expect(handler).toBeTypeOf("function");
+
+    const sender = {
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn(),
+    };
+
+    const result = await handler?.(
+      { sender },
+      {
+        assistantMessageId: "assistant-chat",
+        llmConfigId: "chat-cfg",
+        prompt: "Research with subagents",
+        sessionId: "session-chat",
+        workspacePath: process.cwd(),
+      },
+    );
+
+    expect(result).toMatchObject({ status: "completed" });
+    expect(dbMock.updateTask).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        inputTokens: 130,
+        outputTokens: 30,
+        totalTokens: 160,
       }),
     );
   });

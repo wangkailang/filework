@@ -46,6 +46,7 @@ const makeLL = (locale: "en" | "zh"): TranslationFunctions =>
     toolName_moveFile: () => "moveFile",
     toolName_readFile: () => "readFile",
     toolName_runCommand: () => "runCommand",
+    toolName_runProcess: () => "runProcess",
     toolName_spawnSubagent: () =>
       locale === "zh" ? "启动子任务" : "Start Subagents",
     toolName_automationUpdate: () =>

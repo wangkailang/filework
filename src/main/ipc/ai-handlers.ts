@@ -114,6 +114,10 @@ import {
 } from "./media-runtime";
 import { registerMemoryDebugHandlers } from "./memory-debug-handlers";
 import { buildAgentSystemPrompt } from "./system-prompt";
+import {
+  mergeTokenUsage,
+  subagentUsageFromToolResult,
+} from "./usage-aggregation";
 import { registerUsageHandlers } from "./usage-handlers";
 import { registerWorkspaceMemoryHandlers } from "./workspace-memory-handlers";
 
@@ -742,6 +746,7 @@ const handleTaskExecutionInner = async (
     let agentOutputTokens: number | null = null;
     let agentTotalTokens: number | null = null;
     let agentProviderMeta: Record<string, unknown> | undefined;
+    let subagentUsage = mergeTokenUsage();
 
     const workspace =
       ref.kind === "local"
@@ -938,6 +943,12 @@ const handleTaskExecutionInner = async (
             break;
           }
           case "tool_execution_end":
+            if (ev.toolName === "spawnSubagent") {
+              subagentUsage = mergeTokenUsage(
+                subagentUsage,
+                subagentUsageFromToolResult(ev.result),
+              );
+            }
             sender.send("ai:stream-tool-result", {
               id,
               toolCallId: ev.toolCallId,
@@ -1047,24 +1058,28 @@ const handleTaskExecutionInner = async (
             // completed,以保持 IPC 一致(M1 之前的路径在中止时也会调用
             // ai:stream-done)。
             const wasCancelled = ev.status === "cancelled" || manualStop;
+            const combinedUsage = mergeTokenUsage(
+              {
+                inputTokens: agentInputTokens,
+                outputTokens: agentOutputTokens,
+                totalTokens: agentTotalTokens,
+              },
+              subagentUsage,
+            );
             updateTask(id, {
               status: "completed",
               result: fullText,
               completedAt: new Date().toISOString(),
               modelId: llmConfig?.model ?? null,
               provider: llmConfig?.provider ?? null,
-              inputTokens: agentInputTokens,
-              outputTokens: agentOutputTokens,
-              totalTokens: agentTotalTokens,
+              inputTokens: combinedUsage.inputTokens,
+              outputTokens: combinedUsage.outputTokens,
+              totalTokens: combinedUsage.totalTokens,
             });
             finishAutomationRunForTask(payload.automationRunId, {
               status: wasCancelled ? "canceled" : "succeeded",
               output: fullText,
-              usage: {
-                inputTokens: agentInputTokens,
-                outputTokens: agentOutputTokens,
-                totalTokens: agentTotalTokens,
-              },
+              usage: combinedUsage,
             });
             // 通过 provider adapter 处理缓存事件
             try {
@@ -1097,9 +1112,9 @@ const handleTaskExecutionInner = async (
               timestamp: new Date().toISOString(),
               detail: {
                 status: "completed",
-                inputTokens: agentInputTokens,
-                outputTokens: agentOutputTokens,
-                totalTokens: agentTotalTokens,
+                inputTokens: combinedUsage.inputTokens,
+                outputTokens: combinedUsage.outputTokens,
+                totalTokens: combinedUsage.totalTokens,
               },
             });
             void appendPattern({
@@ -1107,7 +1122,7 @@ const handleTaskExecutionInner = async (
               ts: new Date().toISOString(),
               taskId: id,
               status: wasCancelled ? "cancelled" : "completed",
-              totalUsage: ev.totalUsage,
+              totalUsage: combinedUsage,
               durationMs: Date.now() - taskStartMs,
             });
             if (!sender.isDestroyed()) {

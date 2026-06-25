@@ -7,6 +7,32 @@ import type {
   ToolPart,
 } from "./types";
 
+const hasTextDelivery = (part: MessagePart): boolean =>
+  part.type === "text" && part.text.trim().length > 0;
+
+const hasMediaDelivery = (part: MessagePart): boolean => {
+  switch (part.type) {
+    case "image":
+      return Boolean(part.path);
+    case "image-gallery":
+      return part.images.length > 0;
+    case "video-gallery":
+      return part.videos.length > 0;
+    case "video-job":
+      return part.status === "succeeded" && Boolean(part.resultPath);
+    default:
+      return false;
+  }
+};
+
+const hasCompletionEvidenceAfter = (
+  parts: MessagePart[],
+  partIndex: number,
+): boolean =>
+  parts
+    .slice(partIndex + 1)
+    .some((part) => hasTextDelivery(part) || hasMediaDelivery(part));
+
 export const finalizePartsForSettledTask = (
   parts: MessagePart[],
   options: { status: "completed" | "cancelled"; cancelledReason?: string },
@@ -29,7 +55,7 @@ export const finalizePartsForSettledTask = (
     });
   }
 
-  return parts.map((part) => {
+  return parts.map((part, partIndex) => {
     if (part.type === "plan") {
       const planPart = part as PlanMessagePart;
       if (
@@ -50,6 +76,10 @@ export const finalizePartsForSettledTask = (
       const hadPendingSteps = planPart.plan.steps.some(
         (step) => step.status === "pending",
       );
+      const hasCompletionEvidence = hasCompletionEvidenceAfter(
+        parts,
+        partIndex,
+      );
       const steps = planPart.plan.steps.map((step) => {
         if (step.status === "running") {
           return {
@@ -62,6 +92,16 @@ export const finalizePartsForSettledTask = (
           };
         }
         if (step.status === "pending") {
+          if (hasCompletionEvidence) {
+            return {
+              ...step,
+              status: "completed" as const,
+              subSteps: step.subSteps?.map((subStep) => ({
+                ...subStep,
+                status: "done" as const,
+              })),
+            };
+          }
           return { ...step, status: "skipped" as const };
         }
         return step;
@@ -71,7 +111,8 @@ export const finalizePartsForSettledTask = (
         plan: {
           ...planPart.plan,
           status:
-            steps.some((step) => step.status === "failed") || hadPendingSteps
+            steps.some((step) => step.status === "failed") ||
+            (hadPendingSteps && !hasCompletionEvidence)
               ? ("failed" as const)
               : ("completed" as const),
           steps,

@@ -114,6 +114,33 @@ describe("LocalWorkspace", () => {
       expect(result.stdout.trim()).toBe("hi");
     });
 
+    it("runs a structured process without shell-parsing special path characters", async () => {
+      const specialDir = "一周99(1)";
+      const specialArg = "boggle_solver(1).py";
+      await ws.fs.mkdir(specialDir, { recursive: true });
+
+      const execWithProcess = ws.exec as typeof ws.exec & {
+        runProcess: (
+          executable: string,
+          args: string[],
+          opts?: { cwd?: string },
+        ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+      };
+      const result = await execWithProcess.runProcess(
+        process.execPath,
+        [
+          "-e",
+          "console.log(process.cwd()); console.log(process.argv[1])",
+          specialArg,
+        ],
+        { cwd: specialDir },
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(specialDir);
+      expect(result.stdout).toContain(specialArg);
+    });
+
     it("rejects an absolute cwd outside workspace", async () => {
       await expect(ws.exec.run("ls", { cwd: outside })).rejects.toBeInstanceOf(
         WorkspaceEscapeError,

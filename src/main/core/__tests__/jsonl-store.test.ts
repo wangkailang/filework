@@ -52,6 +52,32 @@ describe("JsonlSessionStore", () => {
       expect(list[0].title).toBe("First chat");
     });
 
+    it("persists the session branch independently from the workspace branch", async () => {
+      const ws = "/some/workspace";
+      const session = await store.createSession(ws, "Branch chat", {
+        lastActiveBranch: "feature/original",
+      });
+      expect(session.lastActiveBranch).toBe("feature/original");
+
+      await store.saveMessages(
+        session.id,
+        ws,
+        [
+          {
+            id: "m1",
+            sessionId: session.id,
+            role: "user",
+            content: "continue",
+            timestamp: "2026-05-09T22:00:00.000Z",
+          },
+        ],
+        { lastActiveBranch: "feature/continued" },
+      );
+
+      const [listed] = await store.listSessions(ws);
+      expect(listed.lastActiveBranch).toBe("feature/continued");
+    });
+
     it("listSessions skips sessions with no messages (empty-session filter)", async () => {
       const ws = "/ws";
       const empty = await store.createSession(ws, "drafted, never sent");

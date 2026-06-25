@@ -33,15 +33,17 @@ const ChatSessionContext = createContext<ChatSessionValue | null>(null);
 const ChatSessionLiteContext = createContext<ChatSessionLiteValue | null>(null);
 
 export const ChatSessionProvider = ({
+  activeBranch,
   workspacePath,
   workspaceRefJson,
   children,
 }: {
+  activeBranch?: string | null;
   workspacePath: string;
   workspaceRefJson?: string;
   children: React.ReactNode;
 }) => {
-  const value = useChatSession(workspacePath, workspaceRefJson);
+  const value = useChatSession(workspacePath, workspaceRefJson, activeBranch);
   const lite = useMemo<ChatSessionLiteValue>(
     () => ({
       sessions: value.sessions,

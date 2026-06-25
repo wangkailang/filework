@@ -16,7 +16,7 @@ import type { Tool, ToolExecutionOptions } from "ai";
 import { tool as defineAiTool } from "ai";
 import type { z } from "zod/v4";
 
-import type { Workspace } from "../workspace/types";
+import { type Workspace, WorkspaceEscapeError } from "../workspace/types";
 import { capToolResult } from "./cap-tool-result";
 
 export interface ToolContext {
@@ -94,6 +94,17 @@ export interface ToolObservedResult {
 export type ToolResultObserver = (
   result: ToolObservedResult,
 ) => void | Promise<void>;
+
+function recoverableToolError(error: unknown): unknown | null {
+  if (error instanceof WorkspaceEscapeError) {
+    return {
+      success: false,
+      error: error.message,
+      hint: "This path is outside the workspace. Write scratch files under the workspace root (for example .filework/tmp/...) and run them with cwd plus a relative path.",
+    };
+  }
+  return null;
+}
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
@@ -203,7 +214,14 @@ export class ToolRegistry {
         // 通用来源上限:在任何工具的结果进入模型上下文之前对其设界,
         // 使得任何工具(内置 / web / MCP)都无法撑爆消费它的
         // 那个步骤。参见 cap-tool-result.ts。
-        const rawOutput = await def.execute(args as never, ctx);
+        let rawOutput: unknown;
+        try {
+          rawOutput = await def.execute(args as never, ctx);
+        } catch (error) {
+          const recovered = recoverableToolError(error);
+          if (recovered == null) throw error;
+          rawOutput = recovered;
+        }
         await opts.onToolResult?.({
           toolName: def.name,
           toolCallId: execOpts.toolCallId,

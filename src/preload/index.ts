@@ -1582,13 +1582,20 @@ const api = {
   },
 
   // 聊天会话
-  createChatSession: (workspacePath: string, title?: string) =>
-    ipcRenderer.invoke("chat:createSession", workspacePath, title),
+  createChatSession: (
+    workspacePath: string,
+    title?: string,
+    options?: { lastActiveBranch?: string | null },
+  ) => ipcRenderer.invoke("chat:createSession", workspacePath, title, options),
   getChatSessions: (workspacePath: string) =>
     ipcRenderer.invoke("chat:getSessions", workspacePath),
   updateChatSession: (
     sessionId: string,
-    updates: { title?: string; updatedAt?: string },
+    updates: {
+      lastActiveBranch?: string | null;
+      title?: string;
+      updatedAt?: string;
+    },
   ) => ipcRenderer.invoke("chat:updateSession", sessionId, updates),
   deleteChatSession: (sessionId: string) =>
     ipcRenderer.invoke("chat:deleteSession", sessionId),
@@ -1602,8 +1609,15 @@ const api = {
     sessionId: string,
     workspacePath: string,
     messages: unknown[],
+    options?: { lastActiveBranch?: string | null },
   ) =>
-    ipcRenderer.invoke("chat:saveHistory", sessionId, workspacePath, messages),
+    ipcRenderer.invoke(
+      "chat:saveHistory",
+      sessionId,
+      workspacePath,
+      messages,
+      options,
+    ),
 };
 
 contextBridge.exposeInMainWorld("filework", api);

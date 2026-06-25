@@ -22,7 +22,11 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { getSandboxLauncher } from "../sandbox";
+import {
+  buildSeatbeltProfile,
+  getSandboxLauncher,
+  isSandboxEffective,
+} from "../sandbox";
 import type {
   ExecOptions,
   ExecResult,
@@ -242,7 +246,7 @@ class LocalWorkspaceExec implements WorkspaceExec {
     private readonly fs: LocalWorkspaceFS,
   ) {}
 
-  async run(command: string, opts?: ExecOptions): Promise<ExecResult> {
+  private async cwdAbs(opts?: ExecOptions): Promise<string> {
     let cwdAbs = this.root;
     if (opts?.cwd) {
       const candidate = path.isAbsolute(opts.cwd)
@@ -251,6 +255,14 @@ class LocalWorkspaceExec implements WorkspaceExec {
       const rel = await this.fs.toRelative(candidate);
       cwdAbs = this.fs.resolve(rel);
     }
+    return cwdAbs;
+  }
+
+  private async spawnAndCapture(
+    launch: { file: string; args: string[]; shell?: boolean },
+    cwdAbs: string,
+    opts?: ExecOptions,
+  ): Promise<ExecResult> {
     const timeoutMs = opts?.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
 
     return new Promise<ExecResult>((resolve, reject) => {
@@ -267,11 +279,6 @@ class LocalWorkspaceExec implements WorkspaceExec {
         else resolve(value as ExecResult);
       };
 
-      // 沙箱包裹:有 policy 走 launcher(darwin 上 sandbox-exec),
-      // 无 policy 则 passthrough,等价旧的 `spawn(command, [], {shell:true})`。
-      const launch = opts?.sandbox
-        ? getSandboxLauncher(opts.sandbox).buildSpawn(command, { cwd: cwdAbs })
-        : { file: command, args: [], shell: true };
       const child = spawn(launch.file, launch.args, {
         cwd: cwdAbs,
         shell: launch.shell ?? false,
@@ -347,6 +354,38 @@ class LocalWorkspaceExec implements WorkspaceExec {
         else opts.signal.addEventListener("abort", onAbort, { once: true });
       }
     });
+  }
+
+  async run(command: string, opts?: ExecOptions): Promise<ExecResult> {
+    const cwdAbs = await this.cwdAbs(opts);
+    // 沙箱包裹:有 policy 走 launcher(darwin 上 sandbox-exec),
+    // 无 policy 则 passthrough,等价旧的 `spawn(command, [], {shell:true})`。
+    const launch = opts?.sandbox
+      ? getSandboxLauncher(opts.sandbox).buildSpawn(command, { cwd: cwdAbs })
+      : { file: command, args: [], shell: true };
+    return this.spawnAndCapture(launch, cwdAbs, opts);
+  }
+
+  async runProcess(
+    executable: string,
+    args: string[] = [],
+    opts?: ExecOptions,
+  ): Promise<ExecResult> {
+    const cwdAbs = await this.cwdAbs(opts);
+    const launch =
+      opts?.sandbox && isSandboxEffective(opts.sandbox.mode)
+        ? {
+            file: "/usr/bin/sandbox-exec",
+            args: [
+              "-p",
+              buildSeatbeltProfile(opts.sandbox),
+              executable,
+              ...args,
+            ],
+            shell: false,
+          }
+        : { file: executable, args, shell: false };
+    return this.spawnAndCapture(launch, cwdAbs, opts);
   }
 }
 

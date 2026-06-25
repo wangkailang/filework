@@ -117,6 +117,59 @@ describe("finalizePartsForSettledTask", () => {
     });
   });
 
+  it("completes stale pending plan steps when the task delivered a final answer", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "plan",
+        plan: {
+          id: "inline-task-1",
+          goal: "Compare frontend state managers",
+          status: "executing",
+          steps: [
+            {
+              id: 1,
+              action: "Research React state management",
+              description: "",
+              status: "completed",
+            },
+            {
+              id: 2,
+              action: "Research Vue state management",
+              description: "",
+              status: "pending",
+            },
+            {
+              id: 3,
+              action: "Research Svelte state management",
+              description: "",
+              status: "pending",
+            },
+          ],
+        },
+      },
+      {
+        type: "text",
+        text: "React, Vue, and Svelte research is complete. Here are the conclusions.",
+      },
+    ];
+
+    const finalized = finalizePartsForSettledTask(parts, {
+      status: "completed",
+    });
+
+    expect(finalized[0]).toMatchObject({
+      type: "plan",
+      plan: {
+        status: "completed",
+        steps: [
+          { status: "completed" },
+          { status: "completed" },
+          { status: "completed" },
+        ],
+      },
+    });
+  });
+
   it("clears running and pending steps when an executing plan is cancelled", () => {
     const parts: MessagePart[] = [
       {

@@ -153,6 +153,14 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toMatch(/Acknowledge mistakes briefly/i);
   });
 
+  it("default prompt grounds command-failure recovery in tool output instead of sandbox guesses", () => {
+    const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
+    expect(prompt).toMatch(/stderr|Hint/i);
+    expect(prompt).toMatch(/sandbox/i);
+    expect(prompt).toMatch(/same command.*local terminal/i);
+    expect(prompt).toMatch(/TLS|SSL|proxy/i);
+  });
+
   it("default prompt routes reminders and recurring follow-ups through automation_update", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
     expect(prompt).toContain("automation_update");
@@ -181,11 +189,13 @@ describe("buildAgentSystemPrompt", () => {
 
   it("deterministic-computation rule names a code-execution path and forbids in-prose math", () => {
     const prompt = buildAgentSystemPrompt({ workspacePath: WORKSPACE });
-    // 必须把模型引向 runCommand(锚定工具名,这样若被泛化改写、丢掉了
-    // 可执行的指令,测试就会失败)
+    // 必须把模型引向结构化执行路径(锚定工具名,这样若被泛化改写、丢掉了
+    // 可执行的指令,测试就会失败),并保留 runCommand 作为 shell 语法 fallback。
+    expect(prompt).toContain("runProcess");
     expect(prompt).toContain("runCommand");
-    // 必须至少提到一个具体的解释器,让模型有现成可用的调用范式
-    expect(prompt).toMatch(/python3 -c|node -e/);
+    // 必须至少提到一个具体的解释器和 argv,让模型有现成可用的调用范式。
+    expect(prompt).toContain("python3");
+    expect(prompt).toMatch(/argv/i);
     // 必须提到 BigInt —— 否则大于 2^53 的整数在 node 中会悄无声息地丢失
     // 精度,而这正是本规则要防止的失败模式
     expect(prompt).toContain("BigInt");

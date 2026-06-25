@@ -14,6 +14,7 @@ export const getToolLabels = (
   findDuplicates: LL.toolName_findDuplicates(),
   automation_update: LL.toolName_automationUpdate(),
   runCommand: LL.toolName_runCommand(),
+  runProcess: LL.toolName_runProcess(),
   webSearch: LL.toolName_webSearch(),
   webFetch: LL.toolName_webFetch(),
   webFetchRendered: LL.toolName_webFetchRendered(),

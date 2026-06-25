@@ -506,6 +506,7 @@ export const App = () => {
       ) : (
         <div className="flex h-screen w-screen flex-col overflow-hidden">
           <ChatSessionProvider
+            activeBranch={branchForChip}
             key={workspace.localPath}
             workspacePath={workspace.localPath}
             workspaceRefJson={workspaceRefJson}

@@ -164,7 +164,11 @@ const listDirectorySchema = z.object({
 });
 
 const writeFileSchema = z.object({
-  path: z.string().describe("Absolute path to the file"),
+  path: z
+    .string()
+    .describe(
+      "Path to the file inside the workspace. Absolute paths are accepted only when they resolve inside the workspace root; do not use /tmp or other outside paths.",
+    ),
   content: z.string().describe("Content to write"),
 });
 
@@ -179,7 +183,7 @@ const runCommandSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Working directory. Accepts any absolute path, including locations outside the workspace (pair with escalatePermissions for those). Defaults to the workspace root. Use this instead of `cd <dir> &&` in the command.",
+      "Working directory inside the workspace. Defaults to the workspace root. Use this instead of `cd <dir> &&` in the command.",
     ),
   runInBackground: z
     .boolean()
@@ -200,6 +204,40 @@ const runCommandSchema = z.object({
     .optional()
     .describe(
       "One short sentence shown to the user explaining why escalatePermissions is needed (e.g. 'pnpm install needs network').",
+    ),
+});
+
+const runProcessSchema = z.object({
+  executable: z
+    .string()
+    .describe(
+      "Executable to run, for example python3, node, pnpm, or an absolute executable path.",
+    ),
+  args: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe(
+      "Argument vector passed directly to the executable without shell parsing. Put each argument in its own array item.",
+    ),
+  cwd: z
+    .string()
+    .optional()
+    .describe(
+      "Working directory inside the workspace. Defaults to the workspace root. Use this instead of passing a long absolute script path.",
+    ),
+  escalatePermissions: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Set true ONLY when the process genuinely needs network or writes outside the workspace. Triggers a user approval prompt.",
+    ),
+  justification: z
+    .string()
+    .optional()
+    .describe(
+      "One short sentence shown to the user explaining why escalatePermissions is needed.",
     ),
 });
 
@@ -513,6 +551,86 @@ const emptyTrashTool: ToolDefinition<
  */
 const BACKGROUND_GUIDANCE = `Long-running commands (dev servers, watchers, REPLs) MUST use \`runInBackground: true\`. Foreground mode buffers stdout in memory and only returns when the child closes — for a dev server that never happens, so the agent hangs. Background mode returns a shellId immediately plus the first ~2s of output; use \`readShellOutput(shellId)\` to poll until you see the ready marker (e.g., \`Local: http://localhost:PORT\`), then \`killShell(shellId)\` when done.`;
 
+const quoteForDisplay = (value: string): string =>
+  /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : JSON.stringify(value);
+
+const formatProcessCommand = (input: {
+  executable: string;
+  args?: string[];
+}): string =>
+  [input.executable, ...(input.args ?? [])].map(quoteForDisplay).join(" ");
+
+function shellSyntaxHint(result: {
+  stdout: string;
+  stderr: string;
+}): string | undefined {
+  const output = `${result.stderr}\n${result.stdout}`;
+  if (!/syntax error.*(unexpected|near unexpected token)/i.test(output)) {
+    return undefined;
+  }
+  return "The shell parsed an unquoted special character, often from a path containing spaces or parentheses. Prefer runProcess with executable/args, or set cwd to the target directory and pass a relative path.";
+}
+
+function hostNetworkTransportHint(result: {
+  stdout: string;
+  stderr: string;
+}): string | undefined {
+  const output = `${result.stderr}\n${result.stdout}`;
+  if (
+    !/(SSL_ERROR_SYSCALL|LibreSSL SSL_connect|OpenSSL SSL_connect|curl:\s*\(35\)|gnutls_handshake|TLS handshake|SSL certificate problem|certificate verify failed|release-assets\.githubusercontent\.com|githubusercontent\.com|Connection reset by peer|HTTP\/2 stream|Recv failure)/i.test(
+      output,
+    )
+  ) {
+    return undefined;
+  }
+  return "This looks like a host network/proxy/TLS download failure. Use the stderr as the source of truth: retry once, check VPN/proxy/Homebrew or GitHub release-asset access, or try a transport-specific fallback; do not ask the user to rerun the same command in a local terminal when this tool already ran it.";
+}
+
+function sandboxNetworkHint(input: {
+  command: string;
+  result: { stdout: string; stderr: string; exitCode?: number | null };
+  policy: SandboxPolicy | undefined;
+}): string | undefined {
+  const { command, result, policy } = input;
+  const networkBlocked =
+    policy != null && isSandboxEffective(policy.mode) && !policy.allowNetwork;
+  if (
+    !networkBlocked ||
+    typeof result.exitCode !== "number" ||
+    result.exitCode === 0 ||
+    !/\b(curl|wget|git\s+(clone|fetch|pull|push)|npm|pnpm|yarn|bun|pip3?|brew)\b/.test(
+      command,
+    )
+  ) {
+    return undefined;
+  }
+
+  const output = `${result.stderr}\n${result.stdout}`;
+  if (
+    !/(curl:\s*\((6|7)\)|Could not resolve host|Failed to connect|getaddrinfo ENOTFOUND|EAI_AGAIN|Network is unreachable|Operation not permitted|nodename nor servname)/i.test(
+      output,
+    )
+  ) {
+    return undefined;
+  }
+
+  return "Likely blocked by the command sandbox's no-network policy. To go online, retry the SAME command with escalatePermissions:true — it prompts for approval, then runs outside the sandbox.";
+}
+
+function commandFailureHint(input: {
+  command: string;
+  result: { stdout: string; stderr: string; exitCode?: number | null };
+  policy: SandboxPolicy | undefined;
+}): string | undefined {
+  if (input.result.exitCode === 0) return undefined;
+  const hints = [
+    hostNetworkTransportHint(input.result),
+    sandboxNetworkHint(input),
+    shellSyntaxHint(input.result),
+  ].filter((hint): hint is string => Boolean(hint));
+  return hints.length > 0 ? hints.join(" ") : undefined;
+}
+
 /**
  * 为本次执行构造沙箱策略。escalatePermissions 经审批后 → 完全放开
  * (danger-full-access / passthrough);否则套用设置档位 + 当前 workspace
@@ -584,24 +702,11 @@ function runCommandTool(
         commandKind === "test"
           ? parseTestStats(result.stdout, result.stderr)
           : undefined;
-      // 沙箱默认阻断出站网络;此时失败的 curl/wget/git/包管理器命令会以
-      // 连接错误结束(curl 退出码 7)。告知模型真正的原因 + 修复办法,而不是
-      // 任由它从一个孤零零的非零退出码去猜。
-      const networkBlocked =
-        policy != null &&
-        isSandboxEffective(policy.mode) &&
-        !policy.allowNetwork;
-      const usesNetwork =
-        /\b(curl|wget|git\s+(clone|fetch|pull|push)|npm|pnpm|yarn|bun|pip3?|brew)\b/.test(
-          args.command,
-        );
-      const hint =
-        networkBlocked &&
-        usesNetwork &&
-        typeof result.exitCode === "number" &&
-        result.exitCode !== 0
-          ? "Likely blocked by the sandbox's no-network policy (curl exit 7 = could not connect). To go online, retry the SAME command with escalatePermissions:true — it prompts for approval, then runs outside the sandbox."
-          : undefined;
+      const hint = commandFailureHint({
+        command: args.command,
+        result,
+        policy,
+      });
       return {
         ...result,
         // 非零退出码即工具失败:agent-loop 与 UI 都以 `success` 判定成败,
@@ -610,6 +715,59 @@ function runCommandTool(
         commandKind,
         deliverable: isDeliverableCommand(args.command),
         ...(hint ? { hint } : {}),
+        ...(testStats ? { testStats } : {}),
+      };
+    },
+  };
+}
+
+function runProcessTool(
+  sandbox?: SandboxConfig,
+): ToolDefinition<z.infer<typeof runProcessSchema>, unknown> {
+  return {
+    name: "runProcess",
+    description:
+      "Run an executable with a structured argv array in the workspace. Use this instead of runCommand for Python/Node scripts or file paths that may contain spaces, parentheses, quotes, or non-ASCII characters. Does not support shell syntax such as pipes, redirects, glob expansion, variables, or heredocs; use runCommand for those.",
+    safety: "destructive",
+    inputSchema: runProcessSchema,
+    toModelOutput: ({ input, output }) =>
+      projectCommandModelOutput({
+        input: { command: formatProcessCommand(input) },
+        output,
+        label: "runProcess",
+      }),
+    execute: async (args, ctx) => {
+      const cwdRel = args.cwd
+        ? await resolveRel(ctx.workspace, args.cwd)
+        : undefined;
+      const policy = await buildRunPolicy(
+        sandbox,
+        ctx.workspace.root,
+        args.escalatePermissions === true,
+      );
+      const result = await ctx.workspace.exec.runProcess(
+        args.executable,
+        args.args,
+        {
+          cwd: cwdRel,
+          signal: ctx.signal,
+          sandbox: policy,
+        },
+      );
+      const command = formatProcessCommand(args);
+      const commandKind = classifyCommand(command);
+      const testStats =
+        commandKind === "test"
+          ? parseTestStats(result.stdout, result.stderr)
+          : undefined;
+      return {
+        ...result,
+        success: result.exitCode === 0,
+        executable: args.executable,
+        args: args.args,
+        command,
+        commandKind,
+        deliverable: isDeliverableCommand(command),
         ...(testStats ? { testStats } : {}),
       };
     },
@@ -811,6 +969,7 @@ export function buildFileTools(deps?: FileToolsDeps): ToolDefinition[] {
     listTrashTool as ToolDefinition,
     emptyTrashTool as ToolDefinition,
     runCommandTool(deps?.gitProtocol, deps?.sandbox) as ToolDefinition,
+    runProcessTool(deps?.sandbox) as ToolDefinition,
     readShellOutputTool as ToolDefinition,
     killShellTool as ToolDefinition,
   ];
@@ -834,5 +993,6 @@ export {
   moveFileTool,
   readFileTool,
   runCommandTool,
+  runProcessTool,
   writeFileTool,
 };

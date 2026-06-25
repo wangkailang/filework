@@ -90,6 +90,11 @@ export interface WorkspaceFS {
 
 export interface WorkspaceExec {
   run(command: string, opts?: ExecOptions): Promise<ExecResult>;
+  runProcess(
+    executable: string,
+    args?: string[],
+    opts?: ExecOptions,
+  ): Promise<ExecResult>;
 }
 
 /**

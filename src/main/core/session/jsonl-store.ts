@@ -43,13 +43,40 @@ const TMP_FILE_EXT = ".jsonl.tmp";
 
 // ─── 辅助函数 ───────────────────────────────────────────────────────
 
-const stripForkFields = (line: SessionLine): ChatSession => ({
-  id: line.id,
-  workspacePath: line.workspacePath,
-  title: line.title,
-  createdAt: line.createdAt,
-  updatedAt: line.updatedAt,
-});
+type SessionMetadataOptions = {
+  lastActiveBranch?: string | null;
+};
+
+const normalizeLastActiveBranch = (
+  branch: string | null | undefined,
+): string | null | undefined => {
+  if (branch === undefined) return undefined;
+  if (branch === null) return null;
+  const trimmed = branch.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const stripForkFields = (line: SessionLine): ChatSession => {
+  const lastActiveBranch = normalizeLastActiveBranch(line.lastActiveBranch);
+  return {
+    id: line.id,
+    workspacePath: line.workspacePath,
+    title: line.title,
+    createdAt: line.createdAt,
+    updatedAt: line.updatedAt,
+    ...(lastActiveBranch !== undefined ? { lastActiveBranch } : {}),
+  };
+};
+
+const applySessionMetadata = (
+  sessionLine: SessionLine,
+  options?: SessionMetadataOptions,
+) => {
+  const lastActiveBranch = normalizeLastActiveBranch(options?.lastActiveBranch);
+  if (lastActiveBranch !== undefined) {
+    sessionLine.lastActiveBranch = lastActiveBranch;
+  }
+};
 
 /**
  * 丢弃绝不应落盘的瞬态字段:
@@ -126,6 +153,7 @@ export class JsonlSessionStore {
   async createSession(
     workspacePath: string,
     title?: string,
+    options?: SessionMetadataOptions,
   ): Promise<ChatSession> {
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -138,6 +166,7 @@ export class JsonlSessionStore {
       createdAt: now,
       updatedAt: now,
     };
+    applySessionMetadata(sessionLine, options);
     const filePath = await this.targetPath(workspacePath, id);
     await this.atomicWrite(filePath, renderRecords([sessionLine]));
     this.sessionIndex.set(id, {
@@ -173,7 +202,9 @@ export class JsonlSessionStore {
 
   async updateSession(
     sessionId: string,
-    updates: Partial<Pick<ChatSession, "title" | "updatedAt">>,
+    updates: Partial<
+      Pick<ChatSession, "lastActiveBranch" | "title" | "updatedAt">
+    >,
   ): Promise<void> {
     const loc = await this.locate(sessionId);
     if (!loc) return;
@@ -181,6 +212,7 @@ export class JsonlSessionStore {
     const sessionLine = records[0];
     if (!sessionLine || sessionLine.kind !== "session") return;
     if (updates.title !== undefined) sessionLine.title = updates.title;
+    applySessionMetadata(sessionLine, updates);
     sessionLine.updatedAt = updates.updatedAt ?? new Date().toISOString();
     await this.atomicWrite(loc.filePath, renderRecords(records));
   }
@@ -225,6 +257,7 @@ export class JsonlSessionStore {
       title: `${sourceSession.title} (分支)`,
       createdAt: now,
       updatedAt: now,
+      lastActiveBranch: sourceSession.lastActiveBranch,
       forkFromSessionId: sourceSession.id,
       forkFromMessageId: fromMessageId,
     };
@@ -270,6 +303,7 @@ export class JsonlSessionStore {
     sessionId: string,
     workspacePath: string,
     messages: ChatMessage[],
+    options?: SessionMetadataOptions,
   ): Promise<void> {
     const loc = await this.locate(sessionId);
     let sessionLine: SessionLine;
@@ -330,6 +364,7 @@ export class JsonlSessionStore {
       );
     sessionLine.updatedAt =
       latestUserMessage?.timestamp ?? new Date().toISOString();
+    applySessionMetadata(sessionLine, options);
 
     await this.atomicWrite(
       filePath,

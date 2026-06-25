@@ -23,6 +23,8 @@ export interface SessionLine {
   title: string;
   createdAt: string;
   updatedAt: string;
+  /** 该会话最后一次发送消息时所在的活动分支。 */
+  lastActiveBranch?: string | null;
   forkFromSessionId?: string;
   forkFromMessageId?: string;
 }
@@ -49,6 +51,7 @@ export interface ChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
+  lastActiveBranch?: string | null;
   automationRun?: {
     id: string;
     automationId: string;

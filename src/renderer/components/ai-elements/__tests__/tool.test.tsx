@@ -21,6 +21,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       toolName_moveFile: () => "Move file",
       toolName_readFile: () => "Read file",
       toolName_runCommand: () => "Run command",
+      toolName_runProcess: () => "Run process",
       toolName_spawnSubagent: () => "Spawn subagent",
       toolName_webFetch: () => "Fetch",
       toolName_webFetchRendered: () => "Fetch rendered",

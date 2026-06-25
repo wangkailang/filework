@@ -401,7 +401,7 @@ const en: BaseTranslation = {
   session_confirm: "Delete",
   session_cancel: "Cancel",
   session_unread: "Unread",
-  session_branch_current: "Current branch",
+  session_branch_current: "Chat branch",
   session_branch_hint:
     "A chat's branch reflects the active branch from its last use. Sending a message updates the chat branch.",
 
@@ -480,6 +480,7 @@ const en: BaseTranslation = {
   toolName_findDuplicates: "Find Duplicates",
   toolName_automationUpdate: "Manage Automations",
   toolName_runCommand: "Run Command",
+  toolName_runProcess: "Run Process",
   toolName_webSearch: "Web Search",
   toolName_webFetch: "Fetch Page",
   toolName_webFetchRendered: "Fetch (Rendered)",

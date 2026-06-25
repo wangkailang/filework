@@ -26,7 +26,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       session_group_today: () => "今天",
       session_group_week: () => "近 7 天",
       session_group_yesterday: () => "昨天",
-      session_branch_current: () => "当前分支",
+      session_branch_current: () => "聊天分支",
       session_branch_hint: () =>
         "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
       session_rename: () => "重命名",
@@ -184,13 +184,22 @@ describe("ChatHistoryPanel", () => {
     expect(html).not.toContain('data-session-row="automation-session"');
   });
 
-  it("exposes current branch context in the session detail affordance", () => {
-    const html = renderToStaticMarkup(
-      <ChatHistoryPanel currentBranch="master" isGitRepo={true} />,
-    );
+  it("exposes the session branch in the session detail affordance", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("session-1", "支持多会话管理"),
+          lastActiveBranch: "feature/session-branch",
+        } as ChatSession,
+      ],
+    };
 
-    expect(html).toContain('data-session-branch="master"');
-    expect(html).toContain("当前分支");
+    const html = renderToStaticMarkup(<ChatHistoryPanel isGitRepo={true} />);
+
+    expect(html).toContain('data-session-branch="feature/session-branch"');
+    expect(html).not.toContain('data-session-branch="master"');
+    expect(html).toContain("聊天分支");
     expect(html).toContain(
       "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
     );
