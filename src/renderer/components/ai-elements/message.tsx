@@ -9,6 +9,7 @@ import { memo, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import { cn } from "../../lib/utils";
 import { useLinkRouter } from "../browser/useLinkRouter";
+import { FilePathChip, getFilePathInfo } from "./file-path-chip";
 import { MarkdownCodeBlock } from "./markdown-code-block";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -179,7 +180,9 @@ export const MessageAction = ({
   </button>
 );
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
+export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
+  workspacePath?: string;
+};
 
 const streamdownPlugins = { cjk, math };
 
@@ -189,13 +192,32 @@ const streamdownControls: ComponentProps<typeof Streamdown>["controls"] = {
   mermaid: true,
 };
 
+const LOCAL_FILE_LINK = /\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+
+const normalizeLocalFileLinks = (
+  children: MessageResponseProps["children"],
+  workspacePath?: string,
+): MessageResponseProps["children"] => {
+  if (typeof children !== "string") return children;
+  return children.replace(LOCAL_FILE_LINK, (match, _label, target) =>
+    getFilePathInfo(target, workspacePath) ? `\`${target}\`` : match,
+  );
+};
+
 function RoutedAnchor({
   children,
   href,
   className,
+  workspacePath,
   ...props
-}: AnchorHTMLAttributes<HTMLAnchorElement>) {
+}: AnchorHTMLAttributes<HTMLAnchorElement> & { workspacePath?: string }) {
   const link = useLinkRouter();
+  const file = getFilePathInfo(href, workspacePath);
+
+  if (file) {
+    return <FilePathChip className={className} file={file} />;
+  }
+
   return (
     <a
       {...props}
@@ -500,12 +522,16 @@ function ChatStrong({
 }
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => {
+  ({ children, className, workspacePath, ...props }: MessageResponseProps) => {
     // Built per-render so each <a> can call useLinkRouter (a hook).
     const components = useMemo<ComponentProps<typeof Streamdown>["components"]>(
       () => ({
-        code: MarkdownCodeBlock,
-        a: RoutedAnchor,
+        code: (codeProps) => (
+          <MarkdownCodeBlock {...codeProps} workspacePath={workspacePath} />
+        ),
+        a: (anchorProps) => (
+          <RoutedAnchor {...anchorProps} workspacePath={workspacePath} />
+        ),
         table: ChatTable,
         thead: ChatTableHead,
         tbody: ChatTableBody,
@@ -526,7 +552,11 @@ export const MessageResponse = memo(
         hr: ChatHorizontalRule,
         strong: ChatStrong,
       }),
-      [],
+      [workspacePath],
+    );
+    const normalizedChildren = useMemo(
+      () => normalizeLocalFileLinks(children, workspacePath),
+      [children, workspacePath],
     );
     return (
       <Streamdown
@@ -538,10 +568,14 @@ export const MessageResponse = memo(
         controls={streamdownControls}
         components={components}
         {...props}
-      />
+      >
+        {normalizedChildren}
+      </Streamdown>
     );
   },
-  (prevProps, nextProps) => prevProps.children === nextProps.children,
+  (prevProps, nextProps) =>
+    prevProps.children === nextProps.children &&
+    prevProps.workspacePath === nextProps.workspacePath,
 );
 
 MessageResponse.displayName = "MessageResponse";

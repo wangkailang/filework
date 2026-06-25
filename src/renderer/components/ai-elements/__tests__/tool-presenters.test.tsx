@@ -139,6 +139,57 @@ describe("writeFile presenter", () => {
       "rounded-md border border-border bg-background/40 font-mono",
     );
   });
+
+  it("renders write diffs with branch-style code rows", () => {
+    const output = toolPresenters.writeFile.output?.(
+      {
+        success: true,
+        diffStat: {
+          added: 1,
+          removed: 0,
+          isNew: false,
+          isBinary: false,
+          truncated: false,
+          hunks: [
+            {
+              kind: "context",
+              value: "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\n",
+              lineCount: 7,
+              newStart: 1,
+              oldStart: 1,
+            },
+            {
+              kind: "added",
+              value: "expect(html).toContain('ok');\n",
+              lineCount: 1,
+              newStart: 8,
+            },
+          ],
+        },
+      },
+      {
+        path: "src/renderer/components/ai-elements/__tests__/tool.test.tsx",
+        content: "line 1\nline 2\n",
+      },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-branch-style-write-diff",
+      },
+    );
+
+    const html = renderToStaticMarkup(output);
+
+    expect(html).toContain('data-write-file-diff-code="true"');
+    expect(html).toContain('data-diff-density="branch"');
+    expect(html).toContain("bg-surface-sunken");
+    expect(html).toContain("max-h-72");
+    expect(html).toContain("overflow-auto");
+    expect(html).toContain("text-[11px]");
+    expect(html).toContain("leading-5");
+    expect(html).toContain("unmodified lines");
+    expect(html).not.toContain("grid-cols-[3rem_3rem_1.5rem_max-content]");
+  });
 });
 
 describe("webSearch presenter", () => {

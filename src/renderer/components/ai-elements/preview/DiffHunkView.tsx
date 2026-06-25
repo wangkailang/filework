@@ -259,7 +259,7 @@ function BranchDiffLine({
       >
         {marker}
       </span>
-      <span className="whitespace-pre px-2">
+      <span className="whitespace-pre px-2" title={text}>
         <CodeText text={text} kind={kind} />
       </span>
     </div>

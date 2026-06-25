@@ -1,10 +1,27 @@
 import {
+  ArchiveRestore,
+  BarChart3,
+  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDashed,
+  FilePenLine,
+  FileSearch,
+  FileText,
+  FolderOpen,
+  FolderPlus,
+  Globe2,
   Loader2,
+  type LucideIcon,
+  MoveRight,
+  RotateCcw,
+  Search,
+  Terminal,
+  Trash2,
+  Wrench,
   XCircle,
+  Youtube,
 } from "lucide-react";
 import { type HTMLAttributes, type ReactNode, useMemo, useState } from "react";
 import type { ToolState } from "../../../main/core/session/message-parts";
@@ -72,8 +89,8 @@ interface ToolHeaderProps extends HTMLAttributes<HTMLDivElement> {
   state: ToolState;
   /** 可选的单行摘要,渲染在工具名称之后(例如 "src/index.ts · 142 lines") */
   summary?: ReactNode;
-  /** 紧凑模式:隐藏状态文字与工具名,只留状态图标 + 摘要。用于分组子项 ——
-   *  分组头已标注工具名,子行不必逐条复读"完成 写入文件"。 */
+  /** 紧凑模式:隐藏状态文字与工具名,只留工具图标、必要状态图标和摘要。
+   *  用于分组子项 —— 分组头已标注工具名,子行不必逐条复读"完成 写入文件"。 */
   dense?: boolean;
   /** 该行是否有可展开内容。false 时不渲染 chevron / 触发器,行变为静态行
    *  (用 chevron 等宽占位保持左边缘对齐)。用于没有内嵌 diff 的写入行等。 */
@@ -102,6 +119,144 @@ const stateIcons: Record<ToolState, { icon: ReactNode; color: string }> = {
   },
 };
 
+type ToolIconConfig = {
+  Icon: LucideIcon;
+  name: string;
+  tone: string;
+};
+
+const defaultToolIcon: ToolIconConfig = {
+  Icon: Wrench,
+  name: "wrench",
+  tone: "text-muted-foreground/70",
+};
+
+const toolIcons: Record<string, ToolIconConfig> = {
+  automation_update: {
+    Icon: Wrench,
+    name: "wrench",
+    tone: "text-muted-foreground/70",
+  },
+  clearDirectoryCache: {
+    Icon: RotateCcw,
+    name: "rotate-ccw",
+    tone: "text-muted-foreground/70",
+  },
+  createDirectory: {
+    Icon: FolderPlus,
+    name: "folder-plus",
+    tone: "text-muted-foreground/75",
+  },
+  deleteFile: {
+    Icon: Trash2,
+    name: "trash-2",
+    tone: "text-status-error/65",
+  },
+  directoryStats: {
+    Icon: BarChart3,
+    name: "bar-chart-3",
+    tone: "text-muted-foreground/75",
+  },
+  emptyTrash: {
+    Icon: Trash2,
+    name: "trash-2",
+    tone: "text-status-error/65",
+  },
+  findDuplicates: {
+    Icon: FileSearch,
+    name: "file-search",
+    tone: "text-muted-foreground/75",
+  },
+  getCacheStats: {
+    Icon: BarChart3,
+    name: "bar-chart-3",
+    tone: "text-muted-foreground/75",
+  },
+  killShell: {
+    Icon: Terminal,
+    name: "terminal",
+    tone: "text-muted-foreground/75",
+  },
+  listDirectory: {
+    Icon: FolderOpen,
+    name: "folder-open",
+    tone: "text-muted-foreground/75",
+  },
+  listTrash: {
+    Icon: Trash2,
+    name: "trash-2",
+    tone: "text-muted-foreground/70",
+  },
+  moveFile: {
+    Icon: MoveRight,
+    name: "move-right",
+    tone: "text-muted-foreground/75",
+  },
+  readFile: {
+    Icon: FileText,
+    name: "file-text",
+    tone: "text-muted-foreground/75",
+  },
+  readShellOutput: {
+    Icon: Terminal,
+    name: "terminal",
+    tone: "text-muted-foreground/75",
+  },
+  restoreFromTrash: {
+    Icon: ArchiveRestore,
+    name: "archive-restore",
+    tone: "text-muted-foreground/70",
+  },
+  runCommand: {
+    Icon: Terminal,
+    name: "terminal",
+    tone: "text-muted-foreground/75",
+  },
+  runProcess: {
+    Icon: Terminal,
+    name: "terminal",
+    tone: "text-muted-foreground/75",
+  },
+  spawnSubagent: {
+    Icon: Bot,
+    name: "bot",
+    tone: "text-muted-foreground/75",
+  },
+  webFetch: {
+    Icon: Globe2,
+    name: "globe-2",
+    tone: "text-muted-foreground/75",
+  },
+  webFetchRendered: {
+    Icon: Globe2,
+    name: "globe-2",
+    tone: "text-muted-foreground/75",
+  },
+  webScrape: {
+    Icon: Globe2,
+    name: "globe-2",
+    tone: "text-muted-foreground/75",
+  },
+  webSearch: {
+    Icon: Search,
+    name: "search",
+    tone: "text-muted-foreground/75",
+  },
+  writeFile: {
+    Icon: FilePenLine,
+    name: "file-pen-line",
+    tone: "text-muted-foreground/75",
+  },
+  youtubeTranscript: {
+    Icon: Youtube,
+    name: "youtube",
+    tone: "text-muted-foreground/75",
+  },
+};
+
+const getToolIcon = (toolName: string): ToolIconConfig =>
+  toolIcons[toolName] ?? defaultToolIcon;
+
 const getStateLabels = (
   LL: TranslationFunctions,
 ): Record<ToolState, string> => ({
@@ -128,37 +283,49 @@ export const ToolHeader = ({
   const toolLabelMap = useMemo(() => getToolLabels(LL), [LL]);
   const label = toolLabelMap[toolName] || toolName;
   const { open } = useCollapsible();
+  const toolIcon = getToolIcon(toolName);
+  const ToolIcon = toolIcon.Icon;
+  const showStateIcon = state !== "output-available";
 
   const inner = (
     <>
-      {collapsible ? (
-        open ? (
-          <ChevronDown className="size-3.5 text-muted-foreground/65 shrink-0" />
-        ) : (
-          <ChevronRight className="size-3.5 text-muted-foreground/65 shrink-0" />
-        )
-      ) : (
-        // 静态行:占位等宽,保持与可展开行的左边缘对齐。
-        <span className="size-3.5 shrink-0" aria-hidden="true" />
-      )}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex size-3.5 shrink-0 items-center justify-center",
+          toolIcon.tone,
+        )}
+        data-tool-icon={toolIcon.name}
+      >
+        <ToolIcon className="size-3.5" />
+      </span>
       {/* dense 分组里"完成"是默认态,逐行重复绿勾只是噪声 —— 成功时省略
           图标,只在进行中 / 准备中才标记,把状态色留给真正需要关注的行。 */}
       {dense ? (
-        state !== "output-available" && (
+        showStateIcon && (
           <span className={cn("flex items-center shrink-0", config.color)}>
             {config.icon}
           </span>
         )
       ) : (
-        <span
-          className={cn("flex items-center gap-1.5 shrink-0", config.color)}
-        >
-          {config.icon}
-          <span className="text-xs font-normal">{stateLabel}</span>
+        <span className={cn("flex items-center gap-1.5 shrink-0")}>
+          {showStateIcon && (
+            <span className={cn("flex items-center", config.color)}>
+              {config.icon}
+            </span>
+          )}
+          <span
+            className={cn(
+              "text-xs font-normal",
+              showStateIcon ? config.color : "text-muted-foreground/75",
+            )}
+          >
+            {stateLabel}
+          </span>
         </span>
       )}
       {!dense && (
-        <span className="text-xs text-muted-foreground/75 font-mono shrink-0">
+        <span className="text-xs text-muted-foreground/75 font-normal shrink-0">
           {label}
         </span>
       )}
@@ -166,6 +333,18 @@ export const ToolHeader = ({
         <span className="text-xs text-muted-foreground/70 font-mono truncate min-w-0 flex-1">
           {summary}
         </span>
+      )}
+      {summary == null && (
+        <span className="min-w-0 flex-1" aria-hidden="true" />
+      )}
+      {collapsible ? (
+        open ? (
+          <ChevronDown className="size-3.5 text-muted-foreground/65 shrink-0" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted-foreground/65 shrink-0" />
+        )
+      ) : (
+        <span className="size-3.5 shrink-0" aria-hidden="true" />
       )}
     </>
   );

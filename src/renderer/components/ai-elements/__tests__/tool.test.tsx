@@ -84,4 +84,44 @@ describe("Tool chrome", () => {
     expect(html).toContain("Manage automations");
     expect(html).not.toContain("automation_update");
   });
+
+  it("renders distinct leading icons for different tools", () => {
+    const readHtml = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader state="output-available" toolName="readFile" />
+      </Tool>,
+    );
+    const searchHtml = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader state="output-available" toolName="webSearch" />
+      </Tool>,
+    );
+
+    expect(readHtml).toContain('data-tool-icon="file-text"');
+    expect(searchHtml).toContain('data-tool-icon="search"');
+    expect(readHtml).not.toContain('data-tool-icon="search"');
+    expect(searchHtml).not.toContain('data-tool-icon="file-text"');
+  });
+
+  it("places the expand chevron after the tool summary", () => {
+    const html = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader
+          state="output-available"
+          summary={<span>src/index.ts</span>}
+          toolName="readFile"
+        />
+      </Tool>,
+    );
+
+    const toolIconIndex = html.indexOf('data-tool-icon="file-text"');
+    const labelIndex = html.indexOf("Read file");
+    const summaryIndex = html.indexOf("src/index.ts");
+    const chevronIndex = html.indexOf("lucide-chevron-right");
+
+    expect(toolIconIndex).toBeGreaterThan(-1);
+    expect(labelIndex).toBeGreaterThan(toolIconIndex);
+    expect(summaryIndex).toBeGreaterThan(labelIndex);
+    expect(chevronIndex).toBeGreaterThan(summaryIndex);
+  });
 });

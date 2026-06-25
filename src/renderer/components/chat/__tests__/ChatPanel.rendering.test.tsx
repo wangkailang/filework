@@ -54,6 +54,13 @@ vi.mock("../../../i18n/i18n-react", () => ({
       suggestion_report: () => "生成报告",
       suggestion_screenshots: () => "整理截图",
       suggestion_stats: () => "统计文件",
+      tool_done: () => "完成",
+      tool_error: () => "错误",
+      tool_errorLabel: () => "错误",
+      tool_params: () => "参数",
+      tool_preparing: () => "准备中",
+      tool_result: () => "结果",
+      tool_running: () => "运行中",
     },
   }),
 }));
@@ -322,6 +329,51 @@ describe("ChatPanel message rendering", () => {
     });
 
     expect(document.querySelector('button[aria-label="复制"]')).not.toBeNull();
+  });
+
+  it("keeps tool error details collapsed when opening a chat", async () => {
+    const assistant: ChatMessage = {
+      id: "assistant-tool-error",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "",
+      parts: [
+        {
+          type: "tool",
+          toolCallId: "call-run-command",
+          toolName: "runCommand",
+          args: { command: "pnpm test" },
+          result: "Command failed with exit code 1",
+          state: "output-error",
+        },
+      ],
+      timestamp: "2026-06-23T11:06:00.000Z",
+    };
+
+    chatState.value = createChatState([assistant]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "runCommand",
+    );
+    expect(document.getElementById("root")?.textContent ?? "").not.toContain(
+      "Command failed with exit code 1",
+    );
+
+    const toolTrigger = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("runCommand"),
+    );
+    expect(toolTrigger).toBeTruthy();
+
+    await act(async () => {
+      toolTrigger?.dispatchEvent(new window.Event("click", { bubbles: true }));
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "Command failed with exit code 1",
+    );
   });
 
   it("hides older error banners after the user continues chatting", async () => {

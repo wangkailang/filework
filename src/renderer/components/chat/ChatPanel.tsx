@@ -708,7 +708,7 @@ export const ChatPanel = ({
     return (
       <Tool
         key={inv.toolCallId}
-        defaultOpen={inv.state === "output-error"}
+        defaultOpen={false}
         forceOpen={inv.approval?.state === "approval-requested"}
       >
         <ToolHeader
@@ -1004,7 +1004,10 @@ export const ChatPanel = ({
         const keyCount = (textKeyCounts.get(baseKey) ?? 0) + 1;
         textKeyCounts.set(baseKey, keyCount);
         return (
-          <MessageResponse key={`${baseKey}-${keyCount}`}>
+          <MessageResponse
+            key={`${baseKey}-${keyCount}`}
+            workspacePath={workspacePath}
+          >
             {part.text}
           </MessageResponse>
         );

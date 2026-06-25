@@ -11,6 +11,7 @@ import type { ExtraProps } from "streamdown";
 // hljs 配置(语言注册、别名、转义)集中在 lib/highlight,与文件预览共用。
 import { escapeHtml, hljs, LANG_ALIAS } from "../../lib/highlight";
 import { cn } from "../../lib/utils";
+import { FilePathChip, getFilePathInfo } from "./file-path-chip";
 
 const LANG_DISPLAY: Record<string, string> = {
   csharp: "c#",
@@ -22,6 +23,7 @@ const LANG_DISPLAY: Record<string, string> = {
 type CodeProps = HTMLAttributes<HTMLElement> &
   ExtraProps & {
     children?: ReactNode;
+    workspacePath?: string;
   };
 
 const childrenToString = (children: ReactNode): string => {
@@ -34,12 +36,16 @@ const childrenToString = (children: ReactNode): string => {
 export const MarkdownCodeBlock = ({
   className,
   children,
+  workspacePath,
   ...props
 }: CodeProps) => {
   const raw = childrenToString(children).replace(/\n$/, "");
   const isBlock = "data-block" in props || raw.includes("\n");
 
   if (!isBlock) {
+    const file = getFilePathInfo(raw, workspacePath);
+    if (file) return <FilePathChip file={file} />;
+
     return (
       <code
         className={cn(
