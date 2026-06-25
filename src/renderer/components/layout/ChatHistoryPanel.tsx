@@ -95,11 +95,14 @@ const isAutomationSession = (session: ChatSession): boolean => {
   return AUTOMATION_TITLE_PREFIXES.some((prefix) => prefix.test(session.title));
 };
 
+const sessionBranchOf = (session: ChatSession): string | null => {
+  const branch = session.lastActiveBranch?.trim();
+  return branch ? branch : null;
+};
+
 export const ChatHistoryPanel = ({
-  currentBranch = null,
   isGitRepo = false,
 }: {
-  currentBranch?: string | null;
   isGitRepo?: boolean;
 }) => {
   const { LL, locale } = useI18nContext();
@@ -167,6 +170,7 @@ export const ChatHistoryPanel = ({
 
   const cancelRename = () => setEditingId(null);
   const hidePreview = () => setPreview(null);
+  const previewBranch = preview ? sessionBranchOf(preview.session) : null;
 
   const showPreview = (
     session: ChatSession,
@@ -215,6 +219,7 @@ export const ChatHistoryPanel = ({
                   locale,
                 );
                 const relativeAge = formatAge(s.updatedAt, Date.now(), locale);
+                const sessionBranch = sessionBranchOf(s);
                 const runStateLabel =
                   runState?.status === "pending"
                     ? LL.task_pending()
@@ -356,12 +361,12 @@ export const ChatHistoryPanel = ({
                         </button>
                       </div>
                     )}
-                    {!isEditing && isGitRepo && currentBranch && (
+                    {!isEditing && isGitRepo && sessionBranch && (
                       <span
                         className="sr-only"
-                        data-session-branch={currentBranch}
+                        data-session-branch={sessionBranch}
                       >
-                        {LL.session_branch_current()}: {currentBranch}.{" "}
+                        {LL.session_branch_current()}: {sessionBranch}.{" "}
                         {LL.session_branch_hint()}
                       </span>
                     )}
@@ -386,7 +391,7 @@ export const ChatHistoryPanel = ({
               {preview.absoluteStamp}
             </div>
           </div>
-          {isGitRepo && currentBranch && (
+          {isGitRepo && previewBranch && (
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2 text-sm text-foreground">
                 <GitBranch
@@ -394,7 +399,7 @@ export const ChatHistoryPanel = ({
                   aria-hidden="true"
                 />
                 <span className="sr-only">{LL.session_branch_current()}</span>
-                <span>{currentBranch}</span>
+                <span>{previewBranch}</span>
               </div>
               <div className="flex gap-2 text-sm font-medium text-status-await">
                 <AlertCircle

@@ -1450,7 +1450,7 @@ type RootTranslation = {
 	 */
 	session_unread: string
 	/**
-	 * C​u​r​r​e​n​t​ ​b​r​a​n​c​h
+	 * C​h​a​t​ ​b​r​a​n​c​h
 	 */
 	session_branch_current: string
 	/**
@@ -1683,6 +1683,10 @@ type RootTranslation = {
 	 * R​u​n​ ​C​o​m​m​a​n​d
 	 */
 	toolName_runCommand: string
+	/**
+	 * R​u​n​ ​P​r​o​c​e​s​s
+	 */
+	toolName_runProcess: string
 	/**
 	 * W​e​b​ ​S​e​a​r​c​h
 	 */
@@ -4031,7 +4035,7 @@ export type TranslationFunctions = {
 	 */
 	session_unread: () => LocalizedString
 	/**
-	 * Current branch
+	 * Chat branch
 	 */
 	session_branch_current: () => LocalizedString
 	/**
@@ -4262,6 +4266,10 @@ export type TranslationFunctions = {
 	 * Run Command
 	 */
 	toolName_runCommand: () => LocalizedString
+	/**
+	 * Run Process
+	 */
+	toolName_runProcess: () => LocalizedString
 	/**
 	 * Web Search
 	 */

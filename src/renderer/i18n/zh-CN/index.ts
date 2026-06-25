@@ -382,7 +382,7 @@ const zhCN: Translation = {
   session_confirm: "删除",
   session_cancel: "取消",
   session_unread: "未读",
-  session_branch_current: "当前分支",
+  session_branch_current: "聊天分支",
   session_branch_hint:
     "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
 
@@ -454,6 +454,7 @@ const zhCN: Translation = {
   toolName_findDuplicates: "查找重复文件",
   toolName_automationUpdate: "管理自动化",
   toolName_runCommand: "执行命令",
+  toolName_runProcess: "执行进程",
   toolName_webSearch: "联网搜索",
   toolName_webFetch: "抓取网页",
   toolName_webFetchRendered: "渲染抓取",

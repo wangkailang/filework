@@ -171,6 +171,7 @@ describe("useChatSession", () => {
     if (root) {
       act(() => root?.unmount());
     }
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     root = null;
@@ -441,6 +442,51 @@ describe("useChatSession", () => {
         sessionId: "session-existing",
       }),
     );
+  });
+
+  it("records the active branch on submit and updates the local session list", async () => {
+    vi.useFakeTimers();
+    const createdSession: ChatSession = {
+      id: "session-branch",
+      workspacePath: "/workspace",
+      title: "新对话",
+      createdAt: "2026-06-23T10:00:00.000Z",
+      updatedAt: "2026-06-23T10:00:00.000Z",
+    };
+    filework.createChatSession.mockResolvedValue(createdSession);
+
+    const Harness = () => {
+      latest = useChatSession("/workspace", undefined, "feature/session");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      await latest?.handleSubmit({ text: "记录分支" });
+    });
+
+    expect(filework.createChatSession).toHaveBeenCalledWith(
+      "/workspace",
+      undefined,
+      { lastActiveBranch: "feature/session" },
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(filework.saveChatHistory).toHaveBeenCalledWith(
+      "session-branch",
+      "/workspace",
+      expect.any(Array),
+      { lastActiveBranch: "feature/session" },
+    );
+    expect(latest?.sessions[0]).toMatchObject({
+      id: "session-branch",
+      lastActiveBranch: "feature/session",
+      title: "记录分支",
+    });
   });
 
   it("reattaches a running task from the next unseen stream event after session switching", async () => {

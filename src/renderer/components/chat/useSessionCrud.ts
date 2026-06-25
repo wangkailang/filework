@@ -10,7 +10,58 @@ import { migrateToParts } from "./helpers";
 import type { ChatMessage, ChatSession, MessagePart, UsagePart } from "./types";
 import type { StreamErrorInfo, UsageInfo } from "./useChatSession";
 
-export function useSessionCrud(workspacePath: string) {
+type SessionSaveOptions = {
+  lastActiveBranch?: string | null;
+};
+
+const normalizeLastActiveBranch = (
+  branch: string | null | undefined,
+): string | null | undefined => {
+  if (branch === undefined) return undefined;
+  if (branch === null) return null;
+  const trimmed = branch.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeSessionSaveOptions = (
+  options?: SessionSaveOptions,
+): SessionSaveOptions | undefined => {
+  const lastActiveBranch = normalizeLastActiveBranch(options?.lastActiveBranch);
+  return lastActiveBranch !== undefined ? { lastActiveBranch } : undefined;
+};
+
+const latestUserTimestamp = (messages: ChatMessage[]): string | null => {
+  let latest: string | null = null;
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    if (latest === null || message.timestamp > latest)
+      latest = message.timestamp;
+  }
+  return latest;
+};
+
+const saveChatHistory = (
+  sessionId: string,
+  workspacePath: string,
+  messages: ChatMessage[],
+  options?: SessionSaveOptions,
+) => {
+  if (options) {
+    window.filework.saveChatHistory(
+      sessionId,
+      workspacePath,
+      messages,
+      options,
+    );
+  } else {
+    window.filework.saveChatHistory(sessionId, workspacePath, messages);
+  }
+};
+
+export function useSessionCrud(
+  workspacePath: string,
+  activeBranch?: string | null,
+) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessagesState] = useState<ChatMessage[]>([]);
@@ -20,6 +71,7 @@ export function useSessionCrud(workspacePath: string) {
   const saveTimersRef = useRef(
     new Map<string, ReturnType<typeof setTimeout>>(),
   );
+  const saveOptionsBySessionRef = useRef(new Map<string, SessionSaveOptions>());
   // 标记当前会话是否有"尚未落盘的真实改动"。仅在 debouncedSave(消息编辑/
   // 流式)时置 true,落盘后清零。纯预览会话只 setMessages、不触发它,因此
   // flushPendingSave 对预览是 no-op,不会无谓改写文件 → 不会刷新 updatedAt。
@@ -39,6 +91,32 @@ export function useSessionCrud(workspacePath: string) {
   const onHistoryLoadedRef = useRef<((sessionId: string) => void) | null>(null);
   activeSessionIdRef.current = activeSessionId;
   messagesRef.current = messages;
+
+  const branchSnapshot = normalizeLastActiveBranch(activeBranch) ?? null;
+
+  const recordSessionActivity = useCallback(
+    (
+      sessionId: string,
+      nextMessages: ChatMessage[],
+      options?: SessionSaveOptions,
+    ) => {
+      const updatedAt = latestUserTimestamp(nextMessages);
+      const normalizedOptions = normalizeSessionSaveOptions(options);
+      if (!updatedAt && !normalizedOptions) return;
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                ...(updatedAt ? { updatedAt } : {}),
+                ...(normalizedOptions ?? {}),
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
 
   const setMessages = useCallback<Dispatch<SetStateAction<ChatMessage[]>>>(
     (nextOrUpdater) => {
@@ -95,35 +173,42 @@ export function useSessionCrud(workspacePath: string) {
           messagesBySessionRef.current.get(id) ??
           (activeSessionIdRef.current === id ? messagesRef.current : []);
         if (latestMessages.length > 0) {
-          window.filework.saveChatHistory(id, workspacePath, latestMessages);
+          const options = saveOptionsBySessionRef.current.get(id);
+          saveChatHistory(id, workspacePath, latestMessages, options);
         }
+        saveOptionsBySessionRef.current.delete(id);
       }
     },
     [workspacePath],
   );
 
   const debouncedSave = useCallback(
-    (msgs: ChatMessage[], sessionId: string) => {
+    (msgs: ChatMessage[], sessionId: string, options?: SessionSaveOptions) => {
       messagesBySessionRef.current.set(sessionId, msgs);
       dirtySessionsRef.current.add(sessionId);
+      const normalizedOptions = normalizeSessionSaveOptions(options);
+      if (normalizedOptions) {
+        saveOptionsBySessionRef.current.set(sessionId, normalizedOptions);
+      }
+      const effectiveOptions =
+        normalizedOptions ?? saveOptionsBySessionRef.current.get(sessionId);
+      recordSessionActivity(sessionId, msgs, effectiveOptions);
       const existing = saveTimersRef.current.get(sessionId);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
         const latestMessages =
           messagesBySessionRef.current.get(sessionId) ?? msgs;
         if (latestMessages.length > 0) {
-          window.filework.saveChatHistory(
-            sessionId,
-            workspacePath,
-            latestMessages,
-          );
+          const options = saveOptionsBySessionRef.current.get(sessionId);
+          saveChatHistory(sessionId, workspacePath, latestMessages, options);
         }
         saveTimersRef.current.delete(sessionId);
         dirtySessionsRef.current.delete(sessionId);
+        saveOptionsBySessionRef.current.delete(sessionId);
       }, 500);
       saveTimersRef.current.set(sessionId, timer);
     },
-    [workspacePath],
+    [recordSessionActivity, workspacePath],
   );
 
   useEffect(() => {
@@ -214,18 +299,27 @@ export function useSessionCrud(workspacePath: string) {
   const createNewSession = useCallback(async (): Promise<string> => {
     flushPendingSave();
     transientMessagesPendingRef.current = false;
-    const session: ChatSession =
-      await window.filework.createChatSession(workspacePath);
+    const session: ChatSession = await window.filework.createChatSession(
+      workspacePath,
+      undefined,
+      {
+        lastActiveBranch: branchSnapshot,
+      },
+    );
+    const sessionWithBranch: ChatSession = {
+      ...session,
+      lastActiveBranch: session.lastActiveBranch ?? branchSnapshot,
+    };
     // Flag the load-history effect to skip the disk read on activation —
     // the caller (submit handler) is about to set messages itself.
-    freshSessionIdRef.current = session.id;
-    messagesBySessionRef.current.set(session.id, []);
-    setSessions((prev) => [session, ...prev]);
-    setActiveSessionId(session.id);
+    freshSessionIdRef.current = sessionWithBranch.id;
+    messagesBySessionRef.current.set(sessionWithBranch.id, []);
+    setSessions((prev) => [sessionWithBranch, ...prev]);
+    setActiveSessionId(sessionWithBranch.id);
     messagesRef.current = [];
     setMessagesState([]);
-    return session.id;
-  }, [flushPendingSave, workspacePath]);
+    return sessionWithBranch.id;
+  }, [branchSnapshot, flushPendingSave, workspacePath]);
 
   const handleNewChat = useCallback(
     (_isLoading?: boolean) => {
@@ -264,6 +358,7 @@ export function useSessionCrud(workspacePath: string) {
       if (timer) clearTimeout(timer);
       saveTimersRef.current.delete(sessionId);
       dirtySessionsRef.current.delete(sessionId);
+      saveOptionsBySessionRef.current.delete(sessionId);
       messagesBySessionRef.current.delete(sessionId);
       await window.filework.deleteChatSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));

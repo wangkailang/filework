@@ -4,6 +4,10 @@ import type { JsonlSessionStore } from "../core/session/jsonl-store";
 import type { ChatMessage, ChatSession } from "../core/session/types";
 import { listAutomationRuns } from "../db";
 
+type SessionMetadataOptions = {
+  lastActiveBranch?: string | null;
+};
+
 const withAutomationRunMetadata = (sessions: ChatSession[]): ChatSession[] => {
   const runsBySessionId = new Map<
     string,
@@ -41,7 +45,9 @@ export const registerChatHandlers = (store: JsonlSessionStore) => {
       _event,
       workspacePath: string,
       title?: string,
-    ): Promise<ChatSession> => store.createSession(workspacePath, title),
+      options?: SessionMetadataOptions,
+    ): Promise<ChatSession> =>
+      store.createSession(workspacePath, title, options),
   );
 
   ipcMain.handle(
@@ -55,7 +61,9 @@ export const registerChatHandlers = (store: JsonlSessionStore) => {
     async (
       _event,
       sessionId: string,
-      updates: Partial<Pick<ChatSession, "title" | "updatedAt">>,
+      updates: Partial<
+        Pick<ChatSession, "lastActiveBranch" | "title" | "updatedAt">
+      >,
     ) => {
       await store.updateSession(sessionId, updates);
       return true;
@@ -87,8 +95,9 @@ export const registerChatHandlers = (store: JsonlSessionStore) => {
       sessionId: string,
       workspacePath: string,
       messages: ChatMessage[],
+      options?: SessionMetadataOptions,
     ) => {
-      await store.saveMessages(sessionId, workspacePath, messages);
+      await store.saveMessages(sessionId, workspacePath, messages, options);
       return true;
     },
   );

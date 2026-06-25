@@ -394,7 +394,7 @@ const ja: Translation = {
   session_confirm: "削除",
   session_cancel: "キャンセル",
   session_unread: "未読",
-  session_branch_current: "現在のブランチ",
+  session_branch_current: "チャットのブランチ",
   session_branch_hint:
     "チャットのブランチは前回使用時のアクティブブランチを反映します。メッセージ送信時に更新されます。",
 
@@ -474,6 +474,7 @@ const ja: Translation = {
   toolName_findDuplicates: "重複ファイル検出",
   toolName_automationUpdate: "自動化を管理",
   toolName_runCommand: "コマンド実行",
+  toolName_runProcess: "プロセス実行",
   toolName_webSearch: "ウェブ検索",
   toolName_webFetch: "ページ取得",
   toolName_webFetchRendered: "レンダリング取得",

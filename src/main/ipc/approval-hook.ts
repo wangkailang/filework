@@ -5,7 +5,7 @@
  * 审批逻辑优先级:
  *   1. writeFile + 计划已审批任务 + 路径在 workspace 内 → 自动批准
  *   2. 工具在本任务已被用户批准(白名单)→ 自动批准(在 requestApproval 内部)
- *   3. moveFile/deleteFile/runCommand:workspace 边界检查(越界则拒绝)
+ *   3. moveFile/deleteFile/runCommand/runProcess:workspace 边界检查(越界则拒绝)
  *   4. 否则:通过 requestApproval → approval-batcher 入队到批量审批卡片
  *      (ai:stream-tool-batch-approval),等待用户决策。
  */
@@ -103,7 +103,7 @@ export const buildApprovalHook = ({
         return { allow: false, reason: OUTSIDE_WORKSPACE_REASON };
       }
     }
-    if (call.toolName === "runCommand") {
+    if (call.toolName === "runCommand" || call.toolName === "runProcess") {
       const args = call.args as { cwd?: string; escalatePermissions?: boolean };
       const escalate = args.escalatePermissions === true;
 

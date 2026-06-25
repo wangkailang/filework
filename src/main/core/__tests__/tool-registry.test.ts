@@ -7,7 +7,7 @@ import {
   type ToolDefinition,
   ToolRegistry,
 } from "../agent/tool-registry";
-import type { Workspace } from "../workspace/types";
+import { type Workspace, WorkspaceEscapeError } from "../workspace/types";
 
 function stubWorkspace(): Workspace {
   return {
@@ -198,6 +198,37 @@ describe("ToolRegistry", () => {
         reason: string;
       };
       expect(result.reason).toBe("Tool call denied");
+    });
+
+    it("returns a recoverable hint when a tool escapes the workspace", async () => {
+      const reg = new ToolRegistry();
+      reg.register({
+        name: "writeOutside",
+        description: "Write outside",
+        safety: "safe",
+        inputSchema: z.object({ path: z.string() }),
+        execute: async (args, ctx) => {
+          throw new WorkspaceEscapeError(args.path, ctx.workspace.root);
+        },
+      });
+
+      const sdkTools = reg.toAiSdkTools({ ctxFactory: () => stubCtx() });
+      const exec = sdkTools.writeOutside.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+      const result = await exec(
+        { path: "/tmp/boggle_solver.py" },
+        {
+          toolCallId: "escape-1",
+        },
+      );
+
+      expect(result).toMatchObject({
+        success: false,
+        error: expect.stringContaining("outside workspace root"),
+        hint: expect.stringContaining("workspace"),
+      });
     });
 
     it("keeps raw tool output observable while projecting model-visible output", async () => {

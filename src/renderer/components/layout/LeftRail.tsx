@@ -324,10 +324,7 @@ export const LeftRail = ({
                 </button>
               </div>
               <div className="min-h-0 flex-1">
-                <ChatHistoryPanel
-                  currentBranch={branchForChip}
-                  isGitRepo={isGitRepo}
-                />
+                <ChatHistoryPanel isGitRepo={isGitRepo} />
               </div>
             </div>
           </div>

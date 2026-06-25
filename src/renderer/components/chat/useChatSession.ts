@@ -121,6 +121,7 @@ const buildAutomationRunDetailContent = (
 export function useChatSession(
   workspacePath: string,
   workspaceRefJson?: string,
+  activeBranch?: string | null,
 ) {
   const { LL } = useI18nContext();
   const [input, setInput] = useState("");
@@ -210,7 +211,11 @@ export function useChatSession(
     };
   }, []);
 
-  const crud = useSessionCrud(workspacePath);
+  const activeBranchSnapshot =
+    typeof activeBranch === "string" && activeBranch.trim().length > 0
+      ? activeBranch.trim()
+      : null;
+  const crud = useSessionCrud(workspacePath, activeBranchSnapshot);
   const handleTaskStarted = useCallback(
     (task: {
       sessionId?: string;
@@ -404,7 +409,9 @@ export function useChatSession(
 
     const withBoth = [...baseMessages, userMessage, assistantMessage];
     crud.setMessages(withBoth);
-    crud.debouncedSave(withBoth, sessionId);
+    crud.debouncedSave(withBoth, sessionId, {
+      lastActiveBranch: activeBranchSnapshot,
+    });
     stream.setIsLoading(true);
     crud.setLastUsage(null);
     crud.setLastError(null);

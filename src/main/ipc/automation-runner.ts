@@ -67,6 +67,7 @@ const HEADLESS_ALLOWED_TOOLS = [
   "getCacheStats",
   "clearDirectoryCache",
   "runCommand",
+  "runProcess",
   "readShellOutput",
   "killShell",
   "webFetch",
@@ -82,7 +83,7 @@ const headlessSender = {
 } as unknown as WebContents;
 
 const headlessBeforeToolCall: BeforeToolCallHook = async (call) => {
-  if (call.toolName === "runCommand") {
+  if (call.toolName === "runCommand" || call.toolName === "runProcess") {
     const args = call.args as { escalatePermissions?: boolean };
     if (args.escalatePermissions === true) {
       return {

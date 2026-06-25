@@ -74,6 +74,8 @@ export const dangerousToolDescriptions: Record<
   clearDirectoryCache: (args) =>
     args.path ? `清理目录缓存 ${args.path}` : "清理所有目录缓存",
   runCommand: (args) => `运行命令 ${String(args.command).slice(0, 120)}`,
+  runProcess: (args) =>
+    `运行进程 ${String(args.executable)} ${(Array.isArray(args.args) ? args.args.join(" ") : "").slice(0, 120)}`.trim(),
 };
 
 /** 需要审批的危险工具名——白名单管理面板据此列出可「始终允许」的工具。 */
