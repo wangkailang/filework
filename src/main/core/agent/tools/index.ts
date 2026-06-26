@@ -617,18 +617,91 @@ function sandboxNetworkHint(input: {
   return "Likely blocked by the command sandbox's no-network policy. To go online, retry the SAME command with escalatePermissions:true — it prompts for approval, then runs outside the sandbox.";
 }
 
+function isPathInsideAnyRoot(target: string, roots: string[]): boolean {
+  const resolvedTarget = path.resolve(target);
+  return roots.some((root) => {
+    const relative = path.relative(root, resolvedTarget);
+    return (
+      relative === "" ||
+      (relative.length > 0 &&
+        !relative.startsWith("..") &&
+        !path.isAbsolute(relative))
+    );
+  });
+}
+
+function extractAbsolutePaths(text: string): string[] {
+  return [...text.matchAll(/(?:^|[\s"'`:=])((?:\/[^\s"'`]+)+)/g)]
+    .map((match) => match[1]?.replace(/[),.;:]+$/, "") ?? "")
+    .filter((candidate) => candidate.length > 1 && path.isAbsolute(candidate));
+}
+
+function sandboxFileWriteHint(input: {
+  command: string;
+  result: { stdout: string; stderr: string; exitCode?: number | null };
+  policy: SandboxPolicy | undefined;
+}): { model: string; display: string } | undefined {
+  const { command, result, policy } = input;
+  const sandboxed =
+    policy != null &&
+    isSandboxEffective(policy.mode) &&
+    policy.mode !== "danger-full-access";
+  if (
+    !sandboxed ||
+    typeof result.exitCode !== "number" ||
+    result.exitCode === 0
+  ) {
+    return undefined;
+  }
+
+  const output = `${result.stderr}\n${result.stdout}`;
+  if (
+    !/(Operation not permitted|Permission denied|could not lock config file)/i.test(
+      output,
+    )
+  ) {
+    return undefined;
+  }
+
+  const paths = extractAbsolutePaths(output);
+  const outsidePath = paths.find(
+    (candidate) => !isPathInsideAnyRoot(candidate, policy.writableRoots),
+  );
+  if (paths.length > 0 && !outsidePath) return undefined;
+
+  const target = outsidePath ? ` (${outsidePath})` : "";
+  const subject = /\bgit\s+config\b.*\s--global\b/.test(command)
+    ? "global Git config"
+    : "a file";
+  return {
+    model: `Likely blocked by the command sandbox's file-write policy while writing ${subject}${target} outside the workspace. If this global/system change is intentional, retry the same command with escalatePermissions:true so the user can approve it.`,
+    display: `Command sandbox blocked a file-write policy violation outside the workspace${target}. The agent can retry with elevated permissions after approval.`,
+  };
+}
+
 function commandFailureHint(input: {
   command: string;
   result: { stdout: string; stderr: string; exitCode?: number | null };
   policy: SandboxPolicy | undefined;
 }): string | undefined {
   if (input.result.exitCode === 0) return undefined;
+  const fileWriteHint = sandboxFileWriteHint(input);
   const hints = [
     hostNetworkTransportHint(input.result),
     sandboxNetworkHint(input),
+    fileWriteHint?.model,
     shellSyntaxHint(input.result),
   ].filter((hint): hint is string => Boolean(hint));
   return hints.length > 0 ? hints.join(" ") : undefined;
+}
+
+function commandDisplayHint(input: {
+  command: string;
+  result: { stdout: string; stderr: string; exitCode?: number | null };
+  policy: SandboxPolicy | undefined;
+}): string | undefined {
+  if (input.result.exitCode === 0) return undefined;
+  return sandboxFileWriteHint(input)?.display;
 }
 
 /**
@@ -707,6 +780,11 @@ function runCommandTool(
         result,
         policy,
       });
+      const displayHint = commandDisplayHint({
+        command: args.command,
+        result,
+        policy,
+      });
       return {
         ...result,
         // 非零退出码即工具失败:agent-loop 与 UI 都以 `success` 判定成败,
@@ -715,6 +793,7 @@ function runCommandTool(
         commandKind,
         deliverable: isDeliverableCommand(args.command),
         ...(hint ? { hint } : {}),
+        ...(displayHint ? { displayHint } : {}),
         ...(testStats ? { testStats } : {}),
       };
     },

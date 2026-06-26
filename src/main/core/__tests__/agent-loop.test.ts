@@ -378,6 +378,49 @@ describe("AgentLoop", () => {
     expect(events[1].type).toBe("context_compressed");
   });
 
+  it("does not append a text-only duplicate when history already contains the current image turn", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      history: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "这里有图" },
+            {
+              type: "image",
+              image: new Uint8Array([1, 2, 3]),
+              mediaType: "image/png",
+            },
+          ],
+        },
+      ],
+    });
+
+    await collect(loop, "这里有图");
+
+    const call = streamTextSpy.mock.calls[0][0] as { messages: unknown[] };
+    expect(call.messages).toHaveLength(1);
+    expect(call.messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "这里有图" },
+        { type: "image", mediaType: "image/png" },
+      ],
+    });
+  });
+
   it("translates AbortError into agent_end{cancelled}", async () => {
     const abortErr = new Error("aborted");
     abortErr.name = "AbortError";

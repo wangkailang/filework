@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getDisplayLlmConfigModality,
   getSelectableLlmConfigs,
+  resolveDisplayedLlmConfig,
 } from "../ModelSelector";
 
 describe("getSelectableLlmConfigs", () => {
@@ -67,6 +68,66 @@ describe("getSelectableLlmConfigs", () => {
         },
       ]).map((config) => config.id),
     ).toEqual(["enabled", "legacy-success"]);
+  });
+});
+
+describe("resolveDisplayedLlmConfig", () => {
+  it("shows the default chat config when no explicit config is selected", () => {
+    const displayed = resolveDisplayedLlmConfig(
+      [
+        {
+          id: "recent",
+          name: "Recently updated model",
+          provider: "openai",
+          model: "gpt-5.5",
+          modality: "chat",
+          enabled: true,
+          lastCheckStatus: "success",
+        },
+        {
+          id: "default-chat",
+          name: "Default chat",
+          provider: "deepseek",
+          model: "deepseek-chat",
+          modality: "chat",
+          enabled: true,
+          isDefault: true,
+          lastCheckStatus: "success",
+        },
+      ],
+      null,
+    );
+
+    expect(displayed?.id).toBe("default-chat");
+  });
+
+  it("keeps an explicit selectable config even when another config is default", () => {
+    const displayed = resolveDisplayedLlmConfig(
+      [
+        {
+          id: "default-chat",
+          name: "Default chat",
+          provider: "deepseek",
+          model: "deepseek-chat",
+          modality: "chat",
+          enabled: true,
+          isDefault: true,
+          lastCheckStatus: "success",
+        },
+        {
+          id: "selected",
+          name: "Selected model",
+          provider: "openai",
+          model: "gpt-5.5",
+          modality: "chat",
+          enabled: true,
+          lastCheckStatus: "success",
+        },
+      ],
+      "selected",
+    );
+
+    expect(displayed?.id).toBe("selected");
   });
 });
 

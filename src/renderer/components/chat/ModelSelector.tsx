@@ -20,6 +20,7 @@ interface LlmConfig {
   model: string;
   modality?: Modality;
   enabled?: boolean;
+  isDefault?: boolean;
   lastCheckStatus?: "success" | "error" | null;
   modelAvailable?: boolean | null;
   modelCapabilities?: {
@@ -64,6 +65,27 @@ export function getSelectableLlmConfigs<T extends SelectableLlmConfig>(
   return configs.filter(isSelectableLlmConfig);
 }
 
+export function resolveDisplayedLlmConfig<T extends LlmConfig>(
+  configs: T[],
+  selectedConfigId: string | null,
+): T | null {
+  const selectableConfigs = getSelectableLlmConfigs(configs);
+  if (selectableConfigs.length === 0) return null;
+
+  const selected = selectedConfigId
+    ? selectableConfigs.find((c) => c.id === selectedConfigId)
+    : null;
+  if (selected) return selected;
+
+  return (
+    selectableConfigs.find(
+      (c) => c.isDefault && getDisplayLlmConfigModality(c) === "chat",
+    ) ??
+    selectableConfigs.find((c) => getDisplayLlmConfigModality(c) === "chat") ??
+    selectableConfigs[0]
+  );
+}
+
 export const ModelSelector = ({
   selectedConfigId,
   onSelect,
@@ -101,9 +123,7 @@ export const ModelSelector = ({
 
   if (selectableConfigs.length <= 1) return null;
 
-  const selected =
-    selectableConfigs.find((c) => c.id === selectedConfigId) ||
-    selectableConfigs[0];
+  const selected = resolveDisplayedLlmConfig(configs, selectedConfigId);
   const selectedModality = selected
     ? getDisplayLlmConfigModality(selected)
     : "chat";

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LocalWorkspace } from "../../../workspace/local-workspace";
 import type { ToolContext, ToolDefinition } from "../../tool-registry";
@@ -11,6 +11,17 @@ function toolByName(name: string): ToolDefinition {
   const tool = buildFileTools().find((x) => x.name === name);
   if (!tool) throw new Error(`${name} tool not found`);
   return tool;
+}
+
+function mockProcessPlatform(platform: NodeJS.Platform): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", {
+    ...descriptor,
+    value: platform,
+  });
+  return () => {
+    if (descriptor) Object.defineProperty(process, "platform", descriptor);
+  };
 }
 
 describe("run process tools", () => {
@@ -29,6 +40,7 @@ describe("run process tools", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -95,6 +107,44 @@ describe("run process tools", () => {
     expect(result.hint).not.toEqual(expect.stringContaining("sandbox"));
     expect(result.hint).not.toEqual(
       expect.stringContaining("rerun the same command locally"),
+    );
+  });
+
+  it("adds a sandbox file-write hint when a command writes outside the workspace", async () => {
+    const restorePlatform = mockProcessPlatform("darwin");
+    const stderr =
+      "error: could not lock config file /Users/kailang/.gitconfig: Operation not permitted\n";
+    vi.spyOn(ws.exec, "run").mockResolvedValue({
+      stdout: "",
+      stderr,
+      exitCode: 255,
+    });
+
+    const tool = buildFileTools({
+      sandbox: { mode: "workspace-write", allowNetwork: false },
+    }).find((x) => x.name === "runCommand");
+    if (!tool) throw new Error("runCommand tool not found");
+
+    let result: Record<string, unknown>;
+    try {
+      result = (await tool.execute(
+        { command: "git config --global user.name Codex" },
+        ctx,
+      )) as Record<string, unknown>;
+    } finally {
+      restorePlatform();
+    }
+
+    expect(result.success).toBe(false);
+    expect(result.hint).toEqual(expect.stringContaining("file-write policy"));
+    expect(result.hint).toEqual(
+      expect.stringContaining("outside the workspace"),
+    );
+    expect(result.hint).toEqual(
+      expect.stringContaining("escalatePermissions:true"),
+    );
+    expect(result.displayHint).toEqual(
+      expect.stringContaining("Command sandbox blocked"),
     );
   });
 
