@@ -171,7 +171,8 @@ const runCommandPresenter: ToolPresenter = {
     const exit = typeof r.exitCode === "number" ? r.exitCode : null;
     const shellId = typeof r.shellId === "string" ? r.shellId : null;
     const shellStatus = typeof r.status === "string" ? r.status : null;
-    if (!stdout && !stderr && exit === null && !shellId) return null;
+    const hint = typeof r.displayHint === "string" ? r.displayHint : "";
+    if (!stdout && !stderr && exit === null && !shellId && !hint) return null;
     return (
       <div className="px-3 py-2 text-xs space-y-2">
         {shellId && shellStatus === "running" && (
@@ -189,6 +190,14 @@ const runCommandPresenter: ToolPresenter = {
             LL={LL}
             tone="error"
           />
+        ) : null}
+        {hint ? (
+          <div
+            data-command-hint="true"
+            className="rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground"
+          >
+            {hint}
+          </div>
         ) : null}
         {exit !== null && (
           <div

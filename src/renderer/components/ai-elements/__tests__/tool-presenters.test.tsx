@@ -11,7 +11,9 @@ const LL = {
     `${n} removed lines unavailable`,
   preview_written_snapshot_label: () => "Written content snapshot",
   tool_diff_label: () => "Diff",
+  tool_stderr: () => "stderr",
   tool_summary_exitCode: (n: number) => `exit ${n}`,
+  tool_summary_more: (n: number) => `${n} more lines`,
   tool_summary_new_file: () => "new file",
 } as unknown as TranslationFunctions;
 
@@ -33,6 +35,30 @@ describe("runCommand presenter", () => {
     expect(html).toContain("text-status-error/70");
     expect(html).not.toContain("text-foreground/80");
     expect(html).not.toContain("text-red-400");
+  });
+
+  it("renders command recovery hints in the expanded output", () => {
+    const output = toolPresenters.runCommand.output?.(
+      {
+        stderr:
+          "error: could not lock config file /Users/kailang/.gitconfig: Operation not permitted\n",
+        exitCode: 255,
+        displayHint:
+          "Command sandbox blocked a file-write policy violation outside the workspace. The agent can retry with elevated permissions after approval.",
+      },
+      { command: "git config --global user.email test@example.com" },
+      "output-error",
+      {
+        LL,
+        toolCallId: "call-command-hint",
+      },
+    );
+
+    const html = renderToStaticMarkup(output);
+
+    expect(html).toContain("data-command-hint");
+    expect(html).toContain("file-write policy");
+    expect(html).toContain("outside the workspace");
   });
 });
 

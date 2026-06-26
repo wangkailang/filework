@@ -123,6 +123,37 @@ export interface AgentLoopConfig {
   maxWallMs?: number;
 }
 
+function contentContainsPrompt(
+  content: ModelMessage["content"],
+  prompt: string,
+) {
+  if (typeof content === "string") return content === prompt;
+  if (!Array.isArray(content)) return false;
+
+  if (prompt === "") {
+    return content.some((part) => {
+      if (typeof part !== "object" || part === null || !("type" in part)) {
+        return false;
+      }
+      const type = (part as { type?: unknown }).type;
+      return type === "image" || type === "file";
+    });
+  }
+
+  return content.some((part) => {
+    if (typeof part !== "object" || part === null || !("type" in part)) {
+      return false;
+    }
+    const typed = part as { text?: unknown; type?: unknown };
+    return typed.type === "text" && typed.text === prompt;
+  });
+}
+
+function shouldAppendPrompt(history: ModelMessage[], prompt: string): boolean {
+  const last = history.at(-1);
+  return last?.role !== "user" || !contentContainsPrompt(last.content, prompt);
+}
+
 // ---------------------------------------------------------------------------
 // AgentLoop
 // ---------------------------------------------------------------------------
@@ -237,10 +268,9 @@ export class AgentLoop {
       }
     }
 
-    const messages: ModelMessage[] = [
-      ...history,
-      { role: "user", content: prompt },
-    ];
+    const messages: ModelMessage[] = shouldAppendPrompt(history, prompt)
+      ? [...history, { role: "user", content: prompt }]
+      : [...history];
 
     const aiTools =
       this.cfg.tools instanceof ToolRegistry

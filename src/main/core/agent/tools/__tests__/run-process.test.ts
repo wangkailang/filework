@@ -98,6 +98,33 @@ describe("run process tools", () => {
     );
   });
 
+  it("adds a sandbox file-write hint when a command writes outside the workspace", async () => {
+    const tool = buildFileTools({
+      sandbox: { mode: "workspace-write", allowNetwork: false },
+    }).find((x) => x.name === "runCommand");
+    if (!tool) throw new Error("runCommand tool not found");
+
+    const result = (await tool.execute(
+      {
+        command:
+          "printf '%s\\n' 'error: could not lock config file /Users/kailang/.gitconfig: Operation not permitted' >&2; exit 255",
+      },
+      ctx,
+    )) as Record<string, unknown>;
+
+    expect(result.success).toBe(false);
+    expect(result.hint).toEqual(expect.stringContaining("file-write policy"));
+    expect(result.hint).toEqual(
+      expect.stringContaining("outside the workspace"),
+    );
+    expect(result.hint).toEqual(
+      expect.stringContaining("escalatePermissions:true"),
+    );
+    expect(result.displayHint).toEqual(
+      expect.stringContaining("Command sandbox blocked"),
+    );
+  });
+
   it("does not add a network recovery hint to successful commands", async () => {
     const result = (await toolByName("runCommand").execute(
       {
