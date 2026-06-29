@@ -1,4 +1,4 @@
-import { FolderOpenIcon, X } from "lucide-react";
+import { DownloadIcon, FolderOpenIcon, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../ui/button";
 import {
@@ -13,6 +13,8 @@ import {
 interface ImageLightboxProps {
   src: string;
   alt?: string;
+  /** Suggested filename for the browser download action. */
+  downloadName?: string;
   /** 显示在图片下方(提示词、文件名等)。 */
   caption?: ReactNode;
   /**
@@ -23,6 +25,41 @@ interface ImageLightboxProps {
   onClose: () => void;
 }
 
+const basename = (value: string): string | null => {
+  const normalized = value.split(/[?#]/, 1)[0]?.replace(/\\/g, "/") ?? "";
+  const name = normalized.split("/").filter(Boolean).pop();
+  if (!name) return null;
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+};
+
+export const ImageDownloadButton = ({
+  src,
+  downloadName,
+}: {
+  src: string;
+  downloadName?: string | null;
+}) => (
+  <Button
+    asChild
+    size="icon-sm"
+    variant="ghost"
+    className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white"
+  >
+    <a
+      href={src}
+      download={downloadName ?? basename(src) ?? "image"}
+      aria-label="下载图片"
+      title="下载图片"
+    >
+      <DownloadIcon />
+    </a>
+  </Button>
+);
+
 /**
  * 单图灯箱。按 Esc 或点击背景关闭。同级的轮播
  * 实现位于 ImageGallery,那个保持在图集作用域内(在图集
@@ -32,10 +69,14 @@ interface ImageLightboxProps {
 export const ImageLightbox = ({
   src,
   alt,
+  downloadName,
   caption,
   revealPath,
   onClose,
 }: ImageLightboxProps) => {
+  const effectiveDownloadName =
+    downloadName ?? (revealPath ? basename(revealPath) : null) ?? basename(src);
+
   return (
     <Dialog
       open
@@ -54,6 +95,7 @@ export const ImageLightbox = ({
           </DialogDescription>
         </DialogHeader>
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          <ImageDownloadButton src={src} downloadName={effectiveDownloadName} />
           {revealPath && (
             <Button
               type="button"

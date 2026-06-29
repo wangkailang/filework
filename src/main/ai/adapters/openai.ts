@@ -15,6 +15,7 @@ import {
   type ProviderAdapter,
   type ProviderConfig,
 } from "./base";
+import { buildProviderNativeCompactionOptions } from "./native-compaction";
 import { resolveOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
 type ResolveApiKey = NonNullable<ProviderConfig["resolveApiKey"]>;
@@ -96,12 +97,16 @@ export class OpenAIAdapter implements ProviderAdapter {
     const shouldSendReasoningEffort =
       Boolean(config?.reasoningEffort) &&
       config?.modelCapabilities?.supportsReasoning !== false;
+    const nativeOpenAIOptions = config
+      ? (buildProviderNativeCompactionOptions(config).openai ?? {})
+      : {};
     return {
       openai: {
         parallelToolCalls: false,
         ...(shouldSendReasoningEffort && {
           reasoningEffort: config?.reasoningEffort,
         }),
+        ...nativeOpenAIOptions,
       },
     };
   }

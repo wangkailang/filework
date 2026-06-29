@@ -55,9 +55,15 @@ export type TransformContextHook = (
   signal?: AbortSignal,
 ) => Promise<TransformContextResult>;
 
+export type ContextUsageHook = (payload: {
+  messages: ModelMessage[];
+  preparedMessages: ModelMessage[];
+}) => void;
+
 export interface AgentLoopHooks {
   beforeToolCall?: BeforeToolCallHook;
   transformContext?: TransformContextHook;
+  contextUsage?: ContextUsageHook;
   /**
    * 可选的流后裁决钩子。存在时,AgentLoop 会在每次 `streamText` 调用后
    * 运行该钩子,并可附加反馈最多循环 `maxReflections` 次。
@@ -315,6 +321,17 @@ export class AgentLoop {
         //(输入 token 的倍增因素)。最新结果保持完整。
         prepareStep: ({ messages: stepMessages }) => {
           const compacted = compactToolResults(stepMessages);
+          try {
+            this.cfg.hooks?.contextUsage?.({
+              messages: stepMessages,
+              preparedMessages: compacted ?? stepMessages,
+            });
+          } catch (err) {
+            console.warn(
+              "[AgentLoop] contextUsage hook failed:",
+              err instanceof Error ? err.message : err,
+            );
+          }
           return compacted ? { messages: compacted } : {};
         },
         abortSignal: effectiveSignal,
@@ -469,6 +486,7 @@ export class AgentLoop {
               agentId,
               turnIndex,
               reason: mapTurnEndReason(part.finishReason),
+              usage: stepUsage,
             });
             // ── token 预算核算(每个 step 都计,含纯工具步)──────────────
             const stepTotal =

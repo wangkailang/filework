@@ -59,6 +59,7 @@ export const MediaImageCard = ({ part }: MediaImageCardProps) => {
             </>
           }
           revealPath={part.path}
+          downloadName={part.path.split("/").filter(Boolean).pop()}
           onClose={() => setOpen(false)}
         />
       )}

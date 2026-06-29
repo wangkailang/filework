@@ -1125,6 +1125,21 @@ const webSearchPresenter: ToolPresenter = {
   },
 };
 
+const searchFilesPresenter: ToolPresenter = {
+  summary: (args) => {
+    const q = searchQuery(args).trim();
+    if (!q) return null;
+    return <span className={TOOL_SUMMARY_TEXT}>{q}</span>;
+  },
+  groupSummary: (argsList) => {
+    const queries = argsList
+      .map((args) => searchQuery(args).trim())
+      .filter(Boolean);
+    if (!queries.length) return null;
+    return <span className={TOOL_SUMMARY_TEXT}>{queries.join("、")}</span>;
+  },
+};
+
 // --- 没有丰富输出的文件操作:仅呈现目标路径,使折叠行显示为
 //     "移动文件 a → b",而不是单纯的"完成 moveFile"。
 
@@ -1238,6 +1253,7 @@ export const toolPresenters: Record<string, ToolPresenter> = {
   readShellOutput: readShellOutputPresenter,
   killShell: killShellPresenter,
   webSearch: webSearchPresenter,
+  searchFiles: searchFilesPresenter,
   moveFile: moveFilePresenter,
   deleteFile: deleteFilePresenter,
   createDirectory: createDirectoryPresenter,

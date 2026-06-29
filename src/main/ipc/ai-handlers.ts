@@ -16,7 +16,12 @@ import {
 import { isImageGenerationModelId } from "../../shared/llm-modalities";
 import { resolveAdapterName } from "../ai/adapters";
 import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
+import {
+  extractProviderNativeCompactionUsage,
+  type ProviderNativeCompaction,
+} from "../ai/adapters/native-compaction";
 import { compressContext } from "../ai/context-compressor";
+import { repairMissingToolResults } from "../ai/context-safety";
 import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError } from "../ai/error-classifier";
 import { emitMemoryEvent } from "../ai/memory-debug-store";
@@ -29,8 +34,12 @@ import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { emitTaskTraceEvent } from "../ai/task-trace-store";
 import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
   estimateTokens,
-  getTokenBudgetForModel,
+  getCompressionTriggerBudget,
+  getContextWindowForModel,
+  getTokenBudget,
+  SAFETY_MARGIN,
   truncateToFitAsync,
 } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
@@ -186,6 +195,28 @@ const finishAutomationRunForTask = (
   }
 };
 
+const readLatestContextInputTokens = (
+  history: Array<{ parts?: unknown[] }> | undefined,
+): number => {
+  const messages = history ?? [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const parts = messages[i]?.parts ?? [];
+    for (let j = parts.length - 1; j >= 0; j -= 1) {
+      const part = parts[j];
+      if (part == null || typeof part !== "object") continue;
+      const record = part as { inputTokens?: unknown; type?: unknown };
+      if (record.type !== "usage") continue;
+      if (
+        typeof record.inputTokens === "number" &&
+        Number.isFinite(record.inputTokens)
+      ) {
+        return record.inputTokens;
+      }
+    }
+  }
+  return 0;
+};
+
 /**
  * 主任务执行 handler
  */
@@ -208,6 +239,7 @@ const handleTaskExecutionInner = async (
     /** 自动化手动运行记录 id。存在时,本 chat 任务会同步 automation_runs。 */
     automationRunId?: string;
     chatPermissionMode?: ChatPermissionMode;
+    contextInputTokens?: number;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
@@ -454,8 +486,88 @@ const handleTaskExecutionInner = async (
     const llmConfig = llmSelection.config;
     const resolvedLlmConfigId = llmConfig.id;
 
-    const { model, adapter, generationOptions, providerOptions } =
-      getModelAndAdapterByConfigId(resolvedLlmConfigId);
+    const {
+      model,
+      adapter,
+      generationOptions,
+      providerOptions,
+      providerNativeCompaction,
+    } = getModelAndAdapterByConfigId(resolvedLlmConfigId);
+    const contextWindow = llmConfig
+      ? (llmConfig.modelContextWindow ??
+        getContextWindowForModel(llmConfig.model))
+      : null;
+    const maxOutputTokens =
+      llmConfig?.maxOutputTokens ??
+      llmConfig?.modelMaxOutputTokens ??
+      DEFAULT_MAX_OUTPUT_TOKENS;
+    const tokenBudget = llmConfig
+      ? getTokenBudget({
+          modelId: llmConfig.model,
+          contextWindow,
+          maxOutputTokens,
+        })
+      : undefined;
+    const compressionTriggerBudget = llmConfig
+      ? getCompressionTriggerBudget({
+          modelId: llmConfig.model,
+          contextWindow,
+          maxOutputTokens,
+        })
+      : undefined;
+    const emitContextBudgetTrace = (detail: {
+      compressionStage?:
+        | "none"
+        | "tool-result-compaction"
+        | "llm-summary"
+        | "safe-truncation";
+      messagesDropped?: number;
+      originalTokens: number;
+      repairedToolResults?: number;
+      semanticToolResultSummary?: boolean;
+      source: "agent-step" | "history" | "provider-step";
+      turnIndex?: number;
+      usedTokens: number;
+      wasTruncated?: boolean;
+      providerNativeCompaction?: ProviderNativeCompaction;
+    }) => {
+      emitTaskTraceEvent(sender, {
+        taskId: id,
+        type: "context-budget",
+        timestamp: new Date().toISOString(),
+        detail: {
+          contextWindow,
+          maxOutputTokens,
+          safetyMargin: SAFETY_MARGIN,
+          tokenBudget: tokenBudget ?? null,
+          compressionTriggerBudget: compressionTriggerBudget ?? null,
+          originalTokens: detail.originalTokens,
+          usedTokens: detail.usedTokens,
+          source: detail.source,
+          ...(detail.turnIndex !== undefined && {
+            turnIndex: detail.turnIndex,
+          }),
+          ...(detail.wasTruncated !== undefined && {
+            wasTruncated: detail.wasTruncated,
+          }),
+          ...(detail.messagesDropped !== undefined && {
+            messagesDropped: detail.messagesDropped,
+          }),
+          ...(detail.compressionStage !== undefined && {
+            compressionStage: detail.compressionStage,
+          }),
+          ...(detail.repairedToolResults !== undefined && {
+            repairedToolResults: detail.repairedToolResults,
+          }),
+          ...(detail.semanticToolResultSummary !== undefined && {
+            semanticToolResultSummary: detail.semanticToolResultSummary,
+          }),
+          ...(detail.providerNativeCompaction !== undefined && {
+            providerNativeCompaction: detail.providerNativeCompaction,
+          }),
+        },
+      });
+    };
 
     emitTaskTraceEvent(sender, {
       taskId: id,
@@ -466,6 +578,7 @@ const handleTaskExecutionInner = async (
         modelId: llmConfig?.model ?? null,
         configId: resolvedLlmConfigId,
         fallbackFromConfigId: llmSelection.fallbackFromConfigId,
+        providerNativeCompaction,
       },
     });
 
@@ -519,6 +632,16 @@ const handleTaskExecutionInner = async (
     let convertedHistory: import("ai").ModelMessage[] | undefined;
     if (Array.isArray(payload.history) && payload.history.length > 0) {
       try {
+        const latestContextInputTokens =
+          typeof payload.contextInputTokens === "number" &&
+          Number.isFinite(payload.contextInputTokens) &&
+          payload.contextInputTokens > 0
+            ? payload.contextInputTokens
+            : readLatestContextInputTokens(payload.history);
+        const forceCompressionFromUsage =
+          !providerNativeCompaction.enabled &&
+          compressionTriggerBudget != null &&
+          latestContextInputTokens > compressionTriggerBudget;
         const coreMessages = await convertToCoreMessages(
           payload.history as HistoryMessage[],
           {
@@ -531,6 +654,39 @@ const handleTaskExecutionInner = async (
           },
         );
 
+        const inputRepair = repairMissingToolResults(coreMessages);
+        const safeCoreMessages = inputRepair.messages;
+        const originalTokens = estimateTokens(safeCoreMessages);
+        let preparedCoreMessages = safeCoreMessages;
+        let semanticToolResultSummary = false;
+        const shouldSummarizeToolResults =
+          forceCompressionFromUsage ||
+          (!providerNativeCompaction.enabled &&
+            compressionTriggerBudget != null &&
+            originalTokens > compressionTriggerBudget) ||
+          (tokenBudget != null && originalTokens > tokenBudget);
+
+        if (shouldSummarizeToolResults) {
+          try {
+            preparedCoreMessages = await summarizeLargeToolResults(
+              safeCoreMessages,
+              {
+                model,
+                signal: controller.signal,
+                taskId: id,
+                promptSnippet: payload.prompt,
+              },
+            );
+            semanticToolResultSummary =
+              estimateTokens(preparedCoreMessages) < originalTokens;
+          } catch (err) {
+            console.warn(
+              "[ai:executeTask] Tool result summarization failed, continuing with raw results:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+
         let compressorCalled = false;
         const compressor = async (
           msgs: import("ai").ModelMessage[],
@@ -538,26 +694,11 @@ const handleTaskExecutionInner = async (
         ) => {
           compressorCalled = true;
 
-          // 在压缩前先对超大的工具结果(>60KB)做摘要。仅当上下文确实
-          // 超出预算时才运行,避免在短对话上做不必要的 LLM 调用。
-          let preprocessed = msgs;
-          try {
-            preprocessed = await summarizeLargeToolResults(msgs, {
-              model,
-              signal: controller.signal,
-              taskId: id,
-              promptSnippet: payload.prompt,
-            });
-          } catch (err) {
-            console.warn(
-              "[ai:executeTask] Tool result summarization failed, continuing with raw results:",
-              err instanceof Error ? err.message : err,
-            );
-          }
-
-          const result = await compressContext(preprocessed, {
+          const result = await compressContext(msgs, {
             model,
             budget,
+            force: forceCompressionFromUsage,
+            tailBudget: forceCompressionFromUsage ? 4_000 : undefined,
             signal: controller.signal,
             taskId: id,
             promptSnippet: payload.prompt,
@@ -584,28 +725,48 @@ const handleTaskExecutionInner = async (
           }
           return result;
         };
-        const tokenBudget = llmConfig?.model
-          ? getTokenBudgetForModel(llmConfig.model)
-          : undefined;
-        const originalTokens = estimateTokens(coreMessages);
         const truncationResult = await truncateToFitAsync(
-          coreMessages,
+          preparedCoreMessages,
           tokenBudget,
           compressor,
-        );
-        convertedHistory = truncationResult.messages;
-
-        emitTaskTraceEvent(sender, {
-          taskId: id,
-          type: "context-budget",
-          timestamp: new Date().toISOString(),
-          detail: {
-            tokenBudget: tokenBudget ?? null,
-            originalTokens,
-            wasTruncated: truncationResult.wasTruncated,
-            messagesDropped: truncationResult.messagesDropped,
+          {
+            compressionTriggerBudget: providerNativeCompaction.enabled
+              ? undefined
+              : compressionTriggerBudget,
+            forceCompression: forceCompressionFromUsage,
           },
+        );
+        const repaired = repairMissingToolResults(truncationResult.messages);
+        convertedHistory = repaired.messages;
+        const usedTokens = estimateTokens(convertedHistory);
+        const repairedToolResults =
+          inputRepair.repairedToolCallIds.length +
+          repaired.repairedToolCallIds.length;
+
+        emitContextBudgetTrace({
+          source: "history",
+          originalTokens,
+          usedTokens,
+          wasTruncated: truncationResult.wasTruncated,
+          messagesDropped: truncationResult.messagesDropped,
+          compressionStage: truncationResult.compressionStage,
+          repairedToolResults,
+          semanticToolResultSummary,
+          providerNativeCompaction,
         });
+
+        if (truncationResult.toolResultCompaction && !sender.isDestroyed()) {
+          emitMemoryEvent(
+            sender,
+            id,
+            "compression-write",
+            {
+              ...truncationResult.toolResultCompaction,
+              compressionStage: truncationResult.compressionStage,
+            },
+            payload.prompt,
+          );
+        }
 
         // 记录消息被简单截断悄然丢弃的情形
         if (truncationResult.messagesDropped > 0 && !sender.isDestroyed()) {
@@ -616,6 +777,8 @@ const handleTaskExecutionInner = async (
             {
               messagesDropped: truncationResult.messagesDropped,
               originalTokens,
+              compressionStage: truncationResult.compressionStage,
+              repairedToolResults,
             },
             payload.prompt,
           );
@@ -623,7 +786,7 @@ const handleTaskExecutionInner = async (
 
         // 若 compressor 从未被调用(history 在预算内),仍发出一个
         // compression-skip 事件,让调试面板显示有活动
-        if (!compressorCalled) {
+        if (!compressorCalled && !truncationResult.toolResultCompaction) {
           emitMemoryEvent(
             sender,
             id,
@@ -859,6 +1022,8 @@ const handleTaskExecutionInner = async (
         ? { model, rules: builtinRules() }
         : { rules: defaultRules() },
     );
+    const estimateAgentStepTokens = (messages: import("ai").ModelMessage[]) =>
+      estimateTokens([{ role: "system", content: systemPrompt }, ...messages]);
 
     const agentLoop = new AgentLoop({
       workspace,
@@ -872,7 +1037,17 @@ const handleTaskExecutionInner = async (
       maxOutputTokens: generationOptions.maxOutputTokens,
       signal: controller.signal,
       agentId: id,
-      hooks: { reflect: reflectHook },
+      hooks: {
+        reflect: reflectHook,
+        contextUsage: ({ messages, preparedMessages }) => {
+          emitContextBudgetTrace({
+            source: "agent-step",
+            originalTokens: estimateAgentStepTokens(messages),
+            usedTokens: estimateAgentStepTokens(preparedMessages),
+            providerNativeCompaction,
+          });
+        },
+      },
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
         return {
@@ -979,6 +1154,22 @@ const handleTaskExecutionInner = async (
               detail: { ok: ev.success, durationMs: ev.durationMs },
             });
             break;
+          case "turn_end": {
+            const inputTokens = ev.usage?.inputTokens;
+            if (
+              typeof inputTokens === "number" &&
+              Number.isFinite(inputTokens)
+            ) {
+              emitContextBudgetTrace({
+                source: "provider-step",
+                originalTokens: inputTokens,
+                turnIndex: ev.turnIndex,
+                usedTokens: inputTokens,
+                providerNativeCompaction,
+              });
+            }
+            break;
+          }
           case "retry": {
             console.log(
               `[Main] Retry attempt ${ev.attempt} for taskId: ${id}, error type: ${ev.errorType}`,
@@ -1117,6 +1308,31 @@ const handleTaskExecutionInner = async (
                   { cacheReadTokens: cr },
                   payload.prompt,
                 );
+              }
+            } catch {
+              // 非关键
+            }
+            try {
+              const nativeCompaction =
+                extractProviderNativeCompactionUsage(agentProviderMeta);
+              if (nativeCompaction?.applied) {
+                emitMemoryEvent(
+                  sender,
+                  id,
+                  "compression-write",
+                  {
+                    compressionStage: "provider-native",
+                    providerNativeCompactionMode: nativeCompaction.mode,
+                    providerNativeCompactionApplied: true,
+                  },
+                  payload.prompt,
+                );
+                emitTaskTraceEvent(sender, {
+                  taskId: id,
+                  type: "provider-native-compaction",
+                  timestamp: new Date().toISOString(),
+                  detail: { ...nativeCompaction },
+                });
               }
             } catch {
               // 非关键

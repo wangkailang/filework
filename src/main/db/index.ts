@@ -2413,6 +2413,8 @@ export interface LlmConfig {
   modelAvailable?: boolean | null;
   modelCapabilities?: LlmModelCapabilities | null;
   modelCatalogFetchedAt?: string | null;
+  modelContextWindow?: number | null;
+  modelMaxOutputTokens?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2499,6 +2501,8 @@ function attachLlmModelCatalogMetadata(config: LlmConfig): LlmConfig {
       modelAvailable: null,
       modelCapabilities: null,
       modelCatalogFetchedAt: null,
+      modelContextWindow: null,
+      modelMaxOutputTokens: null,
     };
   }
 
@@ -2509,6 +2513,8 @@ function attachLlmModelCatalogMetadata(config: LlmConfig): LlmConfig {
     modelCapabilities: matchedModel?.capabilities ?? null,
     modelCatalogFetchedAt:
       matchedModel?.fetchedAt ?? catalog[0]?.fetchedAt ?? null,
+    modelContextWindow: matchedModel?.contextWindow ?? null,
+    modelMaxOutputTokens: matchedModel?.maxOutputTokens ?? null,
   };
 }
 
@@ -2598,6 +2604,8 @@ export const createLlmConfig = (
     modelAvailable: null,
     modelCapabilities: null,
     modelCatalogFetchedAt: null,
+    modelContextWindow: null,
+    modelMaxOutputTokens: null,
   };
 };
 

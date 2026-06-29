@@ -22,6 +22,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       toolName_readFile: () => "Read file",
       toolName_runCommand: () => "Run command",
       toolName_runProcess: () => "Run process",
+      toolName_searchFiles: () => "Search files",
       toolName_spawnSubagent: () => "Spawn subagent",
       toolName_webFetch: () => "Fetch",
       toolName_webFetchRendered: () => "Fetch rendered",
@@ -83,6 +84,17 @@ describe("Tool chrome", () => {
 
     expect(html).toContain("Manage automations");
     expect(html).not.toContain("automation_update");
+  });
+
+  it("localizes the search files tool name", () => {
+    const html = renderToStaticMarkup(
+      <Tool defaultOpen>
+        <ToolHeader state="output-available" toolName="searchFiles" />
+      </Tool>,
+    );
+
+    expect(html).toContain("Search files");
+    expect(html).not.toContain(">searchFiles<");
   });
 
   it("renders distinct leading icons for different tools", () => {

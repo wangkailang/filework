@@ -160,6 +160,12 @@ export interface UsagePart {
   provider: string | null;
 }
 
+export interface ContextCompressedPart {
+  type: "context-compressed";
+  originalTokens?: number | null;
+  compressedTokens?: number | null;
+}
+
 export interface ClarificationPart {
   type: "clarification";
   question: string;
@@ -451,6 +457,7 @@ export type MessagePart =
   | PlanMessagePart
   | ErrorPart
   | UsagePart
+  | ContextCompressedPart
   | ClarificationPart
   | ImagePart
   | ImageGalleryPart

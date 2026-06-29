@@ -11,6 +11,15 @@ const chatState: {
   value: {},
 };
 
+let taskTraceCallback:
+  | ((data: {
+      taskId: string;
+      type: string;
+      timestamp: string;
+      detail: Record<string, unknown>;
+    }) => void)
+  | null = null;
+
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
     LL: {
@@ -141,7 +150,11 @@ vi.mock("../../ai-elements/prompt-input", () => ({
     <div>{children}</div>
   ),
   PromptInputRichEditor: () => <div data-testid="composer" />,
-  PromptInputSubmit: () => null,
+  PromptInputSubmit: () => (
+    <button aria-label="Send" type="submit">
+      Enter
+    </button>
+  ),
 }));
 
 vi.mock("../AgentTelemetry", () => ({
@@ -215,7 +228,25 @@ describe("ChatPanel message rendering", () => {
       filework: {
         chatAttachBlob: vi.fn(),
         chatAttachFile: vi.fn(),
+        llmConfig: {
+          get: vi.fn(() =>
+            Promise.resolve({
+              id: "cfg-1",
+              maxOutputTokens: null,
+              model: "gpt-5.5",
+              modelContextWindow: 258_000,
+              modelMaxOutputTokens: null,
+            }),
+          ),
+          list: vi.fn(() => Promise.resolve([])),
+        },
         openFiles: vi.fn(() => Promise.resolve([])),
+        taskTrace: {
+          onEvent: vi.fn((callback) => {
+            taskTraceCallback = callback;
+            return vi.fn();
+          }),
+        },
       },
     });
     vi.stubGlobal("window", window);
@@ -227,6 +258,7 @@ describe("ChatPanel message rendering", () => {
     ).IS_REACT_ACT_ENVIRONMENT = true;
     root = createRoot(document.getElementById("root") as HTMLElement);
     vi.mocked(MessageResponse).mockClear();
+    taskTraceCallback = null;
   });
 
   afterEach(() => {
@@ -406,6 +438,492 @@ describe("ChatPanel message rendering", () => {
 
     expect(document.getElementById("root")?.textContent ?? "").toContain(
       "替我审批",
+    );
+  });
+
+  it("shows context usage immediately before the Enter button", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          tokenBudget: 258_000,
+          originalTokens: 183_000,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="71% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    expect(usageButton?.textContent).not.toContain("71%");
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const usageIndex = buttons.indexOf(usageButton as HTMLButtonElement);
+    const enterIndex = buttons.findIndex(
+      (button) => button.textContent === "Enter",
+    );
+    expect(usageIndex).toBeGreaterThanOrEqual(0);
+    expect(usageIndex).toBeLessThan(enterIndex);
+  });
+
+  it("renders a divider when the assistant context was compressed", async () => {
+    chatState.value = createChatState([
+      {
+        id: "assistant-compressed",
+        sessionId: "session-1",
+        role: "assistant",
+        content: "",
+        parts: [
+          {
+            type: "context-compressed",
+            originalTokens: 401_000,
+            compressedTokens: 40_000,
+          },
+          { type: "text", text: "继续执行后续任务。" },
+        ],
+        timestamp: "2026-06-29T04:00:00.000Z",
+      },
+    ]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    const marker = document.querySelector('[data-context-compressed="true"]');
+    expect(marker).not.toBeNull();
+    expect(marker?.textContent).toContain("上下文已自动压缩");
+    expect(marker?.textContent).toContain("401k");
+    expect(marker?.textContent).toContain("40k");
+  });
+
+  it("shows selected model context before task usage is available", async () => {
+    chatState.value = createChatState([], {
+      selectedLlmConfigId: "cfg-1",
+    });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const usageButton = document.querySelector('button[aria-label*="0% 已用"]');
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    expect(usageButton?.textContent).not.toContain("0%");
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "已用 0 标记，共 258k",
+    );
+  });
+
+  it("falls back to known gpt-5.5 context before model metadata arrives", async () => {
+    window.filework.llmConfig.get = vi.fn(() =>
+      Promise.resolve({
+        id: "cfg-1",
+        maxOutputTokens: null,
+        model: "gpt-5.5",
+        modelContextWindow: null,
+        modelMaxOutputTokens: null,
+      }),
+    );
+    chatState.value = createChatState([], {
+      selectedLlmConfigId: "cfg-1",
+    });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const usageButton = document.querySelector('button[aria-label*="0% 已用"]');
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    expect(usageButton?.textContent).not.toContain("0%");
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "已用 0 标记，共 258k",
+    );
+  });
+
+  it("uses post-compression context tokens from context-budget trace", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 475_000,
+          tokenBudget: 247_808,
+          usedTokens: 180_000,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="70% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 180k 标记，共 258k");
+    expect(rootText).not.toContain("已用 475k 标记，共 258k");
+  });
+
+  it("shows provider-native compaction status from context-budget trace", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 200_000,
+          originalTokens: 170_000,
+          providerNativeCompaction: {
+            enabled: true,
+            mode: "anthropic-context-management-compact",
+            provider: "anthropic",
+            triggerTokens: 170_000,
+          },
+          source: "provider-step",
+          tokenBudget: 190_000,
+          usedTokens: 170_000,
+        },
+      });
+    });
+
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("原生压缩已启用：Anthropic");
+  });
+
+  it("updates provider-native compaction status when the provider reports it applied", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 200_000,
+          originalTokens: 170_000,
+          providerNativeCompaction: {
+            enabled: true,
+            mode: "anthropic-context-management-compact",
+            provider: "anthropic",
+            triggerTokens: 170_000,
+          },
+          source: "provider-step",
+          tokenBudget: 190_000,
+          usedTokens: 170_000,
+        },
+      });
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "provider-native-compaction",
+        timestamp: "2026-06-29T04:00:01.000Z",
+        detail: {
+          applied: true,
+          mode: "anthropic-context-management-compact",
+          provider: "anthropic",
+        },
+      });
+    });
+
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("原生压缩已应用：Anthropic");
+    expect(rootText).not.toContain("原生压缩已启用：Anthropic");
+  });
+
+  it("lets provider step input usage override a smaller history-only estimate", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 18,
+          tokenBudget: 247_808,
+        },
+      });
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:01.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 31_100,
+          source: "provider-step",
+          tokenBudget: 247_808,
+          usedTokens: 31_100,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="12% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 31k 标记，共 258k");
+    expect(rootText).not.toContain("已用 18 标记，共 258k");
+  });
+
+  it("does not downgrade provider-measured context usage with a lower estimate", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 34_300,
+          source: "provider-step",
+          tokenBudget: 247_808,
+          usedTokens: 34_300,
+        },
+      });
+      taskTraceCallback?.({
+        taskId: "task-2",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:01.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 12_000,
+          source: "agent-step",
+          tokenBudget: 247_808,
+          usedTokens: 12_000,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="13% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 34k 标记，共 258k");
+    expect(rootText).not.toContain("已用 12k 标记，共 258k");
+  });
+
+  it("keeps provider-measured context usage separate from cumulative input", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 34_500,
+          source: "provider-step",
+          tokenBudget: 247_808,
+          turnIndex: 0,
+          usedTokens: 34_500,
+        },
+      });
+      taskTraceCallback?.({
+        taskId: "task-2",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:01.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 34_900,
+          source: "provider-step",
+          tokenBudget: 247_808,
+          turnIndex: 0,
+          usedTokens: 34_900,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="14% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 35k 标记，共 258k");
+    expect(rootText).toContain("累计输入 69k 标记");
+    expect(rootText).not.toContain("27% 已用");
+  });
+
+  it("restores latest usage input as estimated context usage from existing rows", async () => {
+    chatState.value = createChatState(
+      [
+        {
+          id: "assistant-1",
+          sessionId: "session-1",
+          role: "assistant",
+          content: "",
+          timestamp: "2026-06-29T04:00:00.000Z",
+          parts: [
+            {
+              inputTokens: 34_500,
+              modelId: "gpt-5.5",
+              outputTokens: 390,
+              provider: "openai",
+              totalTokens: 34_890,
+              type: "usage",
+            },
+          ],
+        },
+        {
+          id: "assistant-2",
+          sessionId: "session-1",
+          role: "assistant",
+          content: "",
+          timestamp: "2026-06-29T04:00:01.000Z",
+          parts: [
+            {
+              inputTokens: 34_900,
+              modelId: "gpt-5.5",
+              outputTokens: 22,
+              provider: "openai",
+              totalTokens: 34_922,
+              type: "usage",
+            },
+          ],
+        },
+      ],
+      {
+        selectedLlmConfigId: "cfg-1",
+      },
+    );
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="14% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("估算");
+    expect(rootText).toContain("已用 35k 标记，共 258k");
+    expect(rootText).toContain("累计输入 69k 标记");
+    expect(rootText).not.toContain("已用 0 标记，共 258k");
+  });
+
+  it("does not restore provider input tokens as context usage", async () => {
+    chatState.value = createChatState([], {
+      lastUsage: {
+        inputTokens: 34_700,
+        outputTokens: 460,
+        totalTokens: 35_160,
+        modelId: "gpt-5.5",
+        provider: "openai",
+      },
+      selectedLlmConfigId: "cfg-1",
+    });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const usageButton = document.querySelector('button[aria-label*="0% 已用"]');
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    expect(usageButton?.textContent).not.toContain("0%");
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 0 标记，共 258k");
+    expect(rootText).not.toContain("已用 35k 标记，共 258k");
+  });
+
+  it("keeps context usage from trace when final provider input tokens are cumulative", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          tokenBudget: 258_000,
+          originalTokens: 300,
+        },
+      });
+    });
+    expect(document.getElementById("root")?.textContent ?? "").toContain("0%");
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "task-done",
+        timestamp: "2026-06-29T04:00:01.000Z",
+        detail: {
+          status: "completed",
+          inputTokens: 117_900,
+          outputTokens: 812,
+          totalTokens: 118_712,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="已用 300 标记，共 258k"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    expect(usageButton?.textContent).not.toContain("118k");
+    expect(document.getElementById("root")?.textContent ?? "").not.toContain(
+      "已用 118k 标记，共 258k",
     );
   });
 

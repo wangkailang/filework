@@ -321,6 +321,19 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toMatch(/gh pr create/);
   });
 
+  it("git workspace prompt requires repository-grounded branch impact answers", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspacePath: WORKSPACE,
+      isGitWorkspace: true,
+    });
+    expect(prompt).toContain("## Git Repository Grounding");
+    expect(prompt).toMatch(/branch|分支/i);
+    expect(prompt).toMatch(/rollback|revert|回滚|回退/i);
+    expect(prompt).toMatch(/deploy|部署/i);
+    expect(prompt).toContain("git status --short --branch");
+    expect(prompt).toMatch(/Do not start.*hypothetical/i);
+  });
+
   it("allowed-tools restriction is announced when skill restricts tools", () => {
     const prompt = buildAgentSystemPrompt({
       workspacePath: WORKSPACE,

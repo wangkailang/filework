@@ -459,6 +459,7 @@ const zhCN: Translation = {
   toolName_deleteFile: "删除文件",
   toolName_directoryStats: "目录统计",
   toolName_findDuplicates: "查找重复文件",
+  toolName_searchFiles: "搜索文件",
   toolName_automationUpdate: "管理自动化",
   toolName_runCommand: "执行命令",
   toolName_runProcess: "执行进程",

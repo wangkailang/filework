@@ -197,6 +197,11 @@ const toolIcons: Record<string, ToolIconConfig> = {
     name: "file-text",
     tone: "text-muted-foreground/75",
   },
+  searchFiles: {
+    Icon: FileSearch,
+    name: "file-search",
+    tone: "text-muted-foreground/75",
+  },
   readShellOutput: {
     Icon: Terminal,
     name: "terminal",
