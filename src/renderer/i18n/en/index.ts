@@ -420,6 +420,15 @@ const en: BaseTranslation = {
   chat_copy: "Copy",
   chat_copied: "Copied",
   chat_inputPlaceholder: "Tell me what you want to do... (Enter to send)",
+  chatPermission_label: "Request approval",
+  chatPermission_requestLabel: "Request approval",
+  chatPermission_requestDesc: "Ask before sensitive actions.",
+  chatPermission_autoLabel: "Approve for me",
+  chatPermission_autoDesc:
+    "Auto-approve tool calls while keeping workspace sandbox limits.",
+  chatPermission_fullLabel: "Full access",
+  chatPermission_fullDesc:
+    "Allow full filesystem and network access without per-action approval.",
 
   // Error types
   errorType_auth: "Auth Failed",
@@ -666,9 +675,16 @@ const en: BaseTranslation = {
   skillsModal_marketInstall: "Install",
   skillsModal_marketInstalled: "Installed",
   skillsModal_marketUninstall: "Uninstall",
+  skillsModal_marketUninstalling: "Uninstalling…",
   skillsModal_marketCommunity: "Community",
   skillsModal_marketOfficial: "Official",
   skillsModal_marketInstalling: "Installing…",
+  skillsModal_marketConfirmInstallTitle: "Install {0:string}?",
+  skillsModal_marketConfirmInstallDescription:
+    "This will add {0:string} to your personal skills and make it available in chat after refresh.",
+  skillsModal_marketConfirmUninstallTitle: "Uninstall {0:string}?",
+  skillsModal_marketConfirmUninstallDescription:
+    "This removes {0:string} from your personal skills. You can install it again from the marketplace later.",
   skillsModal_marketConfirmCommunity:
     "This is a community-contributed skill. Once installed, it can execute commands and scripts in your workspace. Only install if you trust the source.",
   skillsModal_marketEmpty: "No skills available in the marketplace",

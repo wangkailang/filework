@@ -145,6 +145,24 @@
       "homepage": "https://github.com/anthropics/skills/tree/main/skills/pptx"
     },
     {
+      "id": "ppt-master",
+      "name": "ppt-master",
+      "description": "AI-driven multi-format SVG content generation system. Converts source documents (PDF/DOCX/URL/Markdown) into high-quality SVG pages and exports natively editable PPTX through real DrawingML shapes, text boxes, charts, and animations.",
+      "version": "2.7.0",
+      "level": "community",
+      "source": {
+        "type": "git",
+        "repo": "https://github.com/hugohe3/ppt-master.git",
+        "ref": "main",
+        "subdir": "skills/ppt-master"
+      },
+      "requires": {
+        "bins": ["python", "pip"],
+        "pip": ["requirements.txt"]
+      },
+      "homepage": "https://github.com/hugohe3/ppt-master"
+    },
+    {
       "id": "skill-creator",
       "name": "skill-creator",
       "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",

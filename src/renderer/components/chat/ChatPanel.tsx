@@ -8,6 +8,9 @@ import {
   MessageSquarePlus,
   RefreshCw,
   Settings,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
   Sparkles,
   Zap,
 } from "lucide-react";
@@ -19,6 +22,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type ChatPermissionMode,
+  isChatPermissionMode,
+} from "../../../shared/chat-permissions";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
@@ -71,6 +78,14 @@ import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { type AgentState, AgentTelemetry } from "./AgentTelemetry";
 import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
@@ -298,6 +313,97 @@ const getRetryTypeLabels = (
   server_error: LL.retry_serverError(),
   timeout: LL.retry_timeout(),
 });
+
+const CHAT_PERMISSION_ICON = {
+  auto: ShieldCheck,
+  full: ShieldAlert,
+  request: ShieldQuestion,
+} satisfies Record<ChatPermissionMode, typeof ShieldQuestion>;
+
+const getChatPermissionOptions = (
+  LL: TranslationFunctions,
+): Array<{ desc: string; label: string; value: ChatPermissionMode }> => [
+  {
+    value: "request",
+    label: LL.chatPermission_requestLabel(),
+    desc: LL.chatPermission_requestDesc(),
+  },
+  {
+    value: "auto",
+    label: LL.chatPermission_autoLabel(),
+    desc: LL.chatPermission_autoDesc(),
+  },
+  {
+    value: "full",
+    label: LL.chatPermission_fullLabel(),
+    desc: LL.chatPermission_fullDesc(),
+  },
+];
+
+const ChatPermissionSelector = ({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  onChange: (mode: ChatPermissionMode) => void;
+  value: ChatPermissionMode;
+}) => {
+  const { LL } = useI18nContext();
+  const options = useMemo(() => getChatPermissionOptions(LL), [LL]);
+  const selected =
+    options.find((option) => option.value === value) ?? options[0];
+  const SelectedIcon = CHAT_PERMISSION_ICON[selected.value];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={disabled}
+          title={selected.desc}
+          aria-label={`${LL.chatPermission_label()}: ${selected.label}`}
+          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <SelectedIcon className="size-3.5" />
+          <span className="hidden sm:inline">{selected.label}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuLabel>{LL.chatPermission_label()}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(next) => {
+            if (isChatPermissionMode(next)) onChange(next);
+          }}
+        >
+          {options.map((option) => {
+            const Icon = CHAT_PERMISSION_ICON[option.value];
+            return (
+              <DropdownMenuRadioItem
+                key={option.value}
+                value={option.value}
+                className="items-start gap-2 py-2"
+              >
+                <Icon className="mt-0.5 size-3.5 text-muted-foreground" />
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium">
+                    {option.label}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                    {option.desc}
+                  </span>
+                </span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
 
 /** Fallback recovery actions for errors that don't carry explicit actions (e.g. persisted from older versions) */
 const fallbackRecoveryActions = (errorType?: string): RecoveryAction[] => {
@@ -1489,6 +1595,11 @@ export const ChatPanel = ({
                 >
                   <Brain />
                 </Button>
+                <ChatPermissionSelector
+                  value={chat.chatPermissionMode}
+                  onChange={chat.setChatPermissionMode}
+                  disabled={chat.isLoading}
+                />
                 <ModelSelector
                   selectedConfigId={chat.selectedLlmConfigId}
                   onSelect={chat.setSelectedLlmConfigId}

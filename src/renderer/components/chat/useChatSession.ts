@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ChatPermissionMode,
+  DEFAULT_CHAT_PERMISSION_MODE,
+  resolveChatPermissionMode,
+} from "../../../shared/chat-permissions";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { truncateTitle } from "./helpers";
@@ -85,6 +90,8 @@ const scheduleAfterPaint = (callback: () => void) => {
   setTimeout(callback, 0);
 };
 
+const CHAT_PERMISSION_STORAGE_KEY = "filework-chat-permission-mode";
+
 const buildAutomationChatPrompt = (
   run: AutomationRunRecordForChat,
   automation?: AutomationRecordForChat,
@@ -128,6 +135,13 @@ export function useChatSession(
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(
     () => localStorage.getItem("filework-selected-llm-config") || null,
   );
+  const [chatPermissionMode, setChatPermissionModeState] =
+    useState<ChatPermissionMode>(() =>
+      resolveChatPermissionMode(
+        localStorage.getItem(CHAT_PERMISSION_STORAGE_KEY) ??
+          DEFAULT_CHAT_PERMISSION_MODE,
+      ),
+    );
   const [sessionRunStates, setSessionRunStates] = useState<SessionRunStateMap>(
     {},
   );
@@ -136,6 +150,10 @@ export function useChatSession(
 
   // Validate persisted LLM config ID on mount
   const validatedConfigRef = useRef(false);
+  const chatPermissionModeRef = useRef(chatPermissionMode);
+  useEffect(() => {
+    chatPermissionModeRef.current = chatPermissionMode;
+  }, [chatPermissionMode]);
   useEffect(() => {
     if (validatedConfigRef.current || !selectedLlmConfigId) return;
     validatedConfigRef.current = true;
@@ -492,6 +510,7 @@ export function useChatSession(
           workspaceRefJson,
           sessionId,
           assistantMessageId: assistantId,
+          chatPermissionMode: chatPermissionModeRef.current,
           llmConfigId: selectedLlmConfigId || undefined,
           history,
         })
@@ -622,6 +641,7 @@ export function useChatSession(
           sessionId,
           assistantMessageId: assistantId,
           automationRunId: prepared.id,
+          chatPermissionMode: chatPermissionModeRef.current,
           llmConfigId:
             prepared.modelId ??
             automation.modelId ??
@@ -937,6 +957,12 @@ export function useChatSession(
       localStorage.removeItem("filework-selected-llm-config");
     }
   }, []);
+  const setChatPermissionMode = useCallback((mode: ChatPermissionMode) => {
+    const next = resolveChatPermissionMode(mode);
+    chatPermissionModeRef.current = next;
+    setChatPermissionModeState(next);
+    localStorage.setItem(CHAT_PERMISSION_STORAGE_KEY, next);
+  }, []);
 
   return {
     sessions: crud.sessions,
@@ -952,6 +978,8 @@ export function useChatSession(
     activePlanId: plan.activePlanId,
     activeSkill: stream.activeSkill,
     pendingSkillApproval: stream.pendingSkillApproval,
+    chatPermissionMode,
+    setChatPermissionMode,
     selectedLlmConfigId,
     setSelectedLlmConfigId: setSelectedLlmConfigIdStable,
     retryInfo: stream.retryInfo,

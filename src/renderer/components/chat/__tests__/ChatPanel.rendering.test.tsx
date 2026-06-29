@@ -22,6 +22,13 @@ vi.mock("../../../i18n/i18n-react", () => ({
       chat_error: () => "错误",
       chat_forkHere: () => "从这里分叉",
       chat_inputPlaceholder: () => "输入消息",
+      chatPermission_autoDesc: () => "在工作区沙箱内自动批准工具调用",
+      chatPermission_autoLabel: () => "替我审批",
+      chatPermission_fullDesc: () => "不限制文件系统或网络访问",
+      chatPermission_fullLabel: () => "完全访问权限",
+      chatPermission_label: () => "请求审批",
+      chatPermission_requestDesc: () => "敏感操作会先请求确认",
+      chatPermission_requestLabel: () => "请求审批",
       chat_retrying: (attempt: string, max: string) => `重试 ${attempt}/${max}`,
       errorType_auth: () => "认证错误",
       errorType_authHint: () => "检查认证",
@@ -174,6 +181,7 @@ const createChatState = (
 ) => ({
   activeSessionId: "session-1",
   activeSkill: null,
+  chatPermissionMode: "request",
   handleBatchApproval: vi.fn(),
   handleClarificationPick: vi.fn(),
   handleForkSession: vi.fn(),
@@ -191,6 +199,7 @@ const createChatState = (
   pendingSkillApproval: null,
   retryInfo: null,
   selectedLlmConfigId: null,
+  setChatPermissionMode: vi.fn(),
   setInput: vi.fn(),
   setLastError: vi.fn(),
   setSelectedLlmConfigId: vi.fn(),
@@ -373,6 +382,30 @@ describe("ChatPanel message rendering", () => {
 
     expect(document.getElementById("root")?.textContent ?? "").toContain(
       "Command failed with exit code 1",
+    );
+  });
+
+  it("shows the current chat permission mode in the composer footer", async () => {
+    chatState.value = createChatState([], {
+      chatPermissionMode: "request",
+    });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "请求审批",
+    );
+
+    chatState.value = createChatState([], {
+      chatPermissionMode: "auto",
+    });
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "替我审批",
     );
   });
 

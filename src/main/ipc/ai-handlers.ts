@@ -8,6 +8,11 @@
 import crypto from "node:crypto";
 import { join } from "node:path";
 import { ipcMain } from "electron";
+import {
+  type ChatPermissionMode,
+  resolveChatPermissionMode,
+  resolveChatPermissionRunConfig,
+} from "../../shared/chat-permissions";
 import { isImageGenerationModelId } from "../../shared/llm-modalities";
 import { resolveAdapterName } from "../ai/adapters";
 import { runWithDevtoolsTaskScope } from "../ai/adapters/devtools";
@@ -202,11 +207,17 @@ const handleTaskExecutionInner = async (
     assistantMessageId?: string;
     /** 自动化手动运行记录 id。存在时,本 chat 任务会同步 automation_runs。 */
     automationRunId?: string;
+    chatPermissionMode?: ChatPermissionMode;
     llmConfigId?: string;
     history?: Array<{ role: string; content: string; parts?: unknown[] }>;
   },
 ) => {
   const ref = resolveWorkspaceRef(payload);
+  const chatPermissionMode = resolveChatPermissionMode(
+    payload.chatPermissionMode,
+  );
+  const chatPermissionRunConfig =
+    resolveChatPermissionRunConfig(chatPermissionMode);
   // 沙箱 + skill 发现需要一个具体的磁盘路径。对 local ref 来说就是
   // `ref.path`;对 github 来说是 clone 目录,要到下面把 Workspace
   // 物化出来后才知道。
@@ -810,8 +821,12 @@ const handleTaskExecutionInner = async (
       currentThreadId: payload.sessionId,
       parentAllowedSkills,
       enableMemoryTools,
+      autoApprovePlans: chatPermissionRunConfig.autoApprovePlans,
+      sandboxMode: chatPermissionRunConfig.sandboxMode,
     });
     const beforeToolCall = buildApprovalHook({
+      approvalPolicy: chatPermissionRunConfig.approvalPolicy,
+      sandboxMode: chatPermissionRunConfig.sandboxMode,
       sender,
       taskId: id,
       workspace,

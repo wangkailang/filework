@@ -413,6 +413,15 @@ const ja: Translation = {
   chat_copy: "コピー",
   chat_copied: "コピーしました",
   chat_inputPlaceholder: "やりたいことを教えてください... (Enter で送信)",
+  chatPermission_label: "承認を要求",
+  chatPermission_requestLabel: "承認を要求",
+  chatPermission_requestDesc: "機密性の高い操作の前に確認します。",
+  chatPermission_autoLabel: "代わりに承認",
+  chatPermission_autoDesc:
+    "ワークスペースのサンドボックス制限内でツール呼び出しを自動承認します。",
+  chatPermission_fullLabel: "フルアクセス",
+  chatPermission_fullDesc:
+    "ファイルシステムとネットワークへの完全アクセスを許可し、操作ごとの承認を省略します。",
 
   // Error types
   errorType_auth: "認証失敗",
@@ -658,9 +667,16 @@ const ja: Translation = {
   skillsModal_marketInstall: "インストール",
   skillsModal_marketInstalled: "インストール済み",
   skillsModal_marketUninstall: "アンインストール",
+  skillsModal_marketUninstalling: "アンインストール中…",
   skillsModal_marketCommunity: "コミュニティ",
   skillsModal_marketOfficial: "公式",
   skillsModal_marketInstalling: "インストール中…",
+  skillsModal_marketConfirmInstallTitle: "{0} をインストールしますか？",
+  skillsModal_marketConfirmInstallDescription:
+    "{0} を個人スキルに追加し、更新後にチャットで利用できるようにします。",
+  skillsModal_marketConfirmUninstallTitle: "{0} をアンインストールしますか？",
+  skillsModal_marketConfirmUninstallDescription:
+    "{0} を個人スキルから削除します。後でマーケットから再インストールできます。",
   skillsModal_marketConfirmCommunity:
     "これはコミュニティ提供のスキルです。インストール後、ワークスペースでコマンドやスクリプトを実行できます。信頼できるソースの場合のみインストールしてください。",
   skillsModal_marketEmpty: "マーケットに利用可能なスキルがありません",

@@ -123,6 +123,28 @@ describe("getRegistry", () => {
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.every((e) => validateEntry(e))).toBe(true);
   });
+
+  it("includes the community ppt-master skill from its git subdirectory", () => {
+    const entries = getRegistry();
+    const entry = entries.find((e) => e.id === "ppt-master");
+
+    expect(entry).toMatchObject({
+      id: "ppt-master",
+      name: "ppt-master",
+      version: "2.7.0",
+      level: "community",
+      source: {
+        type: "git",
+        repo: "https://github.com/hugohe3/ppt-master.git",
+        subdir: "skills/ppt-master",
+      },
+      homepage: "https://github.com/hugohe3/ppt-master",
+      requires: {
+        bins: ["python", "pip"],
+        pip: ["requirements.txt"],
+      },
+    });
+  });
 });
 
 describe("fetchRegistry", () => {
