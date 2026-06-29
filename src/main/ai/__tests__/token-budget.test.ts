@@ -191,6 +191,50 @@ describe("truncateToFit", () => {
     expect(lastMsg.content).toBe("c".repeat(400));
   });
 
+  it("hard-retains the configured recent chat window before dropping older messages", () => {
+    const recent: ModelMessage[] = [
+      assistantMsg("recent assistant kept"),
+      userMsg("recent user kept"),
+      assistantMsg("recent answer kept"),
+    ];
+    const msgs: ModelMessage[] = [
+      userMsg("old-1 ".repeat(300)),
+      assistantMsg("old-2 ".repeat(300)),
+      userMsg("old-3 ".repeat(300)),
+      ...recent,
+    ];
+
+    const result = truncateToFit(msgs, 80, { recentMessageCount: 3 });
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(result.messagesDropped).toBe(3);
+    expect(nonNoticeMessages).toEqual(recent);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(80);
+  });
+
+  it("trims recent message text instead of dropping recent messages under a tight budget", () => {
+    const msgs: ModelMessage[] = [
+      userMsg("old context ".repeat(300)),
+      userMsg("recent user ".repeat(300)),
+      assistantMsg("recent assistant ".repeat(300)),
+    ];
+
+    const result = truncateToFit(msgs, 35, { recentMessageCount: 2 });
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(nonNoticeMessages).toHaveLength(2);
+    expect(nonNoticeMessages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(nonNoticeMessages[0].content).not.toBe(msgs[1].content);
+    expect(nonNoticeMessages[1].content).not.toBe(msgs[2].content);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(35);
+  });
+
   // -------------------------------------------------------------------------
   // 截断提示
   // -------------------------------------------------------------------------
@@ -473,5 +517,36 @@ describe("truncateToFitAsync", () => {
       originalTokens,
       compressedTokens: estimateTokens(result.messages),
     });
+  });
+
+  it("preserves the recent chat window when falling back after LLM compression fails", async () => {
+    const recent: ModelMessage[] = [
+      assistantMsg("recent assistant kept"),
+      userMsg("recent user kept"),
+      assistantMsg("recent answer kept"),
+    ];
+    const msgs: ModelMessage[] = [
+      userMsg("old-1 ".repeat(300)),
+      assistantMsg("old-2 ".repeat(300)),
+      userMsg("old-3 ".repeat(300)),
+      ...recent,
+    ];
+
+    const result = await truncateToFitAsync(
+      msgs,
+      80,
+      async () => {
+        throw new Error("summary failed");
+      },
+      { recentMessageCount: 3 },
+    );
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(result.compressionStage).toBe("safe-truncation");
+    expect(nonNoticeMessages).toEqual(recent);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(80);
   });
 });

@@ -10,6 +10,7 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
 export const SAFETY_MARGIN = 2_000;
 export const TOOL_RESULT_COMPRESS_THRESHOLD_CHARS = 2_000;
 export const COMPRESSION_TRIGGER_RATIO = 0.85;
+export const DEFAULT_RECENT_MESSAGE_COUNT = 6;
 
 // ---------------------------------------------------------------------------
 // 模型上下文预算
@@ -105,6 +106,11 @@ export interface TruncationResult {
     originalTokens: number;
     compressedTokens: number;
   };
+}
+
+export interface TruncationOptions {
+  /** 最近 N 条 chat 消息硬保留；预算极紧时只裁剪消息文本，不整条丢弃。 */
+  recentMessageCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +292,13 @@ function isLargeToolResult(
 export function truncateToFit(
   messages: ModelMessage[],
   budget?: number,
+  options?: TruncationOptions,
 ): TruncationResult {
   const effectiveBudget =
     budget != null && budget > 0 ? budget : DEFAULT_TOKEN_BUDGET;
+  const recentMessageCount = normalizeRecentMessageCount(
+    options?.recentMessageCount,
+  );
 
   if (messages.length === 0) {
     return {
@@ -310,7 +320,7 @@ export function truncateToFit(
   }
 
   // 策略 1：压缩过大的工具结果
-  let result = compressToolResults(messages);
+  const result = compressToolResults(messages);
 
   if (estimateTokens(result) <= effectiveBudget) {
     const originalTokens = estimateTokens(messages);
@@ -328,53 +338,81 @@ export function truncateToFit(
     };
   }
 
-  // 策略 2：从开头移除较早的消息
-  const originalCount = result.length;
-  while (result.length > 1 && estimateTokens(result) > effectiveBudget) {
-    result = result.slice(1);
-  }
+  // 策略 2/3：从开头移除较早消息，但硬保留最近窗口，并插入截断提示
+  return truncateWithRecentRetention(
+    result,
+    effectiveBudget,
+    recentMessageCount,
+  );
+}
 
-  // 边界情况：单条消息仍超出预算 → 截断其文本
-  if (result.length === 1 && estimateTokens(result) > effectiveBudget) {
-    result = [truncateSingleMessage(result[0], effectiveBudget)];
+function normalizeRecentMessageCount(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) {
+    return DEFAULT_RECENT_MESSAGE_COUNT;
   }
+  return Math.max(1, Math.floor(value));
+}
 
-  // 策略 3：在开头插入截断提示
+function truncateWithRecentRetention(
+  messages: ModelMessage[],
+  effectiveBudget: number,
+  recentMessageCount: number,
+): TruncationResult {
   const notice: ModelMessage = {
     role: "system",
     content: TRUNCATION_NOTICE,
   };
   const noticeTokens = estimateTokens([notice]);
+  const includeNotice = effectiveBudget > noticeTokens + 1;
+  const contentBudget = Math.max(
+    0,
+    includeNotice ? effectiveBudget - noticeTokens : effectiveBudget,
+  );
 
-  // 如有需要，为提示腾出空间
-  while (
-    result.length > 1 &&
-    estimateTokens(result) + noticeTokens > effectiveBudget
-  ) {
-    result = result.slice(1);
+  const protectedStart = Math.max(0, messages.length - recentMessageCount);
+  const protectedTail = messages.slice(protectedStart);
+  let result = truncateProtectedMessagesToBudget(protectedTail, contentBudget);
+  let usedTokens = estimateTokens(result);
+
+  for (let i = protectedStart - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    const candidateTokens = estimateTokens([candidate]);
+    if (usedTokens + candidateTokens > contentBudget) continue;
+    result = [candidate, ...result];
+    usedTokens += candidateTokens;
   }
 
-  // 若单条消息加提示仍超出预算，则进一步截断该消息
-  if (
-    result.length === 1 &&
-    estimateTokens(result) + noticeTokens > effectiveBudget
-  ) {
-    const availableBudget = effectiveBudget - noticeTokens;
-    if (availableBudget > 0) {
-      result = [truncateSingleMessage(result[0], availableBudget)];
-    }
-  }
-
-  result = [notice, ...result];
-  // 减去我们添加的那条提示消息
-  const messagesDropped = originalCount - (result.length - 1);
-
+  const messagesWithNotice = includeNotice ? [notice, ...result] : result;
   return {
-    messages: result,
+    messages: messagesWithNotice,
     wasTruncated: true,
     compressionStage: "safe-truncation",
-    messagesDropped,
+    messagesDropped: messages.length - result.length,
   };
+}
+
+function truncateProtectedMessagesToBudget(
+  messages: ModelMessage[],
+  budget: number,
+): ModelMessage[] {
+  if (messages.length === 0 || estimateTokens(messages) <= budget) {
+    return [...messages];
+  }
+
+  let remainingBudget = Math.max(0, budget);
+  const result: ModelMessage[] = new Array(messages.length);
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const messageBudget = remainingBudget;
+    const messageTokens = estimateTokens([messages[i]]);
+    const next =
+      messageTokens <= messageBudget
+        ? messages[i]
+        : truncateSingleMessage(messages[i], messageBudget);
+    result[i] = next;
+    remainingBudget = Math.max(0, remainingBudget - estimateTokens([next]));
+  }
+
+  return result;
 }
 
 /**
@@ -445,6 +483,7 @@ export async function truncateToFitAsync(
   options?: {
     compressionTriggerBudget?: number | null;
     forceCompression?: boolean;
+    recentMessageCount?: number;
   },
 ): Promise<TruncationResult> {
   const effectiveBudget =
@@ -588,5 +627,7 @@ export async function truncateToFitAsync(
   }
 
   // 策略 3：回退到简单的从头丢弃
-  return truncateToFit(compressed, budget);
+  return truncateToFit(compressed, budget, {
+    recentMessageCount: options?.recentMessageCount,
+  });
 }

@@ -11,7 +11,11 @@ import { generateText } from "ai";
 import { upsertTaskSummary } from "../db";
 import { addMemoryEvent } from "./memory-debug-store";
 import { createTimeoutController } from "./stream-watchdog";
-import { compressToolResults, estimateTokens } from "./token-budget";
+import {
+  compressToolResults,
+  DEFAULT_RECENT_MESSAGE_COUNT,
+  estimateTokens,
+} from "./token-budget";
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -60,6 +64,8 @@ export interface CompressorOptions {
   force?: boolean;
   /** 为受保护的尾部消息预留的 token 预算(默认:20000) */
   tailBudget?: number;
+  /** 即使超过 tailBudget，也硬保留的最近消息数量 */
+  tailMessageCount?: number;
   /** 始终保护的头部消息数量(默认:2) */
   headCount?: number;
   /** 用于取消的 AbortSignal */
@@ -103,6 +109,7 @@ export async function compressContext(
   options: CompressorOptions,
 ): Promise<CompressionResult> {
   const tailBudget = options.tailBudget ?? DEFAULT_TAIL_BUDGET;
+  const tailMessageCount = normalizeTailMessageCount(options.tailMessageCount);
   const headCount = options.headCount ?? DEFAULT_HEAD_COUNT;
 
   // 步骤 1:预裁剪工具结果(开销低,无需 LLM)
@@ -144,6 +151,8 @@ export async function compressContext(
     tailTokens += msgTokens;
     tailStart = i;
   }
+  const hardTailStart = Math.max(headEnd, pruned.length - tailMessageCount);
+  tailStart = Math.min(tailStart, hardTailStart);
   tailStart = expandTailToToolCallBoundary(pruned, tailStart, headEnd);
   const tail = pruned.slice(tailStart);
   tailTokens = estimateTokens(tail);
@@ -250,6 +259,13 @@ export async function compressContext(
       compressedTokens: fallbackTokens,
     };
   }
+}
+
+function normalizeTailMessageCount(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) {
+    return DEFAULT_RECENT_MESSAGE_COUNT;
+  }
+  return Math.max(1, Math.floor(value));
 }
 
 // ---------------------------------------------------------------------------

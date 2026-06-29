@@ -80,6 +80,7 @@ describe("compressContext", () => {
         force: true,
         headCount: 2,
         tailBudget: 10,
+        tailMessageCount: 1,
       },
     );
 
@@ -96,5 +97,30 @@ describe("compressContext", () => {
     expect(toolCallIndex).toBeGreaterThan(0);
     expect(toolResultIndex).toBeGreaterThan(toolCallIndex);
     expect(toolResultIndex).toBeLessThan(summaryIndex);
+  });
+
+  it("hard-retains configured tail messages even when they exceed the tail token budget", async () => {
+    const recentUser = userMsg("recent user context ".repeat(120));
+    const recentAssistant = userMsg("recent assistant context ".repeat(120));
+
+    const result = await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("middle content ".repeat(300)),
+        recentUser,
+        recentAssistant,
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 2,
+      },
+    );
+
+    expect(result.messages).toContainEqual(recentUser);
+    expect(result.messages).toContainEqual(recentAssistant);
   });
 });
