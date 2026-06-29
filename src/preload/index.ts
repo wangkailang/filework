@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { TrashEntry } from "../main/core/agent/tools/trash";
 import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
+import type { ChatPermissionMode } from "../shared/chat-permissions";
 import type { CredentialKind } from "../shared/credentials";
 
 /** 工作目录记忆的单条结构化条目(与主进程 MemoryEntry 同形)。 */
@@ -212,6 +213,7 @@ const api = {
     /** 本回合助手消息 id;登记进重连表,刷新后据此重挂。 */
     assistantMessageId?: string;
     automationRunId?: string;
+    chatPermissionMode?: ChatPermissionMode;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";

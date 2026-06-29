@@ -193,13 +193,16 @@ describe("createPlan tool — approval resumes execution", () => {
     ) => Promise<unknown>;
   };
 
-  const setupCreatePlanTool = (taskId: string) => {
+  const setupCreatePlanTool = (
+    taskId: string,
+    options: { autoApprovePlans?: boolean } = {},
+  ) => {
     const sendSpy = vi.fn();
     const sender = {
       isDestroyed: () => false,
       send: sendSpy,
     } as unknown as WebContents;
-    const registry = buildAgentToolRegistry({ sender, taskId });
+    const registry = buildAgentToolRegistry({ sender, taskId, ...options });
     const tool = registry.get("createPlan") as CreatePlanToolLike | undefined;
     return { tool, sendSpy };
   };
@@ -238,6 +241,42 @@ describe("createPlan tool — approval resumes execution", () => {
       continueExecution: true,
       nextInstruction: expect.stringMatching(/continue.*plan/i),
     });
+  });
+
+  it("auto-approves the draft plan when chat permissions skip approvals", async () => {
+    const taskId = "task-plan-auto-approval";
+    const { tool, sendSpy } = setupCreatePlanTool(taskId, {
+      autoApprovePlans: true,
+    });
+    if (!tool) throw new Error("createPlan tool was not registered");
+
+    await expect(
+      tool.execute(
+        {
+          goal: "Apply the feature",
+          steps: [{ action: "Add tests" }, { action: "Implement behavior" }],
+        },
+        {} as unknown,
+      ),
+    ).resolves.toMatchObject({
+      approved: true,
+      autoApproved: true,
+      continueExecution: true,
+      nextInstruction: expect.stringMatching(/continue.*plan/i),
+    });
+
+    expect(sendSpy).toHaveBeenCalledWith("ai:stream-plan", {
+      id: taskId,
+      plan: expect.objectContaining({
+        status: "executing",
+        steps: [
+          expect.objectContaining({ status: "pending" }),
+          expect.objectContaining({ status: "pending" }),
+        ],
+      }),
+    });
+    expect(pendingPlanApprovals.has(taskId)).toBe(false);
+    expect(approvedInlinePlanTasks.has(taskId)).toBe(true);
   });
 });
 

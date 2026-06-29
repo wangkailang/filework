@@ -1,8 +1,9 @@
-import { ArrowLeft, Blocks, ExternalLink, Search } from "lucide-react";
+import { ArrowLeft, Blocks, ExternalLink, Search, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
@@ -18,6 +19,10 @@ interface MarketItem {
   installed: boolean;
   source: unknown;
 }
+
+type PendingMarketAction =
+  | { type: "install"; item: MarketItem }
+  | { type: "uninstall"; item: MarketItem };
 
 interface SkillExternalInfo {
   context: "default" | "fork";
@@ -95,8 +100,9 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
-  const [pendingCommunityInstall, setPendingCommunityInstall] =
-    useState<MarketItem | null>(null);
+  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const [pendingMarketAction, setPendingMarketAction] =
+    useState<PendingMarketAction | null>(null);
   const isMarket = filter === "market";
 
   const refreshSkills = useCallback(async () => {
@@ -131,11 +137,15 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
   const installMarketItem = useCallback(
     async (item: MarketItem) => {
       setInstallingId(item.id);
-      const res = (await window.filework.marketInstall(item)) as {
-        ok: boolean;
-        error?: string;
-      };
-      setInstallingId(null);
+      let res: { ok: boolean; error?: string };
+      try {
+        res = (await window.filework.marketInstall(item)) as {
+          ok: boolean;
+          error?: string;
+        };
+      } finally {
+        setInstallingId(null);
+      }
       if (res.ok) {
         setMarket((prev) =>
           prev.map((m) => (m.id === item.id ? { ...m, installed: true } : m)),
@@ -148,33 +158,39 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
     [refreshSkills],
   );
 
-  // 安装市场 skill(community 需弹窗确认)
-  const handleInstall = useCallback(
-    (item: MarketItem) => {
-      if (item.level === "community") {
-        setPendingCommunityInstall(item);
-        return;
-      }
-      void installMarketItem(item);
-    },
-    [installMarketItem],
-  );
+  // 安装市场 skill:先进入确认流程,确认后才调用主进程安装。
+  const handleInstall = useCallback((item: MarketItem) => {
+    setPendingMarketAction({ type: "install", item });
+  }, []);
 
-  // 卸载市场 skill
-  const handleUninstall = useCallback(
+  const uninstallMarketItem = useCallback(
     async (skillId: string) => {
-      const res = (await window.filework.marketUninstall(skillId)) as {
-        ok: boolean;
-      };
+      setUninstallingId(skillId);
+      let res: { ok: boolean; error?: string };
+      try {
+        res = (await window.filework.marketUninstall(skillId)) as {
+          ok: boolean;
+          error?: string;
+        };
+      } finally {
+        setUninstallingId(null);
+      }
       if (res.ok) {
         setMarket((prev) =>
           prev.map((m) => (m.id === skillId ? { ...m, installed: false } : m)),
         );
         await refreshSkills();
+      } else {
+        console.warn("[market] uninstall failed:", res.error);
       }
     },
     [refreshSkills],
   );
+
+  // 卸载市场 skill:同样先进入确认流程。
+  const handleUninstall = useCallback((item: MarketItem) => {
+    setPendingMarketAction({ type: "uninstall", item });
+  }, []);
 
   // Fetch skill list when modal opens
   useEffect(() => {
@@ -262,13 +278,9 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
 
   return (
     <>
-      <Dialog
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) onClose();
-        }}
-      >
+      <Dialog open={open}>
         <DialogContent
+          showCloseButton={false}
           onEscapeKeyDown={(event) => {
             if (!selectedSkillId) return;
             event.preventDefault();
@@ -296,6 +308,18 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
               </DialogTitle>
             </div>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-2 right-2"
+            aria-label={LL.session_close()}
+            title={LL.session_close()}
+            onClick={onClose}
+          >
+            <XIcon />
+            <span className="sr-only">{LL.session_close()}</span>
+          </Button>
 
           {selectedSkillId ? (
             <SkillDetailView
@@ -314,6 +338,7 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
               onFilterChange={setFilter}
               availableSources={availableSources}
               installingId={installingId}
+              uninstallingId={uninstallingId}
               onInstall={handleInstall}
               onUninstall={handleUninstall}
             />
@@ -333,18 +358,61 @@ export const SkillsModal = ({ open, onClose }: SkillsModalProps) => {
       </Dialog>
 
       <ConfirmDialog
-        open={pendingCommunityInstall !== null}
-        title={LL.skillsModal_marketConfirmCommunity()}
-        confirmLabel={LL.skillsModal_marketInstall()}
+        open={pendingMarketAction !== null}
+        title={
+          pendingMarketAction?.type === "install"
+            ? LL.skillsModal_marketConfirmInstallTitle(
+                pendingMarketAction.item.name,
+              )
+            : pendingMarketAction
+              ? LL.skillsModal_marketConfirmUninstallTitle(
+                  pendingMarketAction.item.name,
+                )
+              : ""
+        }
+        description={
+          pendingMarketAction?.type === "install"
+            ? [
+                LL.skillsModal_marketConfirmInstallDescription(
+                  pendingMarketAction.item.name,
+                ),
+                pendingMarketAction.item.level === "community"
+                  ? LL.skillsModal_marketConfirmCommunity()
+                  : null,
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+            : pendingMarketAction
+              ? LL.skillsModal_marketConfirmUninstallDescription(
+                  pendingMarketAction.item.name,
+                )
+              : undefined
+        }
+        confirmLabel={
+          pendingMarketAction?.type === "uninstall"
+            ? LL.skillsModal_marketUninstall()
+            : LL.skillsModal_marketInstall()
+        }
         cancelLabel={LL.session_cancel()}
-        busy={installingId === pendingCommunityInstall?.id}
+        busy={
+          pendingMarketAction?.type === "install"
+            ? installingId === pendingMarketAction.item.id
+            : pendingMarketAction?.type === "uninstall"
+              ? uninstallingId === pendingMarketAction.item.id
+              : false
+        }
+        destructive={pendingMarketAction?.type === "uninstall"}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setPendingCommunityInstall(null);
+          if (!nextOpen) setPendingMarketAction(null);
         }}
         onConfirm={async () => {
-          if (!pendingCommunityInstall) return;
-          await installMarketItem(pendingCommunityInstall);
-          setPendingCommunityInstall(null);
+          if (!pendingMarketAction) return;
+          if (pendingMarketAction.type === "install") {
+            await installMarketItem(pendingMarketAction.item);
+          } else {
+            await uninstallMarketItem(pendingMarketAction.item.id);
+          }
+          setPendingMarketAction(null);
         }}
       />
     </>
@@ -609,6 +677,7 @@ const MarketView = ({
   onFilterChange,
   availableSources,
   installingId,
+  uninstallingId,
   onInstall,
   onUninstall,
 }: {
@@ -621,8 +690,9 @@ const MarketView = ({
   onFilterChange: (f: FilterType) => void;
   availableSources: SourceType[];
   installingId: string | null;
+  uninstallingId: string | null;
   onInstall: (item: MarketItem) => void | Promise<void>;
-  onUninstall: (skillId: string) => void | Promise<void>;
+  onUninstall: (item: MarketItem) => void | Promise<void>;
 }) => {
   const { LL } = useI18nContext();
   const sourceLabels = useMemo(() => getSourceLabels(LL), [LL]);
@@ -716,10 +786,13 @@ const MarketView = ({
                   {m.installed ? (
                     <button
                       type="button"
-                      onClick={() => onUninstall(m.id)}
+                      disabled={uninstallingId === m.id}
+                      onClick={() => onUninstall(m)}
                       className="shrink-0 text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent"
                     >
-                      {LL.skillsModal_marketUninstall()}
+                      {uninstallingId === m.id
+                        ? LL.skillsModal_marketUninstalling()
+                        : LL.skillsModal_marketUninstall()}
                     </button>
                   ) : (
                     <button

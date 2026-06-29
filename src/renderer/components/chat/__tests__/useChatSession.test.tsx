@@ -434,12 +434,56 @@ describe("useChatSession", () => {
     expect(filework.executeTask).toHaveBeenCalledWith(
       expect.objectContaining({
         assistantMessageId: latest?.messages[3].id,
+        chatPermissionMode: "request",
         history: expect.arrayContaining([
           expect.objectContaining({ content: "旧问题", role: "user" }),
           expect.objectContaining({ content: "新问题", role: "user" }),
         ]),
         prompt: "新问题",
         sessionId: "session-existing",
+      }),
+    );
+  });
+
+  it("persists the selected chat permission mode and sends it with task execution", async () => {
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === "filework-chat-permission-mode" ? "auto" : null,
+    );
+    const createdSession: ChatSession = {
+      id: "session-permission",
+      workspacePath: "/workspace",
+      title: "新对话",
+      createdAt: "2026-06-23T10:30:00.000Z",
+      updatedAt: "2026-06-23T10:30:00.000Z",
+    };
+    filework.createChatSession.mockResolvedValue(createdSession);
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+
+    expect(latest?.chatPermissionMode).toBe("auto");
+
+    await act(async () => {
+      latest?.setChatPermissionMode("full");
+      await latest?.handleSubmit({ text: "执行命令" });
+    });
+
+    await flushAnimationFrame();
+
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      "filework-chat-permission-mode",
+      "full",
+    );
+    expect(filework.executeTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatPermissionMode: "full",
+        prompt: "执行命令",
       }),
     );
   });

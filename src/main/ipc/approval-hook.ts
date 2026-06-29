@@ -19,6 +19,7 @@ import {
   resolveApprovalPolicy,
   resolveSandboxConfig,
 } from "../core/sandbox";
+import type { ApprovalPolicy, SandboxMode } from "../core/sandbox/types";
 import type { Workspace } from "../core/workspace/types";
 import { getSetting } from "../db";
 import { requestApproval } from "./ai-tools";
@@ -27,6 +28,8 @@ import { canAutoApproveWrite, isInWorkspace } from "./approval-utils";
 interface BuildApprovalHookOptions {
   sender: WebContents;
   taskId: string;
+  approvalPolicy?: ApprovalPolicy;
+  sandboxMode?: SandboxMode;
   /**
    * 拥有此任务的 workspace。传入审批批处理器,使其能读取变更前的
    * 文件并为审批卡片生成结构化的变更预览。为向后兼容而设为可选 ——
@@ -48,11 +51,22 @@ const safeGetSetting = (key: string): string | null => {
 };
 
 export const buildApprovalHook = ({
+  approvalPolicy: approvalPolicyOverride,
+  sandboxMode: sandboxModeOverride,
   sender,
   taskId,
   workspace,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
   return async (call) => {
+    const approvalPolicy =
+      approvalPolicyOverride ??
+      resolveApprovalPolicy(safeGetSetting("approvalPolicy"));
+    const sandboxConfig = sandboxModeOverride
+      ? resolveSandboxConfig(sandboxModeOverride)
+      : resolveSandboxConfig(safeGetSetting("sandboxMode"));
+    const isFullAccess =
+      approvalPolicy === "never" && sandboxConfig.mode === "danger-full-access";
+
     // ── 计划已审批的 writeFile 快速路径 ───────────────────────────
     if (call.toolName === "writeFile") {
       const args = call.args as { path?: string };
@@ -108,21 +122,41 @@ export const buildApprovalHook = ({
       const escalate = args.escalatePermissions === true;
 
       // cwd 越界:未提权时直接拒;提权时交由审批弹窗判断。
-      if (!escalate && args.cwd && !(await isInWorkspace(taskId, [args.cwd]))) {
+      if (
+        !isFullAccess &&
+        !escalate &&
+        args.cwd &&
+        !(await isInWorkspace(taskId, [args.cwd]))
+      ) {
         return { allow: false, reason: "cwd 必须在当前 workspace 内" };
+      }
+
+      if (approvalPolicy === "never") {
+        if (escalate && sandboxConfig.mode !== "danger-full-access") {
+          return {
+            allow: false,
+            reason: "当前 Chat 权限不是完全访问权限，不能自动批准提权命令。",
+          };
+        }
+        return { allow: true };
       }
 
       // 两层模型:提权一律弹窗;否则按审批策略 + 沙箱是否生效决定。
       // 沙箱真正生效(darwin 非 danger 档)时,内核兜底,可免弹窗;
       // 沙箱无效(如非 macOS)则即便策略宽松也必须弹窗兜底。
       if (!escalate) {
-        const policy = resolveApprovalPolicy(safeGetSetting("approvalPolicy"));
-        const { mode } = resolveSandboxConfig(safeGetSetting("sandboxMode"));
-        if (policy !== "untrusted" && isSandboxEffective(mode)) {
+        if (
+          approvalPolicy !== "untrusted" &&
+          isSandboxEffective(sandboxConfig.mode)
+        ) {
           return { allow: true };
         }
       }
       // escalate 或需弹窗 → 落到下方 requestApproval。
+    }
+
+    if (approvalPolicy === "never") {
+      return { allow: true };
     }
 
     // ── 用户审批(白名单短路逻辑在其内部)────────

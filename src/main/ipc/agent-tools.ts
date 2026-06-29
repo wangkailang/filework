@@ -41,6 +41,7 @@ import { buildWebScrapeTool } from "../core/agent/tools/web-scrape";
 import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
 import { resolveSandboxConfig } from "../core/sandbox";
+import type { SandboxMode } from "../core/sandbox/types";
 import { getSetting } from "../db";
 import { mcpManager } from "../mcp/manager";
 import { searchFiles as nativeSearchFiles } from "../native";
@@ -107,6 +108,10 @@ interface BuildAgentToolRegistryOptions {
    * 缺省 → 子 agent 不获注入任何 skill 描述。
    */
   parentAllowedSkills?: string[];
+  /** 当前 chat turn 指定的沙箱模式;缺省时读取全局设置。 */
+  sandboxMode?: SandboxMode;
+  /** 当前 chat turn 是否自动批准首个内联执行计划。 */
+  autoApprovePlans?: boolean;
 }
 
 export const shouldEnableMemoryToolsForPrompt = (prompt: string): boolean => {
@@ -279,11 +284,17 @@ const askClarificationTool = (
  *
  * `status: "executing"` 会隐藏 `plan-viewer.tsx` 中的审批按钮 ——
  * 这些按钮仅在 `status === "draft"` 时渲染(遗留的 `ai:generatePlan`
- * 路径)。本工具不会暂停 agent 循环。
+ * 路径)。首个计划是否暂停取决于当前 chat 权限:请求审批会暂停,
+ * 替我审批/完全访问权限会自动批准并继续。
  */
 const createPlanTool = (
   sender: WebContents,
   taskId: string,
+  {
+    autoApprovePlans = false,
+  }: {
+    autoApprovePlans?: boolean;
+  } = {},
 ): ToolDefinition<
   {
     goal: string;
@@ -305,10 +316,11 @@ const createPlanTool = (
     "Initial plan can be COARSE (e.g. 'research X / research Y / compare /",
     "recommend') — subsequent calls may add, split, or refine steps as you",
     "learn more.",
-    "FIRST call (initial plan, all steps pending) pauses until the user clicks",
-    "「开始」 — the tool returns once approved; on rejection the call fails and",
-    "you should stop. After approval, continue executing the approved plan",
-    "immediately; do not treat publishing the plan as the final answer.",
+    autoApprovePlans
+      ? "FIRST call (initial plan, all steps pending) is auto-approved by the current chat permissions; continue executing it immediately."
+      : "FIRST call (initial plan, all steps pending) pauses until the user clicks 「开始」 — the tool returns once approved; on rejection the call fails and you should stop.",
+    "After approval, continue executing the approved plan immediately; do not",
+    "treat publishing the plan as the final answer.",
     "Subsequent status-update calls do NOT pause — call again",
     "with the (possibly refined) step list and updated `status` fields as you",
     "progress (pending → running → completed).",
@@ -354,10 +366,14 @@ const createPlanTool = (
         : "All plan steps are marked terminal. Provide the final answer now.",
     };
     const alreadyApproved = approvedInlinePlanTasks.has(taskId);
+    const isApproved = alreadyApproved || autoApprovePlans;
+    if (isApproved) {
+      approvedInlinePlanTasks.add(taskId);
+    }
     const plan = {
       id: makeInlinePlanId(taskId),
       goal,
-      status: alreadyApproved ? ("executing" as const) : ("draft" as const),
+      status: isApproved ? ("executing" as const) : ("draft" as const),
       steps: steps.map((s, i) => ({
         id: i + 1,
         action: s.action,
@@ -369,8 +385,14 @@ const createPlanTool = (
       sender.send("ai:stream-plan", { id: taskId, plan });
     }
 
-    if (alreadyApproved) {
-      return { recorded: true, stepCount: steps.length, ...continuation };
+    if (isApproved) {
+      return {
+        recorded: true,
+        approved: true,
+        autoApproved: autoApprovePlans && !alreadyApproved,
+        stepCount: steps.length,
+        ...continuation,
+      };
     }
 
     // 首次调用:暂停,直到用户通过 ai:approvePlan / ai:rejectPlan
@@ -661,6 +683,8 @@ export const buildAgentToolRegistry = ({
   workspacePath,
   currentThreadId,
   parentAllowedSkills,
+  sandboxMode,
+  autoApprovePlans,
 }: BuildAgentToolRegistryOptions): ToolRegistry => {
   const registry = new ToolRegistry();
   const allow = (name: string): boolean =>
@@ -677,11 +701,13 @@ export const buildAgentToolRegistry = ({
     : undefined;
 
   // db 未初始化(如部分单测)时回落默认沙箱配置,不阻断工具装配。
-  let sandboxModeSetting: string | null = null;
-  try {
-    sandboxModeSetting = getSetting("sandboxMode");
-  } catch {
-    sandboxModeSetting = null;
+  let sandboxModeSetting: string | null = sandboxMode ?? null;
+  if (!sandboxModeSetting) {
+    try {
+      sandboxModeSetting = getSetting("sandboxMode");
+    } catch {
+      sandboxModeSetting = null;
+    }
   }
 
   for (const def of buildFileTools({
@@ -698,7 +724,7 @@ export const buildAgentToolRegistry = ({
   }
 
   if (allow("createPlan")) {
-    registry.register(createPlanTool(sender, taskId));
+    registry.register(createPlanTool(sender, taskId, { autoApprovePlans }));
   }
 
   // 工作区记忆：只在显式记忆意图或 tool 白名单中注册,避免普通任务落持久记忆。

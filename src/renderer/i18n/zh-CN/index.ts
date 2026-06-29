@@ -401,6 +401,13 @@ const zhCN: Translation = {
   chat_copy: "复制",
   chat_copied: "已复制",
   chat_inputPlaceholder: "告诉我你想做什么... (Enter 发送)",
+  chatPermission_label: "请求审批",
+  chatPermission_requestLabel: "请求审批",
+  chatPermission_requestDesc: "敏感操作会先请求确认。",
+  chatPermission_autoLabel: "替我审批",
+  chatPermission_autoDesc: "在工作区沙箱限制内自动批准工具调用。",
+  chatPermission_fullLabel: "完全访问权限",
+  chatPermission_fullDesc: "不再限制文件系统和网络访问，也不逐项请求审批。",
 
   // Error types
   errorType_auth: "认证失败",
@@ -635,9 +642,16 @@ const zhCN: Translation = {
   skillsModal_marketInstall: "安装",
   skillsModal_marketInstalled: "已安装",
   skillsModal_marketUninstall: "卸载",
+  skillsModal_marketUninstalling: "卸载中…",
   skillsModal_marketCommunity: "社区",
   skillsModal_marketOfficial: "官方",
   skillsModal_marketInstalling: "安装中…",
+  skillsModal_marketConfirmInstallTitle: "确认安装 {0}？",
+  skillsModal_marketConfirmInstallDescription:
+    "将把 {0} 添加到个人技能中，刷新后可在 chat 中使用。",
+  skillsModal_marketConfirmUninstallTitle: "确认卸载 {0}？",
+  skillsModal_marketConfirmUninstallDescription:
+    "将从个人技能中移除 {0}，之后仍可从市场重新安装。",
   skillsModal_marketConfirmCommunity:
     "这是社区贡献的技能,安装后可在你的工作区中执行命令与脚本。仅在信任来源时安装。",
   skillsModal_marketEmpty: "市场暂无可用技能",

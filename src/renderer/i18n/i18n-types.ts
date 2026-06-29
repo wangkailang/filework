@@ -1516,6 +1516,34 @@ type RootTranslation = {
 	 */
 	chat_inputPlaceholder: string
 	/**
+	 * R​e​q​u​e​s​t​ ​a​p​p​r​o​v​a​l
+	 */
+	chatPermission_label: string
+	/**
+	 * R​e​q​u​e​s​t​ ​a​p​p​r​o​v​a​l
+	 */
+	chatPermission_requestLabel: string
+	/**
+	 * A​s​k​ ​b​e​f​o​r​e​ ​s​e​n​s​i​t​i​v​e​ ​a​c​t​i​o​n​s​.
+	 */
+	chatPermission_requestDesc: string
+	/**
+	 * A​p​p​r​o​v​e​ ​f​o​r​ ​m​e
+	 */
+	chatPermission_autoLabel: string
+	/**
+	 * A​u​t​o​-​a​p​p​r​o​v​e​ ​t​o​o​l​ ​c​a​l​l​s​ ​w​h​i​l​e​ ​k​e​e​p​i​n​g​ ​w​o​r​k​s​p​a​c​e​ ​s​a​n​d​b​o​x​ ​l​i​m​i​t​s​.
+	 */
+	chatPermission_autoDesc: string
+	/**
+	 * F​u​l​l​ ​a​c​c​e​s​s
+	 */
+	chatPermission_fullLabel: string
+	/**
+	 * A​l​l​o​w​ ​f​u​l​l​ ​f​i​l​e​s​y​s​t​e​m​ ​a​n​d​ ​n​e​t​w​o​r​k​ ​a​c​c​e​s​s​ ​w​i​t​h​o​u​t​ ​p​e​r​-​a​c​t​i​o​n​ ​a​p​p​r​o​v​a​l​.
+	 */
+	chatPermission_fullDesc: string
+	/**
 	 * A​u​t​h​ ​F​a​i​l​e​d
 	 */
 	errorType_auth: string
@@ -2342,6 +2370,10 @@ type RootTranslation = {
 	 */
 	skillsModal_marketUninstall: string
 	/**
+	 * U​n​i​n​s​t​a​l​l​i​n​g​…
+	 */
+	skillsModal_marketUninstalling: string
+	/**
 	 * C​o​m​m​u​n​i​t​y
 	 */
 	skillsModal_marketCommunity: string
@@ -2353,6 +2385,26 @@ type RootTranslation = {
 	 * I​n​s​t​a​l​l​i​n​g​…
 	 */
 	skillsModal_marketInstalling: string
+	/**
+	 * I​n​s​t​a​l​l​ ​{​0​}​?
+	 * @param {string} 0
+	 */
+	skillsModal_marketConfirmInstallTitle: RequiredParams<'0'>
+	/**
+	 * T​h​i​s​ ​w​i​l​l​ ​a​d​d​ ​{​0​}​ ​t​o​ ​y​o​u​r​ ​p​e​r​s​o​n​a​l​ ​s​k​i​l​l​s​ ​a​n​d​ ​m​a​k​e​ ​i​t​ ​a​v​a​i​l​a​b​l​e​ ​i​n​ ​c​h​a​t​ ​a​f​t​e​r​ ​r​e​f​r​e​s​h​.
+	 * @param {string} 0
+	 */
+	skillsModal_marketConfirmInstallDescription: RequiredParams<'0'>
+	/**
+	 * U​n​i​n​s​t​a​l​l​ ​{​0​}​?
+	 * @param {string} 0
+	 */
+	skillsModal_marketConfirmUninstallTitle: RequiredParams<'0'>
+	/**
+	 * T​h​i​s​ ​r​e​m​o​v​e​s​ ​{​0​}​ ​f​r​o​m​ ​y​o​u​r​ ​p​e​r​s​o​n​a​l​ ​s​k​i​l​l​s​.​ ​Y​o​u​ ​c​a​n​ ​i​n​s​t​a​l​l​ ​i​t​ ​a​g​a​i​n​ ​f​r​o​m​ ​t​h​e​ ​m​a​r​k​e​t​p​l​a​c​e​ ​l​a​t​e​r​.
+	 * @param {string} 0
+	 */
+	skillsModal_marketConfirmUninstallDescription: RequiredParams<'0'>
 	/**
 	 * T​h​i​s​ ​i​s​ ​a​ ​c​o​m​m​u​n​i​t​y​-​c​o​n​t​r​i​b​u​t​e​d​ ​s​k​i​l​l​.​ ​O​n​c​e​ ​i​n​s​t​a​l​l​e​d​,​ ​i​t​ ​c​a​n​ ​e​x​e​c​u​t​e​ ​c​o​m​m​a​n​d​s​ ​a​n​d​ ​s​c​r​i​p​t​s​ ​i​n​ ​y​o​u​r​ ​w​o​r​k​s​p​a​c​e​.​ ​O​n​l​y​ ​i​n​s​t​a​l​l​ ​i​f​ ​y​o​u​ ​t​r​u​s​t​ ​t​h​e​ ​s​o​u​r​c​e​.
 	 */
@@ -4099,6 +4151,34 @@ export type TranslationFunctions = {
 	 */
 	chat_inputPlaceholder: () => LocalizedString
 	/**
+	 * Request approval
+	 */
+	chatPermission_label: () => LocalizedString
+	/**
+	 * Request approval
+	 */
+	chatPermission_requestLabel: () => LocalizedString
+	/**
+	 * Ask before sensitive actions.
+	 */
+	chatPermission_requestDesc: () => LocalizedString
+	/**
+	 * Approve for me
+	 */
+	chatPermission_autoLabel: () => LocalizedString
+	/**
+	 * Auto-approve tool calls while keeping workspace sandbox limits.
+	 */
+	chatPermission_autoDesc: () => LocalizedString
+	/**
+	 * Full access
+	 */
+	chatPermission_fullLabel: () => LocalizedString
+	/**
+	 * Allow full filesystem and network access without per-action approval.
+	 */
+	chatPermission_fullDesc: () => LocalizedString
+	/**
 	 * Auth Failed
 	 */
 	errorType_auth: () => LocalizedString
@@ -4891,6 +4971,10 @@ export type TranslationFunctions = {
 	 */
 	skillsModal_marketUninstall: () => LocalizedString
 	/**
+	 * Uninstalling…
+	 */
+	skillsModal_marketUninstalling: () => LocalizedString
+	/**
 	 * Community
 	 */
 	skillsModal_marketCommunity: () => LocalizedString
@@ -4902,6 +4986,22 @@ export type TranslationFunctions = {
 	 * Installing…
 	 */
 	skillsModal_marketInstalling: () => LocalizedString
+	/**
+	 * Install {0}?
+	 */
+	skillsModal_marketConfirmInstallTitle: (arg0: string) => LocalizedString
+	/**
+	 * This will add {0} to your personal skills and make it available in chat after refresh.
+	 */
+	skillsModal_marketConfirmInstallDescription: (arg0: string) => LocalizedString
+	/**
+	 * Uninstall {0}?
+	 */
+	skillsModal_marketConfirmUninstallTitle: (arg0: string) => LocalizedString
+	/**
+	 * This removes {0} from your personal skills. You can install it again from the marketplace later.
+	 */
+	skillsModal_marketConfirmUninstallDescription: (arg0: string) => LocalizedString
 	/**
 	 * This is a community-contributed skill. Once installed, it can execute commands and scripts in your workspace. Only install if you trust the source.
 	 */
