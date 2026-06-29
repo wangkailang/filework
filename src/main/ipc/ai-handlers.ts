@@ -68,6 +68,7 @@ import {
   getLlmConfig,
   getSetting,
   getTaskSummary,
+  listContextMemoryChunks,
   listSkillTrust,
   type SkillTrustRow,
   setSetting,
@@ -228,6 +229,22 @@ const readRollingSummary = (
   } catch (error) {
     console.warn(
       "[ai:executeTask] Failed to read rolling context summary:",
+      error instanceof Error ? error.message : error,
+    );
+    return undefined;
+  }
+};
+
+const readContextMemoryChunks = (summaryScopeId: string | undefined) => {
+  if (!summaryScopeId) return undefined;
+  try {
+    return listContextMemoryChunks(summaryScopeId).map((chunk) => ({
+      text: chunk.text,
+      embedding: chunk.embedding,
+    }));
+  } catch (error) {
+    console.warn(
+      "[ai:executeTask] Failed to read context memory chunks:",
       error instanceof Error ? error.message : error,
     );
     return undefined;
@@ -731,6 +748,7 @@ const handleTaskExecutionInner = async (
             taskId: id,
             summaryScopeId: rollingSummaryScopeId,
             previousSummary: readRollingSummary(rollingSummaryScopeId),
+            memoryChunks: readContextMemoryChunks(rollingSummaryScopeId),
             promptSnippet: payload.prompt,
           });
           // 通过 IPC 转发给渲染层(compressContext 已写入 store)

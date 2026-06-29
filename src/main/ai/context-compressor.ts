@@ -8,9 +8,13 @@
 
 import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
-import { upsertTaskSummary } from "../db";
+import { replaceContextMemoryChunks, upsertTaskSummary } from "../db";
 import { addMemoryEvent } from "./memory-debug-store";
-import { buildRollingSummaryContext } from "./rolling-summary";
+import { embedTextToVector, type MemoryVectorChunk } from "./memory-vector";
+import {
+  buildRollingSummaryContext,
+  splitRollingSummaryChunks,
+} from "./rolling-summary";
 import { createTimeoutController } from "./stream-watchdog";
 import {
   compressToolResults,
@@ -74,6 +78,8 @@ export interface CompressorOptions {
   summaryScopeId?: string;
   /** 上一次压缩生成的滚动摘要(可选) */
   previousSummary?: string | null;
+  /** 已持久化的分层记忆块(可选) */
+  memoryChunks?: MemoryVectorChunk[] | null;
   /** 用于关联 memory-debug 的用户 prompt 片段(可选) */
   promptSnippet?: string;
 }
@@ -164,6 +170,7 @@ export async function compressContext(
   if (middle.length === 0) {
     const previousSummaryContext = buildRollingSummaryContext({
       previousSummary: options.previousSummary,
+      memoryChunks: options.memoryChunks,
     });
     const previousSummaryMessage = createSummaryMessage(
       previousSummaryContext?.text,
@@ -197,7 +204,11 @@ export async function compressContext(
   // 步骤 5:用 LLM 对中间段进行摘要(带超时以避免阻塞)
   try {
     const middleText = serializeMessages(middle);
-    const prompt = buildSummarizerPrompt(middleText, options.previousSummary);
+    const prompt = buildSummarizerPrompt(
+      middleText,
+      options.previousSummary,
+      options.memoryChunks,
+    );
 
     const { controller: compressionController, cleanup: cleanupTimeout } =
       createTimeoutController(COMPRESSION_TIMEOUT_MS, options.signal);
@@ -296,9 +307,11 @@ function createSummaryMessage(summary?: string | null): ModelMessage | null {
 function buildSummarizerPrompt(
   middleText: string,
   previousSummary?: string | null,
+  memoryChunks?: MemoryVectorChunk[] | null,
 ): string {
   const rollingSummary = buildRollingSummaryContext({
     previousSummary,
+    memoryChunks,
     query: middleText,
   });
   if (!rollingSummary) {
@@ -343,6 +356,17 @@ function persistTaskSummaries(input: {
       compressedTokens: input.compressedTokens,
       summaryTokens: input.summaryTokens,
     });
+  }
+
+  if (input.summaryScopeId) {
+    replaceContextMemoryChunks(
+      input.summaryScopeId,
+      splitRollingSummaryChunks(input.summary).map((text) => ({
+        text,
+        embedding: embedTextToVector(text),
+        source: "rolling-summary",
+      })),
+    );
   }
 }
 

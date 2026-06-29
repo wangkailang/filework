@@ -37,4 +37,30 @@ describe("buildRollingSummaryContext", () => {
     expect(result?.text).toContain("initial workspace scan");
     expect(result?.text).toContain("verify OAuth token renewal");
   });
+
+  it("uses vector-ranked memory chunks as recall candidates", () => {
+    const result = buildRollingSummaryContext({
+      previousSummary: [
+        "## 已完成",
+        "- first project setup note",
+        "- unrelated visual polish details",
+        "## 待处理",
+        "- final unrelated cleanup",
+      ].join("\n"),
+      memoryChunks: [
+        { text: "sidebar color and spacing memory", embedding: null },
+        {
+          text: "auth session token renewal regression memory",
+          embedding: null,
+        },
+      ],
+      query: "token renewal auth regression",
+      maxChars: 220,
+      maxSnippets: 1,
+    });
+
+    expect(result?.wasTruncated).toBe(true);
+    expect(result?.text).toContain("auth session token renewal");
+    expect(result?.text).not.toContain("sidebar color");
+  });
 });

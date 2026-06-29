@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { automationRunEvents, automationRuns, tasks } from "../schema";
+import {
+  automationRunEvents,
+  automationRuns,
+  contextMemoryChunks,
+  tasks,
+} from "../schema";
 
 describe("automation run schema", () => {
   it("defines the persisted run table used by scheduler and triage", () => {
@@ -35,5 +40,13 @@ describe("automation run schema", () => {
     expect(tasks.sessionId).toBeDefined();
     expect(tasks.assistantMessageId).toBeDefined();
     expect(tasks.updatedAt).toBeDefined();
+  });
+
+  it("defines context memory chunks for layered compression recall", () => {
+    expect(contextMemoryChunks).toBeDefined();
+    expect(contextMemoryChunks.scopeId).toBeDefined();
+    expect(contextMemoryChunks.text).toBeDefined();
+    expect(contextMemoryChunks.embedding).toBeDefined();
+    expect(contextMemoryChunks.source).toBeDefined();
   });
 });

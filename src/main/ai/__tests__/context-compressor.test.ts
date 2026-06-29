@@ -149,6 +149,35 @@ describe("compressContext", () => {
     expect(prompt).toContain("new middle work that must be merged");
   });
 
+  it("includes vector-recalled memory chunks when summarizing new middle history", async () => {
+    await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("new token renewal work that must be merged"),
+        userMsg("latest request"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        previousSummary:
+          "## 已完成\n- initial setup\n- unrelated UI notes\n## 待处理\n- final cleanup",
+        memoryChunks: [
+          {
+            text: "auth session token renewal regression memory",
+            embedding: null,
+          },
+        ],
+      },
+    );
+
+    const prompt = vi.mocked(generateText).mock.calls.at(-1)?.[0].prompt;
+    expect(prompt).toContain("auth session token renewal regression memory");
+  });
+
   it("injects the previous rolling summary when there is no new middle history", async () => {
     const result = await compressContext(
       [{ role: "system", content: "system prompt" }, userMsg("latest request")],
