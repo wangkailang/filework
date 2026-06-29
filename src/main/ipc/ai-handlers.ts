@@ -67,6 +67,7 @@ import {
   finishAutomationRun,
   getLlmConfig,
   getSetting,
+  getTaskSummary,
   listSkillTrust,
   type SkillTrustRow,
   setSetting,
@@ -218,6 +219,21 @@ const readLatestContextInputTokens = (
   return 0;
 };
 
+const readRollingSummary = (
+  summaryScopeId: string | undefined,
+): string | undefined => {
+  if (!summaryScopeId) return undefined;
+  try {
+    return getTaskSummary(summaryScopeId)?.summary ?? undefined;
+  } catch (error) {
+    console.warn(
+      "[ai:executeTask] Failed to read rolling context summary:",
+      error instanceof Error ? error.message : error,
+    );
+    return undefined;
+  }
+};
+
 /**
  * 主任务执行 handler
  */
@@ -257,6 +273,9 @@ const handleTaskExecutionInner = async (
   const legacyWorkspacePath =
     ref.kind === "local" ? ref.path : (payload.workspacePath ?? "");
   const id = crypto.randomUUID();
+  const rollingSummaryScopeId = payload.sessionId
+    ? `session:${payload.sessionId}`
+    : undefined;
   const now = new Date().toISOString();
   const taskStartMs = Date.now();
   const streamRoute = {
@@ -710,6 +729,8 @@ const handleTaskExecutionInner = async (
             tailBudget: forceCompressionFromUsage ? 4_000 : undefined,
             signal: controller.signal,
             taskId: id,
+            summaryScopeId: rollingSummaryScopeId,
+            previousSummary: readRollingSummary(rollingSummaryScopeId),
             promptSnippet: payload.prompt,
           });
           // 通过 IPC 转发给渲染层(compressContext 已写入 store)

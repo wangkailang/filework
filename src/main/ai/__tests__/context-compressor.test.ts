@@ -60,6 +60,7 @@ const findToolResultIndex = (messages: ModelMessage[], toolCallId: string) =>
 
 describe("compressContext", () => {
   beforeEach(() => {
+    vi.mocked(generateText).mockClear();
     vi.mocked(generateText).mockResolvedValue({
       text: "## 已完成\n- summarized earlier work",
     } as Awaited<ReturnType<typeof generateText>>);
@@ -122,5 +123,56 @@ describe("compressContext", () => {
 
     expect(result.messages).toContainEqual(recentUser);
     expect(result.messages).toContainEqual(recentAssistant);
+  });
+
+  it("includes the previous rolling summary when summarizing new middle history", async () => {
+    await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("new middle work that must be merged into the summary"),
+        userMsg("latest request"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        previousSummary: "## 已完成\n- previous compressed fact",
+      },
+    );
+
+    const prompt = vi.mocked(generateText).mock.calls.at(-1)?.[0].prompt;
+    expect(prompt).toContain("上一版滚动摘要");
+    expect(prompt).toContain("previous compressed fact");
+    expect(prompt).toContain("new middle work that must be merged");
+  });
+
+  it("injects the previous rolling summary when there is no new middle history", async () => {
+    const result = await compressContext(
+      [{ role: "system", content: "system prompt" }, userMsg("latest request")],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        previousSummary: "## 已完成\n- previous compressed fact",
+      },
+    );
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.wasCompressed).toBe(true);
+    expect(
+      result.messages.some(
+        (message) =>
+          message.role === "system" &&
+          typeof message.content === "string" &&
+          message.content.includes("previous compressed fact"),
+      ),
+    ).toBe(true);
+    expect(result.messages.at(-1)).toEqual(userMsg("latest request"));
   });
 });
