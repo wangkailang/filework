@@ -1683,7 +1683,10 @@ export const ChatPanel = ({
             ? event.detail.usedTokens
             : originalTokens;
         const accuracy =
-          event.detail.source === "provider-step" ? "actual" : "estimated";
+          event.detail.tokenAccuracy === "actual" ||
+          event.detail.source === "provider-step"
+            ? "actual"
+            : "estimated";
         const providerNativeCompaction = readProviderNativeCompaction(
           event.detail.providerNativeCompaction,
         );

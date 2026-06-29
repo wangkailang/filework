@@ -30,6 +30,7 @@ import {
   type HistoryMessage,
 } from "../ai/message-converter";
 import { appendPattern } from "../ai/pattern-store";
+import { countOpenAIResponsesInputTokens } from "../ai/provider-token-count";
 import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { emitTaskTraceEvent } from "../ai/task-trace-store";
@@ -526,6 +527,8 @@ const handleTaskExecutionInner = async (
       repairedToolResults?: number;
       semanticToolResultSummary?: boolean;
       source: "agent-step" | "history" | "provider-step";
+      tokenAccuracy?: "actual" | "estimated";
+      tokenCountSource?: string;
       turnIndex?: number;
       usedTokens: number;
       wasTruncated?: boolean;
@@ -544,6 +547,12 @@ const handleTaskExecutionInner = async (
           originalTokens: detail.originalTokens,
           usedTokens: detail.usedTokens,
           source: detail.source,
+          ...(detail.tokenAccuracy !== undefined && {
+            tokenAccuracy: detail.tokenAccuracy,
+          }),
+          ...(detail.tokenCountSource !== undefined && {
+            tokenCountSource: detail.tokenCountSource,
+          }),
           ...(detail.turnIndex !== undefined && {
             turnIndex: detail.turnIndex,
           }),
@@ -1024,6 +1033,37 @@ const handleTaskExecutionInner = async (
     );
     const estimateAgentStepTokens = (messages: import("ai").ModelMessage[]) =>
       estimateTokens([{ role: "system", content: systemPrompt }, ...messages]);
+
+    if (llmConfig) {
+      const messagesForProviderCount: import("ai").ModelMessage[] =
+        useMessagesMode && convertedHistory
+          ? [{ role: "system", content: systemPrompt }, ...convertedHistory]
+          : [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: payload.prompt },
+            ];
+      const providerTokenCount = await countOpenAIResponsesInputTokens(
+        {
+          apiKey: llmConfig.apiKey || "",
+          baseUrl: llmConfig.baseUrl,
+          model: llmConfig.model,
+          modelCapabilities: llmConfig.modelCapabilities,
+          provider: llmConfig.provider,
+        },
+        messagesForProviderCount,
+        { signal: controller.signal },
+      );
+      if (providerTokenCount) {
+        emitContextBudgetTrace({
+          source: "history",
+          originalTokens: providerTokenCount.inputTokens,
+          usedTokens: providerTokenCount.inputTokens,
+          tokenAccuracy: providerTokenCount.accuracy,
+          tokenCountSource: providerTokenCount.source,
+          providerNativeCompaction,
+        });
+      }
+    }
 
     const agentLoop = new AgentLoop({
       workspace,

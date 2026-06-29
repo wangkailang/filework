@@ -586,6 +586,39 @@ describe("ChatPanel message rendering", () => {
     expect(rootText).not.toContain("已用 475k 标记，共 258k");
   });
 
+  it("treats provider token-count context-budget traces as actual usage", async () => {
+    chatState.value = createChatState([]);
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      taskTraceCallback?.({
+        taskId: "task-1",
+        type: "context-budget",
+        timestamp: "2026-06-29T04:00:00.000Z",
+        detail: {
+          contextWindow: 258_000,
+          originalTokens: 34_500,
+          source: "history",
+          tokenAccuracy: "actual",
+          tokenBudget: 247_808,
+          usedTokens: 34_500,
+        },
+      });
+    });
+
+    const usageButton = document.querySelector(
+      'button[aria-label*="13% 已用"]',
+    );
+    expect(
+      usageButton?.querySelector('[data-context-usage-ring="true"]'),
+    ).not.toBeNull();
+    const rootText = document.getElementById("root")?.textContent ?? "";
+    expect(rootText).toContain("已用 35k 标记，共 258k");
+    expect(rootText).not.toContain("估算");
+  });
+
   it("shows provider-native compaction status from context-budget trace", async () => {
     chatState.value = createChatState([]);
     await act(async () => {
