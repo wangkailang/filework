@@ -1,4 +1,5 @@
 import { open, readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { extname, join } from "node:path";
 import { ipcMain } from "electron";
 import {
@@ -9,12 +10,19 @@ import {
 import {
   directoryStats,
   type NativeSearchOptions,
+  prepareOfficePreview,
   searchFiles,
 } from "../native";
 
 // 文件预览的读取上限:超过则只读前 N 字节并标记 truncated,
 // 避免把几百 MB 的文件整体读入内存、序列化过 IPC 拖垮渲染进程。
 const MAX_PREVIEW_BYTES = 10 * 1024 * 1024; // 10 MB
+const OFFICE_PREVIEW_CACHE_ROOT = join(
+  homedir(),
+  ".filework",
+  "previews",
+  "office",
+);
 
 export interface FileInfo {
   name: string;
@@ -145,6 +153,16 @@ export const registerFileHandlers = () => {
     "fs:searchFiles",
     (_event, rootPath: string, query: string, options?: NativeSearchOptions) =>
       searchFiles(rootPath, query, options),
+  );
+
+  // Office 预览:不在工作区生成派生文件。native 负责转换队列、隔离目录、
+  // 超时和按 source fingerprint + converter version 的缓存。
+  ipcMain.handle("fs:prepareOfficePreview", (_event, filePath: string) =>
+    prepareOfficePreview(filePath, {
+      cacheRoot: OFFICE_PREVIEW_CACHE_ROOT,
+      timeoutMs: 60_000,
+      thumbnailSize: 640,
+    }),
   );
 
   // 回收站:列出 / 恢复 / 永久清除(以 workspaceRoot 区分各工作区的回收站)。

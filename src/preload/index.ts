@@ -1,7 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { TrashEntry } from "../main/core/agent/tools/trash";
-import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
+import type {
+  NativeOfficePreviewResult,
+  NativeSearchOptions,
+  NativeSearchResult,
+} from "../main/native";
 import type { ChatPermissionMode } from "../shared/chat-permissions";
 import type { CredentialKind } from "../shared/credentials";
 
@@ -144,6 +148,8 @@ const api = {
     options?: NativeSearchOptions,
   ): Promise<NativeSearchResult> =>
     ipcRenderer.invoke("fs:searchFiles", workspaceRoot, query, options),
+  prepareOfficePreview: (path: string): Promise<NativeOfficePreviewResult> =>
+    ipcRenderer.invoke("fs:prepareOfficePreview", path),
 
   // 回收站
   trashList: (workspaceRoot: string): Promise<TrashEntry[]> =>

@@ -1,4 +1,5 @@
 mod dedup;
+pub mod office_preview;
 mod scan;
 mod search;
 mod stats;
