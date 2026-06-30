@@ -20,6 +20,7 @@ pub struct OfficePreviewRequest {
     pub source_path: String,
     pub cache_root: String,
     pub libre_office_path: Option<String>,
+    pub quick_look_path: Option<String>,
     pub thumbnailer_path: Option<String>,
     pub timeout_ms: Option<u32>,
     pub thumbnail_size: Option<u32>,
@@ -29,7 +30,9 @@ pub struct OfficePreviewRequest {
 #[napi(object)]
 pub struct OfficePreviewResult {
     pub cache_key: String,
-    pub pdf_path: String,
+    pub preview_kind: String,
+    pub preview_path: String,
+    pub pdf_path: Option<String>,
     pub thumbnail_path: Option<String>,
     pub source_mtime_ms: f64,
     pub source_size: f64,
@@ -76,15 +79,31 @@ pub fn prepare_office_preview(
     let cache_root = PathBuf::from(&request.cache_root);
     let timeout_ms = u64::from(request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS as u32));
     let thumbnail_size = request.thumbnail_size.unwrap_or(DEFAULT_THUMBNAIL_SIZE);
-    let converter_path = resolve_libre_office_path(request.libre_office_path.as_deref())?;
-    let converter_version = read_converter_version(&converter_path)?;
+    fs::create_dir_all(&cache_root)
+        .map_err(|e| format!("Failed to create Office preview cache root: {}", e))?;
+
+    let (converter_path, converter_version) =
+        match resolve_libre_office_path(request.libre_office_path.as_deref())
+            .and_then(|path| read_converter_version(&path).map(|version| (path, version)))
+        {
+            Ok(resolved) => resolved,
+            Err(converter_error) => {
+                return prepare_quick_look_preview(
+                    &request,
+                    &source_path,
+                    &cache_root,
+                    timeout_ms,
+                    thumbnail_size,
+                )
+                .map_err(|fallback_error| {
+                    format!("{converter_error}. Quick Look fallback failed: {fallback_error}")
+                });
+            }
+        };
     let fingerprint = build_office_preview_fingerprint(&source_path, &converter_version)?;
     let cache_dir = cache_root.join(&fingerprint.cache_key);
     let pdf_path = cache_dir.join("preview.pdf");
     let thumbnail_path = cache_dir.join("thumbnail.png");
-
-    fs::create_dir_all(&cache_root)
-        .map_err(|e| format!("Failed to create Office preview cache root: {}", e))?;
 
     if pdf_path.is_file() {
         let thumbnail = ensure_thumbnail(
@@ -103,7 +122,7 @@ pub fn prepare_office_preview(
         ));
     }
 
-    let _queue_guard = OFFICE_PREVIEW_QUEUE
+    let queue_guard = OFFICE_PREVIEW_QUEUE
         .lock()
         .map_err(|_| "Office preview conversion queue is poisoned".to_string())?;
 
@@ -138,7 +157,15 @@ pub fn prepare_office_preview(
     let cleanup_result = fs::remove_dir_all(&job_dir);
     if let Err(err) = convert_result {
         let _ = cleanup_result;
-        return Err(err);
+        drop(queue_guard);
+        return prepare_quick_look_preview(
+            &request,
+            &source_path,
+            &cache_root,
+            timeout_ms,
+            thumbnail_size,
+        )
+        .map_err(|fallback_error| format!("{err}. Quick Look fallback failed: {fallback_error}"));
     }
     if let Err(err) = cleanup_result {
         return Err(format!("Failed to clean Office preview temp dir: {}", err));
@@ -156,6 +183,59 @@ pub fn prepare_office_preview(
         fingerprint,
         pdf_path,
         thumbnail,
+        converter_version,
+        false,
+    ))
+}
+
+fn prepare_quick_look_preview(
+    request: &OfficePreviewRequest,
+    source_path: &Path,
+    cache_root: &Path,
+    timeout_ms: u64,
+    thumbnail_size: u32,
+) -> std::result::Result<OfficePreviewResult, String> {
+    let qlmanage = resolve_quick_look_path(request.quick_look_path.as_deref())?;
+    let converter_version = "Quick Look thumbnail".to_string();
+    let fingerprint = build_office_preview_fingerprint(source_path, &converter_version)?;
+    let cache_dir = cache_root.join(&fingerprint.cache_key);
+    let thumbnail_path = cache_dir.join("thumbnail.png");
+
+    if thumbnail_path.is_file() {
+        return Ok(result_from_image_path(
+            fingerprint,
+            thumbnail_path,
+            converter_version,
+            true,
+        ));
+    }
+
+    let _queue_guard = OFFICE_PREVIEW_QUEUE
+        .lock()
+        .map_err(|_| "Office preview conversion queue is poisoned".to_string())?;
+
+    if thumbnail_path.is_file() {
+        return Ok(result_from_image_path(
+            fingerprint,
+            thumbnail_path,
+            converter_version,
+            true,
+        ));
+    }
+
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create Office preview cache dir: {}", e))?;
+    generate_quick_look_thumbnail(
+        &qlmanage,
+        source_path,
+        &thumbnail_path,
+        thumbnail_size,
+        timeout_ms,
+    )?;
+
+    Ok(result_from_image_path(
+        fingerprint,
+        thumbnail_path,
         converter_version,
         false,
     ))
@@ -236,6 +316,22 @@ fn resolve_libre_office_path(explicit: Option<&str>) -> std::result::Result<Path
         "LibreOffice headless converter not found. Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH."
             .to_string(),
     )
+}
+
+fn resolve_quick_look_path(explicit: Option<&str>) -> std::result::Result<PathBuf, String> {
+    if let Some(path) = explicit {
+        return Ok(PathBuf::from(path));
+    }
+    if let Ok(path) = env::var("FILEWORK_QUICKLOOK_PATH") {
+        if !path.trim().is_empty() {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    let macos_default = PathBuf::from("/usr/bin/qlmanage");
+    if macos_default.is_file() {
+        return Ok(macos_default);
+    }
+    Err("Quick Look thumbnail generator not found at /usr/bin/qlmanage.".to_string())
 }
 
 fn find_on_path(command: &str) -> Option<PathBuf> {
@@ -421,24 +517,41 @@ fn try_qlmanage_thumbnail(
     if !qlmanage.is_file() {
         return false;
     }
+    generate_quick_look_thumbnail(
+        &qlmanage,
+        pdf_path,
+        thumbnail_path,
+        thumbnail_size,
+        timeout_ms,
+    )
+    .is_ok()
+}
+
+fn generate_quick_look_thumbnail(
+    qlmanage: &Path,
+    source_path: &Path,
+    thumbnail_path: &Path,
+    thumbnail_size: u32,
+    timeout_ms: u64,
+) -> std::result::Result<(), String> {
     let Some(out_dir) = thumbnail_path.parent() else {
-        return false;
+        return Err("Office preview thumbnail path has no parent directory".to_string());
     };
     let ql_dir = out_dir.join(".ql-thumbnail");
-    if fs::create_dir_all(&ql_dir).is_err() {
-        return false;
-    }
+    fs::create_dir_all(&ql_dir)
+        .map_err(|e| format!("Failed to create Quick Look thumbnail dir: {}", e))?;
     let args = vec![
         OsString::from("-t"),
         OsString::from("-s"),
         OsString::from(thumbnail_size.to_string()),
         OsString::from("-o"),
         ql_dir.as_os_str().to_os_string(),
-        pdf_path.as_os_str().to_os_string(),
+        source_path.as_os_str().to_os_string(),
     ];
-    if run_command_with_timeout(&qlmanage, &args, timeout_ms, "Quick Look thumbnail").is_err() {
+    if let Err(err) = run_command_with_timeout(qlmanage, &args, timeout_ms, "Quick Look thumbnail")
+    {
         let _ = fs::remove_dir_all(&ql_dir);
-        return false;
+        return Err(err);
     }
     let generated = fs::read_dir(&ql_dir).ok().and_then(|entries| {
         entries.filter_map(|entry| entry.ok()).find_map(|entry| {
@@ -450,16 +563,22 @@ fn try_qlmanage_thumbnail(
             }
         })
     });
-    let ok = generated
-        .as_ref()
-        .and_then(|path| fs::rename(path, thumbnail_path).ok())
-        .is_some()
-        || generated
-            .as_ref()
-            .and_then(|path| fs::copy(path, thumbnail_path).ok())
-            .is_some();
+    let Some(generated) = generated else {
+        let _ = fs::remove_dir_all(&ql_dir);
+        return Err("Quick Look finished without producing a PNG thumbnail".to_string());
+    };
+    fs::rename(&generated, thumbnail_path)
+        .or_else(|_| {
+            fs::copy(&generated, thumbnail_path)?;
+            fs::remove_file(&generated)
+        })
+        .map_err(|e| format!("Failed to publish Quick Look thumbnail: {}", e))?;
     let _ = fs::remove_dir_all(&ql_dir);
-    ok && thumbnail_path.is_file()
+    if thumbnail_path.is_file() {
+        Ok(())
+    } else {
+        Err("Quick Look thumbnail was not written".to_string())
+    }
 }
 
 fn try_pdftoppm_thumbnail(
@@ -535,10 +654,33 @@ fn result_from_paths(
     converter_version: String,
     cache_hit: bool,
 ) -> OfficePreviewResult {
+    let pdf_path = pdf_path.to_string_lossy().into_owned();
     OfficePreviewResult {
         cache_key: fingerprint.cache_key,
-        pdf_path: pdf_path.to_string_lossy().into_owned(),
+        preview_kind: "pdf".to_string(),
+        preview_path: pdf_path.clone(),
+        pdf_path: Some(pdf_path),
         thumbnail_path: thumbnail_path.map(|p| p.to_string_lossy().into_owned()),
+        source_mtime_ms: fingerprint.source_mtime_ms,
+        source_size: fingerprint.source_size as f64,
+        converter_version,
+        cache_hit,
+    }
+}
+
+fn result_from_image_path(
+    fingerprint: OfficePreviewFingerprint,
+    image_path: PathBuf,
+    converter_version: String,
+    cache_hit: bool,
+) -> OfficePreviewResult {
+    let image_path = image_path.to_string_lossy().into_owned();
+    OfficePreviewResult {
+        cache_key: fingerprint.cache_key,
+        preview_kind: "image".to_string(),
+        preview_path: image_path.clone(),
+        pdf_path: None,
+        thumbnail_path: Some(image_path),
         source_mtime_ms: fingerprint.source_mtime_ms,
         source_size: fingerprint.source_size as f64,
         converter_version,
@@ -574,6 +716,7 @@ mod tests {
             source_path: source_path.to_string_lossy().into_owned(),
             cache_root: cache_root.to_string_lossy().into_owned(),
             libre_office_path: Some(office_path.to_string_lossy().into_owned()),
+            quick_look_path: None,
             thumbnailer_path: None,
             timeout_ms: Some(3_000),
             thumbnail_size: Some(320),
@@ -645,7 +788,7 @@ printf 'PNG:%s:%s' "$1" "$3" > "$2"
 
         let first = prepare_office_preview(req.clone()).unwrap();
         assert!(!first.cache_hit);
-        assert!(Path::new(&first.pdf_path).exists());
+        assert!(Path::new(first.pdf_path.as_ref().unwrap()).exists());
         assert!(Path::new(first.thumbnail_path.as_ref().unwrap()).exists());
         assert_eq!(first.converter_version, "LibreOffice 24.2.1");
 
@@ -658,6 +801,102 @@ printf 'PNG:%s:%s' "$1" "$3" > "$2"
         assert!(second.cache_hit);
         assert_eq!(second.pdf_path, first.pdf_path);
         assert_eq!(second.thumbnail_path, first.thumbnail_path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn falls_back_to_quick_look_image_preview_when_libreoffice_is_unavailable() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("Deck File.pptx");
+        let cache = dir.path().join("cache");
+        let missing_office = dir.path().join("missing-soffice");
+        let qlmanage = dir.path().join("fake-qlmanage");
+        fs::write(&source, b"slides").unwrap();
+        write_executable(
+            &qlmanage,
+            r#"#!/bin/sh
+outdir=""
+input=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    outdir="$1"
+  else
+    input="$1"
+  fi
+  shift
+done
+base="$(basename "$input")"
+printf 'PNG:%s' "$input" > "$outdir/$base.png"
+"#,
+        )
+        .unwrap();
+
+        let mut req = request(source, cache, missing_office);
+        req.quick_look_path = Some(qlmanage.to_string_lossy().into_owned());
+
+        let first = prepare_office_preview(req.clone()).unwrap();
+        assert!(!first.cache_hit);
+        assert_eq!(first.preview_kind, "image");
+        assert!(first.pdf_path.is_none());
+        assert!(Path::new(&first.preview_path).exists());
+        assert_eq!(first.thumbnail_path.as_ref(), Some(&first.preview_path));
+        assert_eq!(first.converter_version, "Quick Look thumbnail");
+
+        let second = prepare_office_preview(req).unwrap();
+        assert!(second.cache_hit);
+        assert_eq!(second.preview_path, first.preview_path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn falls_back_to_quick_look_image_preview_when_libreoffice_conversion_fails() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("Broken Deck.pptx");
+        let cache = dir.path().join("cache");
+        let office = dir.path().join("failing-soffice");
+        let qlmanage = dir.path().join("fake-qlmanage");
+        fs::write(&source, b"slides").unwrap();
+        write_executable(
+            &office,
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "LibreOffice 24.2.1"
+  exit 0
+fi
+echo "conversion failed" >&2
+exit 2
+"#,
+        )
+        .unwrap();
+        write_executable(
+            &qlmanage,
+            r#"#!/bin/sh
+outdir=""
+input=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    outdir="$1"
+  else
+    input="$1"
+  fi
+  shift
+done
+base="$(basename "$input")"
+printf 'PNG:%s' "$input" > "$outdir/$base.png"
+"#,
+        )
+        .unwrap();
+
+        let mut req = request(source, cache, office);
+        req.quick_look_path = Some(qlmanage.to_string_lossy().into_owned());
+
+        let result = prepare_office_preview(req).unwrap();
+        assert_eq!(result.preview_kind, "image");
+        assert!(result.pdf_path.is_none());
+        assert!(Path::new(&result.preview_path).exists());
+        assert_eq!(result.converter_version, "Quick Look thumbnail");
     }
 
     #[cfg(unix)]
