@@ -35,7 +35,10 @@ const hasCompletionEvidenceAfter = (
 
 export const finalizePartsForSettledTask = (
   parts: MessagePart[],
-  options: { status: "completed" | "cancelled"; cancelledReason?: string },
+  options: {
+    status: "completed" | "cancelled" | "failed";
+    cancelledReason?: string;
+  },
 ): MessagePart[] => {
   const toolResults = new Map<
     string,
@@ -70,6 +73,25 @@ export const finalizePartsForSettledTask = (
         return {
           type: "plan",
           plan: cancelPlanExecution(planPart.plan),
+        };
+      }
+
+      if (options.status === "failed") {
+        return {
+          type: "plan",
+          plan: {
+            ...planPart.plan,
+            status: "failed",
+            steps: planPart.plan.steps.map((step) => {
+              if (step.status === "running") {
+                return { ...step, status: "failed" as const };
+              }
+              if (step.status === "pending") {
+                return { ...step, status: "skipped" as const };
+              }
+              return step;
+            }),
+          },
         };
       }
 

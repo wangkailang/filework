@@ -125,6 +125,8 @@ export type AgentEvent =
       agentId: string;
       turnIndex: number;
       reason: TurnEndReason;
+      /** 当前模型 step 的用量。不同于 agent_end.totalUsage,这里不是多 step 累计值。 */
+      usage?: TokenUsage;
     }
   | {
       type: "agent_end";

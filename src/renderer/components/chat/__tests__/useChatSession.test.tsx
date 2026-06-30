@@ -398,7 +398,25 @@ describe("useChatSession", () => {
         sessionId: "session-existing",
         role: "assistant",
         content: "旧回答",
-        parts: [{ type: "text", text: "旧回答" }],
+        parts: [
+          { type: "text", text: "旧回答" },
+          {
+            inputTokens: 111_000,
+            modelId: "gpt-5.5",
+            outputTokens: 200,
+            provider: "openai",
+            totalTokens: 111_200,
+            type: "usage",
+          },
+          {
+            inputTokens: 221_000,
+            modelId: "gpt-5.5",
+            outputTokens: 400,
+            provider: "openai",
+            totalTokens: 221_400,
+            type: "usage",
+          },
+        ],
         timestamp: "2026-06-23T10:00:01.000Z",
       },
     ]);
@@ -435,6 +453,7 @@ describe("useChatSession", () => {
       expect.objectContaining({
         assistantMessageId: latest?.messages[3].id,
         chatPermissionMode: "request",
+        contextInputTokens: 221_000,
         history: expect.arrayContaining([
           expect.objectContaining({ content: "旧问题", role: "user" }),
           expect.objectContaining({ content: "新问题", role: "user" }),

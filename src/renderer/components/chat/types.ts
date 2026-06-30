@@ -17,6 +17,7 @@ export type {
   BatchApprovalEntry,
   BatchApprovalPart,
   ClarificationPart,
+  ContextCompressedPart,
   ErrorPart,
   ImageGalleryPart,
   ImagePart,

@@ -32,6 +32,19 @@ export interface MemoryEventDetail {
   messagesDropped?: number;
   /** Number of tool results summarized */
   resultsSummarized?: number;
+  /** Compression stage that changed the outgoing context */
+  compressionStage?:
+    | "none"
+    | "tool-result-compaction"
+    | "llm-summary"
+    | "safe-truncation"
+    | "provider-native";
+  /** Provider-native compaction mode when the provider reports it was applied */
+  providerNativeCompactionMode?: string;
+  /** Whether provider metadata confirmed a native compaction edit/truncation */
+  providerNativeCompactionApplied?: boolean;
+  /** Number of missing tool results repaired before provider send */
+  repairedToolResults?: number;
   /** Error message for failed operations */
   error?: string;
 }

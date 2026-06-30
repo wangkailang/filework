@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -27,14 +28,18 @@ import {
 
 interface ConversationContextType {
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  canScroll: boolean;
   isAtBottom: boolean;
+  setCanScroll: (v: boolean) => void;
   setIsAtBottom: (v: boolean) => void;
   scrollToBottom: () => void;
 }
 
 const ConversationContext = createContext<ConversationContextType>({
   scrollRef: { current: null },
+  canScroll: false,
   isAtBottom: true,
+  setCanScroll: () => {},
   setIsAtBottom: () => {},
   scrollToBottom: () => {},
 });
@@ -53,6 +58,7 @@ export const Conversation = ({
   ...props
 }: ConversationProps) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [canScroll, setCanScroll] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback(() => {
@@ -63,7 +69,14 @@ export const Conversation = ({
 
   return (
     <ConversationContext.Provider
-      value={{ scrollRef, isAtBottom, setIsAtBottom, scrollToBottom }}
+      value={{
+        scrollRef,
+        canScroll,
+        isAtBottom,
+        setCanScroll,
+        setIsAtBottom,
+        scrollToBottom,
+      }}
     >
       <div
         className={cn(
@@ -92,7 +105,19 @@ export const ConversationContent = ({
   className,
   ...props
 }: ConversationContentProps) => {
-  const { scrollRef, setIsAtBottom, scrollToBottom } = useConversation();
+  const { scrollRef, setCanScroll, setIsAtBottom, scrollToBottom } =
+    useConversation();
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const threshold = 40;
+    const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const hasScrollableOverflow = maxScrollTop > threshold;
+    setCanScroll(hasScrollableOverflow);
+    setIsAtBottom(
+      !hasScrollableOverflow || maxScrollTop - el.scrollTop < threshold,
+    );
+  }, [scrollRef, setCanScroll, setIsAtBottom]);
 
   // Track child count to auto-scroll on new messages
   const prevChildCountRef = useRef(0);
@@ -109,25 +134,26 @@ export const ConversationContent = ({
     prevChildCountRef.current = childCount;
   }, [childCount, scrollToBottom]);
 
+  // Keep overflow and bottom state in sync with layout changes.
+  useLayoutEffect(() => {
+    updateScrollState();
+  });
+
   // Observe scroll position to toggle "at bottom" state
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const handleScroll = () => {
-      const threshold = 40;
-      const atBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-      setIsAtBottom(atBottom);
-    };
+    const handleScroll = () => updateScrollState();
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [scrollRef, setIsAtBottom]);
+  }, [scrollRef, updateScrollState]);
 
   // MutationObserver – auto-scroll while streaming if user is near bottom
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const observer = new MutationObserver(() => {
+      updateScrollState();
       const threshold = 40;
       const nearBottom =
         el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
@@ -141,7 +167,7 @@ export const ConversationContent = ({
       characterData: true,
     });
     return () => observer.disconnect();
-  }, [scrollRef]);
+  }, [scrollRef, updateScrollState]);
 
   return (
     <div
@@ -201,26 +227,27 @@ export const ConversationScrollButton = ({
   ...props
 }: ConversationScrollButtonProps) => {
   const { LL } = useI18nContext();
-  const { isAtBottom, scrollToBottom } = useConversation();
+  const { canScroll, isAtBottom, scrollToBottom } = useConversation();
 
-  if (isAtBottom) return null;
+  if (!canScroll || isAtBottom) return null;
 
   return (
     <Button
       type="button"
       onClick={scrollToBottom}
-      variant="outline"
-      size="sm"
+      variant="ghost"
+      size="icon"
       className={cn(
-        "absolute bottom-20 left-1/2 -translate-x-1/2 z-10",
-        "rounded-full bg-background/90 text-muted-foreground shadow-md backdrop-blur-sm",
+        "absolute bottom-4 left-1/2 z-10 -translate-x-1/2",
+        "size-9 rounded-full border border-border/60 bg-background/85 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-md",
+        "hover:border-border hover:bg-background hover:text-foreground active:scale-95 dark:bg-background/75",
         className,
       )}
       aria-label={LL.conv_scrollToBottom()}
+      title={LL.conv_scrollToBottom()}
       {...props}
     >
-      <ArrowDown data-icon="inline-start" />
-      <span>{LL.conv_newMessages()}</span>
+      <ArrowDown className="size-4" aria-hidden="true" />
     </Button>
   );
 };

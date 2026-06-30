@@ -22,6 +22,9 @@ export interface ProviderConfig {
   apiPath?: string | null;
   model: string;
   reasoningEffort?: string | null;
+  compressionTriggerBudget?: number | null;
+  maxOutputTokens?: number | null;
+  modelContextWindow?: number | null;
   modelCapabilities?: {
     preferredApi?: "chat_completions" | "responses" | null;
     supportsReasoning?: boolean | null;
@@ -35,8 +38,15 @@ export interface CacheMetrics {
   cacheReadTokens: number | null;
 }
 
-type JSONValue = null | string | number | boolean | JSONObject | JSONValue[];
-type JSONObject = { [key: string]: JSONValue };
+export type JSONValue =
+  | null
+  | string
+  | number
+  | boolean
+  | JSONObject
+  | JSONValue[];
+export type JSONObject = { [key: string]: JSONValue };
+export type ProviderOptionMap = Record<string, JSONObject>;
 
 // ---------------------------------------------------------------------------
 // 接口
@@ -50,7 +60,7 @@ export interface ProviderAdapter {
   createModel(config: ProviderConfig): LanguageModel;
 
   /** 构建 provider 特有的选项(例如 prompt 缓存 headers) */
-  buildProviderOptions(config?: ProviderConfig): Record<string, JSONObject>;
+  buildProviderOptions(config?: ProviderConfig): ProviderOptionMap;
 
   /** 在流式响应完成后,从 provider 元数据中提取缓存指标 */
   extractCacheMetrics(

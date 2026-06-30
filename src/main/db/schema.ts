@@ -49,6 +49,16 @@ export const taskSummaries = sqliteTable("task_summaries", {
   summaryTokens: integer("summary_tokens"),
 });
 
+export const contextMemoryChunks = sqliteTable("context_memory_chunks", {
+  id: text("id").primaryKey(),
+  scopeId: text("scope_id").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  source: text("source").notNull(),
+  text: text("text").notNull(),
+  embedding: text("embedding").notNull(),
+});
+
 export const fileOperations = sqliteTable("file_operations", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull(),

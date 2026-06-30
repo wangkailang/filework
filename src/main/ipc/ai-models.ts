@@ -13,7 +13,9 @@ import {
   type ProviderAdapter,
   type ProviderConfig,
 } from "../ai/adapters";
+import { getProviderNativeCompaction } from "../ai/adapters/native-compaction";
 import { classifyError } from "../ai/error-classifier";
+import { getCompressionTriggerBudget } from "../ai/token-budget";
 import { getLlmConfig, getLlmConfigs, type LlmConfig } from "../db";
 import { getFreshGithubCopilotSessionToken } from "./github-copilot-session";
 
@@ -91,6 +93,13 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     maxOutputTokens,
     reasoningEffort,
   } = config;
+  const resolvedMaxOutputTokens =
+    maxOutputTokens ?? config.modelMaxOutputTokens ?? null;
+  const compressionTriggerBudget = getCompressionTriggerBudget({
+    modelId,
+    contextWindow: config.modelContextWindow ?? null,
+    maxOutputTokens: resolvedMaxOutputTokens,
+  });
   console.log(
     "[AI] provider:",
     provider,
@@ -129,6 +138,9 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     apiPath,
     model: modelId,
     reasoningEffort,
+    compressionTriggerBudget,
+    maxOutputTokens: resolvedMaxOutputTokens,
+    modelContextWindow: config.modelContextWindow ?? null,
     modelCapabilities: config.modelCapabilities,
   };
   const modelWithAdapter = createModelWithAdapter(providerConfig);
@@ -146,6 +158,7 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     providerOptions: modelWithAdapter.adapter.buildProviderOptions(
       providerConfig,
     ) as ProviderOptions,
+    providerNativeCompaction: getProviderNativeCompaction(providerConfig),
     modelId,
     configId: config.id,
   };

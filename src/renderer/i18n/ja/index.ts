@@ -481,6 +481,7 @@ const ja: Translation = {
   toolName_deleteFile: "ファイル削除",
   toolName_directoryStats: "ディレクトリ統計",
   toolName_findDuplicates: "重複ファイル検出",
+  toolName_searchFiles: "ファイル検索",
   toolName_automationUpdate: "自動化を管理",
   toolName_runCommand: "コマンド実行",
   toolName_runProcess: "プロセス実行",

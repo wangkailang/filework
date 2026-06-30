@@ -34,19 +34,25 @@ function nextRun() {
 vi.mock("ai", () => ({
   stepCountIs: vi.fn(() => ({})),
   tool: vi.fn((def: unknown) => def),
-  streamText: vi.fn(() => {
-    const run = nextRun();
-    return {
-      fullStream: (async function* () {
-        for (const p of run.parts) yield p;
-        if (run.holdMs)
-          await new Promise((resolve) => setTimeout(resolve, run.holdMs));
-        if (run.throwAfter) throw run.throwAfter;
-      })(),
-      totalUsage: Promise.resolve(run.totalUsage),
-      providerMetadata: Promise.resolve(run.providerMetadata),
-    };
-  }),
+  streamText: vi.fn(
+    (options?: {
+      messages?: unknown[];
+      prepareStep?: (args: { messages: unknown[] }) => unknown;
+    }) => {
+      const run = nextRun();
+      options?.prepareStep?.({ messages: options.messages ?? [] });
+      return {
+        fullStream: (async function* () {
+          for (const p of run.parts) yield p;
+          if (run.holdMs)
+            await new Promise((resolve) => setTimeout(resolve, run.holdMs));
+          if (run.throwAfter) throw run.throwAfter;
+        })(),
+        totalUsage: Promise.resolve(run.totalUsage),
+        providerMetadata: Promise.resolve(run.providerMetadata),
+      };
+    },
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -102,7 +108,11 @@ describe("AgentLoop", () => {
         { type: "start-step" },
         { type: "text-delta", text: "Hello, " },
         { type: "text-delta", text: "world" },
-        { type: "finish-step", finishReason: "stop", usage: {} },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 5, outputTokens: 3 },
+        },
       ],
       totalUsage: { inputTokens: 5, outputTokens: 3 },
     });
@@ -139,6 +149,7 @@ describe("AgentLoop", () => {
 
     const turnEnd = events[6];
     expect(turnEnd.type === "turn_end" && turnEnd.reason).toBe("finish");
+    expect(turnEnd.type === "turn_end" && turnEnd.usage?.inputTokens).toBe(5);
 
     const end = events[7];
     if (end.type !== "agent_end") throw new Error("expected agent_end");
@@ -376,6 +387,67 @@ describe("AgentLoop", () => {
     expect(compressed.compressedTokens).toBe(200);
     expect(events[0].type).toBe("agent_start");
     expect(events[1].type).toBe("context_compressed");
+  });
+
+  it("reports prepared step context after tool-result compaction", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const reports: Array<{
+      messages: unknown[];
+      preparedMessages: unknown[];
+    }> = [];
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      history: [
+        { role: "user", content: "inspect" },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "old",
+              toolName: "runCommand",
+              output: { type: "text", value: "a".repeat(5000) },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "latest",
+              toolName: "runCommand",
+              output: { type: "text", value: "fresh result" },
+            },
+          ],
+        },
+      ],
+      hooks: {
+        contextUsage: ((payload: {
+          messages: unknown[];
+          preparedMessages: unknown[];
+        }) => {
+          reports.push(payload);
+        }) as never,
+      },
+    });
+
+    await collect(loop, "inspect");
+
+    expect(reports).toHaveLength(1);
+    expect(JSON.stringify(reports[0].messages)).toContain("a".repeat(5000));
+    expect(JSON.stringify(reports[0].preparedMessages)).toContain(
+      "chars elided to save context",
+    );
   });
 
   it("does not append a text-only duplicate when history already contains the current image turn", async () => {

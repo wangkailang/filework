@@ -9,6 +9,10 @@ import type { PlanView } from "../../../main/core/session/message-parts";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { ApprovalState } from "../ai-elements/confirmation";
 import { buildTurnSummary } from "./buildTurnSummary";
+import {
+  readContextCompressionDetail,
+  upsertContextCompressedPart,
+} from "./context-compression-part";
 import { contentFromParts } from "./helpers";
 import type { SkillApprovalData } from "./SkillApprovalDialog";
 import type {
@@ -632,6 +636,15 @@ export function useStreamSubscription({
         );
       });
 
+    const offMemoryEvent =
+      window.filework.memoryDebug?.onEvent?.(({ taskId, type, detail }) => {
+        if (type !== "compression-write" || !canRouteTask(taskId)) return;
+        const compression = readContextCompressionDetail(detail);
+        updateParts(taskId, (parts) =>
+          upsertContextCompressedPart(parts, compression),
+        );
+      }) ?? (() => {});
+
     const offDone = window.filework.onStreamDone(
       ({ id, sessionId, assistantMessageId }) => {
         if (sessionId || assistantMessageId) {
@@ -807,7 +820,10 @@ export function useStreamSubscription({
           };
           const existingParts =
             msg.parts && msg.parts.length > 0 ? msg.parts : [];
-          const newParts: MessagePart[] = [...existingParts, errorPart];
+          const newParts = finalizePartsForSettledTask(
+            [...existingParts, errorPart],
+            { status: "failed" },
+          );
           updated[idx] = {
             ...msg,
             content: msg.content || error,
@@ -1093,6 +1109,7 @@ export function useStreamSubscription({
       offToolApproval();
       offToolBatchApproval();
       offToolBatchAutoApproved();
+      offMemoryEvent();
       offRetry();
       offDone();
       offError();

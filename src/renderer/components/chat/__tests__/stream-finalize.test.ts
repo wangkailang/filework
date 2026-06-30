@@ -218,4 +218,48 @@ describe("finalizePartsForSettledTask", () => {
       },
     });
   });
+
+  it("marks running plan progress failed when a task ends with an error", () => {
+    const parts: MessagePart[] = [
+      {
+        type: "plan",
+        plan: {
+          id: "inline-task-1",
+          goal: "Highlight file references",
+          status: "executing",
+          steps: [
+            {
+              id: 1,
+              action: "Locate renderer output",
+              description: "",
+              status: "running",
+            },
+            {
+              id: 2,
+              action: "Patch UI state",
+              description: "",
+              status: "pending",
+            },
+          ],
+        },
+      },
+      {
+        type: "error",
+        message: "Task interrupted unexpectedly",
+        errorType: "server_error",
+      },
+    ];
+
+    const finalized = finalizePartsForSettledTask(parts, {
+      status: "failed",
+    });
+
+    expect(finalized[0]).toMatchObject({
+      type: "plan",
+      plan: {
+        status: "failed",
+        steps: [{ status: "failed" }, { status: "skipped" }],
+      },
+    });
+  });
 });

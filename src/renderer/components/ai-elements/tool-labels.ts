@@ -12,6 +12,7 @@ export const getToolLabels = (
   deleteFile: LL.toolName_deleteFile(),
   directoryStats: LL.toolName_directoryStats(),
   findDuplicates: LL.toolName_findDuplicates(),
+  searchFiles: LL.toolName_searchFiles(),
   automation_update: LL.toolName_automationUpdate(),
   runCommand: LL.toolName_runCommand(),
   runProcess: LL.toolName_runProcess(),

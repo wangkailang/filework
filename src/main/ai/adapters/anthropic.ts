@@ -16,6 +16,7 @@ import {
   type ProviderAdapter,
   type ProviderConfig,
 } from "./base";
+import { buildProviderNativeCompactionOptions } from "./native-compaction";
 
 export class AnthropicAdapter implements ProviderAdapter {
   readonly name = "anthropic";
@@ -31,13 +32,17 @@ export class AnthropicAdapter implements ProviderAdapter {
     return anthropic(config.model);
   }
 
-  buildProviderOptions() {
+  buildProviderOptions(config?: ProviderConfig) {
+    const nativeAnthropicOptions = config
+      ? (buildProviderNativeCompactionOptions(config).anthropic ?? {})
+      : {};
     return {
       anthropic: {
         cacheControl: { type: "ephemeral" as const },
         // 参见 OpenAIAdapter:串行化工具调用,使 `createPlan` 的
         // 等待审批能中止循环,而不是继续运行其他并行调用。
         disableParallelToolUse: true,
+        ...nativeAnthropicOptions,
       },
     };
   }

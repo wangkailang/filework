@@ -487,6 +487,7 @@ const en: BaseTranslation = {
   toolName_deleteFile: "Delete File",
   toolName_directoryStats: "Directory Stats",
   toolName_findDuplicates: "Find Duplicates",
+  toolName_searchFiles: "Search Files",
   toolName_automationUpdate: "Manage Automations",
   toolName_runCommand: "Run Command",
   toolName_runProcess: "Run Process",

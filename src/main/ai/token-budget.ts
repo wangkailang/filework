@@ -1,58 +1,20 @@
 import type { ModelMessage } from "ai";
+import { getContextWindowForModelId } from "../../shared/model-context-window";
 
 // ---------------------------------------------------------------------------
 // 常量
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_TOKEN_BUDGET = 80_000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
-const SAFETY_MARGIN = 2_000;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+export const SAFETY_MARGIN = 2_000;
 export const TOOL_RESULT_COMPRESS_THRESHOLD_CHARS = 2_000;
+export const COMPRESSION_TRIGGER_RATIO = 0.85;
+export const DEFAULT_RECENT_MESSAGE_COUNT = 6;
 
 // ---------------------------------------------------------------------------
-// 模型上下文窗口映射
+// 模型上下文预算
 // ---------------------------------------------------------------------------
-
-/**
- * 常见模型已知的上下文窗口大小（以 token 计）。
- * 按前缀匹配："claude-3.5-sonnet-20241022" 匹配 "claude-3.5-sonnet"。
- * 更具体的前缀应排在前面。
- */
-const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
-  // Anthropic
-  ["claude-opus-4", 200_000],
-  ["claude-sonnet-4", 200_000],
-  ["claude-3.7", 200_000],
-  ["claude-3.5-sonnet", 200_000],
-  ["claude-3.5-haiku", 200_000],
-  ["claude-3-opus", 200_000],
-  ["claude-3-sonnet", 200_000],
-  ["claude-3-haiku", 200_000],
-  ["claude", 200_000],
-  // OpenAI
-  ["gpt-4.1", 1_000_000],
-  ["gpt-4o", 128_000],
-  ["gpt-4-turbo", 128_000],
-  ["gpt-4-0125", 128_000],
-  ["gpt-4-1106", 128_000],
-  ["gpt-4", 8_192],
-  ["gpt-3.5-turbo", 16_385],
-  ["o4-mini", 200_000],
-  ["o3", 200_000],
-  ["o3-mini", 200_000],
-  ["o1", 200_000],
-  ["o1-mini", 128_000],
-  // DeepSeek
-  ["deepseek-chat", 64_000],
-  ["deepseek-coder", 64_000],
-  ["deepseek-reasoner", 64_000],
-  ["deepseek", 64_000],
-  // 小米 MiMo（推理模型）。MiMo-v2.5-pro 标称 128K 上下文；
-  // 前缀兜底匹配可让未来的 MiMo 型号无需改动代码即可工作。
-  // 若某次部署使用更小的窗口，用户可配置自定义 provider 覆盖。
-  ["mimo-v2.5", 128_000],
-  ["mimo", 128_000],
-];
 
 /**
  * 计算给定模型的输入 token 预算。
@@ -61,13 +23,62 @@ const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
  * 对未知模型回退到 DEFAULT_TOKEN_BUDGET。
  */
 export function getTokenBudgetForModel(modelId: string): number {
-  const lower = modelId.toLowerCase();
-  for (const [prefix, contextWindow] of MODEL_CONTEXT_WINDOWS) {
-    if (lower.startsWith(prefix)) {
-      return contextWindow - DEFAULT_MAX_OUTPUT_TOKENS - SAFETY_MARGIN;
-    }
+  const contextWindow = getContextWindowForModel(modelId);
+  return contextWindow != null
+    ? contextWindow - DEFAULT_MAX_OUTPUT_TOKENS - SAFETY_MARGIN
+    : DEFAULT_TOKEN_BUDGET;
+}
+
+export function getContextWindowForModel(modelId: string): number | null {
+  return getContextWindowForModelId(modelId);
+}
+
+export function getTokenBudget(input: {
+  modelId?: string | null;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+}): number {
+  if (
+    input.contextWindow != null &&
+    Number.isFinite(input.contextWindow) &&
+    input.contextWindow > 0
+  ) {
+    const maxOutputTokens =
+      input.maxOutputTokens != null &&
+      Number.isFinite(input.maxOutputTokens) &&
+      input.maxOutputTokens > 0
+        ? input.maxOutputTokens
+        : DEFAULT_MAX_OUTPUT_TOKENS;
+    return Math.max(
+      1,
+      Math.floor(input.contextWindow - maxOutputTokens - SAFETY_MARGIN),
+    );
   }
-  return DEFAULT_TOKEN_BUDGET;
+
+  return input.modelId
+    ? getTokenBudgetForModel(input.modelId)
+    : DEFAULT_TOKEN_BUDGET;
+}
+
+export function getCompressionTriggerBudget(input: {
+  modelId?: string | null;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+}): number {
+  const hardBudget = getTokenBudget(input);
+  const contextWindow =
+    input.contextWindow != null &&
+    Number.isFinite(input.contextWindow) &&
+    input.contextWindow > 0
+      ? input.contextWindow
+      : input.modelId
+        ? getContextWindowForModel(input.modelId)
+        : null;
+  const triggerBudget =
+    contextWindow != null
+      ? Math.floor(contextWindow * COMPRESSION_TRIGGER_RATIO)
+      : Math.floor(hardBudget * COMPRESSION_TRIGGER_RATIO);
+  return Math.max(1, Math.min(hardBudget, triggerBudget));
 }
 const TRUNCATION_NOTICE =
   "[系统提示] 部分早期对话已被省略，以下为最近的对话内容。";
@@ -80,8 +91,26 @@ const COMPRESSED_PLACEHOLDER = "[工具结果已压缩]";
 export interface TruncationResult {
   messages: ModelMessage[];
   wasTruncated: boolean;
+  compressionStage:
+    | "none"
+    | "tool-result-compaction"
+    | "llm-summary"
+    | "safe-truncation";
   /** 简单截断丢弃的消息数量（未截断时为 0） */
   messagesDropped: number;
+  /**
+   * 本地工具结果压缩的 token 变化。该路径无需 LLM 摘要,但仍会改变实际
+   * 发送上下文,调用方可据此暴露一次明确的 compression 事件。
+   */
+  toolResultCompaction?: {
+    originalTokens: number;
+    compressedTokens: number;
+  };
+}
+
+export interface TruncationOptions {
+  /** 最近 N 条 chat 消息硬保留；预算极紧时只裁剪消息文本，不整条丢弃。 */
+  recentMessageCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +253,15 @@ export function compressToolResults(messages: ModelMessage[]): ModelMessage[] {
   });
 }
 
+function toolResultCompaction(
+  originalTokens: number,
+  compressedTokens: number,
+): TruncationResult["toolResultCompaction"] {
+  return compressedTokens < originalTokens
+    ? { originalTokens, compressedTokens }
+    : undefined;
+}
+
 function isLargeToolResult(
   output: { type: string; value?: unknown } | undefined,
 ): boolean {
@@ -254,68 +292,127 @@ function isLargeToolResult(
 export function truncateToFit(
   messages: ModelMessage[],
   budget?: number,
+  options?: TruncationOptions,
 ): TruncationResult {
   const effectiveBudget =
     budget != null && budget > 0 ? budget : DEFAULT_TOKEN_BUDGET;
+  const recentMessageCount = normalizeRecentMessageCount(
+    options?.recentMessageCount,
+  );
 
   if (messages.length === 0) {
-    return { messages: [], wasTruncated: false, messagesDropped: 0 };
+    return {
+      messages: [],
+      wasTruncated: false,
+      compressionStage: "none",
+      messagesDropped: 0,
+    };
   }
 
   // 检查是否已在预算之内
   if (estimateTokens(messages) <= effectiveBudget) {
-    return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
+    return {
+      messages: [...messages],
+      wasTruncated: false,
+      compressionStage: "none",
+      messagesDropped: 0,
+    };
   }
 
   // 策略 1：压缩过大的工具结果
-  let result = compressToolResults(messages);
+  const result = compressToolResults(messages);
 
   if (estimateTokens(result) <= effectiveBudget) {
-    return { messages: result, wasTruncated: false, messagesDropped: 0 };
+    const originalTokens = estimateTokens(messages);
+    const compressedTokens = estimateTokens(result);
+    return {
+      messages: result,
+      wasTruncated: false,
+      compressionStage:
+        compressedTokens < originalTokens ? "tool-result-compaction" : "none",
+      messagesDropped: 0,
+      toolResultCompaction: toolResultCompaction(
+        originalTokens,
+        compressedTokens,
+      ),
+    };
   }
 
-  // 策略 2：从开头移除较早的消息
-  const originalCount = result.length;
-  while (result.length > 1 && estimateTokens(result) > effectiveBudget) {
-    result = result.slice(1);
-  }
+  // 策略 2/3：从开头移除较早消息，但硬保留最近窗口，并插入截断提示
+  return truncateWithRecentRetention(
+    result,
+    effectiveBudget,
+    recentMessageCount,
+  );
+}
 
-  // 边界情况：单条消息仍超出预算 → 截断其文本
-  if (result.length === 1 && estimateTokens(result) > effectiveBudget) {
-    result = [truncateSingleMessage(result[0], effectiveBudget)];
+function normalizeRecentMessageCount(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) {
+    return DEFAULT_RECENT_MESSAGE_COUNT;
   }
+  return Math.max(1, Math.floor(value));
+}
 
-  // 策略 3：在开头插入截断提示
+function truncateWithRecentRetention(
+  messages: ModelMessage[],
+  effectiveBudget: number,
+  recentMessageCount: number,
+): TruncationResult {
   const notice: ModelMessage = {
     role: "system",
     content: TRUNCATION_NOTICE,
   };
   const noticeTokens = estimateTokens([notice]);
+  const includeNotice = effectiveBudget > noticeTokens + 1;
+  const contentBudget = Math.max(
+    0,
+    includeNotice ? effectiveBudget - noticeTokens : effectiveBudget,
+  );
 
-  // 如有需要，为提示腾出空间
-  while (
-    result.length > 1 &&
-    estimateTokens(result) + noticeTokens > effectiveBudget
-  ) {
-    result = result.slice(1);
+  const protectedStart = Math.max(0, messages.length - recentMessageCount);
+  const protectedTail = messages.slice(protectedStart);
+  let result = truncateProtectedMessagesToBudget(protectedTail, contentBudget);
+  let usedTokens = estimateTokens(result);
+
+  for (let i = protectedStart - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    const candidateTokens = estimateTokens([candidate]);
+    if (usedTokens + candidateTokens > contentBudget) continue;
+    result = [candidate, ...result];
+    usedTokens += candidateTokens;
   }
 
-  // 若单条消息加提示仍超出预算，则进一步截断该消息
-  if (
-    result.length === 1 &&
-    estimateTokens(result) + noticeTokens > effectiveBudget
-  ) {
-    const availableBudget = effectiveBudget - noticeTokens;
-    if (availableBudget > 0) {
-      result = [truncateSingleMessage(result[0], availableBudget)];
-    }
+  const messagesWithNotice = includeNotice ? [notice, ...result] : result;
+  return {
+    messages: messagesWithNotice,
+    wasTruncated: true,
+    compressionStage: "safe-truncation",
+    messagesDropped: messages.length - result.length,
+  };
+}
+
+function truncateProtectedMessagesToBudget(
+  messages: ModelMessage[],
+  budget: number,
+): ModelMessage[] {
+  if (messages.length === 0 || estimateTokens(messages) <= budget) {
+    return [...messages];
   }
 
-  result = [notice, ...result];
-  // 减去我们添加的那条提示消息
-  const messagesDropped = originalCount - (result.length - 1);
+  let remainingBudget = Math.max(0, budget);
+  const result: ModelMessage[] = new Array(messages.length);
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const messageBudget = remainingBudget;
+    const messageTokens = estimateTokens([messages[i]]);
+    const next =
+      messageTokens <= messageBudget
+        ? messages[i]
+        : truncateSingleMessage(messages[i], messageBudget);
+    result[i] = next;
+    remainingBudget = Math.max(0, remainingBudget - estimateTokens([next]));
+  }
 
-  return { messages: result, wasTruncated: true, messagesDropped };
+  return result;
 }
 
 /**
@@ -383,33 +480,141 @@ export async function truncateToFitAsync(
     msgs: ModelMessage[],
     budget: number,
   ) => Promise<CompressionResult>,
+  options?: {
+    compressionTriggerBudget?: number | null;
+    forceCompression?: boolean;
+    recentMessageCount?: number;
+  },
 ): Promise<TruncationResult> {
   const effectiveBudget =
     budget != null && budget > 0 ? budget : DEFAULT_TOKEN_BUDGET;
+  const compressionTriggerBudget =
+    options?.compressionTriggerBudget != null &&
+    Number.isFinite(options.compressionTriggerBudget) &&
+    options.compressionTriggerBudget > 0
+      ? Math.min(effectiveBudget, Math.floor(options.compressionTriggerBudget))
+      : null;
 
   if (messages.length === 0) {
-    return { messages: [], wasTruncated: false, messagesDropped: 0 };
+    return {
+      messages: [],
+      wasTruncated: false,
+      compressionStage: "none",
+      messagesDropped: 0,
+    };
   }
 
+  const originalTokens = estimateTokens(messages);
+  const forceCompression = options?.forceCompression === true;
+
   // 检查是否已在预算之内
-  if (estimateTokens(messages) <= effectiveBudget) {
-    return { messages: [...messages], wasTruncated: false, messagesDropped: 0 };
+  if (originalTokens <= effectiveBudget) {
+    if (
+      !compressor ||
+      compressionTriggerBudget == null ||
+      (!forceCompression && originalTokens <= compressionTriggerBudget)
+    ) {
+      return {
+        messages: [...messages],
+        wasTruncated: false,
+        compressionStage: "none",
+        messagesDropped: 0,
+      };
+    }
+
+    const compressed = compressToolResults(messages);
+    const compressedTokens = estimateTokens(compressed);
+    if (!forceCompression && compressedTokens <= compressionTriggerBudget) {
+      return {
+        messages: compressed,
+        wasTruncated: false,
+        compressionStage:
+          compressedTokens < originalTokens ? "tool-result-compaction" : "none",
+        messagesDropped: 0,
+        toolResultCompaction: toolResultCompaction(
+          originalTokens,
+          compressedTokens,
+        ),
+      };
+    }
+
+    try {
+      const result = await compressor(compressed, compressionTriggerBudget);
+      if (estimateTokens(result.messages) <= effectiveBudget) {
+        return {
+          messages: result.messages,
+          wasTruncated: result.wasCompressed,
+          compressionStage: result.wasCompressed ? "llm-summary" : "none",
+          messagesDropped: 0,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        "[token-budget] LLM compression failed below hard budget, using original context:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    return {
+      messages: [...messages],
+      wasTruncated: false,
+      compressionStage: "none",
+      messagesDropped: 0,
+    };
   }
 
   // 策略 1：压缩工具结果
   const compressed = compressToolResults(messages);
-  if (estimateTokens(compressed) <= effectiveBudget) {
-    return { messages: compressed, wasTruncated: false, messagesDropped: 0 };
+  const compressedTokens = estimateTokens(compressed);
+  if (compressedTokens <= effectiveBudget) {
+    if (
+      compressor &&
+      compressionTriggerBudget != null &&
+      compressedTokens > compressionTriggerBudget
+    ) {
+      try {
+        const result = await compressor(compressed, compressionTriggerBudget);
+        if (estimateTokens(result.messages) <= effectiveBudget) {
+          return {
+            messages: result.messages,
+            wasTruncated: result.wasCompressed,
+            compressionStage: result.wasCompressed ? "llm-summary" : "none",
+            messagesDropped: 0,
+          };
+        }
+      } catch (err) {
+        console.warn(
+          "[token-budget] LLM compression failed after tool result compaction, using compacted context:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    return {
+      messages: compressed,
+      wasTruncated: false,
+      compressionStage:
+        compressedTokens < originalTokens ? "tool-result-compaction" : "none",
+      messagesDropped: 0,
+      toolResultCompaction: toolResultCompaction(
+        originalTokens,
+        compressedTokens,
+      ),
+    };
   }
 
   // 策略 2：如可用则尝试 LLM 压缩
   if (compressor) {
     try {
-      const result = await compressor(compressed, effectiveBudget);
+      const result = await compressor(
+        compressed,
+        compressionTriggerBudget ?? effectiveBudget,
+      );
       if (estimateTokens(result.messages) <= effectiveBudget) {
         return {
           messages: result.messages,
           wasTruncated: result.wasCompressed,
+          compressionStage: result.wasCompressed ? "llm-summary" : "none",
           messagesDropped: 0,
         };
       }
@@ -422,5 +627,7 @@ export async function truncateToFitAsync(
   }
 
   // 策略 3：回退到简单的从头丢弃
-  return truncateToFit(compressed, budget);
+  return truncateToFit(compressed, budget, {
+    recentMessageCount: options?.recentMessageCount,
+  });
 }

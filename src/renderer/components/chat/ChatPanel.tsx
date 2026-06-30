@@ -26,6 +26,7 @@ import {
   type ChatPermissionMode,
   isChatPermissionMode,
 } from "../../../shared/chat-permissions";
+import { getContextWindowForModelId } from "../../../shared/model-context-window";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
 import { cn } from "../../lib/utils";
@@ -91,6 +92,7 @@ import { ArticleMetaBar } from "./ArticleMetaBar";
 import { AttachmentChips, AttachmentList } from "./AttachmentChips";
 import { movePendingBatchApprovalsToEnd } from "./assistant-part-ordering";
 import { useChatSessionContext } from "./ChatSessionProvider";
+import { type ContextUsage, ContextUsageButton } from "./ContextUsageButton";
 import { migrateToParts } from "./helpers";
 import { ImageGallery } from "./ImageGallery";
 import { MediaImageCard } from "./MediaImageCard";
@@ -130,6 +132,93 @@ import { WorkingIndicator } from "./WorkingIndicator";
 // 但保留单换行与行内空格。配合 `whitespace-pre-wrap` 实现「留空格、去空行」。
 const collapseBlankLines = (text: string): string =>
   text.replace(/\r?\n(?:[ \t]*\r?\n)+/g, "\n");
+
+const readPositiveNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+
+const readProviderNativeCompaction = (
+  value: unknown,
+): ContextUsage["providerNativeCompaction"] => {
+  if (value == null || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.enabled !== "boolean") return null;
+  return {
+    enabled: record.enabled,
+    ...(record.applied === true && { applied: true }),
+    ...(typeof record.mode === "string" && { mode: record.mode }),
+    ...(typeof record.provider === "string" && { provider: record.provider }),
+    ...(typeof record.reason === "string" && { reason: record.reason }),
+    ...(typeof record.triggerTokens === "number" && {
+      triggerTokens: record.triggerTokens,
+    }),
+  };
+};
+
+type LlmConfigContextInfo = {
+  enabled?: boolean;
+  isDefault?: boolean;
+  maxOutputTokens?: number | null;
+  modality?: "chat" | "image" | "video";
+  model?: string | null;
+  modelContextWindow?: number | null;
+  modelMaxOutputTokens?: number | null;
+};
+
+const getInitialContextUsageFromConfig = (
+  config: LlmConfigContextInfo | null | undefined,
+  options: {
+    usageModelId?: string | null;
+  } = {},
+): ContextUsage | null => {
+  if (config?.modality === "image" || config?.modality === "video") return null;
+  const contextWindow =
+    readPositiveNumber(config?.modelContextWindow) ??
+    getContextWindowForModelId(config?.model) ??
+    getContextWindowForModelId(options.usageModelId);
+  if (contextWindow == null) return null;
+  return {
+    contextWindow,
+    cumulativeInputTokens: null,
+    maxOutputTokens:
+      readPositiveNumber(config?.maxOutputTokens) ??
+      readPositiveNumber(config?.modelMaxOutputTokens),
+    originalTokens: 0,
+    safetyMargin: null,
+    tokenBudget: null,
+  };
+};
+
+const sumUsageInputTokens = (messages: ChatMessage[]): number => {
+  let total = 0;
+  for (const message of messages) {
+    if (!message.parts) continue;
+    for (const part of message.parts) {
+      if (part.type !== "usage") continue;
+      const inputTokens = (part as UsagePart).inputTokens;
+      if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
+        total += inputTokens;
+      }
+    }
+  }
+  return total;
+};
+
+const getLatestUsageInputTokens = (messages: ChatMessage[]): number | null => {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const parts = messages[i]?.parts ?? [];
+    for (let j = parts.length - 1; j >= 0; j -= 1) {
+      const part = parts[j];
+      if (part.type !== "usage") continue;
+      const inputTokens = (part as UsagePart).inputTokens;
+      if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
+        return inputTokens;
+      }
+    }
+  }
+  return null;
+};
 
 // 一键复制按钮:点击后写入剪贴板,短暂显示「已复制」反馈。
 const CopyMessageAction = ({ content }: { content: string }) => {
@@ -245,6 +334,43 @@ const formatTokens = (n: number | null): string => {
   if (n == null) return "-";
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return String(n);
+};
+
+const formatCompactTokenCount = (
+  n: number | null | undefined,
+): string | null => {
+  if (n == null || !Number.isFinite(n)) return null;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+};
+
+const ContextCompressedDivider = ({
+  originalTokens,
+  compressedTokens,
+}: {
+  originalTokens?: number | null;
+  compressedTokens?: number | null;
+}) => {
+  const original = formatCompactTokenCount(originalTokens);
+  const compressed = formatCompactTokenCount(compressedTokens);
+  const stats = original && compressed ? `${original} → ${compressed}` : null;
+  return (
+    <div
+      className="my-3 flex items-center gap-3 text-[11px] text-muted-foreground/80"
+      data-context-compressed="true"
+    >
+      <span className="h-px min-w-6 flex-1 bg-border/70" />
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <Brain className="h-3 w-3" aria-hidden="true" />
+        <span>上下文已自动压缩</span>
+        {stats ? (
+          <span className="text-muted-foreground/60">{stats}</span>
+        ) : null}
+      </span>
+      <span className="h-px min-w-6 flex-1 bg-border/70" />
+    </div>
+  );
 };
 
 const renderApprovalRequest = ({
@@ -626,6 +752,142 @@ export const ChatPanel = ({
   const { LL } = useI18nContext();
   const [memoryOpen, setMemoryOpen] = useState(false);
   const chat = useChatSessionContext();
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const contextBudgetTraceReceivedRef = useRef(false);
+  const contextUsageSessionIdRef = useRef<string | null | undefined>(undefined);
+  const persistedContextInputTokensRef = useRef(0);
+  const lastPersistedContextInputTokensRef = useRef(0);
+  const liveProviderStepInputTokensRef = useRef(0);
+  const seenProviderStepKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const activeSessionId = chat.activeSessionId ?? null;
+    const sessionChanged = contextUsageSessionIdRef.current !== activeSessionId;
+    contextUsageSessionIdRef.current = activeSessionId;
+    contextBudgetTraceReceivedRef.current = false;
+    if (sessionChanged) {
+      persistedContextInputTokensRef.current = 0;
+      lastPersistedContextInputTokensRef.current = 0;
+      liveProviderStepInputTokensRef.current = 0;
+      seenProviderStepKeysRef.current = new Set();
+      setContextUsage(null);
+    }
+    const lastUsageModelId =
+      typeof chat.lastUsage?.modelId === "string"
+        ? chat.lastUsage.modelId
+        : null;
+
+    const loadInitialContextUsage = async () => {
+      try {
+        let config: LlmConfigContextInfo | null = null;
+        if (chat.selectedLlmConfigId) {
+          const result = await window.filework.llmConfig.get(
+            chat.selectedLlmConfigId,
+          );
+          if (result && typeof result === "object" && !("error" in result)) {
+            config = result as LlmConfigContextInfo;
+          }
+        } else {
+          const result = await window.filework.llmConfig.list();
+          if (Array.isArray(result)) {
+            const configs = result as LlmConfigContextInfo[];
+            config =
+              configs.find(
+                (item) =>
+                  item.isDefault &&
+                  item.enabled !== false &&
+                  item.modality !== "image" &&
+                  item.modality !== "video",
+              ) ??
+              configs.find(
+                (item) =>
+                  item.enabled !== false &&
+                  item.modality !== "image" &&
+                  item.modality !== "video",
+              ) ??
+              null;
+          }
+        }
+
+        if (cancelled || contextBudgetTraceReceivedRef.current) return;
+        const initialUsage = getInitialContextUsageFromConfig(config, {
+          usageModelId: lastUsageModelId,
+        });
+        if (!initialUsage) return;
+        setContextUsage((prev) => {
+          const actualTokens =
+            prev?.accuracy === "actual" ? prev.originalTokens : null;
+          return {
+            ...initialUsage,
+            cumulativeInputTokens:
+              prev?.cumulativeInputTokens ?? initialUsage.cumulativeInputTokens,
+            originalTokens:
+              actualTokens ??
+              prev?.originalTokens ??
+              initialUsage.originalTokens,
+            accuracy: prev?.accuracy ?? initialUsage.accuracy,
+            tokenBudget: prev?.tokenBudget ?? initialUsage.tokenBudget,
+            safetyMargin: prev?.safetyMargin ?? initialUsage.safetyMargin,
+          };
+        });
+      } catch {
+        // 仅用于发送前提示;任务 trace 仍是权威用量来源。
+      }
+    };
+
+    void loadInitialContextUsage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chat.activeSessionId, chat.lastUsage?.modelId, chat.selectedLlmConfigId]);
+
+  useEffect(() => {
+    const persistedTokens = sumUsageInputTokens(chat.messages);
+    const latestUsageInputTokens = getLatestUsageInputTokens(chat.messages);
+    persistedContextInputTokensRef.current = persistedTokens;
+    if (persistedTokens !== lastPersistedContextInputTokensRef.current) {
+      lastPersistedContextInputTokensRef.current = persistedTokens;
+      liveProviderStepInputTokensRef.current = 0;
+      seenProviderStepKeysRef.current = new Set();
+    }
+
+    const cumulativeTokens =
+      persistedContextInputTokensRef.current +
+      liveProviderStepInputTokensRef.current;
+    setContextUsage((prev) => {
+      if (!prev && cumulativeTokens <= 0) return prev;
+      const shouldUseUsageFallback =
+        typeof latestUsageInputTokens === "number" &&
+        latestUsageInputTokens > 0 &&
+        (prev == null ||
+          prev.originalTokens == null ||
+          prev.originalTokens <= 0 ||
+          prev.accuracy !== "actual");
+      return prev
+        ? {
+            ...prev,
+            cumulativeInputTokens: cumulativeTokens,
+            originalTokens: shouldUseUsageFallback
+              ? latestUsageInputTokens
+              : prev.originalTokens,
+            accuracy: shouldUseUsageFallback ? "estimated" : prev.accuracy,
+          }
+        : {
+            contextWindow: null,
+            cumulativeInputTokens: cumulativeTokens,
+            maxOutputTokens: null,
+            originalTokens: latestUsageInputTokens ?? 0,
+            safetyMargin: null,
+            tokenBudget: null,
+            accuracy:
+              typeof latestUsageInputTokens === "number"
+                ? "estimated"
+                : undefined,
+          };
+    });
+  }, [chat.messages]);
 
   // Composer-side pending attachments — lifted out of PromptInput so the
   // drag-drop overlay (sibling DOM) and the file picker feed the same
@@ -1152,6 +1414,15 @@ export const ChatPanel = ({
           <TurnSummaryCard key="turn-summary" part={part as TurnSummaryPart} />
         );
       }
+      if (part.type === "context-compressed") {
+        return (
+          <ContextCompressedDivider
+            key="context-compressed"
+            originalTokens={part.originalTokens}
+            compressedTokens={part.compressedTokens}
+          />
+        );
+      }
       if (part.type === "subagent") {
         const sp = part as SubagentMessagePart;
         return <SubagentCard key={`subagent-${sp.batchId}`} part={sp} />;
@@ -1360,6 +1631,122 @@ export const ChatPanel = ({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pendingApprovalToolCallId, chat.handleApproval]);
+
+  useEffect(() => {
+    const unsubscribe = window.filework.taskTrace?.onEvent?.((event) => {
+      if (event.type === "provider-native-compaction") {
+        const providerNativeCompaction = readProviderNativeCompaction({
+          ...event.detail,
+          enabled: true,
+        });
+        if (!providerNativeCompaction) return;
+        setContextUsage((prev) =>
+          prev
+            ? {
+                ...prev,
+                providerNativeCompaction: {
+                  ...(prev.providerNativeCompaction ?? { enabled: true }),
+                  ...providerNativeCompaction,
+                  applied: true,
+                  enabled: true,
+                },
+              }
+            : prev,
+        );
+        return;
+      }
+
+      if (event.type === "context-budget") {
+        contextBudgetTraceReceivedRef.current = true;
+        const contextWindow =
+          typeof event.detail.contextWindow === "number"
+            ? event.detail.contextWindow
+            : null;
+        const maxOutputTokens =
+          typeof event.detail.maxOutputTokens === "number"
+            ? event.detail.maxOutputTokens
+            : null;
+        const safetyMargin =
+          typeof event.detail.safetyMargin === "number"
+            ? event.detail.safetyMargin
+            : null;
+        const tokenBudget =
+          typeof event.detail.tokenBudget === "number"
+            ? event.detail.tokenBudget
+            : null;
+        const originalTokens =
+          typeof event.detail.originalTokens === "number"
+            ? event.detail.originalTokens
+            : null;
+        const usedTokens =
+          typeof event.detail.usedTokens === "number"
+            ? event.detail.usedTokens
+            : originalTokens;
+        const accuracy =
+          event.detail.tokenAccuracy === "actual" ||
+          event.detail.source === "provider-step"
+            ? "actual"
+            : "estimated";
+        const providerNativeCompaction = readProviderNativeCompaction(
+          event.detail.providerNativeCompaction,
+        );
+        setContextUsage((prev) => {
+          const displayedTokens = usedTokens;
+          let cumulativeInputTokens = prev?.cumulativeInputTokens ?? null;
+          if (accuracy === "actual" && typeof usedTokens === "number") {
+            const turnIndex =
+              typeof event.detail.turnIndex === "number"
+                ? event.detail.turnIndex
+                : event.timestamp;
+            const stepKey = `${event.taskId}:${turnIndex}`;
+            if (!seenProviderStepKeysRef.current.has(stepKey)) {
+              seenProviderStepKeysRef.current.add(stepKey);
+              liveProviderStepInputTokensRef.current += usedTokens;
+            }
+            cumulativeInputTokens =
+              persistedContextInputTokensRef.current +
+              liveProviderStepInputTokensRef.current;
+          }
+          const next: ContextUsage = {
+            accuracy,
+            contextWindow,
+            cumulativeInputTokens,
+            maxOutputTokens,
+            originalTokens: displayedTokens,
+            providerNativeCompaction,
+            safetyMargin,
+            tokenBudget,
+          };
+
+          if (
+            accuracy === "estimated" &&
+            prev?.accuracy === "actual" &&
+            typeof prev.originalTokens === "number" &&
+            typeof displayedTokens === "number" &&
+            displayedTokens < prev.originalTokens
+          ) {
+            return {
+              ...prev,
+              contextWindow: contextWindow ?? prev.contextWindow,
+              cumulativeInputTokens:
+                cumulativeInputTokens ?? prev.cumulativeInputTokens,
+              maxOutputTokens: maxOutputTokens ?? prev.maxOutputTokens,
+              providerNativeCompaction:
+                providerNativeCompaction ?? prev.providerNativeCompaction,
+              safetyMargin: safetyMargin ?? prev.safetyMargin,
+              tokenBudget: tokenBudget ?? prev.tokenBudget,
+            };
+          }
+
+          return next;
+        });
+        return;
+      }
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // JSX
@@ -1605,11 +1992,14 @@ export const ChatPanel = ({
                   onSelect={chat.setSelectedLlmConfigId}
                 />
               </div>
-              <PromptInputSubmit
-                disabled={false}
-                status={chat.isLoading ? "streaming" : "ready"}
-                onStop={chat.handleStopGeneration}
-              />
+              <div className="flex items-center gap-1">
+                <ContextUsageButton usage={contextUsage} />
+                <PromptInputSubmit
+                  disabled={false}
+                  status={chat.isLoading ? "streaming" : "ready"}
+                  onStop={chat.handleStopGeneration}
+                />
+              </div>
             </PromptInputFooter>
           </PromptInput>
         </div>

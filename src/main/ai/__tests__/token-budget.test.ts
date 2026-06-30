@@ -1,11 +1,15 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  COMPRESSION_TRIGGER_RATIO,
   DEFAULT_TOKEN_BUDGET,
   estimateTokens,
+  getCompressionTriggerBudget,
+  getTokenBudget,
   getTokenBudgetForModel,
   TOOL_RESULT_COMPRESS_THRESHOLD_CHARS,
   truncateToFit,
+  truncateToFitAsync,
 } from "../token-budget";
 
 // ---------------------------------------------------------------------------
@@ -187,6 +191,50 @@ describe("truncateToFit", () => {
     expect(lastMsg.content).toBe("c".repeat(400));
   });
 
+  it("hard-retains the configured recent chat window before dropping older messages", () => {
+    const recent: ModelMessage[] = [
+      assistantMsg("recent assistant kept"),
+      userMsg("recent user kept"),
+      assistantMsg("recent answer kept"),
+    ];
+    const msgs: ModelMessage[] = [
+      userMsg("old-1 ".repeat(300)),
+      assistantMsg("old-2 ".repeat(300)),
+      userMsg("old-3 ".repeat(300)),
+      ...recent,
+    ];
+
+    const result = truncateToFit(msgs, 80, { recentMessageCount: 3 });
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(result.messagesDropped).toBe(3);
+    expect(nonNoticeMessages).toEqual(recent);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(80);
+  });
+
+  it("trims recent message text instead of dropping recent messages under a tight budget", () => {
+    const msgs: ModelMessage[] = [
+      userMsg("old context ".repeat(300)),
+      userMsg("recent user ".repeat(300)),
+      assistantMsg("recent assistant ".repeat(300)),
+    ];
+
+    const result = truncateToFit(msgs, 35, { recentMessageCount: 2 });
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(nonNoticeMessages).toHaveLength(2);
+    expect(nonNoticeMessages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(nonNoticeMessages[0].content).not.toBe(msgs[1].content);
+    expect(nonNoticeMessages[1].content).not.toBe(msgs[2].content);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(35);
+  });
+
   // -------------------------------------------------------------------------
   // 截断提示
   // -------------------------------------------------------------------------
@@ -276,6 +324,11 @@ describe("getTokenBudgetForModel", () => {
     expect(getTokenBudgetForModel("gpt-4o-mini")).toBe(117_808);
   });
 
+  it("uses Codex-compatible 258K fallback budget for GPT-5.5 when provider metadata is missing", () => {
+    // 258K - 8192 - 2000 = 247808
+    expect(getTokenBudgetForModel("gpt-5.5")).toBe(247_808);
+  });
+
   it("returns correct budget for DeepSeek models", () => {
     // 64K - 8192 - 2000 = 53808
     expect(getTokenBudgetForModel("deepseek-chat")).toBe(53_808);
@@ -290,5 +343,210 @@ describe("getTokenBudgetForModel", () => {
   it("is case-insensitive", () => {
     expect(getTokenBudgetForModel("Claude-3.5-Sonnet")).toBe(189_808);
     expect(getTokenBudgetForModel("GPT-4o")).toBe(117_808);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTokenBudget
+// ---------------------------------------------------------------------------
+
+describe("getTokenBudget", () => {
+  it("uses configured context window for dynamically refreshed models", () => {
+    expect(
+      getTokenBudget({
+        modelId: "gpt-5.5",
+        contextWindow: 32_000,
+        maxOutputTokens: 4_096,
+      }),
+    ).toBe(25_904);
+  });
+
+  it("falls back to model-name budget when no configured context window exists", () => {
+    expect(getTokenBudget({ modelId: "gpt-4o" })).toBe(117_808);
+  });
+});
+
+describe("getCompressionTriggerBudget", () => {
+  it("triggers compression at 85% of the context window for GPT-5.5", () => {
+    expect(COMPRESSION_TRIGGER_RATIO).toBe(0.85);
+    expect(
+      getCompressionTriggerBudget({
+        modelId: "gpt-5.5",
+        contextWindow: 258_000,
+      }),
+    ).toBe(219_300);
+  });
+
+  it("never returns a trigger above the hard input budget", () => {
+    expect(
+      getCompressionTriggerBudget({
+        contextWindow: 32_000,
+        maxOutputTokens: 8_192,
+      }),
+    ).toBe(21_808);
+  });
+});
+
+describe("truncateToFitAsync", () => {
+  it("runs LLM compression once history crosses the soft trigger budget", async () => {
+    const msgs = [userMsg("a".repeat(3200))]; // ~800 tokens
+    let compressorCalls = 0;
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1000,
+      async (_messages, budget) => {
+        compressorCalls += 1;
+        expect(budget).toBe(700);
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      { compressionTriggerBudget: 700 },
+    );
+
+    expect(compressorCalls).toBe(1);
+    expect(result.wasTruncated).toBe(true);
+    expect(result.compressionStage).toBe("llm-summary");
+    expect(result.messages).toEqual([userMsg("compressed")]);
+  });
+
+  it("does not run LLM compression below the soft trigger budget", async () => {
+    const msgs = [userMsg("a".repeat(2000))]; // 500 tokens
+    let compressorCalls = 0;
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1000,
+      async () => {
+        compressorCalls += 1;
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      { compressionTriggerBudget: 700 },
+    );
+
+    expect(compressorCalls).toBe(0);
+    expect(result.wasTruncated).toBe(false);
+    expect(result.compressionStage).toBe("none");
+    expect(result.messages).toEqual(msgs);
+  });
+
+  it("runs LLM compression below the soft trigger budget when forced", async () => {
+    const msgs = [userMsg("a".repeat(2000))]; // 500 tokens
+    let compressorCalls = 0;
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1000,
+      async (_messages, budget) => {
+        compressorCalls += 1;
+        expect(budget).toBe(700);
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      { compressionTriggerBudget: 700, forceCompression: true },
+    );
+
+    expect(compressorCalls).toBe(1);
+    expect(result.wasTruncated).toBe(true);
+    expect(result.compressionStage).toBe("llm-summary");
+    expect(result.messages).toEqual([userMsg("compressed")]);
+  });
+
+  it("runs LLM compression when tool-result compaction is still over the soft trigger budget", async () => {
+    const msgs = [
+      userMsg("a".repeat(3200)), // ~800 tokens
+      toolResultMsg("call-1", "runCommand", "b".repeat(4000)),
+    ];
+    let compressorCalls = 0;
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1000,
+      async (messages, budget) => {
+        compressorCalls += 1;
+        expect(budget).toBe(700);
+        const compactedTokens = estimateTokens(messages);
+        expect(compactedTokens).toBeGreaterThan(700);
+        expect(compactedTokens).toBeLessThanOrEqual(1000);
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      { compressionTriggerBudget: 700 },
+    );
+
+    expect(compressorCalls).toBe(1);
+    expect(result.wasTruncated).toBe(true);
+    expect(result.compressionStage).toBe("llm-summary");
+    expect(result.messages).toEqual([userMsg("compressed")]);
+  });
+
+  it("reports local tool-result compaction when it drops context below the soft trigger budget", async () => {
+    const msgs = [
+      userMsg("a".repeat(1200)), // ~300 tokens
+      toolResultMsg("call-1", "readFile", "b".repeat(4000)),
+    ];
+    const originalTokens = estimateTokens(msgs);
+    let compressorCalls = 0;
+
+    const result = await truncateToFitAsync(
+      msgs,
+      2_000,
+      async () => {
+        compressorCalls += 1;
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      { compressionTriggerBudget: 700 },
+    );
+
+    expect(compressorCalls).toBe(0);
+    expect(result.wasTruncated).toBe(false);
+    expect(result.compressionStage).toBe("tool-result-compaction");
+    expect(result.toolResultCompaction).toEqual({
+      originalTokens,
+      compressedTokens: estimateTokens(result.messages),
+    });
+  });
+
+  it("preserves the recent chat window when falling back after LLM compression fails", async () => {
+    const recent: ModelMessage[] = [
+      assistantMsg("recent assistant kept"),
+      userMsg("recent user kept"),
+      assistantMsg("recent answer kept"),
+    ];
+    const msgs: ModelMessage[] = [
+      userMsg("old-1 ".repeat(300)),
+      assistantMsg("old-2 ".repeat(300)),
+      userMsg("old-3 ".repeat(300)),
+      ...recent,
+    ];
+
+    const result = await truncateToFitAsync(
+      msgs,
+      80,
+      async () => {
+        throw new Error("summary failed");
+      },
+      { recentMessageCount: 3 },
+    );
+    const nonNoticeMessages = result.messages.filter(
+      (m) => m.role !== "system",
+    );
+
+    expect(result.wasTruncated).toBe(true);
+    expect(result.compressionStage).toBe("safe-truncation");
+    expect(nonNoticeMessages).toEqual(recent);
+    expect(estimateTokens(result.messages)).toBeLessThanOrEqual(80);
   });
 });

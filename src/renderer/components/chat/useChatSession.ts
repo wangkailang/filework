@@ -23,6 +23,7 @@ import type {
   ChatSession,
   ClarificationPart,
   MessagePart,
+  UsagePart,
 } from "./types";
 import { usePlanFlow } from "./usePlanFlow";
 import { useSessionCrud } from "./useSessionCrud";
@@ -41,6 +42,23 @@ export interface UsageInfo {
   modelId: string | null;
   provider: string | null;
 }
+
+const getLatestUsageInputTokens = (
+  messages: Array<{ parts?: MessagePart[] | undefined }>,
+): number => {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const parts = messages[i]?.parts ?? [];
+    for (let j = parts.length - 1; j >= 0; j -= 1) {
+      const part = parts[j];
+      if (part.type !== "usage") continue;
+      const inputTokens = (part as UsagePart).inputTokens;
+      if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
+        return inputTokens;
+      }
+    }
+  }
+  return 0;
+};
 
 export interface StreamErrorInfo {
   message: string;
@@ -502,6 +520,7 @@ export function useChatSession(
           parts: parts?.filter((p) => p.type !== "plan"),
         });
       }
+      const contextInputTokens = getLatestUsageInputTokens(history);
 
       window.filework
         .executeTask({
@@ -511,6 +530,7 @@ export function useChatSession(
           sessionId,
           assistantMessageId: assistantId,
           chatPermissionMode: chatPermissionModeRef.current,
+          contextInputTokens,
           llmConfigId: selectedLlmConfigId || undefined,
           history,
         })
@@ -632,6 +652,7 @@ export function useChatSession(
           content,
           parts: parts?.filter((p) => p.type !== "plan"),
         }));
+      const contextInputTokens = getLatestUsageInputTokens(history);
 
       window.filework
         .executeTask({
@@ -642,6 +663,7 @@ export function useChatSession(
           assistantMessageId: assistantId,
           automationRunId: prepared.id,
           chatPermissionMode: chatPermissionModeRef.current,
+          contextInputTokens,
           llmConfigId:
             prepared.modelId ??
             automation.modelId ??

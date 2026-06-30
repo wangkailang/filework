@@ -166,6 +166,11 @@ export const buildGitPrinciples = (modelName: string): string => `## Git Safety
 - Don't push to remote unless the user asks. Don't touch \`git config\`.
 - Commit message trailer: \`Co-Authored-By: ${modelName} <noreply@filework.local>\`. Full HEREDOC template lives in the \`runCommand\` tool description.`;
 
+const GIT_REPOSITORY_GROUNDING = `## Git Repository Grounding
+- In a git workspace, questions about the current project/repository/branch, rollback/revert/reset, merge impact, deploy/release/test-environment risk, or "what changed / what should we watch" are repository-grounded tasks, not generic Git Q&A.
+- Before the final answer, inspect real git evidence with read-only commands. Start with \`git status --short --branch\`; then use \`git branch -vv\`, \`git log\`, \`git diff --stat\`, \`git diff --name-status\`, or targeted file reads as needed.
+- Do not start with hypothetical framing ("assuming...", "if..."). If evidence is unavailable after checking, say what you checked and what remains unknown.`;
+
 export const buildGitRunCommandProtocol = (
   modelName: string,
 ): string => `Git workflow (when running git / gh / glab through this tool — there are no dedicated git/PR tools)
@@ -301,6 +306,7 @@ export const buildAgentSystemPrompt = ({
 
   if (isGitWorkspace) {
     sections.push("", buildGitPrinciples(resolveModelName(modelName)));
+    sections.push("", GIT_REPOSITORY_GROUNDING);
   }
 
   if (skill) {

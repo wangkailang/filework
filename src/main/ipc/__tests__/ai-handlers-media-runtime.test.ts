@@ -93,6 +93,10 @@ vi.mock("../../ai/memory-debug-store", () => ({
   emitMemoryEvent: vi.fn(),
 }));
 
+vi.mock("../../ai/provider-token-count", () => ({
+  countOpenAIResponsesInputTokens: vi.fn(() => Promise.resolve(null)),
+}));
+
 vi.mock("../../ai/task-trace-store", () => ({
   emitTaskTraceEvent: vi.fn(),
 }));

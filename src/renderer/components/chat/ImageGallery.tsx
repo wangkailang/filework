@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, Images, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Images,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import {
@@ -10,6 +17,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { safeHostname } from "./helpers";
+import { ImageDownloadButton } from "./ImageLightbox";
 import type { ImageGalleryPart } from "./types";
 
 interface ImageGalleryProps {
@@ -18,12 +26,12 @@ interface ImageGalleryProps {
 
 const headerLabel = (part: ImageGalleryPart): string => {
   if (part.source === "web-search")
-    return part.context ? `搜索: ${part.context}` : "图片搜索";
+    return part.context ? `图片搜索 · ${part.context}` : "图片搜索结果";
   if (part.source === "web-fetch")
     return part.context
-      ? `来自 ${safeHostname(part.context) ?? part.context}`
+      ? `页面图片 · ${safeHostname(part.context) ?? part.context}`
       : "页面图片";
-  return "图集";
+  return "图片结果";
 };
 
 // 1 → 1 列,2-4 → 2 列,5+ → 2 / 3 列自适应。
@@ -33,7 +41,19 @@ const gridColsFor = (n: number): string => {
   return "grid-cols-2 sm:grid-cols-3";
 };
 
+const filenameFromUrl = (url: string): string => {
+  const withoutQuery = url.split(/[?#]/, 1)[0] ?? "";
+  const name = withoutQuery.split("/").filter(Boolean).pop();
+  if (!name) return "image";
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+};
+
 export const ImageGallery = ({ part }: ImageGalleryProps) => {
+  const [expanded, setExpanded] = useState(false);
   const [failed, setFailed] = useState<Set<number>>(() => new Set());
   const [lightbox, setLightbox] = useState<number | null>(null);
 
@@ -55,6 +75,12 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
   }, []);
 
   const close = useCallback(() => setLightbox(null), []);
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      if (prev) setLightbox(null);
+      return !prev;
+    });
+  }, []);
   const step = useCallback(
     (dir: 1 | -1) => {
       setLightbox((cur) => {
@@ -87,40 +113,58 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-border bg-muted">
-      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={toggleExpanded}
+        className="flex w-full items-center gap-2 border-b border-border/60 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-background/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
         <Images className="h-3.5 w-3.5 opacity-60" />
-        <span className="truncate">{headerLabel(part)}</span>
-        <span className="ml-auto opacity-60">{visible.length} 张</span>
-      </div>
-      <div className={`grid gap-1 p-1 ${gridColsFor(visible.length)}`}>
-        {part.images.map((img, idx) => {
-          if (failed.has(idx)) return null;
-          const host = img.sourceUrl ? safeHostname(img.sourceUrl) : null;
-          return (
-            <button
-              key={img.url}
-              type="button"
-              onClick={() => setLightbox(idx)}
-              className="group relative aspect-[4/3] overflow-hidden rounded bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <img
-                src={img.url}
-                alt={img.description ?? ""}
-                loading="lazy"
-                decoding="async"
-                referrerPolicy="no-referrer"
-                onError={() => markFailed(idx)}
-                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-              />
-              {host && (
-                <span className="pointer-events-none absolute bottom-1 right-1 max-w-[80%] truncate rounded bg-black/60 px-1.5 py-0.5 text-[10px] leading-tight text-white/90">
-                  {host}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+        <span className="min-w-0 flex-1 truncate">{headerLabel(part)}</span>
+        <span className="shrink-0 opacity-60">{visible.length} 张图片</span>
+        <span className="flex shrink-0 items-center gap-1 opacity-70">
+          {expanded ? (
+            <>
+              收起 <ChevronUp className="h-3.5 w-3.5" />
+            </>
+          ) : (
+            <>
+              展开 <ChevronDown className="h-3.5 w-3.5" />
+            </>
+          )}
+        </span>
+      </button>
+      {expanded && (
+        <div className={`grid gap-1 p-1 ${gridColsFor(visible.length)}`}>
+          {part.images.map((img, idx) => {
+            if (failed.has(idx)) return null;
+            const host = img.sourceUrl ? safeHostname(img.sourceUrl) : null;
+            return (
+              <button
+                key={img.url}
+                type="button"
+                onClick={() => setLightbox(idx)}
+                className="group relative aspect-[4/3] overflow-hidden rounded bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <img
+                  src={img.url}
+                  alt={img.description ?? ""}
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  onError={() => markFailed(idx)}
+                  className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                />
+                {host && (
+                  <span className="pointer-events-none absolute bottom-1 right-1 max-w-[80%] truncate rounded bg-black/60 px-1.5 py-0.5 text-[10px] leading-tight text-white/90">
+                    {host}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <Dialog
         open={activeImage != null}
@@ -139,6 +183,12 @@ export const ImageGallery = ({ part }: ImageGalleryProps) => {
             </DialogDescription>
           </DialogHeader>
           <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+            {activeImage && (
+              <ImageDownloadButton
+                src={activeImage.url}
+                downloadName={filenameFromUrl(activeImage.url)}
+              />
+            )}
             <DialogClose asChild>
               <Button
                 type="button"

@@ -214,6 +214,8 @@ const api = {
     assistantMessageId?: string;
     automationRunId?: string;
     chatPermissionMode?: ChatPermissionMode;
+    /** 最近一次 provider input tokens,用于对齐 Codex 风格 context 压缩触发。 */
+    contextInputTokens?: number;
     llmConfigId?: string;
     history?: Array<{
       role: "user" | "assistant";

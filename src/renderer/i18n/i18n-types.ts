@@ -1704,6 +1704,10 @@ type RootTranslation = {
 	 */
 	toolName_findDuplicates: string
 	/**
+	 * S​e​a​r​c​h​ ​F​i​l​e​s
+	 */
+	toolName_searchFiles: string
+	/**
 	 * M​a​n​a​g​e​ ​A​u​t​o​m​a​t​i​o​n​s
 	 */
 	toolName_automationUpdate: string
@@ -4338,6 +4342,10 @@ export type TranslationFunctions = {
 	 * Find Duplicates
 	 */
 	toolName_findDuplicates: () => LocalizedString
+	/**
+	 * Search Files
+	 */
+	toolName_searchFiles: () => LocalizedString
 	/**
 	 * Manage Automations
 	 */

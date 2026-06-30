@@ -72,6 +72,16 @@ export const initDatabase = async () => {
       compressed_tokens INTEGER,
       summary_tokens INTEGER
     );
+    CREATE TABLE IF NOT EXISTS context_memory_chunks (
+      id TEXT PRIMARY KEY,
+      scope_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      text TEXT NOT NULL,
+      embedding TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_context_memory_scope ON context_memory_chunks(scope_id, updated_at);
     CREATE TABLE IF NOT EXISTS file_operations (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
@@ -573,6 +583,16 @@ export const initDatabase = async () => {
       compressed_tokens INTEGER,
       summary_tokens INTEGER
     );
+    CREATE TABLE IF NOT EXISTS context_memory_chunks (
+      id TEXT PRIMARY KEY,
+      scope_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      text TEXT NOT NULL,
+      embedding TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_context_memory_scope ON context_memory_chunks(scope_id, updated_at);
   `);
 
   // M3 PR 2:删除旧版聊天表。M3 PR 1+ 上的现有用户已经
@@ -862,6 +882,16 @@ export interface TaskSummary {
   originalTokens?: number | null;
   compressedTokens?: number | null;
   summaryTokens?: number | null;
+}
+
+export interface ContextMemoryChunk {
+  id: string;
+  scopeId: string;
+  createdAt: string;
+  updatedAt: string;
+  source: string;
+  text: string;
+  embedding: number[];
 }
 
 interface FileOperation {
@@ -1160,6 +1190,73 @@ export const getTaskSummary = (taskId: string): TaskSummary | null => {
     summaryTokens: row.summaryTokens ?? null,
   };
 };
+
+export const replaceContextMemoryChunks = (
+  scopeId: string,
+  chunks: Array<{
+    text: string;
+    embedding: number[];
+    source?: string;
+  }>,
+) => {
+  if (!db) return;
+  const now = new Date().toISOString();
+  db.delete(schema.contextMemoryChunks)
+    .where(eq(schema.contextMemoryChunks.scopeId, scopeId))
+    .run();
+
+  const values = chunks
+    .map((chunk, index) => ({
+      id: `${scopeId}:${index}`,
+      scopeId,
+      createdAt: now,
+      updatedAt: now,
+      source: chunk.source ?? "rolling-summary",
+      text: chunk.text.trim(),
+      embedding: JSON.stringify(chunk.embedding),
+    }))
+    .filter((chunk) => chunk.text.length > 0);
+
+  if (values.length === 0) return;
+  db.insert(schema.contextMemoryChunks).values(values).run();
+};
+
+export const listContextMemoryChunks = (
+  scopeId: string,
+  limit = 80,
+): ContextMemoryChunk[] => {
+  if (!db) return [];
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const rows = db
+    .select()
+    .from(schema.contextMemoryChunks)
+    .where(eq(schema.contextMemoryChunks.scopeId, scopeId))
+    .all()
+    .slice(-safeLimit);
+
+  return rows.map((row) => ({
+    id: row.id,
+    scopeId: row.scopeId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    source: row.source,
+    text: row.text,
+    embedding: parseEmbedding(row.embedding),
+  }));
+};
+
+function parseEmbedding(raw: string): number[] {
+  try {
+    const value = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (item): item is number =>
+        typeof item === "number" && Number.isFinite(item),
+    );
+  } catch {
+    return [];
+  }
+}
 
 // ============================================================================
 // 自动化定义
@@ -2413,6 +2510,8 @@ export interface LlmConfig {
   modelAvailable?: boolean | null;
   modelCapabilities?: LlmModelCapabilities | null;
   modelCatalogFetchedAt?: string | null;
+  modelContextWindow?: number | null;
+  modelMaxOutputTokens?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2499,6 +2598,8 @@ function attachLlmModelCatalogMetadata(config: LlmConfig): LlmConfig {
       modelAvailable: null,
       modelCapabilities: null,
       modelCatalogFetchedAt: null,
+      modelContextWindow: null,
+      modelMaxOutputTokens: null,
     };
   }
 
@@ -2509,6 +2610,8 @@ function attachLlmModelCatalogMetadata(config: LlmConfig): LlmConfig {
     modelCapabilities: matchedModel?.capabilities ?? null,
     modelCatalogFetchedAt:
       matchedModel?.fetchedAt ?? catalog[0]?.fetchedAt ?? null,
+    modelContextWindow: matchedModel?.contextWindow ?? null,
+    modelMaxOutputTokens: matchedModel?.maxOutputTokens ?? null,
   };
 }
 
@@ -2598,6 +2701,8 @@ export const createLlmConfig = (
     modelAvailable: null,
     modelCapabilities: null,
     modelCatalogFetchedAt: null,
+    modelContextWindow: null,
+    modelMaxOutputTokens: null,
   };
 };
 

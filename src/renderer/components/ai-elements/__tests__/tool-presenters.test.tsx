@@ -256,3 +256,40 @@ describe("webSearch presenter", () => {
     expect(html).toContain("A comparison of React state managers.");
   });
 });
+
+describe("searchFiles presenter", () => {
+  it("shows the search query in the folded summary", () => {
+    const summary = toolPresenters.searchFiles?.summary?.(
+      {
+        query: "words_alpha",
+        path: "/Users/kailang/Desktop/未命名文件夹/一周99(1)",
+        limit: 20,
+      },
+      {
+        results: [
+          {
+            path: "/Users/kailang/Desktop/未命名文件夹/一周99(1)/words_alpha.txt",
+            relPath: "words_alpha.txt",
+            name: "words_alpha.txt",
+            size: 4234910,
+          },
+        ],
+        count: 1,
+        totalMatched: 1,
+        truncated: false,
+      },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-search-files",
+        workspacePath: "/Users/kailang/Desktop/未命名文件夹/一周99(1)",
+      },
+    );
+
+    const html = renderToStaticMarkup(summary);
+
+    expect(html).toContain("words_alpha");
+    expect(html).toContain("text-foreground/65");
+    expect(html).not.toContain("/Users/kailang/Desktop");
+  });
+});

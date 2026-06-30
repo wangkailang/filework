@@ -126,6 +126,38 @@ describe("ai-models LLM config selection", () => {
     );
   });
 
+  it("passes provider-native compaction trigger metadata into the adapter", () => {
+    const selected = makeConfig({
+      id: "selected",
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      modelContextWindow: 200_000,
+      maxOutputTokens: 8_000,
+    });
+    dbMock.getLlmConfig.mockReturnValue(selected);
+    dbMock.getLlmConfigs.mockReturnValue([selected]);
+    adapterMock.createModelWithAdapter.mockReturnValue({
+      model: "model",
+      adapter: { buildProviderOptions: () => ({}) },
+    });
+
+    const result = getModelAndAdapterByConfigId("selected");
+
+    expect(result.providerNativeCompaction).toEqual({
+      enabled: true,
+      mode: "anthropic-context-management-compact",
+      provider: "anthropic",
+      triggerTokens: 170_000,
+    });
+    expect(adapterMock.createModelWithAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compressionTriggerBudget: 170_000,
+        maxOutputTokens: 8_000,
+        modelContextWindow: 200_000,
+      }),
+    );
+  });
+
   it("returns advanced generation options from the selected config", () => {
     const selected = makeConfig({
       id: "selected",

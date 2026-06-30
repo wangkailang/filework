@@ -85,6 +85,7 @@ export const AttachmentChips = ({
           alt={previewing.name}
           caption={previewing.name}
           revealPath={previewing.path}
+          downloadName={previewing.name}
           onClose={() => setPreviewId(null)}
         />
       )}
@@ -144,6 +145,7 @@ export const AttachmentList = ({
           alt={previewing.name}
           caption={previewing.name}
           revealPath={previewing.path}
+          downloadName={previewing.name}
           onClose={() => setPreviewId(null)}
         />
       )}
