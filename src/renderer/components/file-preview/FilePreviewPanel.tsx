@@ -25,6 +25,33 @@ const isPdfFile = (filename: string): boolean => {
   return getFileExtension(filename).toLowerCase() === ".pdf";
 };
 
+const OFFICE_EXTENSIONS = new Set([
+  ".doc",
+  ".docx",
+  ".dot",
+  ".dotx",
+  ".docm",
+  ".dotm",
+  ".xls",
+  ".xlsx",
+  ".xlsm",
+  ".xlt",
+  ".xltx",
+  ".xltm",
+  ".ods",
+  ".ppt",
+  ".pptx",
+  ".pptm",
+  ".pot",
+  ".potx",
+  ".potm",
+  ".odp",
+]);
+
+const isOfficeFile = (filename: string): boolean => {
+  return OFFICE_EXTENSIONS.has(getFileExtension(filename).toLowerCase());
+};
+
 const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -100,6 +127,7 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const [truncated, setTruncated] = useState(false);
   const [truncatedTotal, setTruncatedTotal] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [officePdfPath, setOfficePdfPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -110,13 +138,19 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const absolutePath = filePath;
   const ext = getFileExtension(fileName);
   const isPdf = isPdfFile(fileName);
+  const isOffice = isOfficeFile(fileName);
   const isImage = isImageFile(fileName);
   const isVideo = isVideoFile(fileName);
   const isAudio = isAudioFile(fileName);
   const isMarkdown = isMarkdownFile(fileName);
   const isHtml = isHtmlFile(fileName);
   const supported =
-    isSupportedFile(fileName) || isPdf || isImage || isVideo || isAudio;
+    isSupportedFile(fileName) ||
+    isPdf ||
+    isOffice ||
+    isImage ||
+    isVideo ||
+    isAudio;
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.25, 5)), []);
   const zoomOut = useCallback(
@@ -134,6 +168,7 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     setTruncated(false);
     setTruncatedTotal(0);
     setImageSrc(null);
+    setOfficePdfPath(null);
     setMdView("rendered");
 
     if (!supported || isPdf || isVideo || isAudio) {
@@ -146,6 +181,23 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
       // 同步即可,加载与错误交给 <img> 自身处理。
       setImageSrc(localFileUrl(absolutePath));
       setIsLoading(false);
+    } else if (isOffice) {
+      window.filework
+        .prepareOfficePreview(absolutePath)
+        .then((result) => {
+          if (!cancelled) {
+            setOfficePdfPath(result.pdfPath);
+            setIsLoading(false);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setError(
+              err instanceof Error ? err.message : LL.preview_readFileError(),
+            );
+            setIsLoading(false);
+          }
+        });
     } else {
       window.filework
         .readFilePreview(absolutePath)
@@ -170,7 +222,7 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, supported, isImage, isPdf, isVideo, isAudio, LL]);
+  }, [absolutePath, supported, isImage, isOffice, isPdf, isVideo, isAudio, LL]);
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -332,6 +384,10 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
         )}
 
         {!isLoading && isPdf && <PdfViewer filePath={filePath} />}
+
+        {!isLoading && !error && isOffice && officePdfPath && (
+          <PdfViewer filePath={officePdfPath} />
+        )}
 
         {!isLoading && isVideo && (
           <VideoViewer filePath={filePath} fileName={fileName} />
