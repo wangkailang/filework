@@ -607,7 +607,15 @@ const ja: Translation = {
   preview_truncated: "ファイルが大きすぎます({0})。先頭のみをプレビューします",
   preview_viewRendered: "プレビュー",
   preview_viewSource: "ソース",
+  preview_viewVisual: "表示",
+  preview_viewContent: "内容",
   preview_openInBrowser: "ブラウザでプレビュー",
+  preview_officePdfUnavailable:
+    "完全な Office PDF プレビューは利用できません。ページ精度の高いプレビューには LibreOffice をインストールするか FILEWORK_LIBREOFFICE_PATH を設定してください。",
+  preview_emptyOfficeContent: "抽出された Office 内容がありません",
+  preview_emptySheet: "空のシート",
+  preview_slide: "スライド {0}",
+  preview_speakerNotes: "発表者ノート",
   preview_fullscreen: "全画面",
   preview_exitFullscreen: "全画面を終了",
 

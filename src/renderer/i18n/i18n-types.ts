@@ -2167,9 +2167,38 @@ type RootTranslation = {
 	 */
 	preview_viewSource: string
 	/**
+	 * V​i​s​u​a​l
+	 */
+	preview_viewVisual: string
+	/**
+	 * C​o​n​t​e​n​t
+	 */
+	preview_viewContent: string
+	/**
 	 * O​p​e​n​ ​i​n​ ​b​r​o​w​s​e​r
 	 */
 	preview_openInBrowser: string
+	/**
+	 * F​u​l​l​ ​O​f​f​i​c​e​ ​P​D​F​ ​p​r​e​v​i​e​w​ ​i​s​ ​u​n​a​v​a​i​l​a​b​l​e​.​ ​I​n​s​t​a​l​l​ ​L​i​b​r​e​O​f​f​i​c​e​ ​o​r​ ​s​e​t​ ​F​I​L​E​W​O​R​K​_​L​I​B​R​E​O​F​F​I​C​E​_​P​A​T​H​ ​f​o​r​ ​p​a​g​e​-​a​c​c​u​r​a​t​e​ ​p​r​e​v​i​e​w​.
+	 */
+	preview_officePdfUnavailable: string
+	/**
+	 * N​o​ ​e​x​t​r​a​c​t​e​d​ ​O​f​f​i​c​e​ ​c​o​n​t​e​n​t
+	 */
+	preview_emptyOfficeContent: string
+	/**
+	 * E​m​p​t​y​ ​s​h​e​e​t
+	 */
+	preview_emptySheet: string
+	/**
+	 * S​l​i​d​e​ ​{​0​}
+	 * @param {number} 0
+	 */
+	preview_slide: RequiredParams<'0'>
+	/**
+	 * S​p​e​a​k​e​r​ ​n​o​t​e​s
+	 */
+	preview_speakerNotes: string
 	/**
 	 * F​u​l​l​s​c​r​e​e​n
 	 */
@@ -4775,9 +4804,37 @@ export type TranslationFunctions = {
 	 */
 	preview_viewSource: () => LocalizedString
 	/**
+	 * Visual
+	 */
+	preview_viewVisual: () => LocalizedString
+	/**
+	 * Content
+	 */
+	preview_viewContent: () => LocalizedString
+	/**
 	 * Open in browser
 	 */
 	preview_openInBrowser: () => LocalizedString
+	/**
+	 * Full Office PDF preview is unavailable. Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH for page-accurate preview.
+	 */
+	preview_officePdfUnavailable: () => LocalizedString
+	/**
+	 * No extracted Office content
+	 */
+	preview_emptyOfficeContent: () => LocalizedString
+	/**
+	 * Empty sheet
+	 */
+	preview_emptySheet: () => LocalizedString
+	/**
+	 * Slide {0}
+	 */
+	preview_slide: (arg0: number) => LocalizedString
+	/**
+	 * Speaker notes
+	 */
+	preview_speakerNotes: () => LocalizedString
 	/**
 	 * Fullscreen
 	 */

@@ -70,6 +70,8 @@ export interface NativeOfficePreviewOptions {
   cacheRoot: string;
   /** 可选 LibreOffice/soffice 可执行文件路径;未传时 native 自行解析。 */
   libreOfficePath?: string;
+  /** 可选 macOS Quick Look 可执行文件路径;未传时 native 使用 /usr/bin/qlmanage。 */
+  quickLookPath?: string;
   /** 可选测试/自定义缩略图命令: <pdf> <output.png> <size>。 */
   thumbnailerPath?: string;
   /** 单次外部转换命令超时。默认 60s。 */
@@ -85,7 +87,9 @@ interface NativeOfficePreviewRequest extends NativeOfficePreviewOptions {
 /** native Office 预览生成结果。 */
 export interface NativeOfficePreviewResult {
   cacheKey: string;
-  pdfPath: string;
+  previewKind: "pdf" | "image";
+  previewPath: string;
+  pdfPath?: string;
   thumbnailPath?: string;
   sourceMtimeMs: number;
   sourceSize: number;
@@ -93,7 +97,7 @@ export interface NativeOfficePreviewResult {
   cacheHit: boolean;
 }
 
-interface NativeModule {
+export interface NativeModule {
   findDuplicates(
     rootPath: string,
     extensions?: string[] | null,
@@ -108,6 +112,33 @@ interface NativeModule {
   prepareOfficePreviewNative(
     request: NativeOfficePreviewRequest,
   ): Promise<NativeOfficePreviewResult>;
+}
+
+const REQUIRED_NATIVE_EXPORTS = [
+  "findDuplicates",
+  "directoryStats",
+  "scanDirectoryLevel",
+  "searchFiles",
+  "prepareOfficePreviewNative",
+] as const;
+
+export function assertNativeModuleShape(
+  candidate: unknown,
+): asserts candidate is NativeModule {
+  const moduleRecord =
+    candidate && typeof candidate === "object"
+      ? (candidate as Record<string, unknown>)
+      : {};
+  const missing = REQUIRED_NATIVE_EXPORTS.filter(
+    (name) => typeof moduleRecord[name] !== "function",
+  );
+  if (missing.length === 0) return;
+
+  throw new Error(
+    `@filework/native is missing required export(s): ${missing.join(
+      ", ",
+    )}. Run 'pnpm --filter @filework/native run build' or 'pnpm install' to rebuild native bindings.`,
+  );
 }
 
 // createRequire 在两种环境下都可用:
@@ -127,7 +158,9 @@ let native: NativeModule | undefined;
 function loadNative(): NativeModule {
   if (native) return native;
   try {
-    native = requireNative("@filework/native") as NativeModule;
+    const loaded = requireNative("@filework/native");
+    assertNativeModuleShape(loaded);
+    native = loaded;
   } catch (error) {
     const original = error instanceof Error ? error.message : String(error);
     throw new Error(

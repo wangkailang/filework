@@ -1,6 +1,7 @@
 import {
   Code2,
   Eye,
+  FileText,
   FileWarning,
   Globe,
   Loader2,
@@ -8,6 +9,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import type { OfficeContentPreview } from "../../../shared/office-preview";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
 import { cn } from "../../lib/utils";
@@ -116,6 +118,192 @@ const formatBytes = (bytes: number): string => {
   return `${value.toFixed(1)} ${units[i]}`;
 };
 
+type UsableOfficeContentPreview = Exclude<
+  OfficeContentPreview,
+  { kind: "unsupported" }
+>;
+
+const hasUsableOfficeContent = (
+  preview: OfficeContentPreview | undefined,
+): preview is UsableOfficeContentPreview =>
+  Boolean(preview && preview.kind !== "unsupported");
+
+interface OfficeContentLabels {
+  emptyOfficeContent: string;
+  emptySheet: string;
+  slide: (index: number) => string;
+  speakerNotes: string;
+}
+
+const OfficeFallbackNotice = ({ message }: { message: string }) => (
+  <div className="shrink-0 border-b border-border bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+    {message}
+  </div>
+);
+
+const OfficeContentPreviewPane = ({
+  preview,
+  labels,
+}: {
+  preview: UsableOfficeContentPreview;
+  labels: OfficeContentLabels;
+}) => {
+  const [sheetIndex, setSheetIndex] = useState(0);
+
+  if (preview.kind === "document") {
+    if (preview.html) {
+      return (
+        <iframe
+          title="Office document content"
+          sandbox=""
+          srcDoc={`<!doctype html><html><head><meta charset="utf-8" /><style>body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;margin:24px;color:#1f2937;}table{border-collapse:collapse;}td,th{border:1px solid #d1d5db;padding:4px 6px;}img{max-width:100%;}</style></head><body>${preview.html}</body></html>`}
+          className="h-full w-full border-0 bg-background"
+        />
+      );
+    }
+    return (
+      <pre className="h-full overflow-auto whitespace-pre-wrap px-6 py-4 text-sm leading-6 text-foreground">
+        {preview.text || labels.emptyOfficeContent}
+      </pre>
+    );
+  }
+
+  if (preview.kind === "presentation") {
+    if (preview.slides.length === 0) {
+      return (
+        <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+          {labels.emptyOfficeContent}
+        </div>
+      );
+    }
+    return (
+      <div
+        className="h-full overflow-auto px-4 py-3"
+        data-office-presentation-preview="true"
+      >
+        <div className="mx-auto flex max-w-3xl flex-col gap-3">
+          {preview.slides.map((slide) => (
+            <section
+              key={slide.index}
+              data-office-slide={slide.index}
+              className="rounded-md border border-border bg-background px-4 py-3"
+            >
+              <div className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                {labels.slide(slide.index)}
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+                {slide.text || labels.emptyOfficeContent}
+              </div>
+              {slide.notes && (
+                <div className="mt-3 border-t border-border pt-3">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">
+                    {labels.speakerNotes}
+                  </div>
+                  <div className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                    {slide.notes}
+                  </div>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (preview.sheets.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+        {labels.emptyOfficeContent}
+      </div>
+    );
+  }
+
+  const activeSheet =
+    preview.sheets[Math.min(sheetIndex, preview.sheets.length - 1)];
+  const [headerRow, ...bodyRows] = activeSheet.rows;
+  const headerCells = (headerRow ?? []).map((cell, index) => ({
+    id: `${activeSheet.name}-header-${index}`,
+    value: cell,
+  }));
+  const bodyRowViews = bodyRows.map((row, rowIndex) => {
+    const columns = headerRow ?? row;
+    return {
+      id: `${activeSheet.name}-row-${rowIndex}`,
+      cells: columns.map((_, cellIndex) => ({
+        id: `${activeSheet.name}-${rowIndex}-${cellIndex}`,
+        value: row[cellIndex] ?? "",
+      })),
+    };
+  });
+
+  return (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-office-spreadsheet-preview="true"
+    >
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-3 py-2">
+        {preview.sheets.map((sheet, index) => (
+          <button
+            type="button"
+            key={sheet.name}
+            data-office-sheet-tab={sheet.name}
+            aria-pressed={index === sheetIndex}
+            onClick={() => setSheetIndex(index)}
+            className={cn(
+              "shrink-0 rounded-md px-2.5 py-1 text-xs transition-colors",
+              index === sheetIndex
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+            )}
+          >
+            {sheet.name}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {activeSheet.rows.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+            {labels.emptySheet}
+          </div>
+        ) : (
+          <table className="w-max min-w-full border-collapse text-sm">
+            {headerRow && (
+              <thead className="sticky top-0 bg-muted">
+                <tr>
+                  {headerCells.map((cell) => (
+                    <th
+                      key={cell.id}
+                      scope="col"
+                      className="border border-border px-3 py-2 text-left font-medium text-foreground"
+                    >
+                      {cell.value}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {bodyRowViews.map((row) => (
+                <tr key={row.id}>
+                  {row.cells.map((cell) => (
+                    <td
+                      key={cell.id}
+                      className="border border-border px-3 py-1.5 text-foreground"
+                    >
+                      {cell.value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+};
+
 interface FilePreviewPanelProps {
   filePath: string;
 }
@@ -128,6 +316,10 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const [truncatedTotal, setTruncatedTotal] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [officePdfPath, setOfficePdfPath] = useState<string | null>(null);
+  const [officePreview, setOfficePreview] = useState<Awaited<
+    ReturnType<typeof window.filework.prepareOfficePreview>
+  > | null>(null);
+  const [officeView, setOfficeView] = useState<"visual" | "content">("visual");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -169,6 +361,8 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     setTruncatedTotal(0);
     setImageSrc(null);
     setOfficePdfPath(null);
+    setOfficePreview(null);
+    setOfficeView("visual");
     setMdView("rendered");
 
     if (!supported || isPdf || isVideo || isAudio) {
@@ -186,7 +380,19 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
         .prepareOfficePreview(absolutePath)
         .then((result) => {
           if (!cancelled) {
-            setOfficePdfPath(result.pdfPath);
+            const hasContent = hasUsableOfficeContent(result.contentPreview);
+            setOfficePreview(result);
+            if (result.pdfPath) {
+              setOfficePdfPath(result.pdfPath);
+              setOfficeView("visual");
+            } else if (result.previewKind === "image") {
+              setImageSrc(localFileUrl(result.previewPath));
+              setOfficeView(hasContent ? "content" : "visual");
+            } else if (result.previewKind === "content" && hasContent) {
+              setOfficeView("content");
+            } else {
+              setError(LL.preview_readFileError());
+            }
             setIsLoading(false);
           }
         })
@@ -223,6 +429,20 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
       cancelled = true;
     };
   }, [absolutePath, supported, isImage, isOffice, isPdf, isVideo, isAudio, LL]);
+
+  const officeContentPreview = hasUsableOfficeContent(
+    officePreview?.contentPreview,
+  )
+    ? officePreview.contentPreview
+    : null;
+  const hasOfficeVisual = Boolean(officePdfPath || imageSrc);
+  const showOfficeNotice = Boolean(officePreview?.visualPreviewUnavailable);
+  const officeContentLabels: OfficeContentLabels = {
+    emptyOfficeContent: LL.preview_emptyOfficeContent(),
+    emptySheet: LL.preview_emptySheet(),
+    slide: (index) => LL.preview_slide(index),
+    speakerNotes: LL.preview_speakerNotes(),
+  };
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -291,6 +511,44 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
             {LL.preview_openInBrowser()}
           </button>
         )}
+        {isOffice &&
+          !isLoading &&
+          !error &&
+          hasOfficeVisual &&
+          officeContentPreview && (
+            <div className="ml-auto flex shrink-0 items-center rounded-md border border-border p-0.5">
+              <button
+                type="button"
+                onClick={() => setOfficeView("visual")}
+                title={LL.preview_viewVisual()}
+                aria-label={LL.preview_viewVisual()}
+                aria-pressed={officeView === "visual"}
+                className={cn(
+                  "rounded p-1 transition-colors",
+                  officeView === "visual"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Eye className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setOfficeView("content")}
+                title={LL.preview_viewContent()}
+                aria-label={LL.preview_viewContent()}
+                aria-pressed={officeView === "content"}
+                className={cn(
+                  "rounded p-1 transition-colors",
+                  officeView === "content"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <FileText className="h-4 w-4" />
+              </button>
+            </div>
+          )}
       </div>
 
       {/* Content */}
@@ -343,51 +601,93 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           </div>
         )}
 
-        {!isLoading && !error && isImage && imageSrc && (
-          <div className="flex flex-col h-full">
-            <div className="flex items-center justify-center gap-1 px-3 py-1.5 border-b border-border shrink-0">
-              <button
-                type="button"
-                onClick={zoomOut}
-                className="rounded p-1 hover:bg-accent transition-colors"
-                aria-label={LL.preview_zoomOut()}
-              >
-                <ZoomOut className="w-4 h-4 text-muted-foreground" />
-              </button>
-              <button
-                type="button"
-                onClick={resetZoom}
-                className="rounded px-2 py-0.5 hover:bg-accent transition-colors text-xs text-muted-foreground min-w-[3.5rem] text-center"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
-              <button
-                type="button"
-                onClick={zoomIn}
-                className="rounded p-1 hover:bg-accent transition-colors"
-                aria-label={LL.preview_zoomIn()}
-              >
-                <ZoomIn className="w-4 h-4 text-muted-foreground" />
-              </button>
+        {!isLoading &&
+          !error &&
+          (isImage || (isOffice && officeView === "visual")) &&
+          imageSrc && (
+            <div className="flex flex-col h-full">
+              {isOffice && showOfficeNotice && (
+                <OfficeFallbackNotice
+                  message={LL.preview_officePdfUnavailable()}
+                />
+              )}
+              <div className="flex items-center justify-center gap-1 px-3 py-1.5 border-b border-border shrink-0">
+                <button
+                  type="button"
+                  onClick={zoomOut}
+                  className="rounded p-1 hover:bg-accent transition-colors"
+                  aria-label={LL.preview_zoomOut()}
+                >
+                  <ZoomOut className="w-4 h-4 text-muted-foreground" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  className="rounded px-2 py-0.5 hover:bg-accent transition-colors text-xs text-muted-foreground min-w-[3.5rem] text-center"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={zoomIn}
+                  className="rounded p-1 hover:bg-accent transition-colors"
+                  aria-label={LL.preview_zoomIn()}
+                >
+                  <ZoomIn className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[repeating-conic-gradient(hsl(var(--muted))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
+                <img
+                  src={imageSrc}
+                  alt={fileName}
+                  className="max-w-none transition-transform duration-150"
+                  style={{ transform: `scale(${zoom})` }}
+                  draggable={false}
+                  onError={() => setError(LL.preview_readImageError())}
+                />
+              </div>
             </div>
-            <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[repeating-conic-gradient(hsl(var(--muted))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
-              <img
-                src={imageSrc}
-                alt={fileName}
-                className="max-w-none transition-transform duration-150"
-                style={{ transform: `scale(${zoom})` }}
-                draggable={false}
-                onError={() => setError(LL.preview_readImageError())}
-              />
-            </div>
-          </div>
-        )}
+          )}
 
         {!isLoading && isPdf && <PdfViewer filePath={filePath} />}
 
-        {!isLoading && !error && isOffice && officePdfPath && (
-          <PdfViewer filePath={officePdfPath} />
-        )}
+        {!isLoading &&
+          !error &&
+          isOffice &&
+          officeView === "visual" &&
+          officePdfPath && (
+            <div className="flex h-full flex-col">
+              {showOfficeNotice && (
+                <OfficeFallbackNotice
+                  message={LL.preview_officePdfUnavailable()}
+                />
+              )}
+              <div className="min-h-0 flex-1">
+                <PdfViewer filePath={officePdfPath} />
+              </div>
+            </div>
+          )}
+
+        {!isLoading &&
+          !error &&
+          isOffice &&
+          officeView === "content" &&
+          officeContentPreview && (
+            <div className="flex h-full flex-col">
+              {showOfficeNotice && (
+                <OfficeFallbackNotice
+                  message={LL.preview_officePdfUnavailable()}
+                />
+              )}
+              <div className="min-h-0 flex-1">
+                <OfficeContentPreviewPane
+                  key={officePreview?.cacheKey}
+                  preview={officeContentPreview}
+                  labels={officeContentLabels}
+                />
+              </div>
+            </div>
+          )}
 
         {!isLoading && isVideo && (
           <VideoViewer filePath={filePath} fileName={fileName} />

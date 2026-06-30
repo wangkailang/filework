@@ -2,6 +2,10 @@ import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join } from "node:path";
 import { ipcMain } from "electron";
+import type {
+  OfficeContentPreview,
+  OfficePreviewResult,
+} from "../../shared/office-preview";
 import {
   emptyTrash,
   listTrash,
@@ -9,10 +13,16 @@ import {
 } from "../core/agent/tools/trash";
 import {
   directoryStats,
+  type NativeOfficePreviewResult,
   type NativeSearchOptions,
   prepareOfficePreview,
   searchFiles,
 } from "../native";
+import {
+  type OfficeContentPreviewResult,
+  prepareOfficeContentPreview,
+} from "../office-preview/content";
+import { resolveLibreOfficePath } from "../office-preview/paths";
 
 // 文件预览的读取上限:超过则只读前 N 字节并标记 truncated,
 // 避免把几百 MB 的文件整体读入内存、序列化过 IPC 拖垮渲染进程。
@@ -22,6 +32,12 @@ const OFFICE_PREVIEW_CACHE_ROOT = join(
   ".filework",
   "previews",
   "office",
+);
+const OFFICE_CONTENT_PREVIEW_CACHE_ROOT = join(
+  homedir(),
+  ".filework",
+  "previews",
+  "office-content",
 );
 
 export interface FileInfo {
@@ -59,6 +75,84 @@ const wrapFsError = (err: unknown, path: string): Error => {
     return new Error(`[${FS_ERROR_TAG.NOT_FOUND}] ${path}`);
   }
   return err instanceof Error ? err : new Error(String(err));
+};
+
+const getErrorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+const hasUsableOfficeContent = (
+  preview: OfficeContentPreview,
+): preview is Exclude<OfficeContentPreview, { kind: "unsupported" }> =>
+  preview.kind !== "unsupported";
+
+const attachOfficeContentPreview = (
+  result: OfficePreviewResult,
+  settled: PromiseSettledResult<OfficeContentPreviewResult>,
+): OfficePreviewResult => {
+  if (settled.status === "rejected") {
+    return {
+      ...result,
+      contentPreviewError: getErrorMessage(settled.reason),
+    };
+  }
+  if (!hasUsableOfficeContent(settled.value.preview)) {
+    return {
+      ...result,
+      contentPreviewError: settled.value.preview.message,
+    };
+  }
+  return {
+    ...result,
+    contentPreview: settled.value.preview,
+    contentPreviewCacheHit: settled.value.cacheHit,
+    contentPreviewPath: settled.value.contentPreviewPath,
+  };
+};
+
+const visualOfficeResult = (
+  visual: NativeOfficePreviewResult,
+): OfficePreviewResult => ({
+  ...visual,
+  visualPreviewUnavailable: visual.previewKind === "image",
+});
+
+const contentOnlyOfficeResult = (
+  content: OfficeContentPreviewResult,
+  visualError: unknown,
+): OfficePreviewResult => ({
+  cacheKey: content.cacheKey,
+  previewKind: "content",
+  previewPath: content.contentPreviewPath,
+  sourceMtimeMs: content.sourceMtimeMs,
+  sourceSize: content.sourceSize,
+  converterVersion: "Content extraction",
+  cacheHit: content.cacheHit,
+  contentPreview: content.preview,
+  contentPreviewCacheHit: content.cacheHit,
+  contentPreviewPath: content.contentPreviewPath,
+  visualPreviewUnavailable: true,
+  visualPreviewError: getErrorMessage(visualError),
+});
+
+const buildOfficePreviewFailureMessage = (
+  visualError: unknown,
+  contentResult: PromiseSettledResult<OfficeContentPreviewResult>,
+): string => {
+  const visualMessage = getErrorMessage(visualError);
+  const installHint =
+    "Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH for full Office PDF preview.";
+  const contentMessage =
+    contentResult.status === "rejected"
+      ? `Content fallback failed: ${getErrorMessage(contentResult.reason)}`
+      : contentResult.value.preview.kind === "unsupported"
+        ? `Content fallback unavailable: ${contentResult.value.preview.message}`
+        : "Content fallback was available but no visual preview could be prepared.";
+
+  if (visualMessage.includes("LibreOffice headless converter not found")) {
+    return `LibreOffice headless converter not found. ${installHint} ${contentMessage}`;
+  }
+
+  return `${visualMessage}. ${installHint} ${contentMessage}`;
 };
 
 export const registerFileHandlers = () => {
@@ -157,12 +251,39 @@ export const registerFileHandlers = () => {
 
   // Office 预览:不在工作区生成派生文件。native 负责转换队列、隔离目录、
   // 超时和按 source fingerprint + converter version 的缓存。
-  ipcMain.handle("fs:prepareOfficePreview", (_event, filePath: string) =>
-    prepareOfficePreview(filePath, {
-      cacheRoot: OFFICE_PREVIEW_CACHE_ROOT,
-      timeoutMs: 60_000,
-      thumbnailSize: 640,
-    }),
+  ipcMain.handle(
+    "fs:prepareOfficePreview",
+    async (_event, filePath: string) => {
+      const libreOfficePath = await resolveLibreOfficePath();
+      const [visual, content] = await Promise.allSettled([
+        prepareOfficePreview(filePath, {
+          cacheRoot: OFFICE_PREVIEW_CACHE_ROOT,
+          libreOfficePath,
+          timeoutMs: 60_000,
+          thumbnailSize: 640,
+        }),
+        prepareOfficeContentPreview(filePath, {
+          cacheRoot: OFFICE_CONTENT_PREVIEW_CACHE_ROOT,
+          libreOfficePath,
+        }),
+      ]);
+
+      if (visual.status === "fulfilled") {
+        return attachOfficeContentPreview(
+          visualOfficeResult(visual.value),
+          content,
+        );
+      }
+
+      if (
+        content.status === "fulfilled" &&
+        hasUsableOfficeContent(content.value.preview)
+      ) {
+        return contentOnlyOfficeResult(content.value, visual.reason);
+      }
+
+      throw new Error(buildOfficePreviewFailureMessage(visual.reason, content));
+    },
   );
 
   // 回收站:列出 / 恢复 / 永久清除(以 workspaceRoot 区分各工作区的回收站)。

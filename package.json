@@ -22,9 +22,10 @@
     }
   },
   "scripts": {
-    "dev": "FILEWORK_AI_DEVTOOLS=0 electron-vite dev",
-    "dev:devtools": "concurrently -k -n app,devtools \"FILEWORK_AI_DEVTOOLS=1 electron-vite dev\" \"pnpm ai-devtools\"",
-    "build": "electron-vite build",
+    "native:build": "pnpm --filter @filework/native run build",
+    "dev": "pnpm native:build && FILEWORK_AI_DEVTOOLS=0 electron-vite dev",
+    "dev:devtools": "pnpm native:build && concurrently -k -n app,devtools \"FILEWORK_AI_DEVTOOLS=1 electron-vite dev\" \"pnpm ai-devtools\"",
+    "build": "pnpm native:build && electron-vite build",
     "start": "electron-vite preview",
     "package": "electron-builder --mac",
     "lint": "biome format . --write && biome check .",
@@ -37,7 +38,7 @@
     "gaia-eval-diff": "tsx src/eval/gaia/diff-cli.ts",
     "gaia-eval-replay": "tsx src/eval/gaia/replay-cli.ts",
     "typesafe-i18n": "typesafe-i18n --no-watch",
-    "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/sign-native-addons.mjs && pnpm --filter @filework/native run build"
+    "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/sign-native-addons.mjs && pnpm native:build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.43",
