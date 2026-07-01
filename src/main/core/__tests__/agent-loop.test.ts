@@ -17,10 +17,12 @@ const scriptedRuns: Array<{
   parts: FullStreamPart[];
   totalUsage?: unknown;
   providerMetadata?: unknown;
-  /** 在发出这些分块后、迭代 fullStream 时抛出。 */
+  /** 在发出这些分块后、迭代 stream/fullStream 时抛出。 */
   throwAfter?: Error;
   /** 发出分块后、结束/抛出前 await 的毫秒数(用于让墙钟定时器有机会触发)。 */
   holdMs?: number;
+  /** 模拟 AI SDK v7 只暴露 stream 的结果形态。 */
+  streamOnly?: boolean;
 }> = [];
 
 function nextRun() {
@@ -32,22 +34,35 @@ function nextRun() {
 }
 
 vi.mock("ai", () => ({
-  stepCountIs: vi.fn(() => ({})),
+  isStepCount: vi.fn(() => ({})),
   tool: vi.fn((def: unknown) => def),
   streamText: vi.fn(
     (options?: {
       messages?: unknown[];
-      prepareStep?: (args: { messages: unknown[] }) => unknown;
+      prepareStep?: (args: {
+        initialMessages: unknown[];
+        messages: unknown[];
+        responseMessages: unknown[];
+        stepNumber: number;
+      }) => unknown;
     }) => {
       const run = nextRun();
-      options?.prepareStep?.({ messages: options.messages ?? [] });
+      options?.prepareStep?.({
+        initialMessages: options.messages ?? [],
+        messages: options.messages ?? [],
+        responseMessages: [],
+        stepNumber: 0,
+      });
+      const stream = (async function* () {
+        for (const p of run.parts) yield p;
+        if (run.holdMs)
+          await new Promise((resolve) => setTimeout(resolve, run.holdMs));
+        if (run.throwAfter) throw run.throwAfter;
+      })();
       return {
-        fullStream: (async function* () {
-          for (const p of run.parts) yield p;
-          if (run.holdMs)
-            await new Promise((resolve) => setTimeout(resolve, run.holdMs));
-          if (run.throwAfter) throw run.throwAfter;
-        })(),
+        ...(run.streamOnly ? {} : { fullStream: stream }),
+        stream,
+        fullStream: run.streamOnly ? undefined : stream,
         totalUsage: Promise.resolve(run.totalUsage),
         providerMetadata: Promise.resolve(run.providerMetadata),
       };
@@ -159,6 +174,72 @@ describe("AgentLoop", () => {
     expect(end.totalUsage?.totalTokens).toBe(8);
   });
 
+  it("consumes the AI SDK v7 stream result while preserving the text event contract", async () => {
+    scriptedRuns.push({
+      streamOnly: true,
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "v7 " },
+        { type: "text-delta", text: "stream" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 2, outputTokens: 2 },
+        },
+      ],
+      totalUsage: { inputTokens: 2, outputTokens: 2 },
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      agentId: "v7",
+    });
+
+    const events = await collect(loop, "hi");
+    expect(events.map((e) => e.type)).toEqual([
+      "agent_start",
+      "turn_start",
+      "message_start",
+      "message_update",
+      "message_update",
+      "message_end",
+      "turn_end",
+      "agent_end",
+    ]);
+    const end = events.at(-1);
+    if (end?.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.finalText).toBe("v7 stream");
+  });
+
+  it("passes v7 instructions to streamText instead of the deprecated system option", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "ok" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    const streamTextSpy = vi.mocked(streamText);
+    streamTextSpy.mockClear();
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system instructions",
+    });
+
+    await collect(loop, "hi");
+
+    const call = streamTextSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.instructions).toBe("system instructions");
+    expect("system" in call).toBe(false);
+  });
+
   it("emits tool execution events around tool calls", async () => {
     scriptedRuns.push({
       parts: [
@@ -264,7 +345,7 @@ describe("AgentLoop", () => {
 
   it("tool-error part 应产出 tool_execution_end{success=false}", async () => {
     // AI SDK 会将抛出异常的工具 `execute`（例如 MCP 超时 / 未连接）
-    // 转换为 `tool-error` 的 fullStream 分块。若不显式处理该分块，
+    // 转换为 `tool-error` 的 stream 分块。若不显式处理该分块，
     // 它会被悄无声息地丢弃，导致工具气泡永远卡在「执行中」。
     scriptedRuns.push({
       parts: [

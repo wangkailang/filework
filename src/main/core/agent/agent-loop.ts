@@ -1,6 +1,6 @@
 /**
  * AgentLoop —— 领域无关的编排器,通过 Vercel AI SDK 的 `streamText`
- * 运行一组模型回合,把 `fullStream` 转换为带类型的 `AgentEvent`,
+ * 运行一组模型回合,把 AI SDK `stream` 转换为带类型的 `AgentEvent`,
  * 并以异步可迭代对象的形式产出。
  *
  * 取代 `src/main/ipc/ai-handlers.ts:476-568` 处内联的 `streamAndConsume`
@@ -10,7 +10,7 @@
  * - `beforeToolCall` 经由 ToolRegistry 路由(PR 1)—— 此处无需额外接线
  * - 通过 AbortSignal 取消
  *
- * 注意:AI-SDK 的 `streamText` 本身已最多循环 `stepCountIs(N)` 个内部
+ * 注意:AI-SDK 的 `streamText` 本身已最多循环 `isStepCount(N)` 个内部
  * 步骤。每个 "step" 是一次模型决策(纯文本或文本+工具调用)
  * —— 我们把步骤边界映射为 PI 风格的回合事件。
  */
@@ -18,7 +18,7 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel, ModelMessage, Tool } from "ai";
-import { stepCountIs, streamText } from "ai";
+import { isStepCount, streamText } from "ai";
 import type { Workspace } from "../workspace/types";
 import { compactToolResults } from "./compact-tool-results";
 import type {
@@ -321,13 +321,21 @@ export class AgentLoop {
       const result = streamText({
         model: this.cfg.model,
         tools: passNoTools ? {} : aiTools,
-        stopWhen: stepCountIs(this.cfg.maxStepsPerTurn ?? 20),
-        system: this.cfg.systemPrompt,
+        stopWhen: isStepCount(this.cfg.maxStepsPerTurn ?? 20),
+        instructions: this.cfg.systemPrompt,
         messages,
         // 在每个内部步骤前收缩较早的工具结果,避免大体量的
         // webFetch/runCommand 结果在每一步都以全尺寸重发
         //(输入 token 的倍增因素)。最新结果保持完整。
-        prepareStep: ({ messages: stepMessages }) => {
+        prepareStep: ({ initialMessages, responseMessages, messages }) => {
+          // AI SDK v7 会让 prepareStep 返回的 messages 继续流入后续步骤。
+          // 为保持 v6 时代“每一步基于原始输入 + 已累计响应重新计算压缩”
+          // 的语义,优先用 v7 暴露的 initialMessages/responseMessages
+          // 重建本步骤上下文;测试 mock/旧别名下则回退到 messages。
+          const stepMessages =
+            initialMessages.length > 0 || responseMessages.length > 0
+              ? ([...initialMessages, ...responseMessages] as ModelMessage[])
+              : messages;
           const compacted = compactToolResults(stepMessages);
           try {
             this.cfg.hooks?.contextUsage?.({
@@ -355,7 +363,7 @@ export class AgentLoop {
         }),
       });
 
-      for await (const part of result.fullStream) {
+      for await (const part of result.stream) {
         switch (part.type) {
           case "start-step": {
             turnIndex++;
@@ -517,7 +525,7 @@ export class AgentLoop {
               turnIndex + 1 >= (this.cfg.maxStepsPerTurn ?? 20) &&
               !stopReason
             ) {
-              // 模型还想继续(发了 tool-calls)但步数到顶被 stepCountIs 截停。
+              // 模型还想继续(发了 tool-calls)但步数到顶被 isStepCount 截停。
               // 仅记录,供可观测;不主动 abort(streamText 自身会停)。
               stopReason = "max_steps";
             }
@@ -721,7 +729,11 @@ interface RawUsage {
   totalTokens?: number | null;
   cachedInputTokens?: number | null;
   reasoningTokens?: number | null;
-  /** AI SDK v6 的嵌套形式(优先于已废弃的扁平字段)。 */
+  /** AI SDK v7 的输入 token 细分。 */
+  inputTokenDetails?: {
+    cacheReadTokens?: number | null;
+  } | null;
+  /** AI SDK v6+ 的嵌套形式(优先于已废弃的扁平字段)。 */
   outputTokenDetails?: {
     reasoningTokens?: number | null;
     textTokens?: number | null;
@@ -736,7 +748,7 @@ export function mapUsage(raw: unknown): TokenUsage | undefined {
   const total =
     u.totalTokens ??
     (input !== null || output !== null ? (input ?? 0) + (output ?? 0) : null);
-  // 优先使用 v6 嵌套的 `outputTokenDetails.reasoningTokens`;对较旧的 SDK
+  // 优先使用嵌套的 `outputTokenDetails.reasoningTokens`;对较旧的 SDK
   // 响应则回退到已废弃的扁平 `reasoningTokens` 字段。
   const reasoning =
     u.outputTokenDetails?.reasoningTokens ?? u.reasoningTokens ?? null;
@@ -744,7 +756,8 @@ export function mapUsage(raw: unknown): TokenUsage | undefined {
     inputTokens: input,
     outputTokens: output,
     totalTokens: total,
-    cacheReadTokens: u.cachedInputTokens ?? null,
+    cacheReadTokens:
+      u.inputTokenDetails?.cacheReadTokens ?? u.cachedInputTokens ?? null,
     reasoningTokens: reasoning,
   };
 }

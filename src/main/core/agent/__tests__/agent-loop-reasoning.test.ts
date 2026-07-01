@@ -8,7 +8,7 @@ describe("mapUsage — reasoning token extraction", () => {
     expect(mapUsage(42)).toBeUndefined();
   });
 
-  it("extracts reasoningTokens from v6 nested outputTokenDetails", () => {
+  it("extracts reasoningTokens from nested outputTokenDetails", () => {
     const u = mapUsage({
       inputTokens: 100,
       outputTokens: 50,
@@ -56,5 +56,14 @@ describe("mapUsage — reasoning token extraction", () => {
       cachedInputTokens: 80,
     });
     expect(u?.cacheReadTokens).toBe(80);
+  });
+
+  it("extracts cacheReadTokens from v7 inputTokenDetails", () => {
+    const u = mapUsage({
+      inputTokens: 100,
+      outputTokens: 50,
+      inputTokenDetails: { cacheReadTokens: 64 },
+    });
+    expect(u?.cacheReadTokens).toBe(64);
   });
 });
