@@ -293,6 +293,14 @@ export class AgentLoop {
     let totalUsage: TokenUsage | undefined;
     let providerMetadata: Record<string, unknown> | undefined;
     let finalTextAccum = "";
+    let pendingMessageText = "";
+    let pendingMessageOpen = false;
+    const currentFinalText = () =>
+      pendingMessageOpen ? finalTextAccum + pendingMessageText : finalTextAccum;
+    const resetPendingMessage = () => {
+      pendingMessageText = "";
+      pendingMessageOpen = false;
+    };
     // 仅在配置了 reflect 钩子时收集 —— 在默认聊天路径上省去 Map
     // 分配与每次工具调用的写入。
     const reflectEnabled = this.cfg.hooks?.reflect !== undefined;
@@ -361,6 +369,8 @@ export class AgentLoop {
             const delta = part.text;
             if (!messageOpen) {
               messageOpen = true;
+              pendingMessageOpen = true;
+              pendingMessageText = "";
               emit({
                 type: "message_start",
                 agentId,
@@ -369,6 +379,7 @@ export class AgentLoop {
               });
             }
             messageText += delta;
+            pendingMessageText = messageText;
             emit({
               type: "message_update",
               agentId,
@@ -478,6 +489,7 @@ export class AgentLoop {
                 usage: stepUsage,
               });
               finalTextAccum += messageText;
+              resetPendingMessage();
               messageOpen = false;
             }
             lastFinishReason = part.finishReason;
@@ -535,7 +547,7 @@ export class AgentLoop {
       return {
         agentId,
         turnIndex,
-        finalText: finalTextAccum,
+        finalText: currentFinalText(),
         toolCalls: toolResults ? Array.from(toolResults.values()) : [],
         endReason: mapTurnEndReason(lastFinishReason),
         usage: totalUsage,
@@ -545,6 +557,7 @@ export class AgentLoop {
     const onRetry = (attempt: number, errorType: string) => {
       // 重试时重置累积文本 —— 助手消息重新开始。
       finalTextAccum = "";
+      resetPendingMessage();
       emit({
         type: "retry",
         agentId,
@@ -607,6 +620,7 @@ export class AgentLoop {
         });
         passNoTools = verdict.forceNoTools === true;
         finalTextAccum = "";
+        resetPendingMessage();
         reflectionAttempts++;
       }
 
@@ -618,7 +632,7 @@ export class AgentLoop {
           error: { message: aborted.reason, type: "reflection_aborted" },
           totalUsage,
           providerMetadata,
-          finalText: finalTextAccum,
+          finalText: currentFinalText(),
         });
       } else if (this.cfg.signal?.aborted && !stopReason) {
         // 用户/父级在 reflect 间隙取消(streamText 内中止会走 catch)。
@@ -628,7 +642,7 @@ export class AgentLoop {
           status: "cancelled",
           totalUsage,
           providerMetadata,
-          finalText: finalTextAccum,
+          finalText: currentFinalText(),
         });
       } else {
         emit({
@@ -637,7 +651,7 @@ export class AgentLoop {
           status: "completed",
           totalUsage,
           providerMetadata,
-          finalText: finalTextAccum,
+          finalText: currentFinalText(),
           stopReason,
         });
       }
@@ -664,7 +678,7 @@ export class AgentLoop {
           status: "completed",
           totalUsage,
           providerMetadata,
-          finalText: finalTextAccum,
+          finalText: currentFinalText(),
           stopReason,
         });
       } else {
@@ -688,7 +702,7 @@ export class AgentLoop {
           error: errorPayload,
           totalUsage,
           providerMetadata,
-          finalText: finalTextAccum,
+          finalText: currentFinalText(),
         });
       }
     } finally {

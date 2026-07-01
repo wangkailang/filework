@@ -12,6 +12,7 @@
  */
 
 import type { ToolPreview } from "../agent/preview/types";
+import type { SubAgentResultQuality } from "../agent/sub-agent-contract";
 
 export type { ToolPreview } from "../agent/preview/types";
 
@@ -409,7 +410,14 @@ export interface TurnSummaryPart {
 export interface SubagentChildView {
   childTaskId: string;
   goal: string;
-  status: "running" | "ok" | "failed" | "cancelled" | "timeout" | "token_limit";
+  status:
+    | "queued"
+    | "running"
+    | "ok"
+    | "failed"
+    | "cancelled"
+    | "timeout"
+    | "token_limit";
   /** 已观察到的工具调用次数(驱动"步数"显示)。 */
   stepCount: number;
   toolCalls: Array<{
@@ -424,13 +432,18 @@ export interface SubagentChildView {
   };
   /** report 完成后填充的压缩摘要。 */
   summary?: string;
+  /** 结果是否可被父 agent 作为证据采纳。 */
+  resultQuality?: SubAgentResultQuality;
+  /** 子 agent 返回的结构化结果;通常来自 RESULT_JSON。 */
+  artifacts?: Record<string, unknown>;
   error?: string;
   durationMs?: number;
   /**
    * 子 agent 的执行过程(文本 / 推理 / 工具调用),供"钻入面板"复用主线程
    * 渲染器回放。由 `useStreamSubscription` 从 ai:subagent-delta / -tool-call /
-   * -tool-result 累积。默认仅内存保留(不强制持久化,避免 JSONL 膨胀);
-   * 缺省/为空 → 钻入面板显示"无过程记录(可能已重载)"。
+   * -tool-result 累积。实时运行时由 renderer 内存聚合;冷启动恢复时可从
+   * run-event log 物化并落盘,以便重启后仍能钻入查看。缺省/为空 →
+   * 钻入面板显示"无过程记录(可能已重载)"。
    */
   parts?: MessagePart[];
 }

@@ -2,6 +2,8 @@ import type { WebContents } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentEvent } from "../../core/agent/events";
+import { DEFAULT_SUB_AGENT_RESULT_SCHEMA } from "../../core/agent/sub-agent-contract";
+import type { BeforeToolCallHook } from "../../core/agent/tool-registry";
 
 // ---------------------------------------------------------------------------
 // Mock —— AgentLoop 产出预设脚本的事件,依赖项被打桩。
@@ -12,6 +14,22 @@ interface ScriptedRun {
 }
 
 const scriptedRuns: ScriptedRun[] = [];
+let lastToAiSdkToolsOptions:
+  | Parameters<
+      {
+        toAiSdkTools: (options: {
+          beforeToolCall?: BeforeToolCallHook;
+        }) => void;
+      }["toAiSdkTools"]
+    >[0]
+  | undefined;
+const registeredTools = new Map<
+  string,
+  {
+    name: string;
+    execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
+  }
+>();
 
 function nextScript(): ScriptedRun {
   const r = scriptedRuns.shift();
@@ -29,7 +47,18 @@ vi.mock("../../core/agent/agent-loop", () => ({
 }));
 
 const buildAgentToolRegistry = vi.fn((..._args: unknown[]) => ({
-  toAiSdkTools: vi.fn(() => ({})),
+  register: vi.fn(
+    (tool: {
+      name: string;
+      execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
+    }) => {
+      registeredTools.set(tool.name, tool);
+    },
+  ),
+  toAiSdkTools: vi.fn((options) => {
+    lastToAiSdkToolsOptions = options;
+    return {};
+  }),
 }));
 vi.mock("../agent-tools", () => ({
   buildAgentToolRegistry: (arg: unknown) => buildAgentToolRegistry(arg),
@@ -79,6 +108,8 @@ import { createForkSkillRunner } from "../fork-skill-runner";
 describe("createForkSkillRunner", () => {
   beforeEach(() => {
     scriptedRuns.length = 0;
+    lastToAiSdkToolsOptions = undefined;
+    registeredTools.clear();
     vi.clearAllMocks();
   });
 
@@ -292,6 +323,89 @@ describe("createForkSkillRunner", () => {
     );
   });
 
+  it("allows read-only shell inspection for spawned subagents but denies writes and escalation", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "t",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "t", status: "completed" },
+      ],
+    });
+
+    const runner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["runCommand", "runProcess"],
+    });
+
+    const beforeToolCall = lastToAiSdkToolsOptions?.beforeToolCall;
+    if (!beforeToolCall) throw new Error("beforeToolCall was not registered");
+
+    await expect(
+      beforeToolCall(
+        {
+          toolName: "runCommand",
+          toolCallId: "read-shell",
+          args: { command: "find . -maxdepth 2 -type f", cwd: "/ws" },
+        },
+        {} as never,
+      ),
+    ).resolves.toEqual({ allow: true });
+    await expect(
+      beforeToolCall(
+        {
+          toolName: "runProcess",
+          toolCallId: "read-process",
+          args: { executable: "rg", args: ["--files"], cwd: "/ws" },
+        },
+        {} as never,
+      ),
+    ).resolves.toEqual({ allow: true });
+    await expect(
+      beforeToolCall(
+        {
+          toolName: "runCommand",
+          toolCallId: "write-shell",
+          args: { command: "rm -rf out", cwd: "/ws" },
+        },
+        {} as never,
+      ),
+    ).resolves.toMatchObject({
+      allow: false,
+      reason: expect.stringMatching(/read-only/i),
+    });
+    await expect(
+      beforeToolCall(
+        {
+          toolName: "runCommand",
+          toolCallId: "escalate-shell",
+          args: {
+            command: "find . -maxdepth 1 -type f",
+            cwd: "/ws",
+            escalatePermissions: true,
+          },
+        },
+        {} as never,
+      ),
+    ).resolves.toMatchObject({
+      allow: false,
+      reason: expect.stringMatching(/escalation/i),
+    });
+  });
+
   it("forces allowedTools to [] when the option is undefined (zero-tool default)", async () => {
     scriptedRuns.push({
       events: [
@@ -317,6 +431,146 @@ describe("createForkSkillRunner", () => {
     expect(buildAgentToolRegistry).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTools: [] }),
     );
+  });
+
+  it("registers submitSubagentResult for spawned subagents only", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+
+    expect(registeredTools.has("submitSubagentResult")).toBe(true);
+
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "legacy",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "legacy", status: "completed" },
+      ],
+    });
+    registeredTools.clear();
+
+    const legacyRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "legacy",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await legacyRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+
+    expect(registeredTools.has("submitSubagentResult")).toBe(false);
+  });
+
+  it("uses submitSubagentResult artifacts as usable partial output when the run is later truncated", async () => {
+    const submitted = {
+      success: true,
+      artifacts: {
+        status: "partial",
+        coverage: ["/ws/src/main/ipc"],
+        findings: [
+          {
+            claim: "IPC handlers are registered from the main process.",
+            evidence: ["/ws/src/main/index.ts:427"],
+          },
+        ],
+        evidence: [],
+        missing: ["full handler audit"],
+        failureReason: null,
+      },
+    };
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          type: "tool_execution_start",
+          agentId: "child-1",
+          toolCallId: "submit-1",
+          toolName: "submitSubagentResult",
+          args: submitted.artifacts,
+        },
+        {
+          type: "tool_execution_end",
+          agentId: "child-1",
+          toolCallId: "submit-1",
+          toolName: "submitSubagentResult",
+          result: submitted,
+          success: true,
+          durationMs: 0,
+        },
+        {
+          type: "agent_end",
+          agentId: "child-1",
+          status: "completed",
+          stopReason: "token_budget",
+          finalText: "startup summary only",
+        },
+      ],
+    });
+
+    const runner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const report = await runner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "analyze ipc",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: {},
+      },
+    });
+
+    expect(report.status).toBe("token_limit");
+    expect(report.resultQuality).toBe("usable_partial");
+    expect(report.artifacts).toMatchObject({
+      status: "partial",
+      findings: [
+        expect.objectContaining({
+          claim: "IPC handlers are registered from the main process.",
+        }),
+      ],
+    });
   });
 
   it("returns an ok report with summary from agent_end.finalText", async () => {

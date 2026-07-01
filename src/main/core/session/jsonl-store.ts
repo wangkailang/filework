@@ -47,6 +47,12 @@ type SessionMetadataOptions = {
   lastActiveBranch?: string | null;
 };
 
+type AppendMessagePartOptions = {
+  contentFallback?: string;
+  timestamp?: string;
+  replaceSubagentBatches?: boolean;
+};
+
 const normalizeLastActiveBranch = (
   branch: string | null | undefined,
 ): string | null | undefined => {
@@ -376,7 +382,16 @@ export class JsonlSessionStore {
     sessionId: string,
     messageId: string,
     part: MessagePart,
-    options: { contentFallback?: string; timestamp?: string } = {},
+    options: AppendMessagePartOptions = {},
+  ): Promise<boolean> {
+    return this.appendMessageParts(sessionId, messageId, [part], options);
+  }
+
+  async appendMessageParts(
+    sessionId: string,
+    messageId: string,
+    parts: MessagePart[],
+    options: AppendMessagePartOptions = {},
   ): Promise<boolean> {
     const loc = await this.locate(sessionId);
     if (!loc) return false;
@@ -391,10 +406,28 @@ export class JsonlSessionStore {
     );
     if (!message) return false;
 
-    message.parts = [
-      ...(message.parts ?? []),
-      ...stripTransientPreview([part]),
-    ];
+    const persistedParts = stripTransientPreview(parts);
+    if (options.replaceSubagentBatches) {
+      const nextParts = [...(message.parts ?? [])];
+      for (const part of persistedParts) {
+        if (part.type !== "subagent") {
+          nextParts.push(part);
+          continue;
+        }
+        const existingIndex = nextParts.findIndex(
+          (existing) =>
+            existing.type === "subagent" && existing.batchId === part.batchId,
+        );
+        if (existingIndex === -1) {
+          nextParts.push(part);
+        } else {
+          nextParts[existingIndex] = part;
+        }
+      }
+      message.parts = nextParts;
+    } else {
+      message.parts = [...(message.parts ?? []), ...persistedParts];
+    }
     if (!message.content && options.contentFallback) {
       message.content = options.contentFallback;
     }

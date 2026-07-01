@@ -1,6 +1,9 @@
 import type { ToolResultOutput } from "@ai-sdk/provider-utils";
 
 const DEFAULT_TEXT_BUDGET = 12_000;
+const READ_FILE_TEXT_BUDGET = 4_000;
+const COMMAND_STDOUT_BUDGET = 4_000;
+const COMMAND_STDERR_BUDGET = 2_000;
 const RESULT_SNIPPET_BUDGET = 600;
 const WEB_SEARCH_RESULT_LIMIT = 8;
 const WEB_SEARCH_IMAGE_LIMIT = 5;
@@ -50,9 +53,11 @@ export const projectReadFileModelOutput = ({
     [
       `readFile ${input.path ?? "(unknown path)"}`,
       `Characters: ${output.length}`,
-      output.length > DEFAULT_TEXT_BUDGET ? "Truncated for model: true" : null,
+      output.length > READ_FILE_TEXT_BUDGET
+        ? "Truncated for model: true"
+        : null,
       "Content:",
-      clipForModel(output),
+      clipForModel(output, READ_FILE_TEXT_BUDGET),
     ]
       .filter(Boolean)
       .join("\n"),
@@ -95,8 +100,8 @@ export const projectCommandModelOutput = ({
       ? `Test stats: ${compactJson(output.testStats, 1_000)}`
       : null,
     asString(output.hint) ? `Hint: ${asString(output.hint)}` : null,
-    stdout ? `Stdout:\n${clipForModel(stdout, 8_000)}` : null,
-    stderr ? `Stderr:\n${clipForModel(stderr, 6_000)}` : null,
+    stdout ? `Stdout:\n${clipForModel(stdout, COMMAND_STDOUT_BUDGET)}` : null,
+    stderr ? `Stderr:\n${clipForModel(stderr, COMMAND_STDERR_BUDGET)}` : null,
     !stdout && !stderr ? `Output: ${compactJson(output, 4_000)}` : null,
   ];
   return textModelOutput(lines.filter(Boolean).join("\n"));

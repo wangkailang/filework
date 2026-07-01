@@ -30,11 +30,18 @@ import {
   buildReport,
   DEFAULT_SUB_AGENT_MAX_TOKENS,
   DEFAULT_SUB_AGENT_MAX_WALL_MS,
+  DEFAULT_SUB_AGENT_RESULT_SCHEMA,
   extractJsonArtifacts,
   type SubAgentContract,
   type SubAgentReport,
   type SubAgentStatus,
 } from "../core/agent/sub-agent-contract";
+import type {
+  BeforeToolCallDecision,
+  BeforeToolCallHook,
+  ToolDefinition,
+} from "../core/agent/tool-registry";
+import { isDeliverableCommand } from "../core/agent/tools/command-classify";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
 import { buildAgentToolRegistry } from "./agent-tools";
@@ -102,6 +109,93 @@ const truncateForSummary = (text: string, maxTokens: number): string => {
   return `${text.slice(0, charCap)}... [summary truncated]`;
 };
 
+const SUBAGENT_SHELL_WRITE_DENIED =
+  "Sub-agent shell is read-only. Return findings or a patch suggestion to the parent agent instead of modifying files.";
+const SUBAGENT_SHELL_ESCALATION_DENIED =
+  "Sub-agents cannot request shell permission escalation; use read-only inspection commands only.";
+const SUBAGENT_BACKGROUND_SHELL_DENIED =
+  "Sub-agents cannot start background shell processes; use bounded read-only inspection commands only.";
+const SUBAGENT_RESULT_TOOL_NAME = "submitSubagentResult";
+
+const shellCommandForCall = (
+  toolName: string,
+  args: unknown,
+): string | null => {
+  if (args === null || typeof args !== "object") return null;
+  const record = args as Record<string, unknown>;
+  if (toolName === "runCommand") {
+    return typeof record.command === "string" ? record.command : null;
+  }
+  if (toolName !== "runProcess") return null;
+  if (typeof record.executable !== "string") return null;
+  const argv = Array.isArray(record.args) ? record.args : [];
+  return [record.executable, ...argv.map((arg) => String(arg))].join(" ");
+};
+
+const subagentReadOnlyShellGuard = (
+  call: Parameters<BeforeToolCallHook>[0],
+): BeforeToolCallDecision | null => {
+  if (call.toolName !== "runCommand" && call.toolName !== "runProcess") {
+    return null;
+  }
+  const args =
+    call.args !== null && typeof call.args === "object"
+      ? (call.args as Record<string, unknown>)
+      : {};
+  if (args.escalatePermissions === true) {
+    return { allow: false, reason: SUBAGENT_SHELL_ESCALATION_DENIED };
+  }
+  if (args.runInBackground === true) {
+    return { allow: false, reason: SUBAGENT_BACKGROUND_SHELL_DENIED };
+  }
+  const command = shellCommandForCall(call.toolName, call.args);
+  if (command && isDeliverableCommand(command)) {
+    return { allow: false, reason: SUBAGENT_SHELL_WRITE_DENIED };
+  }
+  return null;
+};
+
+const submittedArtifactsFromToolOutput = (
+  output: unknown,
+): Record<string, unknown> | undefined => {
+  if (!output || typeof output !== "object") return undefined;
+  const record = output as Record<string, unknown>;
+  const candidate =
+    record.artifacts && typeof record.artifacts === "object"
+      ? record.artifacts
+      : record;
+  const parsed = DEFAULT_SUB_AGENT_RESULT_SCHEMA.safeParse(candidate);
+  return parsed.success ? (parsed.data as Record<string, unknown>) : undefined;
+};
+
+const buildSubmitSubagentResultTool = (
+  onSubmit: (artifacts: Record<string, unknown>) => void,
+): ToolDefinition<unknown, unknown> => ({
+  name: SUBAGENT_RESULT_TOOL_NAME,
+  description:
+    "Submit the sub-agent's structured result as soon as it has evidence-backed findings. Call this before final prose so the lead agent can consume the result even if later text is truncated.",
+  inputSchema: DEFAULT_SUB_AGENT_RESULT_SCHEMA,
+  safety: "safe",
+  execute: async (args) => {
+    const parsed = DEFAULT_SUB_AGENT_RESULT_SCHEMA.safeParse(args);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.message,
+      };
+    }
+    const artifacts = parsed.data as Record<string, unknown>;
+    onSubmit(artifacts);
+    return {
+      success: true,
+      accepted: true,
+      artifacts,
+      instruction:
+        "Result recorded. End now or provide only a very short note.",
+    };
+  },
+});
+
 /**
  * 构建一个绑定到当前任务的 `runSubagent` 回调。每次调用都会
  * 解析 model/adapter、构造 AgentLoop,并将事件
@@ -142,6 +236,7 @@ export const createForkSkillRunner = (
     // ── 每次调用的组件 ─────────────────────────────────────────────
     const workspace = new LocalWorkspace(opts.workspacePath);
     const isGitWorkspace = isGitBackedWorkspace(workspace);
+    let submittedArtifacts: Record<string, unknown> | undefined;
     // undefined 时强制为 [],使 registry 的 allow() 过滤(零工具
     // 默认)与旧的 `executor.ts:395-397` 行为一致。
     const toolRegistry = buildAgentToolRegistry({
@@ -151,7 +246,21 @@ export const createForkSkillRunner = (
       modelName: modelId,
       isGitWorkspace,
     });
-    const beforeToolCall = buildApprovalHook({ sender, taskId, workspace });
+    if (isSubagent) {
+      toolRegistry.register(
+        buildSubmitSubagentResultTool((artifacts) => {
+          submittedArtifacts = artifacts;
+        }),
+      );
+    }
+    const approvalHook = buildApprovalHook({ sender, taskId, workspace });
+    const beforeToolCall: BeforeToolCallHook = async (call, ctx) => {
+      if (isSubagent) {
+        const guardDecision = subagentReadOnlyShellGuard(call);
+        if (guardDecision) return guardDecision;
+      }
+      return approvalHook(call, ctx);
+    };
 
     // 子 AbortController,使 runner 能对自身的
     // 失败做出反应而不中止父级。父级中止只转发一次。
@@ -282,6 +391,11 @@ export const createForkSkillRunner = (
             break;
           }
           case "tool_execution_end":
+            if (isSubagent && ev.toolName === SUBAGENT_RESULT_TOOL_NAME) {
+              submittedArtifacts =
+                submittedArtifactsFromToolOutput(ev.result) ??
+                submittedArtifacts;
+            }
             sender.send(
               isSubagent ? "ai:subagent-tool-result" : "ai:stream-tool-result",
               routePayload({
@@ -380,9 +494,7 @@ export const createForkSkillRunner = (
         : undefined;
 
     const candidateArtifacts =
-      reportStatus === "ok" && effectiveContract.output.format === "json"
-        ? extractJsonArtifacts(finalTextAccum)
-        : undefined;
+      submittedArtifacts ?? extractJsonArtifacts(finalTextAccum);
 
     const report = buildReport({
       agentId: taskId,

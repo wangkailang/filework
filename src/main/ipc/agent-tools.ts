@@ -22,8 +22,10 @@ import {
   DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
   DEFAULT_SUB_AGENT_MAX_TURNS,
   DEFAULT_SUB_AGENT_MAX_WALL_MS,
+  DEFAULT_SUB_AGENT_RESULT_SCHEMA,
   type SubAgentContract,
   type SubAgentOutputFormat,
+  type SubAgentReport,
 } from "../core/agent/sub-agent-contract";
 import { type ToolDefinition, ToolRegistry } from "../core/agent/tool-registry";
 import {
@@ -61,6 +63,8 @@ import {
 import {
   buildGitRunCommandProtocol,
   buildSubagentSystemPrompt,
+  SUBAGENT_PROFILE_VALUES,
+  type SubagentProfile,
 } from "./system-prompt";
 
 interface BuildAgentToolRegistryOptions {
@@ -449,23 +453,29 @@ const spawnSubagentInputSchema = z.object({
           .describe(
             "Full instructions plus ALL context the sub-agent needs (file paths, constraints, what to return). Assume zero shared memory.",
           ),
+        profile: z
+          .enum(SUBAGENT_PROFILE_VALUES)
+          .optional()
+          .describe(
+            "Optional specialist profile: researcher, code_reviewer, test_analyst, or doc_summarizer.",
+          ),
         outputFormat: z
           .enum(["summary", "json", "answer", "patch"])
-          .default("summary")
+          .default("json")
           .describe(
-            "How the sub-agent must shape its result. Use 'json' only when you will machine-consume the artifacts.",
+            "How the sub-agent must shape its result. Default json returns a validated RESULT_JSON artifact the parent can safely consume.",
           ),
         allowedTools: z
           .array(z.string())
           .optional()
           .describe(
-            "Restrict this sub-agent to a SUBSET of your tools. Omit to inherit your set. Cannot exceed what you have.",
+            "Restrict this sub-agent to a SUBSET of your read-only tools. Use canonical names like readFile/runCommand; provider prefixes such as functions.readFile are tolerated. Direct-write, memory, automation, and delegation tools are filtered out; shell tools are limited to read-only inspection.",
           ),
         allowedSkills: z
           .array(z.string())
           .optional()
           .describe(
-            "Subset of skill ids the sub-agent may use. Omit to inherit yours. Cannot exceed yours.",
+            "Subset of skill ids the sub-agent may use. Omit for no skills. Cannot exceed yours.",
           ),
         maxTurns: z.number().int().min(1).max(20).optional(),
         maxTotalTokens: z.number().int().min(1000).optional(),
@@ -486,6 +496,95 @@ const spawnSubagentInputSchema = z.object({
 
 type SpawnSubagentInput = z.infer<typeof spawnSubagentInputSchema>;
 
+export interface ShapedSubagentToolResult {
+  success: true;
+  batchId: string;
+  summary: {
+    total: number;
+    usable: number;
+    complete: number;
+    partial: number;
+    noResult: number;
+    failed: number;
+  };
+  reports: Array<{
+    goal: string;
+    status: SubAgentReport["status"];
+    resultQuality: SubAgentReport["resultQuality"];
+    usable: boolean;
+    summary: string;
+    artifacts?: Record<string, unknown>;
+    usage: SubAgentReport["usage"];
+    error?: string;
+    unusableReason?: string;
+  }>;
+}
+
+const isUsableSubagentReport = (report: SubAgentReport): boolean =>
+  report.resultQuality === "complete" ||
+  report.resultQuality === "usable_partial";
+
+const unusableSubagentReason = (report: SubAgentReport): string | undefined => {
+  if (isUsableSubagentReport(report)) return undefined;
+  if (report.status === "failed") return report.error ?? "Sub-agent failed.";
+  if (report.status === "cancelled")
+    return report.error ?? "Sub-agent was cancelled.";
+  if (report.status === "timeout" || report.status === "token_limit") {
+    return "Sub-agent stopped before producing validated findings.";
+  }
+  return "Sub-agent produced no validated findings.";
+};
+
+export const shapeSubagentToolResult = ({
+  batchId,
+  goals,
+  reports,
+}: {
+  batchId: string;
+  goals: string[];
+  reports: SubAgentReport[];
+}): ShapedSubagentToolResult => {
+  const shapedReports = reports.map((report, index) => {
+    const usable = isUsableSubagentReport(report);
+    return {
+      goal: goals[index] ?? report.agentId,
+      status: report.status,
+      resultQuality: report.resultQuality,
+      usable,
+      summary: report.summary,
+      artifacts: report.artifacts,
+      usage: report.usage,
+      error: report.error,
+      unusableReason: usable ? undefined : unusableSubagentReason(report),
+    };
+  });
+  const complete = shapedReports.filter(
+    (report) => report.resultQuality === "complete",
+  ).length;
+  const partial = shapedReports.filter(
+    (report) => report.resultQuality === "usable_partial",
+  ).length;
+  const noResult = shapedReports.filter(
+    (report) => report.resultQuality === "no_result",
+  ).length;
+  const failed = shapedReports.filter(
+    (report) => report.status === "failed",
+  ).length;
+  return {
+    success: true,
+    batchId,
+    summary: {
+      total: shapedReports.length,
+      usable: complete + partial,
+      complete,
+      partial,
+      noResult,
+      failed,
+    },
+    reports: shapedReports,
+  };
+};
+
 interface SpawnSubagentDeps {
   sender: WebContents;
   /** 父任务 id —— 用于子事件路由(parentTaskId)。 */
@@ -499,19 +598,145 @@ interface SpawnSubagentDeps {
   parentAllowedSkills?: string[];
 }
 
-/**
- * 工具集子集求交:子 agent 的可用工具不能超过父 agent。
- *  - 子未指定 → 继承父集
- *  - 父=全部(undefined)→ 用子的请求
- *  - 两者都有 → 取交集
- */
+const SUBAGENT_DEFAULT_READ_ONLY_TOOLS = [
+  "listDirectory",
+  "readFile",
+  "directoryStats",
+  "searchFiles",
+  "getCacheStats",
+  "runCommand",
+  "runProcess",
+  "webFetch",
+  "webFetchRendered",
+  "webSearch",
+  "webScrape",
+  "youtubeTranscript",
+  "browserOpen",
+  "browserSnapshot",
+  "browserClose",
+] as const;
+
+const SUBAGENT_READ_ONLY_TOOL_SET = new Set<string>(
+  SUBAGENT_DEFAULT_READ_ONLY_TOOLS,
+);
+
+const SUBAGENT_RESEARCHER_DEFAULTS = {
+  maxTurns: 16,
+  maxTotalTokens: 180_000,
+  maxWallMs: 300_000,
+} as const;
+
+const SUBAGENT_TOOL_NAME_PREFIXES = [
+  "functions.",
+  "function.",
+  "tools.",
+  "tool.",
+] as const;
+
+const normalizeSubagentToolName = (toolName: string): string => {
+  const trimmed = toolName.trim();
+  const prefix = SUBAGENT_TOOL_NAME_PREFIXES.find((candidate) =>
+    trimmed.startsWith(candidate),
+  );
+  return prefix ? trimmed.slice(prefix.length) : trimmed;
+};
+
+const normalizeSubagentToolList = (
+  tools: string[] | undefined,
+): string[] | undefined =>
+  tools
+    ?.map((toolName) => normalizeSubagentToolName(toolName))
+    .filter((toolName) => toolName.length > 0);
+
 const intersectTools = (
   parent: string[] | undefined,
   requested: string[] | undefined,
 ): string[] | undefined => {
-  if (!requested) return parent;
-  if (!parent) return requested;
-  return requested.filter((t) => parent.includes(t));
+  const parentList = parent && parent.length > 0 ? parent : undefined;
+  const requestedList =
+    requested && requested.length > 0 ? requested : undefined;
+  if (!requestedList) return parentList;
+  if (!parentList) return requestedList;
+  return requestedList.filter((t) => parentList.includes(t));
+};
+
+/**
+ * 子 agent 默认只能获得读/查/抓取类工具。即便父 agent 或模型显式请求
+ * writeFile/deleteFile 等工具,这里也会过滤掉,使写入保持在 lead agent
+ * 的单写入者路径;需要改动时让子 agent 返回 patch artifact。shell
+ * 工具只用于只读检查,由 fork-skill-runner 的子 agent guard 二次拦截。
+ */
+export const resolveSubagentAllowedTools = (
+  parentAllowedTools: string[] | undefined,
+  requestedTools: string[] | undefined,
+): string[] => {
+  const normalizedParentTools = normalizeSubagentToolList(parentAllowedTools);
+  const normalizedRequestedTools = normalizeSubagentToolList(requestedTools);
+  const requestedList =
+    normalizedRequestedTools && normalizedRequestedTools.length > 0
+      ? normalizedRequestedTools
+      : undefined;
+  const parentReadOnlyTools = normalizedParentTools?.filter((toolName) =>
+    SUBAGENT_READ_ONLY_TOOL_SET.has(toolName),
+  );
+  const parentRestriction =
+    parentReadOnlyTools && parentReadOnlyTools.length > 0
+      ? parentReadOnlyTools
+      : undefined;
+
+  const candidates =
+    requestedList !== undefined
+      ? (intersectTools(parentRestriction, requestedList) ?? requestedList)
+      : (parentRestriction ?? [...SUBAGENT_DEFAULT_READ_ONLY_TOOLS]);
+  const readOnlyTools = candidates.filter((toolName) =>
+    SUBAGENT_READ_ONLY_TOOL_SET.has(toolName),
+  );
+  if (readOnlyTools.length > 0) return readOnlyTools;
+
+  // A model may pass `allowedTools: []` as an empty optional field, or a
+  // coordinator skill may expose only `spawnSubagent`. In both cases the
+  // useful sub-agent contract is still the built-in read-only grant.
+  if (requestedList === undefined) return [...SUBAGENT_DEFAULT_READ_ONLY_TOOLS];
+
+  return readOnlyTools;
+};
+
+export const resolveSubagentAllowedSkillIds = (
+  parentAllowedSkills: string[] | undefined,
+  requestedSkills: string[] | undefined,
+): string[] => {
+  if (!requestedSkills || requestedSkills.length === 0) return [];
+  if (!parentAllowedSkills || parentAllowedSkills.length === 0) return [];
+  const parentSkillSet = new Set(parentAllowedSkills);
+  return requestedSkills.filter((skillId) => parentSkillSet.has(skillId));
+};
+
+export const resolveSubagentTermination = (
+  profile: SubagentProfile | undefined,
+  overrides: {
+    maxTurns?: number;
+    maxTotalTokens?: number;
+    maxWallMs?: number;
+  },
+): Required<
+  Pick<
+    SubAgentContract["termination"],
+    "maxTurns" | "maxTotalTokens" | "maxWallMs"
+  >
+> => {
+  const defaults =
+    profile === "researcher"
+      ? SUBAGENT_RESEARCHER_DEFAULTS
+      : {
+          maxTurns: DEFAULT_SUB_AGENT_MAX_TURNS,
+          maxTotalTokens: DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
+          maxWallMs: DEFAULT_SUB_AGENT_MAX_WALL_MS,
+        };
+  return {
+    maxTurns: overrides.maxTurns ?? defaults.maxTurns,
+    maxTotalTokens: overrides.maxTotalTokens ?? defaults.maxTotalTokens,
+    maxWallMs: overrides.maxWallMs ?? defaults.maxWallMs,
+  };
 };
 
 /**
@@ -520,8 +745,8 @@ const intersectTools = (
  * tool-result 返回供模型下一回合消费。
  *
  * 设计要点:
- *  - 每个子 agent 走 fork-skill-runner → 同一套沙箱 / 审批 / 工具注册,
- *    天然继承父能力;allowedTools / allowedSkills 取父子交集,父级据此限制。
+ *  - 每个子 agent 走 fork-skill-runner → 同一套沙箱 / 审批 / 工具注册。
+ *    工具授权按只读子工具策略解析,父级只读白名单可进一步收紧。
  *  - 三硬上限(turn/token/wall)经 SubAgentContract.termination 下发,
  *    最终由 AgentLoop 强制。
  *  - 子事件通过 ai:subagent-* 通道(携带 parentTaskId)流回 UI,可观测。
@@ -548,8 +773,8 @@ const spawnSubagentTool = (
     "- Tasks needing back-and-forth with the user — sub-agents cannot ask the user questions.",
     "- Tasks with ordering dependencies — sub-agents run in parallel and cannot talk to each other; sequence those yourself across turns.",
     "",
-    "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents; allowedTools / allowedSkills can only be a SUBSET of yours.",
-    "RESULT: returns a `reports` array (one per task) with status / summary / artifacts. Synthesize them yourself for the user next turn.",
+    "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents; child tools are capped to read-only inspection and cannot include write, memory, automation, or delegation tools.",
+    "RESULT: returns summary counts and a `reports` array. Consume only reports where `usable=true`; `resultQuality=no_result` is diagnostic trace, not evidence.",
   ].join("\n"),
   safety: "destructive",
   inputSchema: spawnSubagentInputSchema,
@@ -566,16 +791,16 @@ const spawnSubagentTool = (
     // 先发 spawn 事件让 UI 立刻出现进度卡。
     const items = input.tasks.map((task, idx) => {
       const childTaskId = `${batchId}:${idx}`;
-      const allowedTools = intersectTools(
+      const allowedTools = resolveSubagentAllowedTools(
         deps.parentAllowedTools,
         task.allowedTools,
       );
-      // skill 子集:子请求 ∩ 父全集;再解析描述注入子 systemPrompt。
-      const childSkillIds = task.allowedSkills
-        ? task.allowedSkills.filter(
-            (s) => deps.parentAllowedSkills?.includes(s) ?? false,
-          )
-        : (deps.parentAllowedSkills ?? []);
+      // skill 子集:只有模型显式请求时才注入,避免把父级所有 skill
+      // 描述塞进每个 child 的初始上下文。
+      const childSkillIds = resolveSubagentAllowedSkillIds(
+        deps.parentAllowedSkills,
+        task.allowedSkills,
+      );
       const allowedSkills = childSkillIds
         .map((id) => {
           const sk = skillRegistry.getById(id);
@@ -589,6 +814,7 @@ const spawnSubagentTool = (
         buildSubagentSystemPrompt({
           workspacePath: deps.workspacePath,
           goal: task.goal,
+          profile: task.profile,
           allowedTools,
           allowedSkills,
         }),
@@ -598,13 +824,18 @@ const spawnSubagentTool = (
       const contract: SubAgentContract = {
         goal: task.goal,
         input: { prompt: task.prompt },
-        output: { format: task.outputFormat as SubAgentOutputFormat },
-        termination: {
-          maxTurns: task.maxTurns ?? DEFAULT_SUB_AGENT_MAX_TURNS,
-          maxTotalTokens:
-            task.maxTotalTokens ?? DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
-          maxWallMs: task.maxWallMs ?? DEFAULT_SUB_AGENT_MAX_WALL_MS,
+        output: {
+          format: task.outputFormat as SubAgentOutputFormat,
+          schema:
+            task.outputFormat === "json"
+              ? DEFAULT_SUB_AGENT_RESULT_SCHEMA
+              : undefined,
         },
+        termination: resolveSubagentTermination(task.profile, {
+          maxTurns: task.maxTurns,
+          maxTotalTokens: task.maxTotalTokens,
+          maxWallMs: task.maxWallMs,
+        }),
       };
 
       return {
@@ -652,21 +883,14 @@ const spawnSubagentTool = (
       },
     );
 
-    return {
-      success: true,
+    // reports 与 items 同序(runForkBatch 按 idx 回填),用 index 取回
+    // 派发时的 goal 文本,让父 agent 能把报告对应到它委派的任务
+    //(r.agentId 是合成的 childTaskId,对父 agent 无意义)。
+    return shapeSubagentToolResult({
       batchId,
-      // reports 与 items 同序(runForkBatch 按 idx 回填),用 index 取回
-      // 派发时的 goal 文本,让父 agent 能把报告对应到它委派的任务
-      //(r.agentId 是合成的 childTaskId,对父 agent 无意义)。
-      reports: result.reports.map((r, i) => ({
-        goal: input.tasks[i]?.goal ?? r.agentId,
-        status: r.status,
-        summary: r.summary,
-        artifacts: r.artifacts,
-        usage: r.usage,
-        error: r.error,
-      })),
-    };
+      goals: input.tasks.map((task) => task.goal),
+      reports: result.reports,
+    });
   },
 });
 

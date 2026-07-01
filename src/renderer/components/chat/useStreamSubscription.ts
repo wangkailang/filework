@@ -15,6 +15,7 @@ import {
 } from "./context-compression-part";
 import { contentFromParts } from "./helpers";
 import type { SkillApprovalData } from "./SkillApprovalDialog";
+import { createSubagentChildren } from "./subagent-state";
 import type {
   ActiveSkillInfo,
   ArticleMetaPart,
@@ -956,6 +957,9 @@ export function useStreamSubscription({
       });
     };
 
+    const markRunning = (child: SubagentChildView): SubagentChildView =>
+      child.status === "queued" ? { ...child, status: "running" } : child;
+
     const offSubagentSpawn = window.filework.onSubagentSpawn(
       ({ parentTaskId, batchId, toolCallId, concurrency, children }) => {
         if (!canRouteTask(parentTaskId)) return;
@@ -967,18 +971,7 @@ export function useStreamSubscription({
             batchId,
             toolCallId,
             concurrency,
-            children: children.map((c) => ({
-              childTaskId: c.childTaskId,
-              goal: c.goal,
-              status: "running",
-              stepCount: 0,
-              toolCalls: [],
-              usage: {
-                inputTokens: null,
-                outputTokens: null,
-                totalTokens: null,
-              },
-            })),
+            children: createSubagentChildren(children, concurrency),
           });
           return parts;
         });
@@ -990,6 +983,7 @@ export function useStreamSubscription({
       ({ parentTaskId, batchId, childTaskId, delta }) => {
         if (!canRouteTask(parentTaskId)) return;
         updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
+          const runningChild = markRunning(c);
           const parts = c.parts ? [...c.parts] : [];
           const last = parts[parts.length - 1];
           if (last && last.type === "text") {
@@ -997,7 +991,7 @@ export function useStreamSubscription({
           } else {
             parts.push({ type: "text", text: delta });
           }
-          return { ...c, parts };
+          return { ...runningChild, parts };
         });
       },
     );
@@ -1006,6 +1000,7 @@ export function useStreamSubscription({
       ({ parentTaskId, batchId, childTaskId, toolCallId, toolName, args }) => {
         if (!canRouteTask(parentTaskId)) return;
         updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
+          const runningChild = markRunning(c);
           const parts = c.parts ? [...c.parts] : [];
           if (
             !parts.some((p) => p.type === "tool" && p.toolCallId === toolCallId)
@@ -1019,7 +1014,7 @@ export function useStreamSubscription({
             });
           }
           return {
-            ...c,
+            ...runningChild,
             stepCount: c.stepCount + 1,
             toolCalls: c.toolCalls.some((t) => t.toolCallId === toolCallId)
               ? c.toolCalls
@@ -1046,35 +1041,41 @@ export function useStreamSubscription({
         const nextState = isFailure
           ? ("output-error" as const)
           : ("output-available" as const);
-        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => ({
-          ...c,
-          toolCalls: c.toolCalls.map((t) =>
-            t.toolCallId === toolCallId ? { ...t, state: nextState } : t,
-          ),
-          parts: c.parts?.map((p) =>
-            p.type === "tool" && p.toolCallId === toolCallId
-              ? { ...p, result, state: nextState }
-              : p,
-          ),
-        }));
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
+          const runningChild = markRunning(c);
+          return {
+            ...runningChild,
+            toolCalls: c.toolCalls.map((t) =>
+              t.toolCallId === toolCallId ? { ...t, state: nextState } : t,
+            ),
+            parts: c.parts?.map((p) =>
+              p.type === "tool" && p.toolCallId === toolCallId
+                ? { ...p, result, state: nextState }
+                : p,
+            ),
+          };
+        });
       },
     );
 
     const offSubagentChildUsage = window.filework.onSubagentChildUsage(
       ({ parentTaskId, batchId, childTaskId, usage }) => {
         if (!canRouteTask(parentTaskId)) return;
-        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => ({
-          ...c,
-          usage: {
-            inputTokens: usage?.inputTokens ?? c.usage.inputTokens,
-            outputTokens: usage?.outputTokens ?? c.usage.outputTokens,
-            totalTokens:
-              usage?.totalTokens ??
-              (usage?.inputTokens != null || usage?.outputTokens != null
-                ? (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-                : c.usage.totalTokens),
-          },
-        }));
+        updateSubagentChild(parentTaskId, batchId, childTaskId, (c) => {
+          const runningChild = markRunning(c);
+          return {
+            ...runningChild,
+            usage: {
+              inputTokens: usage?.inputTokens ?? c.usage.inputTokens,
+              outputTokens: usage?.outputTokens ?? c.usage.outputTokens,
+              totalTokens:
+                usage?.totalTokens ??
+                (usage?.inputTokens != null || usage?.outputTokens != null
+                  ? (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
+                  : c.usage.totalTokens),
+            },
+          };
+        });
       },
     );
 
@@ -1085,6 +1086,8 @@ export function useStreamSubscription({
           ...c,
           status: report.status,
           summary: report.summary || c.summary,
+          resultQuality: report.resultQuality ?? c.resultQuality,
+          artifacts: report.artifacts ?? c.artifacts,
           error: report.error,
           durationMs: report.durationMs,
           usage: {

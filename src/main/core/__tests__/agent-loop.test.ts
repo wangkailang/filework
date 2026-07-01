@@ -515,6 +515,32 @@ describe("AgentLoop", () => {
     expect(end.error).toBeUndefined();
   });
 
+  it("preserves streamed text in agent_end when abort happens before finish-step", async () => {
+    const abortErr = new Error("aborted");
+    abortErr.name = "AbortError";
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "RESULT_JSON\n" },
+        { type: "text-delta", text: '{"status":"complete"}' },
+      ],
+      throwAfter: abortErr,
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+    });
+
+    const events = await collect(loop, "p");
+    const end = events[events.length - 1];
+    if (end.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("cancelled");
+    expect(end.finalText).toBe('RESULT_JSON\n{"status":"complete"}');
+  });
+
   it("translates other errors into agent_end{failed}", async () => {
     scriptedRuns.push({
       parts: [{ type: "start-step" }],

@@ -329,15 +329,66 @@ export const buildAgentSystemPrompt = ({
   return sections.join("\n");
 };
 
+export const SUBAGENT_PROFILE_VALUES = [
+  "researcher",
+  "code_reviewer",
+  "test_analyst",
+  "doc_summarizer",
+] as const;
+
+export type SubagentProfile = (typeof SUBAGENT_PROFILE_VALUES)[number];
+
+const SUBAGENT_PROFILE_PROMPTS: Record<
+  SubagentProfile,
+  { title: string; guidance: string[] }
+> = {
+  researcher: {
+    title: "Researcher",
+    guidance: [
+      "Produce source-backed findings. Prefer verified evidence over broad commentary.",
+      "Cite the concrete source, file, URL, command, or artifact behind each important claim.",
+      "Separate confirmed facts from inferences and call out missing or stale evidence.",
+    ],
+  },
+  code_reviewer: {
+    title: "Code Reviewer",
+    guidance: [
+      "Prioritize bugs, regressions, security risks, missing tests, and behavioral breakage.",
+      "Anchor findings in concrete files, line references, diffs, commands, or reproducible evidence.",
+      "Keep summaries secondary; lead with actionable issues and severity.",
+    ],
+  },
+  test_analyst: {
+    title: "Test Analyst",
+    guidance: [
+      "Focus on failure reproduction, minimal failing inputs, and the narrowest command that proves the behavior.",
+      "Distinguish test setup errors from product regressions and note which evidence supports that split.",
+      "Return the smallest next verification step when the cause is not fully proven.",
+    ],
+  },
+  doc_summarizer: {
+    title: "Document Summarizer",
+    guidance: [
+      "Preserve the source structure and terminology when it carries meaning.",
+      "Stay faithful to the source; do not add unstated conclusions or product claims.",
+      "Extract decisions, requirements, risks, and open questions in a compact form.",
+    ],
+  },
+};
+
 interface BuildSubagentSystemPromptOptions {
   workspacePath: string;
   /** 由 Lead 委派的一句话目标。 */
   goal: string;
-  /** 子 agent 被授权的工具名(已是父集子集)。空 → 仅推理无工具。 */
+  /** 可选角色模板,用于给一次性子 agent 注入更聚焦的工作纪律。 */
+  profile?: SubagentProfile;
+  /** 子 agent 被授权的检查工具名(已是父集子集)。提交结果工具会固定注入。 */
   allowedTools?: string[];
   /** 可选注入的 skill 描述(id → description),供子 agent 知晓可用能力。 */
   allowedSkills?: Array<{ id: string; description: string }>;
 }
+
+const SUBAGENT_RESULT_SUBMIT_TOOL_NAME = "submitSubagentResult";
 
 /**
  * 子 agent(subagent)的系统提示词。刻意精简:子 agent 是一次性、聚焦、
@@ -349,6 +400,7 @@ interface BuildSubagentSystemPromptOptions {
 export const buildSubagentSystemPrompt = ({
   workspacePath,
   goal,
+  profile,
   allowedTools,
   allowedSkills,
 }: BuildSubagentSystemPromptOptions): string => {
@@ -362,12 +414,60 @@ export const buildSubagentSystemPrompt = ({
     `## Goal\n${goal}`,
   ];
 
-  if (allowedTools && allowedTools.length > 0) {
-    sections.push("", `## Available tools\n${allowedTools.join(", ")}`);
+  if (profile) {
+    const profilePrompt = SUBAGENT_PROFILE_PROMPTS[profile];
+    sections.push(
+      "",
+      `## Profile: ${profilePrompt.title}`,
+      profilePrompt.guidance.map((line) => `- ${line}`).join("\n"),
+    );
+  }
+
+  const inspectionTools = allowedTools ?? [];
+  const visibleTools = [
+    ...inspectionTools.filter(
+      (toolName) => toolName !== SUBAGENT_RESULT_SUBMIT_TOOL_NAME,
+    ),
+    SUBAGENT_RESULT_SUBMIT_TOOL_NAME,
+  ];
+  sections.push("", `## Available tools\n${visibleTools.join(", ")}`);
+
+  if (inspectionTools.length > 0) {
+    if (
+      inspectionTools.includes("readFile") ||
+      inspectionTools.includes("runCommand") ||
+      inspectionTools.includes("runProcess") ||
+      inspectionTools.includes("searchFiles")
+    ) {
+      sections.push(
+        "",
+        [
+          "## Context Budget",
+          "- Do not read large files wholesale. Prefer `rg`, `searchFiles`, `wc -l`, and small targeted snippets before using `readFile`.",
+          "- Keep shell evidence short: cap `sed`, `nl -ba`, `head`, `tail`, and similar commands to about 200 lines or less.",
+          "- Avoid broad dumps such as full `nl -ba` over large files, recursive listings without filters, or commands that print entire source files.",
+          "- Reserve enough final-answer budget. Stop collecting evidence once you have enough concrete sources, or as soon as budget feels tight; call `submitSubagentResult` instead of continuing exploration.",
+        ].join("\n"),
+      );
+    }
+    if (
+      inspectionTools.includes("runCommand") ||
+      inspectionTools.includes("runProcess")
+    ) {
+      sections.push(
+        "",
+        [
+          "## Shell limits",
+          "- Shell access is read-only shell inspection only: use it for bounded `find`, `rg`, `ls`, `du`, `git status`, or similar evidence-gathering commands.",
+          "- No writes: do not create, modify, delete, move, archive, install, format, or redirect output into workspace files.",
+          "- No permission escalation, background processes, servers, package installs, or long-running commands.",
+        ].join("\n"),
+      );
+    }
   } else {
     sections.push(
       "",
-      "## Available tools\n(none — reason from the information already in your prompt)",
+      "No inspection tools are available. If the prompt is insufficient, call `submitSubagentResult` with `status: no_result` and a concise `failureReason`.",
     );
   }
 
@@ -379,6 +479,17 @@ export const buildSubagentSystemPrompt = ({
   }
 
   sections.push(
+    "",
+    [
+      "## Result Contract",
+      "- Call `submitSubagentResult` as soon as you have at least one evidence-backed finding; do not wait until the end of exploration.",
+      "- Before running another inspection tool after you have one evidence-backed finding, call `submitSubagentResult` first with `status: partial`.",
+      "- If you cannot call tools or the submit tool is unavailable, your final answer MUST include `RESULT_JSON` followed by one fenced `json` object as a fallback.",
+      '- Schema: `{ "status": "complete|partial|no_result", "coverage": ["paths or sources inspected"], "findings": [{ "claim": "validated finding", "evidence": ["file, command, URL, or artifact"] }], "evidence": ["optional additional concrete sources"], "missing": ["known gaps"], "failureReason": "null or concise reason" }`.',
+      "- Use `status: partial` only when `findings` contains at least one claim backed by concrete evidence.",
+      "- Use `status: no_result` when you only have a startup summary, process note, blocker, or unverified guess. A startup summary is not a result.",
+      "- Keep prose short; the lead consumes the JSON artifact first.",
+    ].join("\n"),
     "",
     "## Rules",
     "- Work only toward the goal above. Do not expand scope.",

@@ -6,6 +6,7 @@ import {
   buildGitPrinciples,
   buildGitRunCommandProtocol,
   buildPlanStepSystemPrompt,
+  buildSubagentSystemPrompt,
   formatCurrentDate,
   formatLocaleContext,
 } from "../system-prompt";
@@ -347,6 +348,104 @@ describe("buildAgentSystemPrompt", () => {
     });
     expect(prompt).toContain("readFile, listDirectory");
     expect(prompt).toContain("工具限制");
+  });
+});
+
+describe("buildSubagentSystemPrompt", () => {
+  it("injects focused researcher guidance while preserving delegation limits", () => {
+    const prompt = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Compare three libraries",
+      profile: "researcher",
+      allowedTools: ["webSearch", "readFile"],
+    });
+
+    expect(prompt).toContain("## Profile: Researcher");
+    expect(prompt).toMatch(/source-backed/i);
+    expect(prompt).toMatch(/cite|evidence/i);
+    expect(prompt).toContain("You CANNOT delegate");
+  });
+
+  it("injects distinct guidance for code review, test analysis, and document summarization", () => {
+    const reviewer = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Review the diff",
+      profile: "code_reviewer",
+    });
+    const tester = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Analyze failing tests",
+      profile: "test_analyst",
+    });
+    const docs = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Summarize the docs",
+      profile: "doc_summarizer",
+    });
+
+    expect(reviewer).toContain("## Profile: Code Reviewer");
+    expect(reviewer).toMatch(/bugs|regressions|line/i);
+    expect(tester).toContain("## Profile: Test Analyst");
+    expect(tester).toMatch(/failure|reproduction|minimal/i);
+    expect(docs).toContain("## Profile: Document Summarizer");
+    expect(docs).toMatch(/structure|faithful|source/i);
+  });
+
+  it("announces read-only shell limits when subagents receive shell tools", () => {
+    const prompt = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Inspect repository structure",
+      allowedTools: ["runCommand", "runProcess", "readFile"],
+    });
+
+    expect(prompt).toMatch(/read-only shell/i);
+    expect(prompt).toMatch(/no writes/i);
+    expect(prompt).toMatch(/no permission escalation/i);
+  });
+
+  it("warns subagents to keep file and command evidence bounded", () => {
+    const prompt = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Analyze a large directory",
+      profile: "researcher",
+      allowedTools: ["runCommand", "readFile", "searchFiles"],
+    });
+
+    expect(prompt).toMatch(/Context Budget/i);
+    expect(prompt).toMatch(/Do not read large files wholesale/i);
+    expect(prompt).toMatch(/200 lines/i);
+    expect(prompt).toMatch(/nl -ba/i);
+    expect(prompt).toMatch(/Stop collecting evidence/i);
+  });
+
+  it("requires a validated result artifact and reserves final-answer budget", () => {
+    const prompt = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Analyze a large directory",
+      profile: "researcher",
+      allowedTools: ["runCommand", "readFile", "searchFiles"],
+    });
+
+    expect(prompt).toContain("submitSubagentResult");
+    expect(prompt).toMatch(/Call `submitSubagentResult`/i);
+    expect(prompt).toContain("RESULT_JSON");
+    expect(prompt).toMatch(/complete\|partial\|no_result/);
+    expect(prompt).toMatch(/findings/i);
+    expect(prompt).toMatch(/evidence/i);
+    expect(prompt).toMatch(/Reserve.*final/i);
+    expect(prompt).toMatch(/startup summary/i);
+    expect(prompt).toMatch(/before running another inspection tool/i);
+  });
+
+  it("announces submitSubagentResult as an available subagent tool", () => {
+    const prompt = buildSubagentSystemPrompt({
+      workspacePath: WORKSPACE,
+      goal: "Report whether the prompt is enough to answer.",
+    });
+
+    expect(prompt).toContain("## Available tools\nsubmitSubagentResult");
+    expect(prompt).not.toContain("## Available tools\n(none");
+    expect(prompt).toMatch(/submit.*no_result/i);
   });
 });
 

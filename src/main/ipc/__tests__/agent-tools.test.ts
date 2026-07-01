@@ -11,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildAgentToolRegistry,
+  resolveSubagentAllowedSkillIds,
+  resolveSubagentAllowedTools,
+  resolveSubagentTermination,
+  shapeSubagentToolResult,
   shouldEnableMemoryToolsForPrompt,
 } from "../agent-tools";
 import {
@@ -54,14 +58,14 @@ describe("askClarification tool — blocks until user answers", () => {
     } as unknown as WebContents;
     const registry = buildAgentToolRegistry({ sender, taskId });
     const tool = registry.get("askClarification") as ToolLike | undefined;
+    if (!tool) throw new Error("askClarification tool was not registered");
     return { tool, sendSpy };
   };
 
   it("returns an unresolved Promise until drainClarificationResolver is called", async () => {
     const { tool, sendSpy } = setupTool("task-clarify-1");
-    expect(tool).toBeDefined();
 
-    const callPromise = tool!.execute(
+    const callPromise = tool.execute(
       { question: "Which?", options: ["A", "B"] },
       {} as unknown,
     );
@@ -90,7 +94,7 @@ describe("askClarification tool — blocks until user answers", () => {
 
   it("rejects when drained with null (task stopped / cancelled)", async () => {
     const { tool, sendSpy } = setupTool("task-clarify-2");
-    const callPromise = tool!.execute(
+    const callPromise = tool.execute(
       { question: "Pick", options: [] },
       {} as unknown,
     );
@@ -102,7 +106,7 @@ describe("askClarification tool — blocks until user answers", () => {
   it("emits ai:stream-clarification with id (taskId), clarificationId, question + filtered options", async () => {
     const tid = "task-clarify-3";
     const { tool, sendSpy } = setupTool(tid);
-    const callPromise = tool!.execute(
+    const callPromise = tool.execute(
       { question: "Lang?", options: ["Python", "", "Go"] },
       {} as unknown,
     );
@@ -129,8 +133,8 @@ describe("askClarification tool — blocks until user answers", () => {
     // 调用会覆盖第一个 resolver,使第一个 Promise 永远挂起。
     const tid = "task-clarify-4";
     const { tool, sendSpy } = setupTool(tid);
-    const p1 = tool!.execute({ question: "Q1" }, {} as unknown);
-    const p2 = tool!.execute({ question: "Q2" }, {} as unknown);
+    const p1 = tool.execute({ question: "Q1" }, {} as unknown);
+    const p2 = tool.execute({ question: "Q2" }, {} as unknown);
 
     expect(sendSpy).toHaveBeenCalledTimes(2);
     const cid1 = (sendSpy.mock.calls[0]?.[1] as { clarificationId: string })
@@ -149,8 +153,8 @@ describe("askClarification tool — blocks until user answers", () => {
   it("drainClarificationsForTask sweeps every clarification belonging to a task", async () => {
     const tid = "task-clarify-5";
     const { tool, sendSpy } = setupTool(tid);
-    const p1 = tool!.execute({ question: "Q1" }, {} as unknown);
-    const p2 = tool!.execute({ question: "Q2" }, {} as unknown);
+    const p1 = tool.execute({ question: "Q1" }, {} as unknown);
+    const p2 = tool.execute({ question: "Q2" }, {} as unknown);
     expect(pendingClarifications.size).toBe(2);
     drainClarificationsForTask(tid);
     expect(pendingClarifications.size).toBe(0);
@@ -163,8 +167,8 @@ describe("askClarification tool — blocks until user answers", () => {
   it("drainClarificationsForTask leaves OTHER tasks' clarifications alone", async () => {
     const { tool: tA, sendSpy: sA } = setupTool("task-A");
     const { tool: tB, sendSpy: sB } = setupTool("task-B");
-    const pA = tA!.execute({ question: "QA" }, {} as unknown);
-    const pB = tB!.execute({ question: "QB" }, {} as unknown);
+    const pA = tA.execute({ question: "QA" }, {} as unknown);
+    const pB = tB.execute({ question: "QB" }, {} as unknown);
     expect(pendingClarifications.size).toBe(2);
     drainClarificationsForTask("task-A");
     expect(pendingClarifications.size).toBe(1);
@@ -326,6 +330,212 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
       allowedTools: ["readFile"],
     });
     expect(registry.has("spawnSubagent")).toBe(false);
+  });
+
+  it("schema preserves supported subagent profiles and rejects unknown profiles", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "main-profile",
+      enableSubagent: true,
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const tool = registry.get("spawnSubagent");
+    if (!tool) throw new Error("spawnSubagent tool was not registered");
+
+    const parsed = tool.inputSchema.safeParse({
+      tasks: [
+        {
+          goal: "Research current options",
+          prompt: "Find source-backed options and summarize tradeoffs.",
+          profile: "researcher",
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const parsedData = parsed.data as {
+      tasks: Array<{ profile?: string }>;
+    };
+    expect(parsedData.tasks[0]?.profile).toBe("researcher");
+
+    const invalid = tool.inputSchema.safeParse({
+      tasks: [
+        {
+          goal: "Do mystery work",
+          prompt: "Use an unknown specialist mode.",
+          profile: "mystery_agent",
+        },
+      ],
+    });
+    expect(invalid.success).toBe(false);
+  });
+
+  it("filters direct-write tools out of subagent grants by default", () => {
+    expect(
+      resolveSubagentAllowedTools(undefined, [
+        "readFile",
+        "searchFiles",
+        "writeFile",
+        "deleteFile",
+        "runCommand",
+        "runProcess",
+        "updateMemory",
+      ]),
+    ).toEqual(["readFile", "searchFiles", "runCommand", "runProcess"]);
+
+    expect(
+      resolveSubagentAllowedTools(
+        ["readFile", "writeFile", "moveFile", "webSearch", "runCommand"],
+        undefined,
+      ),
+    ).toEqual(["readFile", "webSearch", "runCommand"]);
+
+    const defaultTools = resolveSubagentAllowedTools(undefined, undefined);
+    expect(defaultTools).toContain("readFile");
+    expect(defaultTools).toContain("listDirectory");
+    expect(defaultTools).toContain("webSearch");
+    expect(defaultTools).toContain("runCommand");
+    expect(defaultTools).toContain("runProcess");
+    expect(defaultTools).not.toContain("writeFile");
+    expect(defaultTools).not.toContain("automation_update");
+  });
+
+  it("treats an empty requested allowedTools array as omitted so subagents still get default read-only tools", () => {
+    const tools = resolveSubagentAllowedTools(undefined, []);
+
+    expect(tools).toContain("readFile");
+    expect(tools).toContain("listDirectory");
+    expect(tools).toContain("runCommand");
+    expect(tools).not.toContain("writeFile");
+  });
+
+  it("keeps spawnSubagent useful when the parent grant only contains the delegation tool", () => {
+    const tools = resolveSubagentAllowedTools(["spawnSubagent"], undefined);
+
+    expect(tools).toContain("readFile");
+    expect(tools).toContain("listDirectory");
+    expect(tools).toContain("runCommand");
+    expect(tools).not.toContain("spawnSubagent");
+  });
+
+  it("does not let a delegation-only parent grant erase explicit read-only child tool requests", () => {
+    const tools = resolveSubagentAllowedTools(
+      ["spawnSubagent"],
+      ["readFile", "runCommand", "writeFile"],
+    );
+
+    expect(tools).toEqual(["readFile", "runCommand"]);
+  });
+
+  it("normalizes provider-prefixed tool names before resolving subagent grants", () => {
+    const tools = resolveSubagentAllowedTools(undefined, [
+      "functions.listDirectory",
+      "functions.readFile",
+      "functions.searchFiles",
+      "functions.runCommand",
+      "functions.writeFile",
+      "functions.spawnSubagent",
+    ]);
+
+    expect(tools).toEqual([
+      "listDirectory",
+      "readFile",
+      "searchFiles",
+      "runCommand",
+    ]);
+  });
+
+  it("does not inject parent skills into subagents unless explicitly requested", () => {
+    expect(
+      resolveSubagentAllowedSkillIds(["pdf", "browser"], undefined),
+    ).toEqual([]);
+    expect(resolveSubagentAllowedSkillIds(["pdf", "browser"], [])).toEqual([]);
+    expect(
+      resolveSubagentAllowedSkillIds(["pdf", "browser"], ["browser", "write"]),
+    ).toEqual(["browser"]);
+  });
+
+  it("uses larger default limits for researcher subagents while preserving explicit overrides", () => {
+    expect(resolveSubagentTermination("researcher", {})).toEqual({
+      maxTurns: 16,
+      maxTotalTokens: 180_000,
+      maxWallMs: 300_000,
+    });
+    expect(
+      resolveSubagentTermination("code_reviewer", {
+        maxTurns: undefined,
+        maxTotalTokens: undefined,
+        maxWallMs: undefined,
+      }),
+    ).toMatchObject({
+      maxTurns: expect.any(Number),
+      maxTotalTokens: expect.any(Number),
+      maxWallMs: expect.any(Number),
+    });
+    expect(
+      resolveSubagentTermination("researcher", {
+        maxTurns: 4,
+        maxTotalTokens: 10_000,
+        maxWallMs: 30_000,
+      }),
+    ).toEqual({
+      maxTurns: 4,
+      maxTotalTokens: 10_000,
+      maxWallMs: 30_000,
+    });
+  });
+
+  it("marks only complete or usable partial reports as usable for the parent agent", () => {
+    const result = shapeSubagentToolResult({
+      batchId: "batch-usable",
+      goals: ["done", "partial", "startup"],
+      reports: [
+        {
+          agentId: "child-1",
+          status: "ok",
+          resultQuality: "complete",
+          summary: "Done.",
+          artifacts: { status: "complete", findings: [{ claim: "A" }] },
+          usage: { inputTokens: null, outputTokens: null, totalTokens: null },
+          toolCallCount: 1,
+          durationMs: 100,
+        },
+        {
+          agentId: "child-2",
+          status: "token_limit",
+          resultQuality: "usable_partial",
+          summary: "Partial.",
+          artifacts: { status: "partial", findings: [{ claim: "B" }] },
+          usage: { inputTokens: null, outputTokens: null, totalTokens: null },
+          toolCallCount: 2,
+          durationMs: 200,
+        },
+        {
+          agentId: "child-3",
+          status: "token_limit",
+          resultQuality: "no_result",
+          summary: "I will start.",
+          usage: { inputTokens: null, outputTokens: null, totalTokens: null },
+          toolCallCount: 0,
+          durationMs: 300,
+        },
+      ],
+    });
+
+    expect(result.summary).toEqual({
+      total: 3,
+      usable: 2,
+      complete: 1,
+      partial: 1,
+      noResult: 1,
+      failed: 0,
+    });
+    expect(result.reports.map((r) => r.usable)).toEqual([true, true, false]);
+    expect(result.reports[2]).toMatchObject({
+      resultQuality: "no_result",
+      unusableReason: "Sub-agent stopped before producing validated findings.",
+    });
   });
 });
 

@@ -92,4 +92,99 @@ describe("SubagentTracePanel", () => {
     expect(html).toContain("runCommand");
     expect(html).not.toContain("Subagent command failed");
   });
+
+  it("shows only usable truncated child results as partial completion", () => {
+    state.messages = [
+      {
+        id: "assistant-subagent",
+        sessionId: "session-1",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-06-23T11:07:00.000Z",
+        parts: [
+          {
+            type: "subagent",
+            batchId: "batch-1",
+            toolCallId: "spawn-1",
+            concurrency: 1,
+            children: [
+              {
+                childTaskId: "child-1",
+                goal: "分析目录",
+                status: "token_limit",
+                stepCount: 3,
+                toolCalls: [],
+                usage: {
+                  inputTokens: null,
+                  outputTokens: null,
+                  totalTokens: null,
+                },
+                summary: "已有摘要",
+                resultQuality: "usable_partial",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      <SubagentTracePanel
+        batchId="batch-1"
+        childTaskId="child-1"
+        workspacePath="/workspace"
+      />,
+    );
+
+    expect(html).toContain("部分完成");
+    expect(html).not.toContain("token 超限");
+  });
+
+  it("shows truncated child results with no usable artifact as no result", () => {
+    state.messages = [
+      {
+        id: "assistant-subagent",
+        sessionId: "session-1",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-06-23T11:07:00.000Z",
+        parts: [
+          {
+            type: "subagent",
+            batchId: "batch-1",
+            toolCallId: "spawn-1",
+            concurrency: 1,
+            children: [
+              {
+                childTaskId: "child-1",
+                goal: "分析目录",
+                status: "token_limit",
+                stepCount: 1,
+                toolCalls: [],
+                usage: {
+                  inputTokens: null,
+                  outputTokens: null,
+                  totalTokens: null,
+                },
+                summary: "我会先分析目录。",
+                resultQuality: "no_result",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      <SubagentTracePanel
+        batchId="batch-1"
+        childTaskId="child-1"
+        workspacePath="/workspace"
+      />,
+    );
+
+    expect(html).toContain("已截断");
+    expect(html).toContain("未产出可采纳结论");
+    expect(html).not.toContain("部分完成");
+  });
 });
