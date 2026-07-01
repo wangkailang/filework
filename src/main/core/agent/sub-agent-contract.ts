@@ -3,11 +3,30 @@
 // Lead 在下一回合将其作为 tool-result 消费。
 
 import type { ModelMessage } from "ai";
-import type { z } from "zod/v4";
+import { z } from "zod/v4";
 import type { AttachmentHistoryEntry } from "../../ai/attachments";
 import type { TokenUsage } from "./events";
 
 export type SubAgentOutputFormat = "summary" | "json" | "patch" | "answer";
+export type SubAgentResultQuality = "complete" | "usable_partial" | "no_result";
+
+export const DEFAULT_SUB_AGENT_RESULT_SCHEMA = z
+  .object({
+    status: z.enum(["complete", "partial", "no_result"]),
+    coverage: z.array(z.string().min(1)).default([]),
+    findings: z
+      .array(
+        z.object({
+          claim: z.string().min(1),
+          evidence: z.array(z.string().min(1)).default([]),
+        }),
+      )
+      .default([]),
+    evidence: z.array(z.string().min(1)).default([]),
+    missing: z.array(z.string()).default([]),
+    failureReason: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export interface SubAgentContract {
   /** 用一句话陈述该 sub-agent 必须完成的目标。 */
@@ -38,7 +57,7 @@ export interface SubAgentContract {
     maxTurns?: number;
     /** 墙钟时间上限(毫秒)。默认 120_000。 */
     maxWallMs?: number;
-    /** 累计 token 上限(input+output)。映射到 AgentLoop.maxTotalTokens。默认 60_000。 */
+    /** 累计 token 上限(input+output)。映射到 AgentLoop.maxTotalTokens。默认 120_000。 */
     maxTotalTokens?: number;
     /** 若助手文本包含其中任一子串,则提前停止。 */
     stopOn?: string[];
@@ -55,6 +74,11 @@ export type SubAgentStatus =
 export interface SubAgentReport {
   agentId: string;
   status: SubAgentStatus;
+  /**
+   * Runtime status answers "how did the run stop"; resultQuality answers
+   * "can the lead safely consume this as evidence?".
+   */
+  resultQuality: SubAgentResultQuality;
   /** 压缩后的自然语言摘要。始终存在。 */
   summary: string;
   /** format=json/patch 时的结构化载荷。会针对 contract.output.schema 做校验。 */
@@ -70,7 +94,7 @@ export const DEFAULT_SUB_AGENT_MAX_TOKENS = 1500;
 export const DEFAULT_SUB_AGENT_MAX_WALL_MS = 120_000;
 export const DEFAULT_SUB_AGENT_MAX_TURNS = 10;
 /** 子 agent 累计 token 硬上限默认值(input+output)。 */
-export const DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS = 60_000;
+export const DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS = 120_000;
 
 export interface BuildReportInput {
   agentId: string;
@@ -86,6 +110,49 @@ export interface BuildReportInput {
   precomputedSummary?: string;
   error?: string;
 }
+
+const isTerminalRuntimeIssue = (status: SubAgentStatus): boolean =>
+  status === "timeout" || status === "token_limit";
+
+const hasUsableDefaultArtifact = (
+  artifacts: Record<string, unknown> | undefined,
+): { usable: boolean; quality: SubAgentResultQuality } | null => {
+  if (!artifacts) return null;
+  const parsed = DEFAULT_SUB_AGENT_RESULT_SCHEMA.safeParse(artifacts);
+  if (!parsed.success) return null;
+  const hasFindings = parsed.data.findings.length > 0;
+  const hasEvidence = parsed.data.evidence.length > 0;
+  if (parsed.data.status === "no_result" || (!hasFindings && !hasEvidence)) {
+    return { usable: false, quality: "no_result" };
+  }
+  if (parsed.data.status === "partial") {
+    return { usable: true, quality: "usable_partial" };
+  }
+  return { usable: true, quality: "complete" };
+};
+
+const classifyResultQuality = ({
+  status,
+  artifacts,
+  summary,
+}: {
+  status: SubAgentStatus;
+  artifacts: Record<string, unknown> | undefined;
+  summary: string;
+}): SubAgentResultQuality => {
+  const defaultArtifactQuality = hasUsableDefaultArtifact(artifacts);
+  if (defaultArtifactQuality) {
+    if (!defaultArtifactQuality.usable) return "no_result";
+    return status === "ok" && defaultArtifactQuality.quality === "complete"
+      ? "complete"
+      : "usable_partial";
+  }
+  if (status === "ok") {
+    return summary.trim().length > 0 ? "complete" : "no_result";
+  }
+  if (isTerminalRuntimeIssue(status)) return "no_result";
+  return "no_result";
+};
 
 /**
  * 从一次已结束的 AgentLoop 运行中物化出 `SubAgentReport`。
@@ -116,19 +183,21 @@ export function buildReport(input: BuildReportInput): SubAgentReport {
   let finalStatus = status;
   let finalError = error;
 
-  if (status === "ok" && contract.output.format === "json") {
+  if (contract.output.format === "json") {
     if (!contract.output.schema) {
       finalStatus = "failed";
       finalError =
         "contract.output.schema is required when format=json but was not provided";
     } else if (candidateArtifacts === undefined) {
-      finalStatus = "failed";
-      finalError = "format=json contract produced no parseable artifacts";
+      if (status === "ok") {
+        finalStatus = "failed";
+        finalError = "format=json contract produced no parseable artifacts";
+      }
     } else {
       const parsed = contract.output.schema.safeParse(candidateArtifacts);
       if (parsed.success) {
         artifacts = parsed.data as Record<string, unknown>;
-      } else {
+      } else if (status === "ok") {
         finalStatus = "failed";
         finalError = `sub-agent artifacts failed schema validation: ${parsed.error.message}`;
       }
@@ -137,9 +206,16 @@ export function buildReport(input: BuildReportInput): SubAgentReport {
     artifacts = candidateArtifacts;
   }
 
+  const resultQuality = classifyResultQuality({
+    status: finalStatus,
+    artifacts,
+    summary,
+  });
+
   return {
     agentId,
     status: finalStatus,
+    resultQuality,
     summary,
     artifacts,
     usage: usage ?? {
@@ -157,7 +233,8 @@ export function buildReport(input: BuildReportInput): SubAgentReport {
  * 面向 format=json 的尽力而为型 `candidateArtifacts` 提取器。在助手的
  * 最终文本中查找最后一个 ```json``` 围栏块或最外层的 JSON 对象字面量。
  * 若无法分离出任何 JSON 则返回 undefined —— 调用方会经由 buildReport
- * 翻转为 status=failed。
+ * 在正常完成时翻转为 status=failed;在 token/timeout 截断时判为
+ * resultQuality=no_result。
  */
 export function extractJsonArtifacts(
   finalText: string,

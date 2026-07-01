@@ -10,6 +10,7 @@
  *      (ai:stream-tool-batch-approval),等待用户决策。
  */
 
+import path from "node:path";
 import type { WebContents } from "electron";
 import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
 import { rememberPreview } from "../core/agent/preview/snapshot-store";
@@ -40,6 +41,22 @@ interface BuildApprovalHookOptions {
 
 const DENIED_REASON = "用户拒绝了此操作";
 const OUTSIDE_WORKSPACE_REASON = "路径必须在当前 workspace 内";
+
+const isPathInProvidedWorkspace = async (
+  workspace: Workspace | undefined,
+  candidate: string,
+): Promise<boolean> => {
+  if (!workspace) return false;
+  const abs = path.isAbsolute(candidate)
+    ? candidate
+    : workspace.fs.resolve(candidate);
+  try {
+    await workspace.fs.toRelative(abs);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** db 未初始化(如单测)时回落 null,使设置解析走默认值。 */
 const safeGetSetting = (key: string): string | null => {
@@ -126,7 +143,10 @@ export const buildApprovalHook = ({
         !isFullAccess &&
         !escalate &&
         args.cwd &&
-        !(await isInWorkspace(taskId, [args.cwd]))
+        !(
+          (await isPathInProvidedWorkspace(workspace, args.cwd)) ||
+          (await isInWorkspace(taskId, [args.cwd]))
+        )
       ) {
         return { allow: false, reason: "cwd 必须在当前 workspace 内" };
       }

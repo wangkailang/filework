@@ -14,7 +14,7 @@ import {
 } from "../ai-elements/tool";
 import { useChatSessionContext } from "./ChatSessionProvider";
 import { ReasoningBlock } from "./ReasoningBlock";
-import { StatusBadge } from "./SubagentCard";
+import { getSubagentDisplayStatus, StatusBadge } from "./SubagentCard";
 import type {
   MessagePart,
   ReasoningPart,
@@ -129,6 +129,7 @@ export function SubagentTracePanel({
 
   const total = fmtTokens(child.usage.totalTokens);
   const parts = child.parts ?? [];
+  const hasNoUsableResult = child.resultQuality === "no_result";
 
   return (
     <div className="flex h-full flex-col">
@@ -139,7 +140,7 @@ export function SubagentTracePanel({
             {child.goal}
           </span>
           <span className="ml-auto shrink-0">
-            <StatusBadge status={child.status} />
+            <StatusBadge status={getSubagentDisplayStatus(child)} />
           </span>
         </div>
         <div className="mt-1 flex items-center gap-3 text-[10px] text-muted-foreground">
@@ -176,9 +177,11 @@ export function SubagentTracePanel({
       <div className="flex-1 space-y-2 overflow-auto px-3 py-2">
         {parts.length === 0 ? (
           <div className="text-xs text-muted-foreground">
-            {child.status === "running"
-              ? "等待子 agent 输出…"
-              : "无过程记录(可能已重载,仅保留摘要)。"}
+            {child.status === "queued"
+              ? "等待调度…"
+              : child.status === "running"
+                ? "等待子 agent 输出…"
+                : "无过程记录(可能已重载,仅保留摘要)。"}
           </div>
         ) : (
           parts.map((p, i) => (
@@ -190,18 +193,27 @@ export function SubagentTracePanel({
             />
           ))
         )}
-        {/* 摘要仅在没有过程 parts 时作为兜底展示(parts 本身即子 agent 的
-            完整输出,summary 是它的截断副本——两者同时渲染会内容重复)。 */}
-        {parts.length === 0 && child.summary && child.status !== "running" && (
-          <div className="mt-3 rounded-md border border-border bg-background/40 p-2 text-xs">
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-              摘要
-            </div>
-            <div className="whitespace-pre-wrap text-foreground/80">
-              {child.summary}
-            </div>
+        {hasNoUsableResult && child.status !== "queued" && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600">
+            未产出可采纳结论。该子 agent 可能只返回了启动摘要、过程说明或在生成
+            RESULT_JSON 之前被截断。
           </div>
         )}
+        {/* 摘要仅在没有过程 parts 时作为兜底展示(parts 本身即子 agent 的
+            完整输出,summary 是它的截断副本——两者同时渲染会内容重复)。 */}
+        {parts.length === 0 &&
+          child.summary &&
+          child.status !== "queued" &&
+          child.status !== "running" && (
+            <div className="mt-3 rounded-md border border-border bg-background/40 p-2 text-xs">
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                摘要
+              </div>
+              <div className="whitespace-pre-wrap text-foreground/80">
+                {child.summary}
+              </div>
+            </div>
+          )}
         {child.error && (
           <div className="mt-2 whitespace-pre-wrap text-xs text-red-400">
             {child.error}

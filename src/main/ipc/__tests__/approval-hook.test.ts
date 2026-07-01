@@ -84,6 +84,23 @@ describe("buildApprovalHook chat permission overrides", () => {
     expect(sender.send).not.toHaveBeenCalled();
   });
 
+  it("uses the provided workspace for runCommand cwd checks even when the task id has no workspace registration", async () => {
+    const hook = makeHook("never", "workspace-write");
+    const result = await withShortTimeout(
+      hook(
+        {
+          args: { command: "pwd", cwd: root },
+          toolCallId: "call-run-child",
+          toolName: "runCommand",
+        },
+        ctx(),
+      ),
+    );
+
+    expect(result).toEqual({ allow: true });
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
   it("auto mode does not silently grant runCommand escalation", async () => {
     setTaskWorkspace("task-chat-permission", root);
 

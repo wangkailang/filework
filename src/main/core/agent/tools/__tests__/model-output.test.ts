@@ -15,7 +15,7 @@ describe("high-noise tool model output projections", () => {
     expect(value).toContain("readFile /workspace/large.log");
     expect(value).toContain("Content:");
     expect(value).not.toContain("secret-tail");
-    expect(value.length).toBeLessThan(13_000);
+    expect(value.length).toBeLessThan(7_000);
   });
 
   it("projects runCommand output to command metadata plus bounded streams", async () => {
@@ -45,6 +45,6 @@ describe("high-noise tool model output projections", () => {
     expect(value).toContain("Test stats:");
     expect(value).not.toContain("stdout-tail");
     expect(value).not.toContain("stderr-tail");
-    expect(value.length).toBeLessThan(18_000);
+    expect(value.length).toBeLessThan(9_000);
   });
 });

@@ -114,6 +114,7 @@ export async function runForkBatch(
         const failedReport: SubAgentReport = {
           agentId: childTaskId,
           status: "failed",
+          resultQuality: "no_result",
           summary: "",
           usage: {
             inputTokens: null,
@@ -145,6 +146,7 @@ export async function runForkBatch(
       const cancelledReport: SubAgentReport = {
         agentId: childTaskId,
         status: "cancelled",
+        resultQuality: "no_result",
         summary: "",
         usage: {
           inputTokens: null,

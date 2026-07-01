@@ -327,6 +327,19 @@ app.whenReady().then(async () => {
   try {
     const recovered = await recoverInterruptedRunEventLogs(runEventLog, {
       updateTask,
+      appendRecoveredMessageParts: async ({
+        sessionId,
+        assistantMessageId,
+        parts,
+        timestamp,
+      }) => {
+        await sessionStore.appendMessageParts(
+          sessionId,
+          assistantMessageId,
+          parts,
+          { replaceSubagentBatches: true, timestamp },
+        );
+      },
       appendInterruptedMessage: async ({
         sessionId,
         assistantMessageId,

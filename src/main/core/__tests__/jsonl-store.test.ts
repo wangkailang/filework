@@ -379,6 +379,148 @@ describe("JsonlSessionStore", () => {
         ),
       ).resolves.toBe(false);
     });
+
+    it("appends multiple recovered parts in order with one timestamp update", async () => {
+      const s = await store.createSession("/ws", "Recovered subagent");
+      await store.saveMessages(s.id, "/ws", [
+        {
+          id: "assistant-1",
+          sessionId: s.id,
+          role: "assistant",
+          content: "",
+          timestamp: "2026-06-25T00:59:01.000Z",
+          parts: [],
+        },
+      ]);
+      const parts: MessagePart[] = [
+        {
+          type: "subagent",
+          batchId: "batch-1",
+          toolCallId: "spawn-1",
+          concurrency: 1,
+          children: [
+            {
+              childTaskId: "batch-1:0",
+              goal: "Research A",
+              status: "failed",
+              stepCount: 1,
+              toolCalls: [
+                {
+                  toolCallId: "tool-1",
+                  toolName: "readFile",
+                  state: "output-error",
+                },
+              ],
+              usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+              error: "boom",
+              parts: [
+                {
+                  type: "tool",
+                  toolCallId: "tool-1",
+                  toolName: "readFile",
+                  args: { path: "/ws/a.md" },
+                  result: { success: false, error: "boom" },
+                  state: "output-error",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "error",
+          message: "Task interrupted",
+          errorType: "interrupted",
+        },
+      ];
+
+      const appended = await store.appendMessageParts(
+        s.id,
+        "assistant-1",
+        parts,
+        {
+          contentFallback: "Task interrupted",
+          timestamp: "2026-06-25T01:00:00.000Z",
+        },
+      );
+
+      expect(appended).toBe(true);
+      const [message] = await store.getMessages(s.id);
+      expect(message.content).toBe("Task interrupted");
+      expect(message.parts).toEqual(parts);
+      const [listed] = await store.listSessions("/ws");
+      expect(listed.updatedAt).toBe("2026-06-25T01:00:00.000Z");
+    });
+
+    it("can replace stale subagent batches while appending other recovered parts", async () => {
+      const s = await store.createSession("/ws", "Recovered duplicate");
+      const stalePart: MessagePart = {
+        type: "subagent",
+        batchId: "batch-1",
+        toolCallId: "spawn-1",
+        concurrency: 1,
+        children: [
+          {
+            childTaskId: "batch-1:0",
+            goal: "Research A",
+            status: "running",
+            stepCount: 0,
+            toolCalls: [],
+            usage: { inputTokens: null, outputTokens: null, totalTokens: null },
+          },
+        ],
+      };
+      const recoveredPart: MessagePart = {
+        type: "subagent",
+        batchId: "batch-1",
+        toolCallId: "spawn-1",
+        concurrency: 1,
+        children: [
+          {
+            childTaskId: "batch-1:0",
+            goal: "Research A",
+            status: "failed",
+            stepCount: 1,
+            toolCalls: [
+              {
+                toolCallId: "tool-1",
+                toolName: "readFile",
+                state: "output-error",
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+            error: "boom",
+          },
+        ],
+      };
+      const errorPart: MessagePart = {
+        type: "error",
+        message: "Task interrupted",
+        errorType: "interrupted",
+      };
+      await store.saveMessages(s.id, "/ws", [
+        {
+          id: "assistant-1",
+          sessionId: s.id,
+          role: "assistant",
+          content: "partial",
+          timestamp: "2026-06-25T00:59:01.000Z",
+          parts: [stalePart],
+        },
+      ]);
+
+      await store.appendMessageParts(
+        s.id,
+        "assistant-1",
+        [recoveredPart, errorPart],
+        {
+          replaceSubagentBatches: true,
+          timestamp: "2026-06-25T01:00:00.000Z",
+        },
+      );
+
+      const [message] = await store.getMessages(s.id);
+      expect(message.parts).toEqual([recoveredPart, errorPart]);
+    });
   });
 
   describe("deleteSession", () => {

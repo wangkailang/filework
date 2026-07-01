@@ -25,6 +25,7 @@ vi.mock("../fork-skill-runner", () => ({
     ): Promise<{
       agentId: string;
       status: SubAgentReport["status"];
+      resultQuality: SubAgentReport["resultQuality"];
       summary: string;
       usage: SubAgentReport["usage"];
       toolCallCount: number;
@@ -41,6 +42,7 @@ vi.mock("../fork-skill-runner", () => ({
         return {
           agentId: deps.taskId,
           status: run.status,
+          resultQuality: run.status === "ok" ? "complete" : "no_result",
           summary: `result-${idx}`,
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           toolCallCount: 0,
