@@ -146,9 +146,8 @@ function announceOnce(): void {
  */
 export function maybeWrapWithDevtools(model: LanguageModel): LanguageModel {
   if (!devtoolsEnabled()) return model;
-  // LanguageModel 是 string | V2 | V3 联合:gateway 字符串 id 无从包装;
-  // devToolsMiddleware 是 v3 中间件,只包 v3 模型(本项目所有 provider 均为 v3)。
-  if (typeof model === "string" || model.specificationVersion !== "v3") {
+  // LanguageModel 可以是 gateway 字符串 id 或 provider 模型对象;字符串无从包装。
+  if (typeof model === "string") {
     return model;
   }
   announceOnce();

@@ -74,7 +74,7 @@ describe("safeTools.listDirectory", () => {
         incremental: true,
         includeStats: false,
       } satisfies ListDirArgs,
-      { toolCallId: "t1", messages: [] } satisfies ToolCtx,
+      { context: undefined, toolCallId: "t1", messages: [] } satisfies ToolCtx,
     );
 
     expect(result).toEqual([
@@ -147,6 +147,7 @@ describe("safeTools.runCommand", () => {
         } satisfies RunCommandArgs,
         {
           abortSignal: controller.signal,
+          context: undefined,
           toolCallId: "t1",
           messages: [],
         } satisfies RunCommandCtx,
@@ -229,9 +230,10 @@ describe("safeTools.directoryStats", () => {
     const res = await safeTools.directoryStats.execute?.(
       { path: "/tmp", maxEntries: 1000 },
       {
+        context: undefined,
         toolCallId: "t1",
         messages: [],
-      } as unknown as import("ai").ToolExecutionOptions,
+      } as unknown as import("ai").ToolExecutionOptions<unknown>,
     );
 
     expect(res).toEqual(
@@ -278,9 +280,10 @@ describe("safeTools.directoryStats", () => {
     const res = (await safeTools.directoryStats.execute?.(
       { path: "/tmp", maxEntries: 1000 },
       {
+        context: undefined,
         toolCallId: "t2",
         messages: [],
-      } as unknown as import("ai").ToolExecutionOptions,
+      } as unknown as import("ai").ToolExecutionOptions<unknown>,
     )) as {
       totalFiles: number;
       totalSize: number;

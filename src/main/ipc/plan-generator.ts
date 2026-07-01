@@ -11,7 +11,7 @@
  */
 
 import crypto from "node:crypto";
-import { generateText, stepCountIs } from "ai";
+import { generateText, isStepCount } from "ai";
 import { skills } from "../skills";
 import { writePlanFile } from "./plan-file";
 import type {
@@ -85,9 +85,9 @@ export const planTask = async (
   const result = await generateText({
     model,
     tools: readOnlyTools,
-    stopWhen: stepCountIs(10),
+    stopWhen: isStepCount(10),
     abortSignal,
-    system: `You are a task planner. Inspect the workspace briefly (≤3 read-only tool calls — listDirectory, directoryStats; avoid reading file contents), then output a JSON plan.
+    instructions: `You are a task planner. Inspect the workspace briefly (≤3 read-only tool calls — listDirectory, directoryStats; avoid reading file contents), then output a JSON plan.
 
 Current date: ${formatCurrentDate()}
 User locale: ${formatLocaleContext()}

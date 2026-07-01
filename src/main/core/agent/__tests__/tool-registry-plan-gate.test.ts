@@ -6,7 +6,11 @@ import { type ToolContext, ToolRegistry } from "../tool-registry";
 
 // 最小化的上下文 —— 下面的占位工具会忽略它。
 const ctx = {} as ToolContext;
-const execOpts = { toolCallId: "call-1" } as ToolExecutionOptions;
+const execOpts = {
+  context: undefined,
+  messages: [],
+  toolCallId: "call-1",
+} satisfies ToolExecutionOptions<unknown>;
 
 function registryWith(execute: (args: unknown) => Promise<unknown>) {
   const registry = new ToolRegistry();

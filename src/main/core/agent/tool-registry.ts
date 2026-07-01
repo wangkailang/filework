@@ -172,7 +172,10 @@ export class ToolRegistry {
       ...(def.toModelOutput !== undefined && {
         toModelOutput: def.toModelOutput,
       }),
-      execute: async (args: unknown, execOpts: ToolExecutionOptions) => {
+      execute: async (
+        args: unknown,
+        execOpts: ToolExecutionOptions<unknown>,
+      ) => {
         const ctx = opts.ctxFactory({
           toolName: def.name,
           toolCallId: execOpts.toolCallId,

@@ -79,7 +79,7 @@ export type AgentEvent =
       agentId: string;
       messageId: string;
       /**
-       * 原始推理文本增量。AgentLoop 对 AI SDK fullStream 中的每个
+       * 原始推理文本增量。AgentLoop 对 AI SDK stream 中的每个
        * `reasoning-delta` 块发出一个事件,因此消费者若想要平滑的 UI 更新,
        * 应自行批处理 / 节流。
        */

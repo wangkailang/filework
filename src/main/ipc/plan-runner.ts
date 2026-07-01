@@ -14,7 +14,7 @@
  *
  * 现在的驱动器是 `AgentLoop`(单步一次 `streamText` 调用,外层包裹
  * 重试 + 事件转译),而非此前 planner/executor.ts 中内联的
- * `streamText`/fullStream 循环。
+ * `streamText`/stream 循环。
  */
 
 import type { LanguageModel } from "ai";
