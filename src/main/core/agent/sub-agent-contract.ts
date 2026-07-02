@@ -111,9 +111,6 @@ export interface BuildReportInput {
   error?: string;
 }
 
-const isTerminalRuntimeIssue = (status: SubAgentStatus): boolean =>
-  status === "timeout" || status === "token_limit";
-
 const hasUsableDefaultArtifact = (
   artifacts: Record<string, unknown> | undefined,
 ): { usable: boolean; quality: SubAgentResultQuality } | null => {
@@ -126,7 +123,7 @@ const hasUsableDefaultArtifact = (
     return { usable: false, quality: "no_result" };
   }
   if (parsed.data.status === "partial") {
-    return { usable: true, quality: "usable_partial" };
+    return { usable: false, quality: "no_result" };
   }
   return { usable: true, quality: "complete" };
 };
@@ -140,18 +137,13 @@ const classifyResultQuality = ({
   artifacts: Record<string, unknown> | undefined;
   summary: string;
 }): SubAgentResultQuality => {
+  if (status !== "ok") return "no_result";
+
   const defaultArtifactQuality = hasUsableDefaultArtifact(artifacts);
   if (defaultArtifactQuality) {
-    if (!defaultArtifactQuality.usable) return "no_result";
-    return status === "ok" && defaultArtifactQuality.quality === "complete"
-      ? "complete"
-      : "usable_partial";
+    return defaultArtifactQuality.usable ? "complete" : "no_result";
   }
-  if (status === "ok") {
-    return summary.trim().length > 0 ? "complete" : "no_result";
-  }
-  if (isTerminalRuntimeIssue(status)) return "no_result";
-  return "no_result";
+  return summary.trim().length > 0 ? "complete" : "no_result";
 };
 
 /**

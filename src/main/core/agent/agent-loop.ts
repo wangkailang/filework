@@ -60,16 +60,37 @@ export type ContextUsageHook = (payload: {
   preparedMessages: ModelMessage[];
 }) => void;
 
+export type DrainSteeringMessagesHook = () => string[];
+
 export interface AgentLoopHooks {
   beforeToolCall?: BeforeToolCallHook;
   transformContext?: TransformContextHook;
+  transformStepContext?: TransformContextHook;
   contextUsage?: ContextUsageHook;
+  /**
+   * Runtime steering queue. When present, AgentLoop drains queued user
+   * instructions before each model step and injects them as a protected
+   * user message into that step's context.
+   */
+  drainSteeringMessages?: DrainSteeringMessagesHook;
   /**
    * 可选的流后裁决钩子。存在时,AgentLoop 会在每次 `streamText` 调用后
    * 运行该钩子,并可附加反馈最多循环 `maxReflections` 次。
    * 未设置 → 行为与引入 reflection 之前的 AgentLoop 完全一致。
    */
   reflect?: ReflectHook;
+}
+
+export interface GracefulShutdownConfig {
+  /**
+   * 累计 token 达到 maxTotalTokens 的这个比例后,下一 step 进入无工具收尾。
+   * 默认不启用;调用方应只在需要 graceful wrap-up 的路径传入。
+   */
+  tokenBudgetRatio?: number;
+  /** 距离 maxWallMs 只剩这些毫秒时,下一 step 进入无工具收尾。 */
+  wallMsRemaining?: number;
+  /** 注入给模型的收尾指令。 */
+  message?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +148,11 @@ export interface AgentLoopConfig {
    * 不设 → 不限。子 agent 路径的 fork-skill-runner 另有外层 setTimeout 兜底。
    */
   maxWallMs?: number;
+  /**
+   * 预算接近耗尽时的软收尾策略。命中后不会立刻 abort,而是在下一
+   * prepareStep 关闭工具并追加一条 wrap-up 指令,让模型产出最终结果。
+   */
+  gracefulShutdown?: GracefulShutdownConfig;
 }
 
 function contentContainsPrompt(
@@ -243,6 +269,7 @@ export class AgentLoop {
             }
           }, this.cfg.maxWallMs)
         : undefined;
+    const runStartedAt = Date.now();
 
     let history = this.cfg.history ?? [];
 
@@ -295,6 +322,7 @@ export class AgentLoop {
     let finalTextAccum = "";
     let pendingMessageText = "";
     let pendingMessageOpen = false;
+    let gracefulWrapUp = false;
     const currentFinalText = () =>
       pendingMessageOpen ? finalTextAccum + pendingMessageText : finalTextAccum;
     const resetPendingMessage = () => {
@@ -327,7 +355,11 @@ export class AgentLoop {
         // 在每个内部步骤前收缩较早的工具结果,避免大体量的
         // webFetch/runCommand 结果在每一步都以全尺寸重发
         //(输入 token 的倍增因素)。最新结果保持完整。
-        prepareStep: ({ initialMessages, responseMessages, messages }) => {
+        prepareStep: async ({
+          initialMessages,
+          responseMessages,
+          messages,
+        }) => {
           // AI SDK v7 会让 prepareStep 返回的 messages 继续流入后续步骤。
           // 为保持 v6 时代“每一步基于原始输入 + 已累计响应重新计算压缩”
           // 的语义,优先用 v7 暴露的 initialMessages/responseMessages
@@ -337,10 +369,65 @@ export class AgentLoop {
               ? ([...initialMessages, ...responseMessages] as ModelMessage[])
               : messages;
           const compacted = compactToolResults(stepMessages);
+          let preparedMessages = compacted ?? stepMessages;
+          let shouldOverrideMessages = compacted !== null;
+          const shouldWrapThisStep = gracefulWrapUp;
+
+          if (this.cfg.hooks?.transformStepContext) {
+            try {
+              const transformed = await this.cfg.hooks.transformStepContext(
+                preparedMessages,
+                effectiveSignal,
+              );
+              preparedMessages = transformed.messages;
+              shouldOverrideMessages = true;
+              if (
+                typeof transformed.originalTokens === "number" &&
+                typeof transformed.compressedTokens === "number"
+              ) {
+                emit({
+                  type: "context_compressed",
+                  agentId,
+                  originalTokens: transformed.originalTokens,
+                  compressedTokens: transformed.compressedTokens,
+                });
+              }
+            } catch (err) {
+              console.warn(
+                "[AgentLoop] transformStepContext hook failed:",
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
+
+          try {
+            const steeringMessages =
+              this.cfg.hooks?.drainSteeringMessages?.() ?? [];
+            const steeringText = steeringMessages
+              .map((message) => message.trim())
+              .filter(Boolean)
+              .join("\n\n");
+            if (steeringText) {
+              preparedMessages = [
+                ...preparedMessages,
+                {
+                  role: "user",
+                  content: `[User steering]\n${steeringText}`,
+                },
+              ];
+              shouldOverrideMessages = true;
+            }
+          } catch (err) {
+            console.warn(
+              "[AgentLoop] drainSteeringMessages hook failed:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+
           try {
             this.cfg.hooks?.contextUsage?.({
               messages: stepMessages,
-              preparedMessages: compacted ?? stepMessages,
+              preparedMessages,
             });
           } catch (err) {
             console.warn(
@@ -348,7 +435,26 @@ export class AgentLoop {
               err instanceof Error ? err.message : err,
             );
           }
-          return compacted ? { messages: compacted } : {};
+          if (shouldWrapThisStep) {
+            const wrapMessage =
+              this.cfg.gracefulShutdown?.message ??
+              "Wrap up now. Do not call more tools; return the final answer or result artifact from the evidence already gathered.";
+            preparedMessages = [
+              ...preparedMessages,
+              {
+                role: "user",
+                content: `[Graceful shutdown]\n${wrapMessage}`,
+              },
+            ];
+            shouldOverrideMessages = true;
+          }
+
+          return {
+            ...(shouldOverrideMessages ? { messages: preparedMessages } : {}),
+            ...(shouldWrapThisStep
+              ? { activeTools: [], toolChoice: "none" as const }
+              : {}),
+          };
         },
         abortSignal: effectiveSignal,
         providerOptions: this.cfg.providerOptions,
@@ -513,13 +619,39 @@ export class AgentLoop {
               stepUsage?.totalTokens ??
               (stepUsage?.inputTokens ?? 0) + (stepUsage?.outputTokens ?? 0);
             cumulativeTokens += stepTotal;
+            const tokenBudget = this.cfg.maxTotalTokens;
+            const gracefulTokenRatio =
+              this.cfg.gracefulShutdown?.tokenBudgetRatio;
+            const gracefulTokenThreshold =
+              tokenBudget && gracefulTokenRatio && gracefulTokenRatio > 0
+                ? tokenBudget * Math.min(gracefulTokenRatio, 1)
+                : undefined;
+            const gracefulWallRemaining =
+              this.cfg.gracefulShutdown?.wallMsRemaining;
+            const shouldGracefullyWrap =
+              !gracefulWrapUp &&
+              ((gracefulTokenThreshold !== undefined &&
+                cumulativeTokens >= gracefulTokenThreshold) ||
+                (this.cfg.maxWallMs !== undefined &&
+                  gracefulWallRemaining !== undefined &&
+                  this.cfg.maxWallMs > 0 &&
+                  gracefulWallRemaining > 0 &&
+                  this.cfg.maxWallMs - (Date.now() - runStartedAt) <=
+                    gracefulWallRemaining));
+
             if (
-              this.cfg.maxTotalTokens &&
-              cumulativeTokens >= this.cfg.maxTotalTokens &&
-              !internalController.signal.aborted
+              tokenBudget &&
+              cumulativeTokens >= tokenBudget &&
+              !internalController.signal.aborted &&
+              !gracefulWrapUp
             ) {
               stopReason = "token_budget";
               internalController.abort();
+            } else if (
+              shouldGracefullyWrap &&
+              part.finishReason === "tool-calls"
+            ) {
+              gracefulWrapUp = true;
             } else if (
               part.finishReason === "tool-calls" &&
               turnIndex + 1 >= (this.cfg.maxStepsPerTurn ?? 20) &&

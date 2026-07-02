@@ -286,6 +286,92 @@ describe("recoverInterruptedRunEventLogs", () => {
     expect(log.readEvents("task-subagent", 0)).toEqual([]);
   });
 
+  it("recovers submitted subagent artifacts from persisted tool results before a final report exists", async () => {
+    const taskId = "task-subagent-artifact";
+    const route = {
+      taskId,
+      sessionId: "session-a",
+      assistantMessageId: "assistant-a",
+    };
+    log.appendEvent({
+      ...route,
+      index: 0,
+      channel: "ai:stream-start",
+      payload: { id: taskId },
+    });
+    log.appendEvent({
+      ...route,
+      index: 1,
+      channel: "ai:subagent-spawn",
+      payload: {
+        parentTaskId: taskId,
+        batchId: "batch-1",
+        toolCallId: "spawn-1",
+        concurrency: 1,
+        children: [{ childTaskId: "batch-1:0", goal: "Research A" }],
+      },
+    });
+    log.appendEvent({
+      ...route,
+      index: 2,
+      channel: "ai:subagent-tool-call",
+      payload: {
+        parentTaskId: taskId,
+        batchId: "batch-1",
+        childTaskId: "batch-1:0",
+        toolCallId: "submit-1",
+        toolName: "submitSubagentResult",
+        args: {
+          status: "complete",
+          coverage: ["/ws/src/main/ipc"],
+          findings: [{ claim: "A", evidence: ["/ws/a.ts:1"] }],
+        },
+      },
+    });
+    log.appendEvent({
+      ...route,
+      index: 3,
+      channel: "ai:subagent-tool-result",
+      payload: {
+        parentTaskId: taskId,
+        batchId: "batch-1",
+        childTaskId: "batch-1:0",
+        toolCallId: "submit-1",
+        toolName: "submitSubagentResult",
+        result: {
+          success: true,
+          accepted: true,
+          artifacts: {
+            status: "complete",
+            coverage: ["/ws/src/main/ipc"],
+            findings: [{ claim: "A", evidence: ["/ws/a.ts:1"] }],
+            evidence: [],
+            missing: [],
+            failureReason: null,
+          },
+        },
+      },
+    });
+
+    const appendRecoveredMessageParts = vi.fn();
+    await recoverInterruptedRunEventLogs(log, {
+      now: new Date("2026-06-25T01:00:00.000Z"),
+      updateTask: vi.fn(),
+      appendInterruptedMessage: vi.fn(),
+      appendRecoveredMessageParts,
+    });
+
+    const call = appendRecoveredMessageParts.mock.calls[0]?.[0];
+    expect(call.parts[0].children[0].artifacts).toEqual({
+      status: "complete",
+      coverage: ["/ws/src/main/ipc"],
+      findings: [{ claim: "A", evidence: ["/ws/a.ts:1"] }],
+      evidence: [],
+      missing: [],
+      failureReason: null,
+    });
+  });
+
   it("materializes subagent trace for residual terminal logs without marking interruption", async () => {
     appendSubagentTraceEvents("task-terminal-subagent", { terminal: true });
     const updateTask = vi.fn();

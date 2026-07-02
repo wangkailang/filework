@@ -1,6 +1,6 @@
 // 基于 `createForkSkillRunner` 的有界并发调度器。每个
 // 子任务的 parentSignal 由 `deps.parentSignal` 级联而来;failFast
-// 会在首个非 ok 报告出现时中止所有剩余 worker。
+// 会在首个 failed 报告出现时中止所有剩余 worker。
 
 import { randomUUID } from "node:crypto";
 import type {
@@ -18,6 +18,7 @@ export interface ForkPoolItem {
   systemPrompt: string;
   workspacePath: string;
   allowedTools?: string[];
+  isolationMode?: RunSubagentOptions["isolationMode"];
   modelOverrideId?: string;
   /** 每个子任务的 task id 覆盖项;若省略则生成一个 UUID。 */
   taskId?: string;
@@ -98,6 +99,7 @@ export async function runForkBatch(
         prompt: item.contract.input.prompt,
         history: item.contract.input.contextSlice,
         allowedTools: item.allowedTools,
+        isolationMode: item.isolationMode,
         modelOverrideId: item.modelOverrideId,
         contract: item.contract,
       };
@@ -105,8 +107,8 @@ export async function runForkBatch(
         const report = await runner(runOpts);
         reports[idx] = report;
         emitReport(childTaskId, report);
-        // 仅在**真正失败**时级联中止。timeout / token_limit 是"被硬上限
-        // 截断但仍有可用产出"的降级结果,不应连累还在正常推进的兄弟任务。
+        // 仅在**真正失败**时级联中止。timeout / token_limit 是诊断性截断,
+        // 不会被父 agent 当作可用结果,但也不应连累还在正常推进的兄弟任务。
         if (failFast && report.status === "failed") {
           batchController.abort();
         }

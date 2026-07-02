@@ -9,11 +9,18 @@ import type { BeforeToolCallHook } from "../../core/agent/tool-registry";
 // Mock —— AgentLoop 产出预设脚本的事件,依赖项被打桩。
 // ---------------------------------------------------------------------------
 
+const compressContextMock = vi.hoisted(() => vi.fn());
+const estimateTokensMock = vi.hoisted(() => vi.fn());
+const isolatedWorktreeCleanupMock = vi.hoisted(() => vi.fn());
+const isolatedWorktreeDiffMock = vi.hoisted(() => vi.fn());
+const prepareIsolatedGitWorktreeMock = vi.hoisted(() => vi.fn());
+
 interface ScriptedRun {
   events: AgentEvent[];
 }
 
 const scriptedRuns: ScriptedRun[] = [];
+let lastAgentLoopConfig: unknown;
 let lastToAiSdkToolsOptions:
   | Parameters<
       {
@@ -27,6 +34,7 @@ const registeredTools = new Map<
   string,
   {
     name: string;
+    description?: string;
     execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
   }
 >();
@@ -39,6 +47,10 @@ function nextScript(): ScriptedRun {
 
 vi.mock("../../core/agent/agent-loop", () => ({
   AgentLoop: class {
+    constructor(config: unknown) {
+      lastAgentLoopConfig = config;
+    }
+
     async *run(_prompt: string) {
       const { events } = nextScript();
       for (const ev of events) yield ev;
@@ -46,10 +58,19 @@ vi.mock("../../core/agent/agent-loop", () => ({
   },
 }));
 
+vi.mock("../../ai/context-compressor", () => ({
+  compressContext: compressContextMock,
+}));
+
+vi.mock("../../ai/token-budget", () => ({
+  estimateTokens: estimateTokensMock,
+}));
+
 const buildAgentToolRegistry = vi.fn((..._args: unknown[]) => ({
   register: vi.fn(
     (tool: {
       name: string;
+      description?: string;
       execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
     }) => {
       registeredTools.set(tool.name, tool);
@@ -88,6 +109,10 @@ vi.mock("../../core/workspace/local-workspace", () => ({
   },
 }));
 
+vi.mock("../../core/workspace/git-worktree", () => ({
+  prepareIsolatedGitWorktree: prepareIsolatedGitWorktreeMock,
+}));
+
 // ---------------------------------------------------------------------------
 // 辅助函数
 // ---------------------------------------------------------------------------
@@ -108,9 +133,36 @@ import { createForkSkillRunner } from "../fork-skill-runner";
 describe("createForkSkillRunner", () => {
   beforeEach(() => {
     scriptedRuns.length = 0;
+    lastAgentLoopConfig = undefined;
     lastToAiSdkToolsOptions = undefined;
     registeredTools.clear();
     vi.clearAllMocks();
+    compressContextMock.mockResolvedValue({
+      messages: [{ role: "system", content: "compressed-step" }],
+      wasCompressed: true,
+      hadError: false,
+      summaryTokens: 10,
+      originalTokens: 130_000,
+      compressedTokens: 20_000,
+    });
+    estimateTokensMock.mockImplementation((messages: unknown[]) => {
+      const serialized = JSON.stringify(messages);
+      if (serialized.includes("big-tool-output")) return 130_000;
+      if (serialized.includes("compressed-step")) return 20_000;
+      return 1_000;
+    });
+    isolatedWorktreeCleanupMock.mockResolvedValue(undefined);
+    isolatedWorktreeDiffMock.mockResolvedValue({
+      diff: "diff --git a/src/a.ts b/src/a.ts\n",
+      status: " M src/a.ts\n",
+      untrackedFiles: [],
+    });
+    prepareIsolatedGitWorktreeMock.mockResolvedValue({
+      cleanup: isolatedWorktreeCleanupMock,
+      diff: isolatedWorktreeDiffMock,
+      sourcePath: "/ws",
+      workspacePath: "/ws-isolated",
+    });
   });
 
   afterEach(() => {
@@ -490,7 +542,216 @@ describe("createForkSkillRunner", () => {
     expect(registeredTools.has("submitSubagentResult")).toBe(false);
   });
 
-  it("uses submitSubagentResult artifacts as usable partial output when the run is later truncated", async () => {
+  it("describes submitSubagentResult as a single final handoff, not an early partial checkpoint", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+    });
+
+    const submitTool = registeredTools.get("submitSubagentResult");
+    expect(submitTool?.description).toMatch(/exactly once/i);
+    expect(submitTool?.description).toMatch(/done or genuinely blocked/i);
+    expect(submitTool?.description).not.toMatch(/as soon as/i);
+    expect(submitTool?.description).not.toMatch(/before final prose/i);
+  });
+
+  it("passes graceful shutdown instructions to spawned subagents", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: { maxTotalTokens: 100_000, maxWallMs: 60_000 },
+      },
+    });
+
+    expect(lastAgentLoopConfig).toMatchObject({
+      maxTotalTokens: 100_000,
+      maxWallMs: 60_000,
+      gracefulShutdown: {
+        tokenBudgetRatio: 0.8,
+        wallMsRemaining: 12_000,
+        message: expect.stringMatching(/submitSubagentResult exactly once/i),
+      },
+    });
+    expect(
+      (lastAgentLoopConfig as { gracefulShutdown?: { message?: string } })
+        .gracefulShutdown?.message,
+    ).toMatch(/Do not call more tools/i);
+  });
+
+  it("compresses spawned subagent step context before the hard token cap", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: { maxTotalTokens: 100_000 },
+      },
+    });
+
+    const transformStepContext = (
+      lastAgentLoopConfig as {
+        hooks?: {
+          transformStepContext?: (
+            messages: Array<{ role: "user"; content: string }>,
+            signal?: AbortSignal,
+          ) => Promise<unknown>;
+        };
+      }
+    ).hooks?.transformStepContext;
+    if (!transformStepContext) {
+      throw new Error("transformStepContext hook was not registered");
+    }
+
+    const result = await transformStepContext([
+      { role: "user", content: "big-tool-output" },
+    ]);
+
+    expect(compressContextMock).toHaveBeenCalledWith(
+      [{ role: "user", content: "big-tool-output" }],
+      expect.objectContaining({
+        budget: expect.any(Number),
+        force: true,
+        taskId: "child-1",
+        promptSnippet: "research",
+      }),
+    );
+    expect(result).toEqual({
+      messages: [{ role: "system", content: "compressed-step" }],
+      originalTokens: 130_000,
+      compressedTokens: 20_000,
+    });
+  });
+
+  it("runs write-capable spawned subagents in an isolated git worktree and returns a patch artifact", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        {
+          type: "agent_end",
+          agentId: "child-1",
+          status: "completed",
+          finalText: "Changed the file.",
+        },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const report = await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["readFile", "writeFile"],
+      contract: {
+        goal: "edit one file",
+        input: { prompt: "p" },
+        output: { format: "patch" },
+        termination: {},
+      },
+    });
+
+    expect(prepareIsolatedGitWorktreeMock).toHaveBeenCalledWith(
+      "/ws",
+      expect.objectContaining({ id: "child-1" }),
+    );
+    expect(buildAgentToolRegistry).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTools: ["readFile", "writeFile"] }),
+    );
+    expect(
+      (lastAgentLoopConfig as { workspace?: { root?: string } }).workspace,
+    ).toMatchObject({ root: "/ws-isolated" });
+    expect(report.artifacts).toMatchObject({
+      isolatedWorktreePatch: {
+        diff: "diff --git a/src/a.ts b/src/a.ts\n",
+        status: " M src/a.ts\n",
+        untrackedFiles: [],
+      },
+    });
+    expect(isolatedWorktreeDiffMock).toHaveBeenCalled();
+    expect(isolatedWorktreeCleanupMock).toHaveBeenCalled();
+  });
+
+  it("preserves submitted partial artifacts as diagnostics when the run is later truncated", async () => {
     const submitted = {
       success: true,
       artifacts: {
@@ -562,7 +823,7 @@ describe("createForkSkillRunner", () => {
     });
 
     expect(report.status).toBe("token_limit");
-    expect(report.resultQuality).toBe("usable_partial");
+    expect(report.resultQuality).toBe("no_result");
     expect(report.artifacts).toMatchObject({
       status: "partial",
       findings: [

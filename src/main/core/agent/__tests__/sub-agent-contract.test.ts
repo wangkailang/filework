@@ -162,7 +162,7 @@ describe("buildReport", () => {
     expect(r.artifacts).toBeUndefined();
   });
 
-  it("marks truncated reports with validated findings as usable_partial", () => {
+  it("rejects truncated reports even when they submitted partial findings", () => {
     const r = buildReport({
       agentId: "a7-partial",
       contract: baseContract({
@@ -188,14 +188,44 @@ describe("buildReport", () => {
     });
 
     expect(r.status).toBe("token_limit");
-    expect(r.resultQuality).toBe("usable_partial");
+    expect(r.resultQuality).toBe("no_result");
     expect(r.artifacts).toMatchObject({
       status: "partial",
       coverage: ["src/main/ipc"],
     });
   });
 
-  it("accepts default result artifacts for truncated non-json outputs", () => {
+  it("rejects partial default artifacts for ok runs", () => {
+    const r = buildReport({
+      agentId: "a7-ok-partial",
+      contract: baseContract({
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+      }),
+      status: "ok",
+      finalText: "{}",
+      candidateArtifacts: {
+        status: "partial",
+        coverage: ["src/main/ipc"],
+        findings: [
+          {
+            claim: "IPC owns process boundaries.",
+            evidence: ["src/main/ipc/index.ts"],
+          },
+        ],
+        missing: ["Did not inspect renderer consumers."],
+        failureReason: null,
+      },
+      usage: undefined,
+      toolCallCount: 3,
+      durationMs: 60_000,
+    });
+
+    expect(r.status).toBe("ok");
+    expect(r.resultQuality).toBe("no_result");
+    expect(r.artifacts).toMatchObject({ status: "partial" });
+  });
+
+  it("rejects default result artifacts for truncated non-json outputs", () => {
     const r = buildReport({
       agentId: "a7-summary-partial",
       contract: baseContract({ output: { format: "summary" } }),
@@ -218,7 +248,7 @@ describe("buildReport", () => {
     });
 
     expect(r.status).toBe("timeout");
-    expect(r.resultQuality).toBe("usable_partial");
+    expect(r.resultQuality).toBe("no_result");
     expect(r.artifacts).toMatchObject({ status: "partial" });
   });
 

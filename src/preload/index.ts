@@ -246,6 +246,8 @@ const api = {
   /** 重连:把任务的流重定向到当前窗口(关窗重开 → 新 webContents)。 */
   reattachTask: (taskId: string, startIndex?: number): Promise<boolean> =>
     ipcRenderer.invoke("ai:reattachTask", taskId, startIndex),
+  steerTask: (taskId: string, message: string) =>
+    ipcRenderer.invoke("ai:steerTask", { taskId, message }),
   stopGeneration: (taskId: string) =>
     ipcRenderer.invoke("ai:stopGeneration", { taskId }),
 

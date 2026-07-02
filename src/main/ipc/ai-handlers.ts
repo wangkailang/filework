@@ -108,6 +108,8 @@ import {
   awaitPlanGate,
   cleanupTask,
   drainClarificationResolver,
+  drainTaskSteeringMessages,
+  enqueueTaskSteering,
   getActiveTaskForSession,
   getActiveTasks,
   getActiveTaskTarget,
@@ -530,6 +532,9 @@ const handleTaskExecutionInner = async (
       providerOptions,
       providerNativeCompaction,
     } = getModelAndAdapterByConfigId(resolvedLlmConfigId);
+    const providerManagesContextCompression =
+      providerNativeCompaction.enabled &&
+      providerNativeCompaction.mode === "anthropic-context-management-compact";
     const contextWindow = llmConfig
       ? (llmConfig.modelContextWindow ??
         getContextWindowForModel(llmConfig.model))
@@ -613,6 +618,28 @@ const handleTaskExecutionInner = async (
         },
       });
     };
+    const forwardContextCompressionResult = (
+      result: Awaited<ReturnType<typeof compressContext>>,
+    ) => {
+      if (sender.isDestroyed()) return;
+      const eventType = result.hadError
+        ? "compression-error"
+        : result.wasCompressed
+          ? "compression-write"
+          : "compression-skip";
+      sender.send("ai:memory-event", {
+        taskId: id,
+        type: eventType,
+        promptSnippet: payload.prompt?.slice(0, 80),
+        detail: result.wasCompressed
+          ? {
+              originalTokens: result.originalTokens,
+              compressedTokens: result.compressedTokens,
+              summaryTokens: result.summaryTokens,
+            }
+          : { originalTokens: result.originalTokens },
+      });
+    };
 
     emitTaskTraceEvent(sender, {
       taskId: id,
@@ -684,7 +711,7 @@ const handleTaskExecutionInner = async (
             ? payload.contextInputTokens
             : readLatestContextInputTokens(payload.history);
         const forceCompressionFromUsage =
-          !providerNativeCompaction.enabled &&
+          !providerManagesContextCompression &&
           compressionTriggerBudget != null &&
           latestContextInputTokens > compressionTriggerBudget;
         const coreMessages = await convertToCoreMessages(
@@ -706,7 +733,7 @@ const handleTaskExecutionInner = async (
         let semanticToolResultSummary = false;
         const shouldSummarizeToolResults =
           forceCompressionFromUsage ||
-          (!providerNativeCompaction.enabled &&
+          (!providerManagesContextCompression &&
             compressionTriggerBudget != null &&
             originalTokens > compressionTriggerBudget) ||
           (tokenBudget != null && originalTokens > tokenBudget);
@@ -752,25 +779,7 @@ const handleTaskExecutionInner = async (
             promptSnippet: payload.prompt,
           });
           // 通过 IPC 转发给渲染层(compressContext 已写入 store)
-          if (!sender.isDestroyed()) {
-            const eventType = result.hadError
-              ? "compression-error"
-              : result.wasCompressed
-                ? "compression-write"
-                : "compression-skip";
-            sender.send("ai:memory-event", {
-              taskId: id,
-              type: eventType,
-              promptSnippet: payload.prompt?.slice(0, 80),
-              detail: result.wasCompressed
-                ? {
-                    originalTokens: result.originalTokens,
-                    compressedTokens: result.compressedTokens,
-                    summaryTokens: result.summaryTokens,
-                  }
-                : { originalTokens: result.originalTokens },
-            });
-          }
+          forwardContextCompressionResult(result);
           return result;
         };
         const truncationResult = await truncateToFitAsync(
@@ -778,7 +787,7 @@ const handleTaskExecutionInner = async (
           tokenBudget,
           compressor,
           {
-            compressionTriggerBudget: providerNativeCompaction.enabled
+            compressionTriggerBudget: providerManagesContextCompression
               ? undefined
               : compressionTriggerBudget,
             forceCompression: forceCompressionFromUsage,
@@ -1072,6 +1081,18 @@ const handleTaskExecutionInner = async (
     );
     const estimateAgentStepTokens = (messages: import("ai").ModelMessage[]) =>
       estimateTokens([{ role: "system", content: systemPrompt }, ...messages]);
+    const systemPromptTokens = estimateTokens([
+      { role: "system", content: systemPrompt },
+    ]);
+    const stepMessageCompressionBudget =
+      tokenBudget != null
+        ? Math.max(
+            1,
+            Math.min(tokenBudget, compressionTriggerBudget ?? tokenBudget) -
+              systemPromptTokens,
+          )
+        : undefined;
+    let forceStepCompressionFromProviderCount = false;
 
     if (llmConfig) {
       const messagesForProviderCount: import("ai").ModelMessage[] =
@@ -1101,6 +1122,13 @@ const handleTaskExecutionInner = async (
           tokenCountSource: providerTokenCount.source,
           providerNativeCompaction,
         });
+        if (
+          !providerManagesContextCompression &&
+          compressionTriggerBudget != null &&
+          providerTokenCount.inputTokens > compressionTriggerBudget
+        ) {
+          forceStepCompressionFromProviderCount = true;
+        }
       }
     }
 
@@ -1118,6 +1146,45 @@ const handleTaskExecutionInner = async (
       agentId: id,
       hooks: {
         reflect: reflectHook,
+        transformStepContext: providerManagesContextCompression
+          ? undefined
+          : async (messages, signal) => {
+              const originalTokens = estimateAgentStepTokens(messages);
+              const exceedsTrigger =
+                compressionTriggerBudget != null &&
+                originalTokens > compressionTriggerBudget;
+              const exceedsHardBudget =
+                tokenBudget != null && originalTokens > tokenBudget;
+              const force =
+                forceStepCompressionFromProviderCount || exceedsTrigger;
+              if (!force && !exceedsHardBudget) {
+                return { messages };
+              }
+
+              forceStepCompressionFromProviderCount = false;
+              const result = await compressContext(messages, {
+                model,
+                budget:
+                  stepMessageCompressionBudget ??
+                  tokenBudget ??
+                  compressionTriggerBudget ??
+                  1,
+                force,
+                tailBudget: force ? 4_000 : undefined,
+                signal,
+                taskId: id,
+                summaryScopeId: rollingSummaryScopeId,
+                previousSummary: readRollingSummary(rollingSummaryScopeId),
+                memoryChunks: readContextMemoryChunks(rollingSummaryScopeId),
+                promptSnippet: payload.prompt,
+              });
+              forwardContextCompressionResult(result);
+              return {
+                messages: result.messages,
+                originalTokens,
+                compressedTokens: estimateAgentStepTokens(result.messages),
+              };
+            },
         contextUsage: ({ messages, preparedMessages }) => {
           emitContextBudgetTrace({
             source: "agent-step",
@@ -1126,6 +1193,7 @@ const handleTaskExecutionInner = async (
             providerNativeCompaction,
           });
         },
+        drainSteeringMessages: () => drainTaskSteeringMessages(id),
       },
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
@@ -1889,6 +1957,29 @@ export const registerAIHandlers = () => {
   );
 
   ipcMain.handle("ai:getActiveTasks", () => getActiveTasks());
+
+  ipcMain.handle(
+    "ai:steerTask",
+    (_event, payload: unknown): { ok: boolean; accepted: boolean } => {
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        typeof (payload as { taskId?: unknown }).taskId !== "string" ||
+        typeof (payload as { message?: unknown }).message !== "string"
+      ) {
+        return { ok: false, accepted: false };
+      }
+      const { taskId, message } = payload as {
+        taskId: string;
+        message: string;
+      };
+      if (!taskId.trim() || !message.trim()) {
+        return { ok: false, accepted: false };
+      }
+      const accepted = enqueueTaskSteering(taskId, message);
+      return { ok: accepted, accepted };
+    },
+  );
 
   // 重连:先把任务已录制的事件按序「重放」给发起调用的新窗口(渲染层用同一套
   // handler 重建消息,零缺口),再把后续流的投递目标重定向到该窗口。重放直接发往

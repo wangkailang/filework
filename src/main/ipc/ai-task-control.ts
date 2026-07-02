@@ -211,6 +211,27 @@ export const getActiveTasks = (): ActiveTaskSnapshot[] =>
 /** 按任务 ID 存储手动停止标志，用于强制中止流式生成 */
 export const manualStopFlags = new Map<string, boolean>();
 
+/** 运行中 steering:用户追加给下一次模型 step 的轻量指令队列。 */
+const taskSteeringMessages = new Map<string, string[]>();
+
+export const enqueueTaskSteering = (
+  taskId: string,
+  message: string,
+): boolean => {
+  const trimmed = message.trim();
+  if (!taskId || !trimmed) return false;
+  const current = taskSteeringMessages.get(taskId) ?? [];
+  taskSteeringMessages.set(taskId, [...current, trimmed]);
+  return true;
+};
+
+export const drainTaskSteeringMessages = (taskId: string): string[] => {
+  const messages = taskSteeringMessages.get(taskId);
+  if (!messages || messages.length === 0) return [];
+  taskSteeringMessages.delete(taskId);
+  return messages;
+};
+
 /** 按任务 ID 跟踪活跃的工具执行，用于取消 */
 export const activeToolExecutions = new Map<string, Set<AbortController>>();
 
@@ -402,6 +423,9 @@ export const cleanupTask = (taskId: string): void => {
 
   // 清理手动停止标志
   manualStopFlags.delete(taskId);
+
+  // 清理运行中 steering 队列
+  taskSteeringMessages.delete(taskId);
 
   // 清理计划已批准映射
   planApprovedTasks.delete(taskId);

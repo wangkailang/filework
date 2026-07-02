@@ -401,6 +401,24 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     expect(defaultTools).not.toContain("automation_update");
   });
 
+  it("allows direct file-write tools only for explicit worktree-isolated subagents", () => {
+    expect(
+      resolveSubagentAllowedTools(
+        undefined,
+        ["readFile", "writeFile", "moveFile", "deleteFile", "updateMemory"],
+        { allowDirectWrite: true },
+      ),
+    ).toEqual(["readFile", "writeFile", "moveFile", "deleteFile"]);
+
+    expect(
+      resolveSubagentAllowedTools(
+        ["readFile", "writeFile", "runCommand"],
+        ["readFile", "writeFile", "deleteFile"],
+        { allowDirectWrite: true },
+      ),
+    ).toEqual(["readFile", "writeFile"]);
+  });
+
   it("treats an empty requested allowedTools array as omitted so subagents still get default read-only tools", () => {
     const tools = resolveSubagentAllowedTools(undefined, []);
 
@@ -486,7 +504,7 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     });
   });
 
-  it("marks only complete or usable partial reports as usable for the parent agent", () => {
+  it("marks only complete reports as usable for the parent agent", () => {
     const result = shapeSubagentToolResult({
       batchId: "batch-usable",
       goals: ["done", "partial", "startup"],
@@ -525,13 +543,23 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
 
     expect(result.summary).toEqual({
       total: 3,
-      usable: 2,
+      usable: 1,
       complete: 1,
       partial: 1,
       noResult: 1,
       failed: 0,
+      incomplete: 2,
+      allComplete: false,
+      requiresFollowup: true,
     });
-    expect(result.reports.map((r) => r.usable)).toEqual([true, true, false]);
+    expect(result.incompleteGoals).toEqual(["partial", "startup"]);
+    expect(result.reports.map((r) => r.usable)).toEqual([true, false, false]);
+    expect(result.reports[1]).toMatchObject({
+      resultQuality: "usable_partial",
+      summary: "",
+      artifacts: undefined,
+      unusableReason: "Sub-agent stopped before producing validated findings.",
+    });
     expect(result.reports[2]).toMatchObject({
       resultQuality: "no_result",
       unusableReason: "Sub-agent stopped before producing validated findings.",

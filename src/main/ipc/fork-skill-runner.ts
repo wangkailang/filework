@@ -19,16 +19,19 @@
 import type { ModelMessage } from "ai";
 import type { WebContents } from "electron";
 
+import { compressContext } from "../ai/context-compressor";
 import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError } from "../ai/error-classifier";
 import { appendPattern } from "../ai/pattern-store";
 import { StreamWatchdog } from "../ai/stream-watchdog";
+import { estimateTokens } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
 import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import {
   buildReport,
   DEFAULT_SUB_AGENT_MAX_TOKENS,
+  DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
   DEFAULT_SUB_AGENT_MAX_WALL_MS,
   DEFAULT_SUB_AGENT_RESULT_SCHEMA,
   extractJsonArtifacts,
@@ -42,6 +45,7 @@ import type {
   ToolDefinition,
 } from "../core/agent/tool-registry";
 import { isDeliverableCommand } from "../core/agent/tools/command-classify";
+import { prepareIsolatedGitWorktree } from "../core/workspace/git-worktree";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
 import { buildAgentToolRegistry } from "./agent-tools";
@@ -75,6 +79,8 @@ export interface RunSubagentOptions {
   history?: ModelMessage[];
   /** 技能 frontmatter 的 `allowed-tools` 列表。空/undefined → 零工具。 */
   allowedTools?: string[];
+  /** spawned subagent 写入隔离模式。默认不隔离,直接写工具请求会触发 worktree。 */
+  isolationMode?: "worktree";
   /** 技能 frontmatter 的 `model` 覆盖项。失败时回退到 llmConfigId。 */
   modelOverrideId?: string;
   /** 覆盖每轮的步数上限(默认 20)。 */
@@ -116,6 +122,23 @@ const SUBAGENT_SHELL_ESCALATION_DENIED =
 const SUBAGENT_BACKGROUND_SHELL_DENIED =
   "Sub-agents cannot start background shell processes; use bounded read-only inspection commands only.";
 const SUBAGENT_RESULT_TOOL_NAME = "submitSubagentResult";
+const SUBAGENT_CONTEXT_COMPRESSION_TRIGGER_RATIO = 0.7;
+const SUBAGENT_CONTEXT_COMPRESSION_TARGET_RATIO = 0.65;
+const SUBAGENT_GRACEFUL_TOKEN_RATIO = 0.8;
+const SUBAGENT_GRACEFUL_MIN_WALL_MS = 5_000;
+const SUBAGENT_GRACEFUL_MAX_WALL_MS = 30_000;
+const SUBAGENT_GRACEFUL_WALL_RATIO = 0.2;
+const SUBAGENT_GRACEFUL_MESSAGE =
+  "Wrap up now. Do not call more tools. Call submitSubagentResult exactly once with status=complete if the assigned goal is covered, otherwise status=partial or no_result with missing gaps, then stop.";
+const SUBAGENT_DIRECT_WRITE_TOOL_SET = new Set([
+  "writeFile",
+  "moveFile",
+  "deleteFile",
+  "restoreFromTrash",
+  "emptyTrash",
+]);
+const SUBAGENT_DIRECT_WRITE_DENIED =
+  "Sub-agent direct writes require an isolated git worktree. Return a patch artifact to the parent agent instead.";
 
 const shellCommandForCall = (
   toolName: string,
@@ -155,6 +178,13 @@ const subagentReadOnlyShellGuard = (
   return null;
 };
 
+const subagentRequestsDirectWrite = (
+  allowedTools: string[] | undefined,
+): boolean =>
+  (allowedTools ?? []).some((toolName) =>
+    SUBAGENT_DIRECT_WRITE_TOOL_SET.has(toolName),
+  );
+
 const submittedArtifactsFromToolOutput = (
   output: unknown,
 ): Record<string, unknown> | undefined => {
@@ -173,7 +203,7 @@ const buildSubmitSubagentResultTool = (
 ): ToolDefinition<unknown, unknown> => ({
   name: SUBAGENT_RESULT_TOOL_NAME,
   description:
-    "Submit the sub-agent's structured result as soon as it has evidence-backed findings. Call this before final prose so the lead agent can consume the result even if later text is truncated.",
+    "Submit the sub-agent's structured result exactly once, when the assigned goal is done or genuinely blocked. Use status=complete only for a result the lead can rely on; use partial/no_result for diagnostics and then stop.",
   inputSchema: DEFAULT_SUB_AGENT_RESULT_SCHEMA,
   safety: "safe",
   execute: async (args) => {
@@ -234,7 +264,15 @@ export const createForkSkillRunner = (
     const { model, modelId, generationOptions, providerOptions } = resolved;
 
     // ── 每次调用的组件 ─────────────────────────────────────────────
-    const workspace = new LocalWorkspace(opts.workspacePath);
+    const isolatedWorktree =
+      isSubagent &&
+      (opts.isolationMode === "worktree" ||
+        subagentRequestsDirectWrite(opts.allowedTools))
+        ? await prepareIsolatedGitWorktree(opts.workspacePath, { id: taskId })
+        : undefined;
+    const effectiveWorkspacePath =
+      isolatedWorktree?.workspacePath ?? opts.workspacePath;
+    const workspace = new LocalWorkspace(effectiveWorkspacePath);
     const isGitWorkspace = isGitBackedWorkspace(workspace);
     let submittedArtifacts: Record<string, unknown> | undefined;
     // undefined 时强制为 [],使 registry 的 allow() 过滤(零工具
@@ -253,9 +291,21 @@ export const createForkSkillRunner = (
         }),
       );
     }
-    const approvalHook = buildApprovalHook({ sender, taskId, workspace });
+    const approvalHook = buildApprovalHook({
+      sender,
+      taskId,
+      workspace,
+      approvalPolicy: isolatedWorktree ? "never" : undefined,
+      sandboxMode: isolatedWorktree ? "workspace-write" : undefined,
+    });
     const beforeToolCall: BeforeToolCallHook = async (call, ctx) => {
       if (isSubagent) {
+        if (
+          SUBAGENT_DIRECT_WRITE_TOOL_SET.has(call.toolName) &&
+          !isolatedWorktree
+        ) {
+          return { allow: false, reason: SUBAGENT_DIRECT_WRITE_DENIED };
+        }
         const guardDecision = subagentReadOnlyShellGuard(call);
         if (guardDecision) return guardDecision;
       }
@@ -284,6 +334,13 @@ export const createForkSkillRunner = (
         ? rawWallMs
         : opts.contract && rawWallMs === undefined
           ? DEFAULT_SUB_AGENT_MAX_WALL_MS
+          : undefined;
+    const rawTotalTokens = effectiveContract.termination.maxTotalTokens;
+    const effectiveMaxTotalTokens =
+      typeof rawTotalTokens === "number" && rawTotalTokens > 0
+        ? rawTotalTokens
+        : opts.contract && rawTotalTokens === undefined
+          ? DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS
           : undefined;
     const wallTimer = effectiveWallMs
       ? setTimeout(() => {
@@ -321,11 +378,63 @@ export const createForkSkillRunner = (
       beforeToolCall,
     });
 
+    const systemPrompt = `${opts.systemPrompt}\n\nCurrent workspace: ${effectiveWorkspacePath}`;
+    const systemPromptTokens = estimateTokens([
+      { role: "system", content: systemPrompt },
+    ]);
+    const estimateSubagentStepTokens = (messages: ModelMessage[]) =>
+      estimateTokens([{ role: "system", content: systemPrompt }, ...messages]);
+    const transformSubagentStepContext =
+      isSubagent && effectiveMaxTotalTokens
+        ? async (messages: ModelMessage[], signal?: AbortSignal) => {
+            const originalTokens = estimateSubagentStepTokens(messages);
+            const compressionTriggerTokens = Math.floor(
+              effectiveMaxTotalTokens *
+                SUBAGENT_CONTEXT_COMPRESSION_TRIGGER_RATIO,
+            );
+            const exceedsTrigger = originalTokens >= compressionTriggerTokens;
+            const exceedsHardBudget = originalTokens >= effectiveMaxTotalTokens;
+            if (!exceedsTrigger && !exceedsHardBudget) {
+              return { messages };
+            }
+
+            const result = await compressContext(messages, {
+              model,
+              budget: Math.max(
+                1,
+                Math.floor(
+                  effectiveMaxTotalTokens *
+                    SUBAGENT_CONTEXT_COMPRESSION_TARGET_RATIO,
+                ) - systemPromptTokens,
+              ),
+              force: true,
+              tailBudget: 4_000,
+              signal,
+              taskId,
+              promptSnippet: effectiveContract.goal,
+            });
+            return {
+              messages: result.messages,
+              originalTokens,
+              compressedTokens: estimateSubagentStepTokens(result.messages),
+            };
+          }
+        : undefined;
+    const gracefulWallMsRemaining = effectiveWallMs
+      ? Math.min(
+          SUBAGENT_GRACEFUL_MAX_WALL_MS,
+          Math.max(
+            SUBAGENT_GRACEFUL_MIN_WALL_MS,
+            Math.floor(effectiveWallMs * SUBAGENT_GRACEFUL_WALL_RATIO),
+          ),
+        )
+      : undefined;
+
     const agentLoop = new AgentLoop({
       workspace,
       model,
       tools: registryTools,
-      systemPrompt: `${opts.systemPrompt}\n\nCurrent workspace: ${opts.workspacePath}`,
+      systemPrompt,
       history: opts.history,
       providerOptions,
       temperature: generationOptions.temperature,
@@ -337,8 +446,20 @@ export const createForkSkillRunner = (
         effectiveContract.termination.maxTurns ?? opts.maxStepsPerTurn ?? 20,
       // 三硬上限下沉到 AgentLoop 统一强制。墙钟同时保留上面的外层
       // setTimeout 作兜底(防 AgentLoop 卡在非 stream 的 await)。
-      maxTotalTokens: effectiveContract.termination.maxTotalTokens,
+      maxTotalTokens: effectiveMaxTotalTokens,
       maxWallMs: effectiveWallMs,
+      gracefulShutdown: isSubagent
+        ? {
+            tokenBudgetRatio: effectiveMaxTotalTokens
+              ? SUBAGENT_GRACEFUL_TOKEN_RATIO
+              : undefined,
+            wallMsRemaining: gracefulWallMsRemaining,
+            message: SUBAGENT_GRACEFUL_MESSAGE,
+          }
+        : undefined,
+      hooks: transformSubagentStepContext
+        ? { transformStepContext: transformSubagentStepContext }
+        : undefined,
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
         return {
@@ -362,6 +483,7 @@ export const createForkSkillRunner = (
       | { inputTokens?: number | null; outputTokens?: number | null }
       | undefined;
 
+    let streamCompleted = false;
     try {
       for await (const ev of agentLoop.run(opts.prompt)) {
         if (sender.isDestroyed()) break;
@@ -460,11 +582,15 @@ export const createForkSkillRunner = (
           }
         }
       }
+      streamCompleted = true;
     } finally {
       deltaBatcher.drain();
       watchdog.stop();
       parentSignal.removeEventListener("abort", onParentAbort);
       if (wallTimer) clearTimeout(wallTimer);
+      if (!streamCompleted && isolatedWorktree) {
+        await isolatedWorktree.cleanup().catch(() => undefined);
+      }
     }
 
     // ── 构建 SubAgentReport ───────────────────────────────────
@@ -496,7 +622,7 @@ export const createForkSkillRunner = (
     const candidateArtifacts =
       submittedArtifacts ?? extractJsonArtifacts(finalTextAccum);
 
-    const report = buildReport({
+    let report = buildReport({
       agentId: taskId,
       contract: effectiveContract,
       status: reportStatus,
@@ -516,6 +642,31 @@ export const createForkSkillRunner = (
       precomputedSummary,
       error: endEventError,
     });
+
+    if (isolatedWorktree) {
+      try {
+        const patch = await isolatedWorktree.diff();
+        report = {
+          ...report,
+          artifacts: {
+            ...(report.artifacts ?? {}),
+            isolatedWorktreePatch: patch,
+          },
+        };
+      } catch (err) {
+        report = {
+          ...report,
+          artifacts: {
+            ...(report.artifacts ?? {}),
+            isolatedWorktreePatch: {
+              error: err instanceof Error ? err.message : String(err),
+            },
+          },
+        };
+      } finally {
+        await isolatedWorktree.cleanup().catch(() => undefined);
+      }
+    }
 
     // 为迭代优化层做 fire-and-forget 采集。
     // 未配置存储路径时为空操作(参见 pattern-store)。
