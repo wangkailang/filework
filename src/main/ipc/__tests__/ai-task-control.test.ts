@@ -4,6 +4,8 @@ import {
   activeTasks,
   activeToolExecutions,
   cleanupTask,
+  drainTaskSteeringMessages,
+  enqueueTaskSteering,
   getActiveTasks,
   getTaskEvents,
   manualStopFlags,
@@ -272,5 +274,31 @@ describe("active task snapshots", () => {
     cleanupTask("task-cleanup");
 
     expect(log.deleteTask).toHaveBeenCalledWith("task-cleanup");
+  });
+});
+
+describe("task steering queue", () => {
+  afterEach(() => {
+    cleanupTask("task-steer");
+    cleanupTask("task-empty");
+  });
+
+  it("queues non-empty steering messages and drains them once", () => {
+    expect(enqueueTaskSteering("task-steer", "  focus on tests  ")).toBe(true);
+    expect(enqueueTaskSteering("task-steer", "\nthen stop\n")).toBe(true);
+    expect(enqueueTaskSteering("task-empty", "   ")).toBe(false);
+
+    expect(drainTaskSteeringMessages("task-steer")).toEqual([
+      "focus on tests",
+      "then stop",
+    ]);
+    expect(drainTaskSteeringMessages("task-steer")).toEqual([]);
+  });
+
+  it("clears queued steering when the task is cleaned up", () => {
+    enqueueTaskSteering("task-steer", "do not continue");
+    cleanupTask("task-steer");
+
+    expect(drainTaskSteeringMessages("task-steer")).toEqual([]);
   });
 });

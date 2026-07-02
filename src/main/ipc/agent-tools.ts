@@ -465,11 +465,17 @@ const spawnSubagentInputSchema = z.object({
           .describe(
             "How the sub-agent must shape its result. Default json returns a validated RESULT_JSON artifact the parent can safely consume.",
           ),
+        executionMode: z
+          .enum(["read_only", "worktree"])
+          .default("read_only")
+          .describe(
+            "Default read_only forbids direct writes and returns findings or patch suggestions. Use worktree only for isolated file-edit tasks; direct file writes run in a detached git worktree and return a patch artifact for the lead to merge.",
+          ),
         allowedTools: z
           .array(z.string())
           .optional()
           .describe(
-            "Restrict this sub-agent to a SUBSET of your read-only tools. Use canonical names like readFile/runCommand; provider prefixes such as functions.readFile are tolerated. Direct-write, memory, automation, and delegation tools are filtered out; shell tools are limited to read-only inspection.",
+            "Restrict this sub-agent to a SUBSET of your tools. Default read_only filters out direct-write, memory, automation, and delegation tools. With executionMode=worktree, direct file write tools may run only inside the isolated worktree. Shell tools are still limited to read-only inspection.",
           ),
         allowedSkills: z
           .array(z.string())
@@ -506,7 +512,11 @@ export interface ShapedSubagentToolResult {
     partial: number;
     noResult: number;
     failed: number;
+    incomplete: number;
+    allComplete: boolean;
+    requiresFollowup: boolean;
   };
+  incompleteGoals: string[];
   reports: Array<{
     goal: string;
     status: SubAgentReport["status"];
@@ -521,8 +531,7 @@ export interface ShapedSubagentToolResult {
 }
 
 const isUsableSubagentReport = (report: SubAgentReport): boolean =>
-  report.resultQuality === "complete" ||
-  report.resultQuality === "usable_partial";
+  report.resultQuality === "complete";
 
 const unusableSubagentReason = (report: SubAgentReport): string | undefined => {
   if (isUsableSubagentReport(report)) return undefined;
@@ -551,8 +560,8 @@ export const shapeSubagentToolResult = ({
       status: report.status,
       resultQuality: report.resultQuality,
       usable,
-      summary: report.summary,
-      artifacts: report.artifacts,
+      summary: usable ? report.summary : "",
+      artifacts: usable ? report.artifacts : undefined,
       usage: report.usage,
       error: report.error,
       unusableReason: usable ? undefined : unusableSubagentReason(report),
@@ -570,17 +579,25 @@ export const shapeSubagentToolResult = ({
   const failed = shapedReports.filter(
     (report) => report.status === "failed",
   ).length;
+  const incompleteGoals = shapedReports
+    .filter((report) => !report.usable)
+    .map((report) => report.goal);
+  const allComplete = incompleteGoals.length === 0;
   return {
     success: true,
     batchId,
     summary: {
       total: shapedReports.length,
-      usable: complete + partial,
+      usable: complete,
       complete,
       partial,
       noResult,
       failed,
+      incomplete: shapedReports.length - complete,
+      allComplete,
+      requiresFollowup: !allComplete,
     },
+    incompleteGoals,
     reports: shapedReports,
   };
 };
@@ -619,6 +636,11 @@ const SUBAGENT_DEFAULT_READ_ONLY_TOOLS = [
 const SUBAGENT_READ_ONLY_TOOL_SET = new Set<string>(
   SUBAGENT_DEFAULT_READ_ONLY_TOOLS,
 );
+const SUBAGENT_DIRECT_WRITE_TOOL_SET = new Set<string>([
+  "writeFile",
+  "moveFile",
+  "deleteFile",
+]);
 
 const SUBAGENT_RESEARCHER_DEFAULTS = {
   maxTurns: 16,
@@ -669,15 +691,22 @@ const intersectTools = (
 export const resolveSubagentAllowedTools = (
   parentAllowedTools: string[] | undefined,
   requestedTools: string[] | undefined,
+  options: { allowDirectWrite?: boolean } = {},
 ): string[] => {
   const normalizedParentTools = normalizeSubagentToolList(parentAllowedTools);
   const normalizedRequestedTools = normalizeSubagentToolList(requestedTools);
+  const permittedToolSet = options.allowDirectWrite
+    ? new Set([
+        ...SUBAGENT_READ_ONLY_TOOL_SET,
+        ...SUBAGENT_DIRECT_WRITE_TOOL_SET,
+      ])
+    : SUBAGENT_READ_ONLY_TOOL_SET;
   const requestedList =
     normalizedRequestedTools && normalizedRequestedTools.length > 0
       ? normalizedRequestedTools
       : undefined;
   const parentReadOnlyTools = normalizedParentTools?.filter((toolName) =>
-    SUBAGENT_READ_ONLY_TOOL_SET.has(toolName),
+    permittedToolSet.has(toolName),
   );
   const parentRestriction =
     parentReadOnlyTools && parentReadOnlyTools.length > 0
@@ -689,7 +718,7 @@ export const resolveSubagentAllowedTools = (
       ? (intersectTools(parentRestriction, requestedList) ?? requestedList)
       : (parentRestriction ?? [...SUBAGENT_DEFAULT_READ_ONLY_TOOLS]);
   const readOnlyTools = candidates.filter((toolName) =>
-    SUBAGENT_READ_ONLY_TOOL_SET.has(toolName),
+    permittedToolSet.has(toolName),
   );
   if (readOnlyTools.length > 0) return readOnlyTools;
 
@@ -773,8 +802,8 @@ const spawnSubagentTool = (
     "- Tasks needing back-and-forth with the user — sub-agents cannot ask the user questions.",
     "- Tasks with ordering dependencies — sub-agents run in parallel and cannot talk to each other; sequence those yourself across turns.",
     "",
-    "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents; child tools are capped to read-only inspection and cannot include write, memory, automation, or delegation tools.",
-    "RESULT: returns summary counts and a `reports` array. Consume only reports where `usable=true`; `resultQuality=no_result` is diagnostic trace, not evidence.",
+    "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents. Default child tools are capped to read-only inspection and cannot include write, memory, automation, or delegation tools. For isolated edits, set executionMode=worktree and request direct file write tools; the child writes only in a detached worktree and returns a patch artifact for the lead to merge.",
+    "RESULT: returns summary counts, `summary.requiresFollowup`, `incompleteGoals`, and a `reports` array. Consume only reports where `usable=true` AND `resultQuality=complete`; `partial`, `usable_partial`, and `no_result` are diagnostic trace, not evidence. If `requiresFollowup=true`, rerun a narrower sub-agent or inspect each `incompleteGoals` gap yourself before answering.",
   ].join("\n"),
   safety: "destructive",
   inputSchema: spawnSubagentInputSchema,
@@ -791,9 +820,11 @@ const spawnSubagentTool = (
     // 先发 spawn 事件让 UI 立刻出现进度卡。
     const items = input.tasks.map((task, idx) => {
       const childTaskId = `${batchId}:${idx}`;
+      const executionMode = task.executionMode ?? "read_only";
       const allowedTools = resolveSubagentAllowedTools(
         deps.parentAllowedTools,
         task.allowedTools,
+        { allowDirectWrite: executionMode === "worktree" },
       );
       // skill 子集:只有模型显式请求时才注入,避免把父级所有 skill
       // 描述塞进每个 child 的初始上下文。
@@ -846,6 +877,8 @@ const spawnSubagentTool = (
           systemPrompt,
           workspacePath: deps.workspacePath,
           allowedTools,
+          isolationMode:
+            executionMode === "worktree" ? ("worktree" as const) : undefined,
           taskId: childTaskId,
         },
       };

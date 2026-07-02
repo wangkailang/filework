@@ -93,7 +93,7 @@ describe("SubagentTracePanel", () => {
     expect(html).not.toContain("Subagent command failed");
   });
 
-  it("shows only usable truncated child results as partial completion", () => {
+  it("shows legacy partial child results as diagnostics, not usable completion", () => {
     state.messages = [
       {
         id: "assistant-subagent",
@@ -136,7 +136,9 @@ describe("SubagentTracePanel", () => {
       />,
     );
 
-    expect(html).toContain("部分完成");
+    expect(html).toContain("部分结果");
+    expect(html).toContain("未产出可采纳结论");
+    expect(html).not.toContain("部分完成");
     expect(html).not.toContain("token 超限");
   });
 

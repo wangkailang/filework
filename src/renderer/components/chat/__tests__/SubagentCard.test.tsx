@@ -48,7 +48,7 @@ describe("SubagentCard", () => {
     expect(html).toContain("完成 0/6");
   });
 
-  it("shows only usable truncated results as partial completion", () => {
+  it("shows legacy partial results as diagnostics, not usable completion", () => {
     const part: SubagentMessagePart = {
       type: "subagent",
       batchId: "batch-1",
@@ -62,15 +62,14 @@ describe("SubagentCard", () => {
 
     const html = renderToStaticMarkup(<SubagentCard part={part} />);
 
-    expect(html.match(/部分完成/g)).toHaveLength(2);
-    expect(html).toContain("部分 2");
-    expect(html).toContain("有效 2/2");
+    expect(html.match(/部分结果/g)).toHaveLength(3);
+    expect(html).toContain("有效 0/2");
     expect(html).not.toContain("含失败");
     expect(html).not.toContain("token 超限");
     expect(html).not.toContain("超时");
   });
 
-  it("does not treat startup summaries as partial completion", () => {
+  it("does not treat startup summaries as partial results", () => {
     const part: SubagentMessagePart = {
       type: "subagent",
       batchId: "batch-1",
@@ -87,7 +86,7 @@ describe("SubagentCard", () => {
     expect(html).toContain("有效 0/2");
     expect(html).toContain("截断 2");
     expect(html.match(/已截断/g)).toHaveLength(2);
+    expect(html).not.toContain("部分结果");
     expect(html).not.toContain("部分完成");
-    expect(html).not.toContain("含部分完成");
   });
 });

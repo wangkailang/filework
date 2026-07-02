@@ -434,7 +434,9 @@ describe("buildSubagentSystemPrompt", () => {
     expect(prompt).toMatch(/evidence/i);
     expect(prompt).toMatch(/Reserve.*final/i);
     expect(prompt).toMatch(/startup summary/i);
-    expect(prompt).toMatch(/before running another inspection tool/i);
+    expect(prompt).toMatch(/exactly once/i);
+    expect(prompt).toMatch(/will not treat `partial` as complete/i);
+    expect(prompt).not.toMatch(/before running another inspection tool/i);
   });
 
   it("announces submitSubagentResult as an available subagent tool", () => {

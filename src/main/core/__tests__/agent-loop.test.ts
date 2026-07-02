@@ -24,6 +24,7 @@ const scriptedRuns: Array<{
   /** 模拟 AI SDK v7 只暴露 stream 的结果形态。 */
   streamOnly?: boolean;
 }> = [];
+const prepareStepResults: unknown[] = [];
 
 function nextRun() {
   const run = scriptedRuns.shift();
@@ -44,17 +45,34 @@ vi.mock("ai", () => ({
         messages: unknown[];
         responseMessages: unknown[];
         stepNumber: number;
-      }) => unknown;
+      }) => PromiseLike<unknown> | unknown;
     }) => {
       const run = nextRun();
-      options?.prepareStep?.({
-        initialMessages: options.messages ?? [],
-        messages: options.messages ?? [],
-        responseMessages: [],
-        stepNumber: 0,
-      });
       const stream = (async function* () {
-        for (const p of run.parts) yield p;
+        const initialMessages = options?.messages ?? [];
+        const responseMessages: unknown[] = [];
+        prepareStepResults.push(
+          await options?.prepareStep?.({
+            initialMessages,
+            messages: [...initialMessages],
+            responseMessages: [],
+            stepNumber: 0,
+          }),
+        );
+        for (const p of run.parts) {
+          yield p;
+          if (p.type === "finish-step" && p.finishReason === "tool-calls") {
+            responseMessages.push({ role: "assistant", content: "" });
+            prepareStepResults.push(
+              await options?.prepareStep?.({
+                initialMessages,
+                messages: [...initialMessages, ...responseMessages],
+                responseMessages,
+                stepNumber: responseMessages.length,
+              }),
+            );
+          }
+        }
         if (run.holdMs)
           await new Promise((resolve) => setTimeout(resolve, run.holdMs));
         if (run.throwAfter) throw run.throwAfter;
@@ -111,6 +129,7 @@ const fakeModel = {} as LanguageModel;
 describe("AgentLoop", () => {
   beforeEach(() => {
     scriptedRuns.length = 0;
+    prepareStepResults.length = 0;
   });
 
   afterEach(() => {
@@ -529,6 +548,55 @@ describe("AgentLoop", () => {
     expect(JSON.stringify(reports[0].preparedMessages)).toContain(
       "chars elided to save context",
     );
+  });
+
+  it("transforms prepared step context before reporting usage", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const reports: Array<{
+      messages: unknown[];
+      preparedMessages: unknown[];
+    }> = [];
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "",
+      history: [{ role: "user", content: "long history" }],
+      hooks: {
+        transformStepContext: async () => ({
+          messages: [{ role: "system", content: "compressed step" }],
+          originalTokens: 1000,
+          compressedTokens: 100,
+        }),
+        contextUsage: ((payload: {
+          messages: unknown[];
+          preparedMessages: unknown[];
+        }) => {
+          reports.push(payload);
+        }) as never,
+      } as never,
+    });
+
+    const events = await collect(loop, "continue");
+
+    expect(reports).toHaveLength(1);
+    expect(JSON.stringify(reports[0].messages)).toContain("long history");
+    expect(JSON.stringify(reports[0].preparedMessages)).toContain(
+      "compressed step",
+    );
+    const compressed = events.find(
+      (event) => event.type === "context_compressed",
+    );
+    expect(compressed).toMatchObject({
+      originalTokens: 1000,
+      compressedTokens: 100,
+    });
   });
 
   it("does not append a text-only duplicate when history already contains the current image turn", async () => {
@@ -1086,6 +1154,118 @@ describe("AgentLoop", () => {
     expect(end.stopReason).toBe("token_budget");
     // 命中预算应在 reflect 之前 short-circuit。
     expect(reflectMock).not.toHaveBeenCalled();
+  });
+
+  it("near token budget enters graceful no-tool wrap-up before hard abort", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "call-1",
+          toolName: "echo",
+          input: { msg: "scan" },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "echo",
+          output: "large result",
+        },
+        {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 80, outputTokens: 5 },
+        },
+        { type: "start-step" },
+        { type: "text-delta", text: "wrapped" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: registryWith({
+        name: "echo",
+        description: "Echo",
+        safety: "safe",
+        inputSchema: z.object({ msg: z.string() }),
+        execute: async (args) => (args as { msg: string }).msg,
+      }),
+      systemPrompt: "system",
+      maxTotalTokens: 100,
+      gracefulShutdown: {
+        tokenBudgetRatio: 0.8,
+        message:
+          "Wrap up now. Do not call more tools; return the final result artifact.",
+      },
+    });
+
+    const events = await collect(loop, "hi");
+    const end = events.at(-1);
+    if (end?.type !== "agent_end") throw new Error("expected agent_end");
+    expect(end.status).toBe("completed");
+    expect(end.stopReason).toBeUndefined();
+
+    const secondPrepare = prepareStepResults[1] as {
+      activeTools?: string[];
+      toolChoice?: string;
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(secondPrepare.activeTools).toEqual([]);
+    expect(secondPrepare.toolChoice).toBe("none");
+    expect(secondPrepare.messages?.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("Wrap up now"),
+    });
+  });
+
+  it("injects queued steering messages into the next prepared step", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        { type: "text-delta", text: "adjusted" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 5, outputTokens: 3 },
+        },
+      ],
+    });
+    const drainSteeringMessages = vi.fn(() => [
+      "Focus only on the remaining failing test.",
+      "Do not keep exploring unrelated files.",
+    ]);
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: { drainSteeringMessages },
+    });
+
+    await collect(loop, "hi");
+
+    expect(drainSteeringMessages).toHaveBeenCalledTimes(1);
+    const firstPrepare = prepareStepResults[0] as {
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(firstPrepare.messages?.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("[User steering]"),
+    });
+    expect(firstPrepare.messages?.at(-1)?.content).toContain(
+      "Focus only on the remaining failing test.",
+    );
+    expect(firstPrepare.messages?.at(-1)?.content).toContain(
+      "Do not keep exploring unrelated files.",
+    );
   });
 
   it("墙钟超 maxWallMs → agent_end{completed, stopReason:wall_clock}", async () => {

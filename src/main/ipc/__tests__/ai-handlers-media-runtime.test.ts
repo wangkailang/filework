@@ -42,6 +42,7 @@ const taskControlMock = vi.hoisted(() => ({
       _startIndex?: number,
     ): RecordedStreamEventFixture[] => [],
   ),
+  enqueueTaskSteering: vi.fn(),
   manualStopFlags: new Map<string, boolean>(),
   pendingApprovals: new Map<string, (approved: boolean) => void>(),
   pendingClarifications: new Map<string, unknown>(),
@@ -162,6 +163,11 @@ vi.mock("../ai-models", () => ({
     adapter: { extractCacheMetrics: vi.fn(() => ({})) },
     generationOptions: {},
     model: "chat-model",
+    providerNativeCompaction: {
+      enabled: false,
+      provider: "openai",
+      reason: "unsupported-api",
+    },
     providerOptions: {},
   })),
   isAvailableLlmConfig: vi.fn(() => true),
@@ -277,6 +283,9 @@ describe("ai:executeTask media modality routing", () => {
         index: eventIndex++,
         payload,
       }),
+    );
+    taskControlMock.enqueueTaskSteering.mockImplementation(
+      (_taskId: string, message: string) => message.trim().length > 0,
     );
   });
 
@@ -468,6 +477,37 @@ describe("ai:executeTask media modality routing", () => {
       ],
       ["ai:stream-delta", { delta: "replayed", id: "task-replay" }],
     ]);
+  });
+
+  it("queues runtime steering messages through ai:steerTask", async () => {
+    taskControlMock.enqueueTaskSteering.mockReturnValue(true);
+
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:steerTask");
+    expect(handler).toBeTypeOf("function");
+
+    const result = await handler?.(
+      {},
+      { taskId: "task-steer", message: "  focus on the failing test  " },
+    );
+
+    expect(result).toEqual({ ok: true, accepted: true });
+    expect(taskControlMock.enqueueTaskSteering).toHaveBeenCalledWith(
+      "task-steer",
+      "  focus on the failing test  ",
+    );
+  });
+
+  it("rejects empty runtime steering messages", async () => {
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:steerTask");
+
+    const result = await handler?.({}, { taskId: "task-steer", message: "  " });
+
+    expect(result).toEqual({ ok: false, accepted: false });
+    expect(taskControlMock.enqueueTaskSteering).not.toHaveBeenCalled();
   });
 
   it("routes saved custom gpt-image configs through media runtime even if the stored modality is chat", async () => {

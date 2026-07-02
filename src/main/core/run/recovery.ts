@@ -116,6 +116,16 @@ const toolResultState = (result: unknown): ToolState => {
   return isFailure ? "output-error" : "output-available";
 };
 
+const SUBAGENT_RESULT_TOOL_NAME = "submitSubagentResult";
+
+const submittedArtifactsFromToolResult = (
+  result: unknown,
+): Record<string, unknown> | null => {
+  if (!isRecord(result)) return null;
+  if (isRecord(result.artifacts)) return result.artifacts;
+  return null;
+};
+
 const findSubagentPart = (
   parts: SubagentMessagePart[],
   batchId: string,
@@ -179,10 +189,18 @@ const appendSubagentToolCall = (
 
 const applySubagentToolResult = (
   child: SubagentChildView,
-  input: { toolCallId: string; result: unknown },
+  input: { toolCallId: string; result: unknown; toolName?: string | null },
 ): void => {
   if (child.status === "queued") child.status = "running";
   const state = toolResultState(input.result);
+  const toolName =
+    input.toolName ??
+    child.toolCalls.find((tool) => tool.toolCallId === input.toolCallId)
+      ?.toolName;
+  if (toolName === SUBAGENT_RESULT_TOOL_NAME) {
+    const artifacts = submittedArtifactsFromToolResult(input.result);
+    if (artifacts) child.artifacts = artifacts;
+  }
   child.toolCalls = child.toolCalls.map((tool) =>
     tool.toolCallId === input.toolCallId ? { ...tool, state } : tool,
   );
@@ -274,8 +292,10 @@ export const buildRecoveredSubagentParts = (
     if (event.channel === "ai:subagent-tool-result") {
       const toolCallId = readString(event.payload, "toolCallId");
       if (!toolCallId) continue;
+      const toolName = readString(event.payload, "toolName");
       applySubagentToolResult(child, {
         toolCallId,
+        toolName,
         result: event.payload.result,
       });
       continue;

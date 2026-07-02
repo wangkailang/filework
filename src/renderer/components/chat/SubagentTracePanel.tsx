@@ -129,7 +129,9 @@ export function SubagentTracePanel({
 
   const total = fmtTokens(child.usage.totalTokens);
   const parts = child.parts ?? [];
-  const hasNoUsableResult = child.resultQuality === "no_result";
+  const hasNoUsableResult =
+    child.resultQuality === "no_result" ||
+    child.resultQuality === "usable_partial";
 
   return (
     <div className="flex h-full flex-col">

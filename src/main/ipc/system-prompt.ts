@@ -111,8 +111,9 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 - Refuse or narrow requests that would enable malware, credential theft, weapon construction, or other direct harm; keep the reply brief and offer a safe alternative when one exists.
 
 ### Delegation
-- PREFER \`spawnSubagent\` for independent parallel units: multi-topic research/comparison, per-item fan-out, or multi-directory/multi-file analysis. Open one sub-agent per unit in a single call.
-- Do NOT delegate single-step work, order-dependent steps (sub-agents can't talk to each other), or anything needing user clarification. See the tool description for details.
+- Use \`spawnSubagent\` for independent parallel units: multi-topic research, per-item fan-out, or multi-directory/file analysis.
+- Do NOT delegate single-step, order-dependent, or user-clarification work.
+- Consume only \`complete\` sub-agent reports; \`partial\`, \`usable_partial\`, \`no_result\`, timeout, and token-limit reports are diagnostics.
 
 ### Deterministic Computation
 - Token generation is probabilistic; arithmetic is not. For math/conversions/hash/regex, call \`runProcess\` with \`python3\` argv (or \`runCommand\` for shell syntax; use \`BigInt\`). Reasoning blocks do not compute; don't quote multi-digit results without a tool.
@@ -482,11 +483,11 @@ export const buildSubagentSystemPrompt = ({
     "",
     [
       "## Result Contract",
-      "- Call `submitSubagentResult` as soon as you have at least one evidence-backed finding; do not wait until the end of exploration.",
-      "- Before running another inspection tool after you have one evidence-backed finding, call `submitSubagentResult` first with `status: partial`.",
+      "- Call `submitSubagentResult` exactly once, when you are done or genuinely blocked.",
       "- If you cannot call tools or the submit tool is unavailable, your final answer MUST include `RESULT_JSON` followed by one fenced `json` object as a fallback.",
       '- Schema: `{ "status": "complete|partial|no_result", "coverage": ["paths or sources inspected"], "findings": [{ "claim": "validated finding", "evidence": ["file, command, URL, or artifact"] }], "evidence": ["optional additional concrete sources"], "missing": ["known gaps"], "failureReason": "null or concise reason" }`.',
-      "- Use `status: partial` only when `findings` contains at least one claim backed by concrete evidence.",
+      "- Use `status: complete` only when you covered the assigned goal enough for the lead to rely on your result.",
+      "- Use `status: partial` only when you are blocked or near a hard limit after finding some evidence; list every known gap in `missing`. The lead will not treat `partial` as complete.",
       "- Use `status: no_result` when you only have a startup summary, process note, blocker, or unverified guess. A startup summary is not a result.",
       "- Keep prose short; the lead consumes the JSON artifact first.",
     ].join("\n"),

@@ -23,7 +23,6 @@ export const isPartialSubagentResult = (child: SubagentChildView): boolean =>
 
 export const isUsableSubagentResult = (child: SubagentChildView): boolean =>
   child.resultQuality === "complete" ||
-  child.resultQuality === "usable_partial" ||
   (child.resultQuality === undefined && child.status === "ok");
 
 const isTruncatedNoResult = (child: SubagentChildView): boolean =>
@@ -67,7 +66,7 @@ const STATUS_META: Record<
     Icon: Coins,
   },
   partial: {
-    label: "部分完成",
+    label: "部分结果",
     className: "text-amber-500",
     Icon: CircleAlert,
   },
@@ -172,7 +171,7 @@ export function SubagentCard({ part }: { part: SubagentMessagePart }) {
           </span>
         )}
         {allDone && partialCount > 0 && (
-          <span className="text-amber-500">· 部分 {partialCount}</span>
+          <span className="text-amber-500">· 部分结果 {partialCount}</span>
         )}
         {allDone && truncatedCount > 0 && (
           <span className="text-amber-500">· 截断 {truncatedCount}</span>
