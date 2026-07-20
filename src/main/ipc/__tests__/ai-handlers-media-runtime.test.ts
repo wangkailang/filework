@@ -186,6 +186,7 @@ vi.mock("../ai-models", () => ({
     adapter: { extractCacheMetrics: vi.fn(() => ({})) },
     generationOptions: {},
     model: "chat-model",
+    modelLimits: { contextWindow: null, maxOutputTokens: null },
     providerNativeCompaction: {
       enabled: false,
       provider: "openai",
@@ -351,6 +352,7 @@ describe("ai:executeTask media modality routing", () => {
       },
       generationOptions: {},
       model: "chat-model",
+      modelLimits: { contextWindow: 1_050_000, maxOutputTokens: null },
       modelId: "gpt-5.5",
       configId: "chat-cfg",
       providerNativeCompaction: {

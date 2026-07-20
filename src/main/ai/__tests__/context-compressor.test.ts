@@ -303,6 +303,34 @@ describe("compressContext", () => {
     expect(prompt).toContain("new middle work that must be merged");
   });
 
+  it("requests an execution-ready checkpoint without persisting secrets", async () => {
+    await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("implemented the auth fix and ran its regression test"),
+        userMsg("continue with the remaining work"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+      },
+    );
+
+    const prompt = vi.mocked(generateText).mock.calls.at(-1)?.[0].prompt;
+    expect(prompt).toContain("## 当前目标");
+    expect(prompt).toContain("## 用户约束");
+    expect(prompt).toContain("## 关键决策与理由");
+    expect(prompt).toContain("## 文件与产物");
+    expect(prompt).toContain("## 验证状态");
+    expect(prompt).toContain("## 失败尝试");
+    expect(prompt).toContain("## 下一步");
+    expect(prompt).toContain("不要记录密码、API key、访问令牌或其他凭据");
+  });
+
   it("includes vector-recalled memory chunks when summarizing new middle history", async () => {
     await compressContext(
       [

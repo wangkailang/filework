@@ -148,15 +148,15 @@ function rankRecallCandidates(
   chunks: MemoryVectorChunk[],
   query: string,
 ): MemoryVectorChunk[] {
-  const vectorRanked = rankVectorMemoryChunks(chunks, query).filter(
-    (chunk) => chunk.score > 0,
-  );
-  if (vectorRanked.length > 0) return vectorRanked;
-
-  return rankBm25(
+  const lexicalRanked = rankBm25(
     chunks.map((chunk) => chunk.text),
     query,
   )
     .filter((hit) => hit.score > 0)
     .map((hit) => chunks[hit.index]);
+  if (lexicalRanked.length > 0) return lexicalRanked;
+
+  return rankVectorMemoryChunks(chunks, query).filter(
+    (chunk) => chunk.score > 0,
+  );
 }

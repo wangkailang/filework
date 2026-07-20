@@ -7,6 +7,7 @@
  */
 
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import { getKnownModelLimitsForModelId } from "../../shared/model-context-window";
 import {
   createModelWithAdapter,
   getAdapter,
@@ -29,6 +30,23 @@ export interface LlmGenerationOptions {
   reasoningEffort?: string;
   temperature?: number;
   topP?: number;
+}
+
+export function resolveLlmModelLimits(
+  config: Pick<
+    LlmConfig,
+    "maxOutputTokens" | "model" | "modelContextWindow" | "modelMaxOutputTokens"
+  >,
+): { contextWindow: number | null; maxOutputTokens: number | null } {
+  const known = getKnownModelLimitsForModelId(config.model);
+  return {
+    contextWindow: config.modelContextWindow ?? known?.contextWindow ?? null,
+    maxOutputTokens:
+      config.maxOutputTokens ??
+      config.modelMaxOutputTokens ??
+      known?.maxOutputTokens ??
+      null,
+  };
 }
 
 export function isAvailableLlmConfig(config: LlmConfig): boolean {
@@ -93,11 +111,11 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     maxOutputTokens,
     reasoningEffort,
   } = config;
-  const resolvedMaxOutputTokens =
-    maxOutputTokens ?? config.modelMaxOutputTokens ?? null;
+  const resolvedLimits = resolveLlmModelLimits(config);
+  const resolvedMaxOutputTokens = resolvedLimits.maxOutputTokens;
   const compressionTriggerBudget = getCompressionTriggerBudget({
     modelId,
-    contextWindow: config.modelContextWindow ?? null,
+    contextWindow: resolvedLimits.contextWindow,
     maxOutputTokens: resolvedMaxOutputTokens,
   });
   console.log(
@@ -140,7 +158,7 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
     reasoningEffort,
     compressionTriggerBudget,
     maxOutputTokens: resolvedMaxOutputTokens,
-    modelContextWindow: config.modelContextWindow ?? null,
+    modelContextWindow: resolvedLimits.contextWindow,
     modelCapabilities: config.modelCapabilities,
   };
   const modelWithAdapter = createModelWithAdapter(providerConfig);
@@ -155,6 +173,7 @@ export const getModelAndAdapterByConfigId = (configId?: string) => {
   return {
     ...modelWithAdapter,
     generationOptions,
+    modelLimits: resolvedLimits,
     providerOptions: modelWithAdapter.adapter.buildProviderOptions(
       providerConfig,
     ) as ProviderOptions,
