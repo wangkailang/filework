@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   convertToCoreMessages,
+  convertToCoreMessagesWithSourceIds,
   type HistoryMessage,
 } from "../message-converter";
 
@@ -224,6 +225,94 @@ describe("convertToCoreMessages", () => {
       content: [{ type: "text", text: "Second" }],
     });
     expect(result[2]).toEqual({ role: "user", content: "Third" });
+  });
+
+  it("rebuilds OpenAI history from the latest persisted compaction boundary", async () => {
+    const history = [
+      { id: "m1", role: "user", content: "old request" },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "old answer",
+        parts: [{ type: "text", text: "old answer" }],
+      },
+      {
+        id: "m3",
+        role: "assistant",
+        content: "before compactionafter compaction",
+        parts: [
+          { type: "text", text: "before compaction" },
+          {
+            type: "provider-context",
+            provider: "openai",
+            kind: "compaction",
+            itemId: "cmp_123",
+            encryptedContent: "encrypted-state",
+          },
+          { type: "text", text: "after compaction" },
+        ],
+      },
+      { id: "m4", role: "user", content: "next request" },
+    ] as unknown as HistoryMessage[];
+
+    const result = await convertToCoreMessagesWithSourceIds(history, {
+      providerId: "openai",
+    });
+
+    expect(result.messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "custom",
+            kind: "openai.compaction",
+            providerOptions: {
+              openai: {
+                type: "compaction",
+                itemId: "cmp_123",
+                encryptedContent: "encrypted-state",
+              },
+            },
+          },
+          { type: "text", text: "after compaction" },
+        ],
+      },
+      { role: "user", content: "next request" },
+    ]);
+    expect(result.sourceMessageIds).toEqual(["m3", "m4"]);
+  });
+
+  it("ignores OpenAI compaction state when switching to another provider", async () => {
+    const history = [
+      { id: "m1", role: "user", content: "old request" },
+      {
+        id: "m2",
+        role: "assistant",
+        content: "answer",
+        parts: [
+          {
+            type: "provider-context",
+            provider: "openai",
+            kind: "compaction",
+            itemId: "cmp_123",
+          },
+          { type: "text", text: "answer" },
+        ],
+      },
+    ] as unknown as HistoryMessage[];
+
+    const result = await convertToCoreMessagesWithSourceIds(history, {
+      providerId: "anthropic",
+    });
+
+    expect(result.messages).toEqual([
+      { role: "user", content: "old request" },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "answer" }],
+      },
+    ]);
+    expect(result.sourceMessageIds).toEqual(["m1", "m2"]);
   });
 
   it("handles assistant message with no parts using content string", async () => {

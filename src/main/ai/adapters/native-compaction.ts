@@ -3,9 +3,9 @@ import type { JSONObject, ProviderConfig, ProviderOptionMap } from "./base";
 export type ProviderNativeCompaction =
   | {
       enabled: true;
-      mode: "openai-truncation-auto";
+      mode: "openai-context-management-compact";
       provider: "openai";
-      triggerTokens: null;
+      triggerTokens: number;
     }
   | {
       enabled: true;
@@ -21,7 +21,9 @@ export type ProviderNativeCompaction =
 
 export interface ProviderNativeCompactionUsage {
   applied: boolean;
-  mode: "anthropic-context-management-compact" | "openai-truncation-auto";
+  mode:
+    | "anthropic-context-management-compact"
+    | "openai-context-management-compact";
   provider: "anthropic" | "openai";
 }
 
@@ -57,11 +59,19 @@ export function getProviderNativeCompaction(
         reason: "unsupported-api",
       };
     }
+    const triggerTokens = normalizeTrigger(config.compressionTriggerBudget);
+    if (triggerTokens == null) {
+      return {
+        enabled: false,
+        provider: config.provider,
+        reason: "unsupported-api",
+      };
+    }
     return {
       enabled: true,
-      mode: "openai-truncation-auto",
+      mode: "openai-context-management-compact",
       provider: "openai",
-      triggerTokens: null,
+      triggerTokens,
     };
   }
 
@@ -82,7 +92,16 @@ export function buildProviderNativeCompactionOptions(
   if (!native.enabled) return {};
 
   if (native.provider === "openai") {
-    return { openai: { truncation: "auto" } };
+    return {
+      openai: {
+        contextManagement: [
+          {
+            type: "compaction",
+            compactThreshold: native.triggerTokens,
+          },
+        ],
+      },
+    };
   }
 
   const edit: JSONObject = {

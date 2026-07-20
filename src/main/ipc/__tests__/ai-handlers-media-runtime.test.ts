@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskSummary } from "../../db";
 
 type IpcHandler = (...args: unknown[]) => unknown;
 type RecordedStreamEventFixture = {
@@ -16,6 +17,8 @@ const dbMock = vi.hoisted(() => ({
   getLlmConfig: vi.fn(),
   getLlmConfigs: vi.fn(),
   getSetting: vi.fn(),
+  getTaskSummary: vi.fn<() => TaskSummary | null>(() => null),
+  listContextMemoryChunks: vi.fn(() => []),
   listSkillTrust: vi.fn(() => []),
   setSetting: vi.fn(),
   startAutomationRun: vi.fn(),
@@ -55,6 +58,8 @@ const taskControlMock = vi.hoisted(() => ({
 }));
 
 const agentLoopRunMock = vi.hoisted(() => vi.fn());
+const agentLoopConfigs = vi.hoisted(() => [] as unknown[]);
+const compressContextMock = vi.hoisted(() => vi.fn());
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -90,12 +95,26 @@ vi.mock("../../ai/error-classifier", () => ({
   }),
 }));
 
+vi.mock("../../ai/context-compressor", () => ({
+  compressContext: compressContextMock,
+  createContextSummaryMessage: (summary?: string | null) =>
+    summary
+      ? { role: "system", content: `[context summary]\n${summary}` }
+      : null,
+  isContextSummaryMessage: (message: { role?: string; content?: unknown }) =>
+    message.role === "system" &&
+    typeof message.content === "string" &&
+    message.content.startsWith("[context summary]"),
+}));
+
 vi.mock("../../ai/memory-debug-store", () => ({
   emitMemoryEvent: vi.fn(),
 }));
 
 vi.mock("../../ai/provider-token-count", () => ({
   countOpenAIResponsesInputTokens: vi.fn(() => Promise.resolve(null)),
+  estimateToolDefinitionTokens: vi.fn(() => Promise.resolve(0)),
+  supportsOpenAIResponsesInputTokenCount: vi.fn(() => true),
 }));
 
 vi.mock("../../ai/task-trace-store", () => ({
@@ -105,6 +124,10 @@ vi.mock("../../ai/task-trace-store", () => ({
 vi.mock("../../core/agent/agent-loop", () => ({
   AgentLoop: vi.fn(
     class {
+      constructor(config: unknown) {
+        agentLoopConfigs.push(config);
+      }
+
       run = agentLoopRunMock;
     },
   ),
@@ -270,6 +293,7 @@ function makeMediaConfig(
 describe("ai:executeTask media modality routing", () => {
   beforeEach(() => {
     ipcHandlers.clear();
+    agentLoopConfigs.length = 0;
     vi.clearAllMocks();
     agentLoopRunMock.mockImplementation(() => {
       throw new Error("AgentLoop run was not configured for this test");
@@ -288,6 +312,115 @@ describe("ai:executeTask media modality routing", () => {
       (_taskId: string, message: string) => message.trim().length > 0,
     );
   });
+
+  const runGpt55ChatTaskWithProviderCount = async (
+    inputTokens: number,
+    payloadOverrides: Record<string, unknown> = {},
+    agentEvents?: Array<Record<string, unknown>>,
+    providerNativeCompactionEnabled = false,
+  ) => {
+    const aiModels = await import("../ai-models");
+    const providerTokenCount = await import("../../ai/provider-token-count");
+    const gpt55Config = makeMediaConfig("chat", {
+      baseUrl: null,
+      id: "chat-cfg",
+      model: "gpt-5.5",
+      modelCapabilities: {
+        preferredApi: "responses",
+        supportsReasoning: true,
+        supportsTools: true,
+        supportsVision: true,
+      },
+      provider: "openai",
+    });
+    dbMock.getLlmConfig.mockReturnValue(gpt55Config);
+    dbMock.getLlmConfigs.mockReturnValue([gpt55Config]);
+    vi.mocked(aiModels.selectAvailableChatLlmConfig).mockReturnValue({
+      config: gpt55Config,
+      fallbackFromConfigId: null,
+    } as ReturnType<typeof aiModels.selectAvailableChatLlmConfig>);
+    vi.mocked(aiModels.getModelAndAdapterByConfigId).mockReturnValue({
+      adapter: {
+        buildProviderOptions: vi.fn(() => ({})),
+        createModel: vi.fn(() => "chat-model" as never),
+        extractCacheMetrics: vi.fn(() => ({
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+        })),
+        name: "openai",
+      },
+      generationOptions: {},
+      model: "chat-model",
+      modelId: "gpt-5.5",
+      configId: "chat-cfg",
+      providerNativeCompaction: {
+        ...(providerNativeCompactionEnabled
+          ? {
+              enabled: true as const,
+              mode: "openai-context-management-compact" as const,
+              provider: "openai" as const,
+              triggerTokens: 735_000,
+            }
+          : {
+              enabled: false as const,
+              provider: "openai" as const,
+              reason: "unsupported-api" as const,
+            }),
+      },
+      providerOptions: {},
+    });
+    vi.mocked(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).mockResolvedValue({
+      accuracy: "actual",
+      inputTokens,
+      provider: "openai",
+      source: "openai-responses-input-tokens",
+    });
+    agentLoopRunMock.mockImplementation(async function* () {
+      for (const event of agentEvents ?? []) yield event;
+      yield {
+        type: "agent_end" as const,
+        agentId: "parent-task",
+        status: "completed",
+        finalText: "Done",
+        totalUsage: { inputTokens, outputTokens: 20 },
+      };
+    });
+
+    const { registerAIHandlers } = await import("../ai-handlers");
+    registerAIHandlers();
+    const handler = ipcHandlers.get("ai:executeTask");
+    const sender = {
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn(),
+    };
+
+    await handler?.(
+      { sender },
+      {
+        assistantMessageId: "assistant-chat",
+        llmConfigId: "chat-cfg",
+        prompt: "Continue",
+        sessionId: "session-chat",
+        workspacePath: process.cwd(),
+        ...payloadOverrides,
+      },
+    );
+
+    return Object.assign(agentLoopConfigs.at(-1) as object, {
+      sender,
+    }) as {
+      history?: Array<{ role: string; content: unknown }>;
+      hooks?: {
+        transformStepContext?: (
+          messages: Array<{ role: "user"; content: string }>,
+          signal: AbortSignal,
+        ) => Promise<unknown>;
+      };
+      sender: typeof sender;
+    };
+  };
 
   it("stores parent plus subagent token usage for chat tasks", async () => {
     agentLoopRunMock.mockImplementation(async function* () {
@@ -316,6 +449,10 @@ describe("ai:executeTask media modality routing", () => {
         status: "completed",
         finalText: "Done",
         totalUsage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+        contextUsage: {
+          latestStepContextTokens: 50,
+          maxStepContextTokens: 70,
+        },
       };
     });
 
@@ -347,6 +484,15 @@ describe("ai:executeTask media modality routing", () => {
         inputTokens: 130,
         outputTokens: 30,
         totalTokens: 160,
+      }),
+    );
+    expect(sender.send).toHaveBeenCalledWith(
+      "ai:stream-done",
+      expect.objectContaining({
+        contextUsage: {
+          latestStepContextTokens: 50,
+          maxStepContextTokens: 70,
+        },
       }),
     );
   });
@@ -638,5 +784,236 @@ describe("ai:executeTask media modality routing", () => {
     ]);
     expect(sent.map(([channel]) => channel)).toContain("ai:stream-done");
     expect(sent.map(([channel]) => channel)).not.toContain("ai:stream-error");
+  });
+
+  it("does not start GPT-5.5 context compression below the API trigger budget", async () => {
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(500_000);
+    const messages = [{ role: "user" as const, content: "hello" }];
+    const transformed = await loopConfig.hooks?.transformStepContext?.(
+      messages,
+      new AbortController().signal,
+    );
+
+    expect(transformed).toEqual({ messages });
+    expect(compressContextMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards persisted OpenAI compaction state to the chat stream", async () => {
+    const result = await runGpt55ChatTaskWithProviderCount(500_000, {}, [
+      {
+        type: "provider_context",
+        agentId: "parent-task",
+        part: {
+          type: "provider-context",
+          provider: "openai",
+          kind: "compaction",
+          itemId: "cmp_123",
+          encryptedContent: "encrypted-state",
+        },
+      },
+    ]);
+
+    expect(result.sender.send).toHaveBeenCalledWith(
+      "ai:stream-provider-context",
+      expect.objectContaining({
+        assistantMessageId: "assistant-chat",
+        sessionId: "session-chat",
+        part: expect.objectContaining({
+          type: "provider-context",
+          itemId: "cmp_123",
+        }),
+      }),
+    );
+  });
+
+  it("uses one exact provider count and estimates low-risk follow-up steps", async () => {
+    const providerTokenCount = await import("../../ai/provider-token-count");
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(500_000);
+    const transform = loopConfig.hooks?.transformStepContext;
+    const signal = new AbortController().signal;
+
+    await transform?.([{ role: "user", content: "step one" }], signal);
+    await transform?.([{ role: "user", content: "step two" }], signal);
+
+    expect(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-5.5", provider: "openai" }),
+      [{ role: "user", content: "step one" }],
+      expect.objectContaining({
+        instructions: "system",
+        signal,
+        tools: {},
+      }),
+    );
+  });
+
+  it("refreshes the exact provider count when the estimate approaches the trigger", async () => {
+    const providerTokenCount = await import("../../ai/provider-token-count");
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(500_000);
+    const transform = loopConfig.hooks?.transformStepContext;
+    const signal = new AbortController().signal;
+
+    vi.mocked(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).mockResolvedValueOnce({
+      accuracy: "actual",
+      inputTokens: 500_000,
+      provider: "openai",
+      source: "openai-responses-input-tokens",
+    });
+    vi.mocked(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).mockResolvedValueOnce({
+      accuracy: "actual",
+      inputTokens: 700_000,
+      provider: "openai",
+      source: "openai-responses-input-tokens",
+    });
+
+    await transform?.([{ role: "user", content: "small" }], signal);
+    await transform?.(
+      [{ role: "user", content: "x".repeat(1_100_000) }],
+      signal,
+    );
+
+    expect(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips separate token preflight when provider-native compaction is enabled", async () => {
+    const providerTokenCount = await import("../../ai/provider-token-count");
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(
+      500_000,
+      {},
+      undefined,
+      true,
+    );
+    const transform = loopConfig.hooks?.transformStepContext;
+
+    await transform?.(
+      [{ role: "user", content: "step one" }],
+      new AbortController().signal,
+    );
+    await transform?.(
+      [{ role: "user", content: "step two" }],
+      new AbortController().signal,
+    );
+
+    expect(
+      providerTokenCount.countOpenAIResponsesInputTokens,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("does not treat cumulative history usage as current request occupancy", async () => {
+    await runGpt55ChatTaskWithProviderCount(500_000, {
+      contextInputTokens: 900_000,
+      history: [
+        { id: "user-1", role: "user", content: "Earlier request" },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Earlier answer",
+          parts: [
+            {
+              type: "usage",
+              inputTokens: 900_000,
+              outputTokens: 20_000,
+              totalTokens: 920_000,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(compressContextMock).not.toHaveBeenCalled();
+  });
+
+  it("applies a valid rolling-summary watermark before converting history", async () => {
+    dbMock.getTaskSummary.mockReturnValue({
+      taskId: "session:session-chat",
+      createdAt: "2026-07-13T12:00:00.000Z",
+      summary: "## 已完成\n- covered work",
+      coveredThroughMessageId: "m4",
+      retainedTailStartId: "m5",
+      summaryVersion: 1,
+      sourceTokenCount: 200_000,
+      lastCompactedAt: "2026-07-13T12:00:00.000Z",
+    });
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(500_000, {
+      history: [
+        { id: "m1", role: "user", content: "pinned user" },
+        { id: "m2", role: "assistant", content: "pinned assistant" },
+        { id: "m3", role: "user", content: "covered old request" },
+        { id: "m4", role: "assistant", content: "covered old answer" },
+        { id: "m5", role: "user", content: "new request" },
+      ],
+    });
+    const renderedHistory = JSON.stringify(loopConfig.history);
+
+    expect(renderedHistory).toContain("covered work");
+    expect(renderedHistory).toContain("pinned user");
+    expect(renderedHistory).toContain("new request");
+    expect(renderedHistory).not.toContain("covered old request");
+    expect(renderedHistory).not.toContain("covered old answer");
+  });
+
+  it("starts GPT-5.5 context compression after provider input exceeds the API trigger budget", async () => {
+    compressContextMock.mockResolvedValue({
+      compressedTokens: 100,
+      hadError: false,
+      messages: [{ role: "user", content: "compressed" }],
+      originalTokens: 900_000,
+      summaryTokens: 20,
+      wasCompressed: true,
+    });
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(900_000);
+    const messages = [{ role: "user" as const, content: "hello" }];
+    await loopConfig.hooks?.transformStepContext?.(
+      messages,
+      new AbortController().signal,
+    );
+
+    expect(compressContextMock).toHaveBeenCalledWith(
+      messages,
+      expect.objectContaining({
+        force: true,
+        promptSnippet: "Continue",
+      }),
+    );
+    const [, options] = compressContextMock.mock.calls[0] ?? [];
+    expect(
+      (options as { budget?: number } | undefined)?.budget,
+    ).toBeGreaterThan(500_000);
+    expect((options as { budget?: number } | undefined)?.budget).toBeLessThan(
+      525_000,
+    );
+  });
+
+  it("preserves step context when soft-limit summarization fails", async () => {
+    const messages = [
+      { role: "user" as const, content: "old context" },
+      { role: "user" as const, content: "latest request" },
+    ];
+    compressContextMock.mockResolvedValue({
+      compressedTokens: 10,
+      hadError: true,
+      messages: [messages[1]],
+      originalTokens: 900_000,
+      summaryTokens: 0,
+      wasCompressed: false,
+    });
+    const loopConfig = await runGpt55ChatTaskWithProviderCount(900_000);
+
+    const transformed = await loopConfig.hooks?.transformStepContext?.(
+      messages,
+      new AbortController().signal,
+    );
+
+    expect(transformed).toEqual({ messages });
   });
 });

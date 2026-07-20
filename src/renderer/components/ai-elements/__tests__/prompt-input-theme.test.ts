@@ -29,4 +29,8 @@ describe("PromptInput skill command theme", () => {
     );
     expect(promptInputSource).not.toContain("prompt-skill-mention__source");
   });
+
+  it("disables the StarterKit bold mark in chat prompts", () => {
+    expect(promptInputSource).toContain("bold: false");
+  });
 });

@@ -14,6 +14,8 @@
  * SDK 消费者可以直接将它们管道输出到 stdout)。
  */
 
+import type { ProviderContextPart } from "../session/message-parts";
+
 export interface TokenUsage {
   inputTokens: number | null;
   outputTokens: number | null;
@@ -22,6 +24,11 @@ export interface TokenUsage {
   cacheWriteTokens?: number | null;
   /** 模型在隐藏推理上消耗的 token(o 系列、DeepSeek-R1、Claude 扩展思考)。 */
   reasoningTokens?: number | null;
+}
+
+export interface AgentContextUsage {
+  latestStepContextTokens: number;
+  maxStepContextTokens: number;
 }
 
 export interface ClassifiedAgentError {
@@ -135,6 +142,8 @@ export type AgentEvent =
       error?: ClassifiedAgentError;
       /** 所有轮次的聚合用量。在 streamText 解析出它时填充。 */
       totalUsage?: TokenUsage;
+      /** 父 agent 单次请求的上下文占用，不包含累计或子 agent 用量。 */
+      contextUsage?: AgentContextUsage;
       /** 提供方特有的元数据(例如缓存头)。对 core 而言是不透明的。 */
       providerMetadata?: Record<string, unknown>;
       /** 所有 assistant message_end 的 finalText 值的拼接。 */
@@ -157,6 +166,11 @@ export type AgentEvent =
       agentId: string;
       originalTokens: number;
       compressedTokens: number;
+    }
+  | {
+      type: "provider_context";
+      agentId: string;
+      part: ProviderContextPart;
     }
   | {
       type: "reflection_verdict";

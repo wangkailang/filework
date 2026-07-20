@@ -21,7 +21,7 @@ const MODEL_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
   ["gpt-4-1106", 128_000],
   ["gpt-4", 8_192],
   ["gpt-3.5-turbo", 16_385],
-  ["gpt-5.5", 258_000],
+  ["gpt-5.5", 1_050_000],
   ["o4-mini", 200_000],
   ["o3", 200_000],
   ["o3-mini", 200_000],

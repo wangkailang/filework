@@ -64,7 +64,7 @@ describe("OpenAIAdapter API selection", () => {
 });
 
 describe("OpenAIAdapter provider options", () => {
-  it("enables native truncation for official OpenAI Responses models", () => {
+  it("enables native compaction for official OpenAI Responses models", () => {
     const adapter = new OpenAIAdapter();
 
     expect(
@@ -72,6 +72,7 @@ describe("OpenAIAdapter provider options", () => {
         provider: "openai",
         apiKey: "test-key",
         baseUrl: null,
+        compressionTriggerBudget: 735_000,
         model: "gpt-5.5",
         modelCapabilities: {
           preferredApi: "responses",
@@ -83,12 +84,17 @@ describe("OpenAIAdapter provider options", () => {
     ).toEqual({
       openai: {
         parallelToolCalls: false,
-        truncation: "auto",
+        contextManagement: [
+          {
+            type: "compaction",
+            compactThreshold: 735_000,
+          },
+        ],
       },
     });
   });
 
-  it("does not send native truncation to custom OpenAI-compatible endpoints", () => {
+  it("does not send native compaction to custom OpenAI-compatible endpoints", () => {
     const adapter = new OpenAIAdapter();
 
     expect(
@@ -96,6 +102,7 @@ describe("OpenAIAdapter provider options", () => {
         provider: "custom",
         apiKey: "test-key",
         baseUrl: "https://api.example.com/v1",
+        compressionTriggerBudget: 735_000,
         model: "gpt-5.5",
         modelCapabilities: {
           preferredApi: "responses",

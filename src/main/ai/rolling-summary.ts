@@ -41,11 +41,29 @@ export function buildRollingSummaryContext(
     80,
     Math.floor(options.maxChars ?? DEFAULT_MAX_CHARS),
   );
-  if (summary && summary.length <= maxChars && memoryChunks.length === 0) {
+  if (summary && summary.length <= maxChars) {
+    const query = options.query?.trim() ?? "";
+    const maxSnippets = Math.max(
+      0,
+      Math.floor(options.maxSnippets ?? DEFAULT_MAX_SNIPPETS),
+    );
+    const supplementalChunks = query
+      ? rankRecallCandidates(memoryChunks, query)
+          .filter((chunk) => !summary.includes(chunk.text))
+          .slice(0, maxSnippets)
+      : [];
+    let text = summary;
+    let recalledChunks = 0;
+    for (const chunk of supplementalChunks) {
+      const candidate = `${text}\n${chunk.text}`;
+      if (candidate.length > maxChars) continue;
+      text = candidate;
+      recalledChunks += 1;
+    }
     return {
-      text: summary,
+      text,
       wasTruncated: false,
-      recalledChunks: 0,
+      recalledChunks,
     };
   }
 

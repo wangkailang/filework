@@ -47,13 +47,23 @@ export function repairMissingToolResults(
     }
 
     if (Array.isArray(message.content)) {
-      for (const part of message.content) {
-        if (part.type === "tool-result") {
-          pending.delete(part.toolCallId);
+      const content = message.content.filter((part) => {
+        if (part.type !== "tool-result") return true;
+        if (!pending.has(part.toolCallId)) {
+          changed = true;
+          return false;
         }
+        pending.delete(part.toolCallId);
+        return true;
+      });
+      if (content.length > 0) {
+        repairedMessages.push(
+          content.length === message.content.length
+            ? message
+            : { ...message, content },
+        );
       }
     }
-    repairedMessages.push(message);
   }
 
   flushPending();

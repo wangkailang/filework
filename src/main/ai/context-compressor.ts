@@ -20,6 +20,7 @@ import {
   compressToolResults,
   DEFAULT_RECENT_MESSAGE_COUNT,
   estimateTokens,
+  truncateToFit,
 } from "./token-budget";
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,12 @@ export interface CompressorOptions {
   memoryChunks?: MemoryVectorChunk[] | null;
   /** 用于关联 memory-debug 的用户 prompt 片段(可选) */
   promptSnippet?: string;
+  /** 最新用户请求，用于从较长的滚动摘要中召回相关事实。 */
+  recallQuery?: string;
+  /** 与 messages 一一对应的原始 chat message id。 */
+  sourceMessageIds?: Array<string | null>;
+  /** 上一版持久化摘要的版本号。 */
+  previousSummaryVersion?: number | null;
 }
 
 export interface CompressionResult {
@@ -94,6 +101,9 @@ export interface CompressionResult {
   originalTokens: number;
   /** 压缩后的 token 数 */
   compressedTokens: number;
+  coveredThroughMessageId?: string;
+  retainedTailStartId?: string;
+  summaryVersion?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +131,7 @@ export async function compressContext(
   const headCount = options.headCount ?? DEFAULT_HEAD_COUNT;
 
   // 步骤 1:预裁剪工具结果(开销低,无需 LLM)
-  const pruned = compressToolResults(messages);
+  const pruned = compressToolResults(messages, { preserveLatest: true });
   const prunedTokens = estimateTokens(pruned);
 
   if (!options.force && prunedTokens <= options.budget) {
@@ -164,6 +174,16 @@ export async function compressContext(
   tailStart = expandTailToToolCallBoundary(pruned, tailStart, headEnd);
   const tail = pruned.slice(tailStart);
   tailTokens = estimateTokens(tail);
+  const coveredThroughMessageId = findLastSourceMessageId(
+    options.sourceMessageIds,
+    headEnd,
+    tailStart,
+  );
+  const retainedTailStartId = findFirstSourceMessageId(
+    options.sourceMessageIds,
+    tailStart,
+    pruned.length,
+  );
 
   // 步骤 4:提取中间段
   const middle = pruned.slice(headEnd, tailStart);
@@ -172,15 +192,20 @@ export async function compressContext(
       previousSummary: options.previousSummary,
       memoryChunks: options.memoryChunks,
     });
-    const previousSummaryMessage = createSummaryMessage(
+    const previousSummaryMessage = createContextSummaryMessage(
       previousSummaryContext?.text,
     );
     if (previousSummaryMessage) {
       const summaryTokens = estimateTokens([previousSummaryMessage]);
-      const compressedTokens =
-        estimateTokens(head) + summaryTokens + tailTokens;
+      const fittedMessages = fitCompressedMessages(
+        head,
+        previousSummaryMessage,
+        tail,
+        options.budget,
+      );
+      const compressedTokens = estimateTokens(fittedMessages);
       return {
-        messages: [...head, previousSummaryMessage, ...tail],
+        messages: fittedMessages,
         wasCompressed: true,
         hadError: false,
         summaryTokens,
@@ -190,9 +215,15 @@ export async function compressContext(
     }
 
     // 没有可压缩的中间段 —— 直接返回 头部 + 尾部
-    const noMiddleTokens = estimateTokens(head) + tailTokens;
+    const fittedMessages = fitCompressedMessages(
+      head,
+      null,
+      tail,
+      options.budget,
+    );
+    const noMiddleTokens = estimateTokens(fittedMessages);
     return {
-      messages: [...head, ...tail],
+      messages: fittedMessages,
       wasCompressed: false,
       hadError: false,
       summaryTokens: 0,
@@ -208,6 +239,7 @@ export async function compressContext(
       middleText,
       options.previousSummary,
       options.memoryChunks,
+      options.recallQuery ?? options.promptSnippet,
     );
 
     const { controller: compressionController, cleanup: cleanupTimeout } =
@@ -225,14 +257,20 @@ export async function compressContext(
       cleanupTimeout();
     }
 
-    const summaryMessage = createSummaryMessage(summary);
+    const summaryMessage = createContextSummaryMessage(summary);
     if (!summaryMessage) {
       throw new Error("Context summarizer returned an empty summary");
     }
 
     const summaryTokens = estimateTokens([summaryMessage]);
 
-    const compressedTokens = estimateTokens(head) + summaryTokens + tailTokens;
+    const fittedMessages = fitCompressedMessages(
+      head,
+      summaryMessage,
+      tail,
+      options.budget,
+    );
+    const compressedTokens = estimateTokens(fittedMessages);
 
     if (options.taskId) {
       addMemoryEvent(
@@ -255,15 +293,21 @@ export async function compressContext(
       originalTokens: prunedTokens,
       compressedTokens,
       summaryTokens,
+      coveredThroughMessageId,
+      retainedTailStartId,
+      summaryVersion: (options.previousSummaryVersion ?? 0) + 1,
     });
 
     return {
-      messages: [...head, summaryMessage, ...tail],
+      messages: fittedMessages,
       wasCompressed: true,
       hadError: false,
       summaryTokens,
       originalTokens: prunedTokens,
       compressedTokens,
+      ...(coveredThroughMessageId && { coveredThroughMessageId }),
+      ...(retainedTailStartId && { retainedTailStartId }),
+      summaryVersion: (options.previousSummaryVersion ?? 0) + 1,
     };
   } catch (error) {
     console.warn(
@@ -282,20 +326,45 @@ export async function compressContext(
         options.promptSnippet,
       );
     }
-    // 回退:返回不含摘要的 头部 + 尾部
-    const fallbackTokens = estimateTokens(head) + tailTokens;
+    // 摘要失败不能静默丢失中间历史。是否必须进一步安全截断由调用方
+    // 根据 hard budget 决定。
     return {
-      messages: [...head, ...tail],
+      messages: pruned,
       wasCompressed: false,
       hadError: true,
       summaryTokens: 0,
       originalTokens: prunedTokens,
-      compressedTokens: fallbackTokens,
+      compressedTokens: prunedTokens,
     };
   }
 }
 
-function createSummaryMessage(summary?: string | null): ModelMessage | null {
+function fitCompressedMessages(
+  head: ModelMessage[],
+  summary: ModelMessage | null,
+  tail: ModelMessage[],
+  budget: number,
+): ModelMessage[] {
+  const candidate = summary ? [...head, summary, ...tail] : [...head, ...tail];
+  if (estimateTokens(candidate) <= budget) return candidate;
+
+  const fixedContext = summary ? [...head, summary] : head;
+  const fixedTokens = estimateTokens(fixedContext);
+  if (tail.length > 0 && fixedTokens < budget) {
+    const fittedTail = truncateToFit(tail, budget - fixedTokens, {
+      recentMessageCount: tail.length,
+    }).messages;
+    return [...fixedContext, ...fittedTail];
+  }
+
+  return truncateToFit(candidate, budget, {
+    recentMessageCount: Math.max(1, tail.length + (summary ? 1 : 0)),
+  }).messages;
+}
+
+export function createContextSummaryMessage(
+  summary?: string | null,
+): ModelMessage | null {
   const trimmedSummary = summary?.trim();
   if (!trimmedSummary) return null;
   return {
@@ -304,15 +373,24 @@ function createSummaryMessage(summary?: string | null): ModelMessage | null {
   };
 }
 
+export function isContextSummaryMessage(message: ModelMessage): boolean {
+  return (
+    message.role === "system" &&
+    typeof message.content === "string" &&
+    message.content.startsWith(SUMMARY_PREFIX)
+  );
+}
+
 function buildSummarizerPrompt(
   middleText: string,
   previousSummary?: string | null,
   memoryChunks?: MemoryVectorChunk[] | null,
+  recallQuery?: string | null,
 ): string {
   const rollingSummary = buildRollingSummaryContext({
     previousSummary,
     memoryChunks,
-    query: middleText,
+    query: recallQuery,
   });
   if (!rollingSummary) {
     return `${SUMMARIZER_PROMPT}
@@ -339,13 +417,16 @@ function persistTaskSummaries(input: {
   originalTokens: number;
   compressedTokens: number;
   summaryTokens: number;
+  coveredThroughMessageId?: string;
+  retainedTailStartId?: string;
+  summaryVersion: number;
 }): void {
   const now = new Date().toISOString();
-  const summaryIds = new Set(
-    [input.taskId, input.summaryScopeId].filter(
-      (id): id is string => typeof id === "string" && id.length > 0,
-    ),
-  );
+  const summaryIds = new Set<string>();
+  if (input.taskId) summaryIds.add(input.taskId);
+  if (input.summaryScopeId && input.coveredThroughMessageId) {
+    summaryIds.add(input.summaryScopeId);
+  }
 
   for (const taskId of summaryIds) {
     upsertTaskSummary({
@@ -355,10 +436,15 @@ function persistTaskSummaries(input: {
       originalTokens: input.originalTokens,
       compressedTokens: input.compressedTokens,
       summaryTokens: input.summaryTokens,
+      coveredThroughMessageId: input.coveredThroughMessageId ?? null,
+      retainedTailStartId: input.retainedTailStartId ?? null,
+      summaryVersion: input.summaryVersion,
+      sourceTokenCount: input.originalTokens,
+      lastCompactedAt: now,
     });
   }
 
-  if (input.summaryScopeId) {
+  if (input.summaryScopeId && input.coveredThroughMessageId) {
     replaceContextMemoryChunks(
       input.summaryScopeId,
       splitRollingSummaryChunks(input.summary).map((text) => ({
@@ -368,6 +454,40 @@ function persistTaskSummaries(input: {
       })),
     );
   }
+}
+
+function findLastSourceMessageId(
+  sourceMessageIds: Array<string | null> | undefined,
+  start: number,
+  end: number,
+): string | undefined {
+  if (!sourceMessageIds) return undefined;
+  for (
+    let index = Math.min(end, sourceMessageIds.length) - 1;
+    index >= start;
+    index--
+  ) {
+    const id = sourceMessageIds[index]?.trim();
+    if (id) return id;
+  }
+  return undefined;
+}
+
+function findFirstSourceMessageId(
+  sourceMessageIds: Array<string | null> | undefined,
+  start: number,
+  end: number,
+): string | undefined {
+  if (!sourceMessageIds) return undefined;
+  for (
+    let index = Math.max(0, start);
+    index < Math.min(end, sourceMessageIds.length);
+    index++
+  ) {
+    const id = sourceMessageIds[index]?.trim();
+    if (id) return id;
+  }
+  return undefined;
 }
 
 function normalizeTailMessageCount(value: number | undefined): number {

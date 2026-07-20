@@ -2,6 +2,13 @@ import { generateText, type LanguageModel, type ModelMessage } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compressContext } from "../context-compressor";
 
+const dbMock = vi.hoisted(() => ({
+  replaceContextMemoryChunks: vi.fn(),
+  upsertTaskSummary: vi.fn(),
+}));
+
+vi.mock("../../db", () => dbMock);
+
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
@@ -60,6 +67,7 @@ const findToolResultIndex = (messages: ModelMessage[], toolCallId: string) =>
 
 describe("compressContext", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(generateText).mockClear();
     vi.mocked(generateText).mockResolvedValue({
       text: "## 已完成\n- summarized earlier work",
@@ -77,7 +85,7 @@ describe("compressContext", () => {
       ],
       {
         model: {} as LanguageModel,
-        budget: 20,
+        budget: 1_000,
         force: true,
         headCount: 2,
         tailBudget: 10,
@@ -113,7 +121,7 @@ describe("compressContext", () => {
       ],
       {
         model: {} as LanguageModel,
-        budget: 20,
+        budget: 2_000,
         force: true,
         headCount: 1,
         tailBudget: 1,
@@ -123,6 +131,152 @@ describe("compressContext", () => {
 
     expect(result.messages).toContainEqual(recentUser);
     expect(result.messages).toContainEqual(recentAssistant);
+  });
+
+  it("preserves the precompacted context when summarization fails", async () => {
+    vi.mocked(generateText).mockRejectedValueOnce(new Error("summary failed"));
+    const messages = [
+      { role: "system" as const, content: "system prompt" },
+      userMsg("middle context that must not be dropped"),
+      userMsg("latest request"),
+    ];
+
+    const result = await compressContext(messages, {
+      model: {} as LanguageModel,
+      budget: 20,
+      force: true,
+      headCount: 1,
+      tailBudget: 1,
+      tailMessageCount: 1,
+    });
+
+    expect(result.hadError).toBe(true);
+    expect(result.wasCompressed).toBe(false);
+    expect(result.messages).toEqual(messages);
+  });
+
+  it("persists the last summarized source message as the checkpoint watermark", async () => {
+    const result = await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("old request"),
+        userMsg("old answer"),
+        userMsg("latest request"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        sourceMessageIds: ["m1", "m2", "m3", "m4"],
+        summaryScopeId: "session:chat-1",
+      },
+    );
+
+    expect(result.coveredThroughMessageId).toBe("m3");
+    expect(result.retainedTailStartId).toBe("m4");
+    expect(dbMock.upsertTaskSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: "session:chat-1",
+        coveredThroughMessageId: "m3",
+        retainedTailStartId: "m4",
+        summaryVersion: 1,
+      }),
+    );
+  });
+
+  it("does not advance the session checkpoint without stable source message ids", async () => {
+    await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("runtime-only middle context"),
+        userMsg("latest request"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        taskId: "task-1",
+        summaryScopeId: "session:chat-1",
+      },
+    );
+
+    expect(dbMock.upsertTaskSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: "task-1" }),
+    );
+    expect(dbMock.upsertTaskSummary).not.toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: "session:chat-1" }),
+    );
+    expect(dbMock.replaceContextMemoryChunks).not.toHaveBeenCalledWith(
+      "session:chat-1",
+      expect.anything(),
+    );
+  });
+
+  it("preserves the latest tool result while compacting older context", async () => {
+    const latestResult = `LATEST_RESULT:${"x".repeat(3_000)}`;
+    const result = await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("older middle context ".repeat(200)),
+        assistantWithToolCall("call-latest", "readFile"),
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-latest",
+              toolName: "readFile",
+              output: { type: "text", value: latestResult },
+            },
+          ],
+        },
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 1_000,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 2,
+      },
+    );
+
+    const latestToolMessage = result.messages.findLast(
+      (message) => message.role === "tool",
+    );
+    expect(latestToolMessage?.content).toEqual([
+      expect.objectContaining({
+        output: { type: "text", value: latestResult },
+      }),
+    ]);
+  });
+
+  it("fits a successful semantic compression result within the target budget", async () => {
+    const result = await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("middle context ".repeat(400)),
+        userMsg(`LATEST_REQUEST:${"x".repeat(2_000)}`),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 120,
+        force: true,
+        headCount: 1,
+        tailBudget: 1_000,
+        tailMessageCount: 1,
+      },
+    );
+
+    expect(result.hadError).toBe(false);
+    expect(result.compressedTokens).toBeLessThanOrEqual(120);
+    expect(JSON.stringify(result.messages)).toContain("LATEST_REQUEST");
   });
 
   it("includes the previous rolling summary when summarizing new middle history", async () => {
@@ -171,6 +325,7 @@ describe("compressContext", () => {
             embedding: null,
           },
         ],
+        recallQuery: "auth token renewal regression",
       },
     );
 
@@ -178,12 +333,42 @@ describe("compressContext", () => {
     expect(prompt).toContain("auth session token renewal regression memory");
   });
 
+  it("uses the latest user request rather than middle history for summary recall", async () => {
+    await compressContext(
+      [
+        { role: "system", content: "system prompt" },
+        userMsg("unrelated renderer spacing notes"),
+        userMsg("latest request"),
+      ],
+      {
+        model: {} as LanguageModel,
+        budget: 20,
+        force: true,
+        headCount: 1,
+        tailBudget: 1,
+        tailMessageCount: 1,
+        previousSummary: [
+          "## 已完成",
+          "- first setup fact",
+          "- unrelated visual details",
+          "- OAuth token renewal bug isolated in auth/session.ts",
+          "## 待处理",
+          "- final cleanup",
+        ].join("\n"),
+        recallQuery: "OAuth token renewal auth session",
+      },
+    );
+
+    const prompt = vi.mocked(generateText).mock.calls.at(-1)?.[0].prompt;
+    expect(prompt).toContain("OAuth token renewal bug");
+  });
+
   it("injects the previous rolling summary when there is no new middle history", async () => {
     const result = await compressContext(
       [{ role: "system", content: "system prompt" }, userMsg("latest request")],
       {
         model: {} as LanguageModel,
-        budget: 20,
+        budget: 1_000,
         force: true,
         headCount: 1,
         tailBudget: 1,

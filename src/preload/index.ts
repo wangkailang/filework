@@ -221,6 +221,7 @@ const api = {
     contextInputTokens?: number;
     llmConfigId?: string;
     history?: Array<{
+      id?: string;
       role: "user" | "assistant";
       content: string;
       parts?: unknown[];
@@ -496,6 +497,27 @@ const api = {
     ) => callback(data);
     ipcRenderer.on("ai:stream-media", handler);
     return () => ipcRenderer.removeListener("ai:stream-media", handler);
+  },
+  onStreamProviderContext: (
+    callback: (data: {
+      id: string;
+      sessionId?: string;
+      assistantMessageId?: string;
+      part: import("../main/core/session/message-parts").ProviderContextPart;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        id: string;
+        sessionId?: string;
+        assistantMessageId?: string;
+        part: import("../main/core/session/message-parts").ProviderContextPart;
+      },
+    ) => callback(data);
+    ipcRenderer.on("ai:stream-provider-context", handler);
+    return () =>
+      ipcRenderer.removeListener("ai:stream-provider-context", handler);
   },
   onStreamReasoning: (
     callback: (data: { id: string; messageId: string; delta: string }) => void,
@@ -871,6 +893,10 @@ const api = {
       id: string;
       sessionId?: string;
       assistantMessageId?: string;
+      contextUsage?: {
+        latestStepContextTokens: number;
+        maxStepContextTokens: number;
+      };
     }) => void,
   ) => {
     const handler = (
@@ -879,6 +905,10 @@ const api = {
         id: string;
         sessionId?: string;
         assistantMessageId?: string;
+        contextUsage?: {
+          latestStepContextTokens: number;
+          maxStepContextTokens: number;
+        };
       },
     ) => callback(data);
     ipcRenderer.on("ai:stream-done", handler);

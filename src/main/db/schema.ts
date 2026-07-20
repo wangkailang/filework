@@ -47,6 +47,11 @@ export const taskSummaries = sqliteTable("task_summaries", {
   originalTokens: integer("original_tokens"),
   compressedTokens: integer("compressed_tokens"),
   summaryTokens: integer("summary_tokens"),
+  coveredThroughMessageId: text("covered_through_message_id"),
+  retainedTailStartId: text("retained_tail_start_id"),
+  summaryVersion: integer("summary_version"),
+  sourceTokenCount: integer("source_token_count"),
+  lastCompactedAt: text("last_compacted_at"),
 });
 
 export const contextMemoryChunks = sqliteTable("context_memory_chunks", {

@@ -318,6 +318,8 @@ export class AgentLoop {
         : this.cfg.tools;
 
     let totalUsage: TokenUsage | undefined;
+    let latestStepContextTokens = 0;
+    let maxStepContextTokens = 0;
     let providerMetadata: Record<string, unknown> | undefined;
     let finalTextAccum = "";
     let pendingMessageText = "";
@@ -528,6 +530,31 @@ export class AgentLoop {
             });
             break;
           }
+          case "custom": {
+            if (part.kind !== "openai.compaction") break;
+            const metadata = part.providerMetadata?.openai;
+            if (
+              metadata?.type !== "compaction" ||
+              typeof metadata.itemId !== "string" ||
+              metadata.itemId.length === 0
+            ) {
+              break;
+            }
+            emit({
+              type: "provider_context",
+              agentId,
+              part: {
+                type: "provider-context",
+                provider: "openai",
+                kind: "compaction",
+                itemId: metadata.itemId,
+                ...(typeof metadata.encryptedContent === "string" && {
+                  encryptedContent: metadata.encryptedContent,
+                }),
+              },
+            });
+            break;
+          }
           case "tool-call": {
             toolResults?.set(part.toolCallId, {
               name: part.toolName,
@@ -594,6 +621,18 @@ export class AgentLoop {
           }
           case "finish-step": {
             const stepUsage = mapUsage(part.usage);
+            const stepInputTokens = stepUsage?.inputTokens;
+            if (
+              typeof stepInputTokens === "number" &&
+              Number.isFinite(stepInputTokens) &&
+              stepInputTokens >= 0
+            ) {
+              latestStepContextTokens = stepInputTokens;
+              maxStepContextTokens = Math.max(
+                maxStepContextTokens,
+                stepInputTokens,
+              );
+            }
             if (messageOpen) {
               emit({
                 type: "message_end",
@@ -771,6 +810,10 @@ export class AgentLoop {
           status: "failed",
           error: { message: aborted.reason, type: "reflection_aborted" },
           totalUsage,
+          contextUsage: buildContextUsage(
+            latestStepContextTokens,
+            maxStepContextTokens,
+          ),
           providerMetadata,
           finalText: currentFinalText(),
         });
@@ -781,6 +824,10 @@ export class AgentLoop {
           agentId,
           status: "cancelled",
           totalUsage,
+          contextUsage: buildContextUsage(
+            latestStepContextTokens,
+            maxStepContextTokens,
+          ),
           providerMetadata,
           finalText: currentFinalText(),
         });
@@ -790,6 +837,10 @@ export class AgentLoop {
           agentId,
           status: "completed",
           totalUsage,
+          contextUsage: buildContextUsage(
+            latestStepContextTokens,
+            maxStepContextTokens,
+          ),
           providerMetadata,
           finalText: currentFinalText(),
           stopReason,
@@ -817,6 +868,10 @@ export class AgentLoop {
           agentId,
           status: "completed",
           totalUsage,
+          contextUsage: buildContextUsage(
+            latestStepContextTokens,
+            maxStepContextTokens,
+          ),
           providerMetadata,
           finalText: currentFinalText(),
           stopReason,
@@ -841,6 +896,10 @@ export class AgentLoop {
           status,
           error: errorPayload,
           totalUsage,
+          contextUsage: buildContextUsage(
+            latestStepContextTokens,
+            maxStepContextTokens,
+          ),
           providerMetadata,
           finalText: currentFinalText(),
         });
@@ -849,6 +908,16 @@ export class AgentLoop {
       if (wallTimer) clearTimeout(wallTimer);
     }
   }
+}
+
+function buildContextUsage(
+  latestStepContextTokens: number,
+  maxStepContextTokens: number,
+) {
+  if (latestStepContextTokens <= 0 && maxStepContextTokens <= 0) {
+    return undefined;
+  }
+  return { latestStepContextTokens, maxStepContextTokens };
 }
 
 // ---------------------------------------------------------------------------

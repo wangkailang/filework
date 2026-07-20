@@ -23,6 +23,7 @@ export type {
   ImagePart,
   MessagePart,
   PlanMessagePart,
+  ProviderContextPart,
   ReasoningPart,
   RecoveryAction,
   SubagentChildView,

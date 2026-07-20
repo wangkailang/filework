@@ -193,6 +193,49 @@ describe("AgentLoop", () => {
     expect(end.totalUsage?.totalTokens).toBe(8);
   });
 
+  it("keeps cumulative billing separate from latest and maximum step context", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 50_000, outputTokens: 1_000 },
+        },
+        { type: "start-step" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 48_000, outputTokens: 1_000 },
+        },
+      ],
+      totalUsage: {
+        inputTokens: 1_000_000,
+        outputTokens: 20_000,
+        totalTokens: 1_020_000,
+      },
+    });
+
+    const events = await collect(
+      new AgentLoop({
+        workspace: stubWorkspace(),
+        model: fakeModel,
+        tools: emptyRegistry(),
+        systemPrompt: "system",
+        agentId: "context-usage",
+      }),
+      "hi",
+    );
+    const end = events.at(-1);
+    if (end?.type !== "agent_end") throw new Error("expected agent_end");
+
+    expect(end.totalUsage?.inputTokens).toBe(1_000_000);
+    expect(end.contextUsage).toEqual({
+      latestStepContextTokens: 48_000,
+      maxStepContextTokens: 50_000,
+    });
+  });
+
   it("consumes the AI SDK v7 stream result while preserving the text event contract", async () => {
     scriptedRuns.push({
       streamOnly: true,
@@ -232,6 +275,50 @@ describe("AgentLoop", () => {
     if (end?.type !== "agent_end") throw new Error("expected agent_end");
     expect(end.status).toBe("completed");
     expect(end.finalText).toBe("v7 stream");
+  });
+
+  it("emits an opaque provider context event for OpenAI compaction items", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "custom",
+          kind: "openai.compaction",
+          providerMetadata: {
+            openai: {
+              type: "compaction",
+              itemId: "cmp_123",
+              encryptedContent: "encrypted-state",
+            },
+          },
+        },
+        { type: "text-delta", text: "continued" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+
+    const events = await collect(
+      new AgentLoop({
+        workspace: stubWorkspace(),
+        model: fakeModel,
+        tools: emptyRegistry(),
+        systemPrompt: "system",
+        agentId: "compaction",
+      }),
+      "continue",
+    );
+
+    expect(events).toContainEqual({
+      type: "provider_context",
+      agentId: "compaction",
+      part: {
+        type: "provider-context",
+        provider: "openai",
+        kind: "compaction",
+        itemId: "cmp_123",
+        encryptedContent: "encrypted-state",
+      },
+    });
   });
 
   it("passes v7 instructions to streamText instead of the deprecated system option", async () => {

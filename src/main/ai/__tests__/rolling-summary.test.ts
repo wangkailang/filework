@@ -14,6 +14,31 @@ describe("buildRollingSummaryContext", () => {
     expect(result?.recalledChunks).toBe(0);
   });
 
+  it("keeps a short previous summary intact when memory chunks exist", () => {
+    const summary = [
+      "## 已完成",
+      "- fact A",
+      "- fact B",
+      "- fact C",
+      "## 待处理",
+      "- fact F",
+    ].join("\n");
+    const result = buildRollingSummaryContext({
+      previousSummary: summary,
+      memoryChunks: [
+        { text: "fact A", embedding: null },
+        { text: "fact F", embedding: null },
+      ],
+      maxChars: 500,
+    });
+
+    expect(result).toEqual({
+      text: summary,
+      wasTruncated: false,
+      recalledChunks: 0,
+    });
+  });
+
   it("recalls matching chunks from a long previous summary with head and tail fallback", () => {
     const result = buildRollingSummaryContext({
       previousSummary: [
@@ -59,7 +84,8 @@ describe("buildRollingSummaryContext", () => {
       maxSnippets: 1,
     });
 
-    expect(result?.wasTruncated).toBe(true);
+    expect(result?.wasTruncated).toBe(false);
+    expect(result?.recalledChunks).toBe(1);
     expect(result?.text).toContain("auth session token renewal");
     expect(result?.text).not.toContain("sidebar color");
   });

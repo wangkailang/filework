@@ -26,6 +26,13 @@ const sqliteMock = vi.hoisted(() => {
           { name: "oauth_client_secret" },
         ];
       }
+      if (sql.includes("task_summaries")) {
+        return [
+          { name: "task_id" },
+          { name: "created_at" },
+          { name: "summary" },
+        ];
+      }
       if (sql.includes("tasks")) {
         return [
           { name: "input_tokens" },
@@ -192,6 +199,23 @@ describe("automation run migrations", () => {
     );
     expect(sqliteMock.state.execCalls.join("\n")).toContain(
       "ALTER TABLE tasks ADD COLUMN updated_at TEXT",
+    );
+  });
+
+  it("adds context checkpoint columns to existing task summaries", async () => {
+    const { initDatabase } = await import("../index");
+
+    await expect(initDatabase()).resolves.toBeUndefined();
+
+    const sql = sqliteMock.state.execCalls.join("\n");
+    expect(sql).toContain(
+      "ALTER TABLE task_summaries ADD COLUMN covered_through_message_id TEXT",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE task_summaries ADD COLUMN summary_version INTEGER",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE task_summaries ADD COLUMN last_compacted_at TEXT",
     );
   });
 });
