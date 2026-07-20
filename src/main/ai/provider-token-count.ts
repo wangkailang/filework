@@ -1,6 +1,7 @@
-import type { ModelMessage } from "ai";
+import { asSchema, type ModelMessage, type Tool } from "ai";
 import type { ProviderConfig } from "./adapters/base";
 import { getProviderFetch } from "./provider-fetch";
+import { estimateTokens } from "./token-budget";
 
 const OPENAI_RESPONSES_INPUT_TOKENS_URL =
   "https://api.openai.com/v1/responses/input_tokens";
@@ -32,6 +33,20 @@ type OpenAIResponsesInputItem =
 
 type OpenAIResponsesInput = OpenAIResponsesInputItem[];
 
+type ProviderTokenCountToolChoice =
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "tool"; toolName: string };
+
+interface ProviderTokenCountOptions {
+  fetch?: typeof fetch;
+  signal?: AbortSignal;
+  instructions?: string;
+  tools?: Record<string, Tool>;
+  toolChoice?: ProviderTokenCountToolChoice;
+}
+
 export const supportsOpenAIResponsesInputTokenCount = (
   config: Pick<
     ProviderConfig,
@@ -52,19 +67,31 @@ export const countOpenAIResponsesInputTokens = async (
     "apiKey" | "baseUrl" | "model" | "modelCapabilities" | "provider"
   >,
   messages: ModelMessage[],
-  options?: { fetch?: typeof fetch; signal?: AbortSignal },
+  options?: ProviderTokenCountOptions,
 ): Promise<ProviderTokenCountResult | null> => {
   if (!supportsOpenAIResponsesInputTokenCount(config)) return null;
 
   const input = toOpenAIResponsesInput(messages);
   if (!input) return null;
+  const tools = options?.tools
+    ? await toOpenAIResponsesTools(options.tools)
+    : undefined;
+  if (options?.tools && !tools) return null;
 
   const fetchImpl = options?.fetch ?? getProviderFetch() ?? globalThis.fetch;
   if (!fetchImpl) return null;
 
   try {
     const response = await fetchImpl(OPENAI_RESPONSES_INPUT_TOKENS_URL, {
-      body: JSON.stringify({ model: config.model, input }),
+      body: JSON.stringify({
+        model: config.model,
+        ...(options?.instructions && { instructions: options.instructions }),
+        input,
+        ...(tools && tools.length > 0 && { tools }),
+        ...(options?.toolChoice && {
+          tool_choice: toOpenAIResponsesToolChoice(options.toolChoice),
+        }),
+      }),
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -108,6 +135,57 @@ export const countOpenAIResponsesInputTokens = async (
     }
     return null;
   }
+};
+
+export const estimateToolDefinitionTokens = async (
+  tools: Record<string, Tool>,
+): Promise<number> => {
+  const renderedTools = await toOpenAIResponsesTools(tools);
+  if (!renderedTools || renderedTools.length === 0) return 0;
+  return estimateTokens([
+    { role: "system", content: JSON.stringify(renderedTools) },
+  ]);
+};
+
+const toOpenAIResponsesTools = async (tools: Record<string, Tool>) => {
+  const result: Array<{
+    type: "function";
+    name: string;
+    description?: string;
+    parameters: unknown;
+  }> = [];
+
+  try {
+    for (const [name, tool] of Object.entries(tools)) {
+      if (!("inputSchema" in tool) || tool.inputSchema == null) return null;
+      if (
+        tool.description !== undefined &&
+        typeof tool.description !== "string"
+      ) {
+        return null;
+      }
+      const parameters = await Promise.resolve(
+        asSchema(tool.inputSchema).jsonSchema,
+      );
+      result.push({
+        type: "function",
+        name,
+        ...(tool.description && { description: tool.description }),
+        parameters,
+      });
+    }
+  } catch {
+    return null;
+  }
+
+  return result;
+};
+
+const toOpenAIResponsesToolChoice = (
+  toolChoice: ProviderTokenCountToolChoice,
+) => {
+  if (typeof toolChoice === "string") return toolChoice;
+  return { type: "function", name: toolChoice.toolName };
 };
 
 const isOfficialOpenAIEndpoint = (baseUrl: string | null | undefined) => {

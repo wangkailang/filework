@@ -274,6 +274,9 @@ export function useSessionCrud(
               totalTokens: usagePart.totalTokens,
               modelId: usagePart.modelId,
               provider: usagePart.provider,
+              latestStepContextTokens:
+                usagePart.latestStepContextTokens ?? null,
+              maxStepContextTokens: usagePart.maxStepContextTokens ?? null,
             });
             break;
           }

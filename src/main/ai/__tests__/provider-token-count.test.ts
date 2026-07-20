@@ -1,7 +1,8 @@
-import type { ModelMessage } from "ai";
+import { jsonSchema, type ModelMessage, type Tool } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import {
   countOpenAIResponsesInputTokens,
+  estimateToolDefinitionTokens,
   supportsOpenAIResponsesInputTokenCount,
 } from "../provider-token-count";
 
@@ -125,6 +126,77 @@ describe("OpenAI Responses input token count", () => {
         output: "words_alpha.txt",
       },
     ]);
+  });
+
+  it("counts instructions, function tools, and tool choice from the rendered request", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        jsonResponse({ object: "response.input_tokens", input_tokens: 4321 }),
+    );
+    const tools: Record<string, Tool> = {
+      searchFiles: {
+        description: "Search workspace files",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+          additionalProperties: false,
+        }),
+      },
+    };
+
+    await countOpenAIResponsesInputTokens(
+      officialOpenAIConfig,
+      [{ role: "user", content: "find config" }],
+      {
+        fetch: fetchMock as typeof fetch,
+        instructions: "You are a workspace agent.",
+        tools,
+        toolChoice: "required",
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      model: "gpt-5.5",
+      instructions: "You are a workspace agent.",
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "find config" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "searchFiles",
+          description: "Search workspace files",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      tool_choice: "required",
+    });
+  });
+
+  it("estimates serialized tool definitions for providers without exact counting", async () => {
+    const tokens = await estimateToolDefinitionTokens({
+      searchFiles: {
+        description: "Search workspace files by query",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+          additionalProperties: false,
+        }),
+      },
+    });
+
+    expect(tokens).toBeGreaterThan(10);
   });
 
   it("skips OpenAI-compatible custom endpoints so they keep local estimates", async () => {

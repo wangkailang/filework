@@ -551,7 +551,7 @@ describe("ChatPanel message rendering", () => {
     ).not.toBeNull();
     expect(usageButton?.textContent).not.toContain("0%");
     expect(document.getElementById("root")?.textContent ?? "").toContain(
-      "已用 0 标记，共 258k",
+      "已用 0 标记，共 1.1m",
     );
   });
 

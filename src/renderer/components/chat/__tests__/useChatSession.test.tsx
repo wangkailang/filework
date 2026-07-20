@@ -2,7 +2,7 @@ import { parseHTML } from "linkedom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage, ChatSession } from "../types";
+import type { ChatMessage, ChatSession, ProviderContextPart } from "../types";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -40,6 +40,14 @@ type ActiveTaskMock = {
   sessionId?: string;
   assistantMessageId?: string;
   streamEventCount: number;
+};
+type StreamRoutePayload = {
+  id: string;
+  sessionId?: string;
+  assistantMessageId?: string;
+};
+type ProviderContextPayload = StreamRoutePayload & {
+  part: ProviderContextPart;
 };
 
 const noop = () => undefined;
@@ -99,10 +107,13 @@ const createFileworkMock = () => ({
   ),
   onStreamMedia: vi.fn(off),
   onStreamPlan: vi.fn(off),
+  onStreamProviderContext: vi.fn(
+    (_callback: (data: ProviderContextPayload) => void) => noop,
+  ),
   onStreamReasoning: vi.fn(off),
   onStreamReasoningEnd: vi.fn(off),
   onStreamRetry: vi.fn(off),
-  onStreamStart: vi.fn(off),
+  onStreamStart: vi.fn((_callback: (data: StreamRoutePayload) => void) => noop),
   onStreamToolApproval: vi.fn(off),
   onStreamToolBatchApproval: vi.fn(off),
   onStreamToolBatchAutoApproved: vi.fn(off),
@@ -455,13 +466,89 @@ describe("useChatSession", () => {
         chatPermissionMode: "request",
         contextInputTokens: 221_000,
         history: expect.arrayContaining([
-          expect.objectContaining({ content: "旧问题", role: "user" }),
+          expect.objectContaining({
+            id: latest?.messages[0].id,
+            content: "旧问题",
+            role: "user",
+          }),
           expect.objectContaining({ content: "新问题", role: "user" }),
         ]),
         prompt: "新问题",
         sessionId: "session-existing",
       }),
     );
+  });
+
+  it("persists streamed provider context on the assistant message", async () => {
+    const session: ChatSession = {
+      id: "session-compaction",
+      workspacePath: "/workspace",
+      title: "新对话",
+      createdAt: "2026-07-14T10:00:00.000Z",
+      updatedAt: "2026-07-14T10:00:00.000Z",
+    };
+    filework.createChatSession.mockResolvedValue(session);
+
+    let startCallback: ((data: StreamRoutePayload) => void) | null = null;
+    let providerContextCallback:
+      | ((data: ProviderContextPayload) => void)
+      | null = null;
+    filework.onStreamStart.mockImplementation((callback) => {
+      startCallback = callback;
+      return noop;
+    });
+    filework.onStreamProviderContext.mockImplementation((callback) => {
+      providerContextCallback = callback;
+      return noop;
+    });
+
+    const Harness = () => {
+      latest = useChatSession("/workspace");
+      return null;
+    };
+
+    await act(async () => {
+      root?.render(<Harness />);
+    });
+    await act(async () => {
+      await latest?.handleSubmit({ text: "继续" });
+    });
+    await flushAnimationFrame();
+
+    const assistantMessage = latest?.messages.find(
+      (message) => message.role === "assistant",
+    );
+    await act(async () => {
+      startCallback?.({
+        id: "task-compaction",
+        sessionId: session.id,
+        assistantMessageId: assistantMessage?.id,
+      });
+      providerContextCallback?.({
+        id: "task-compaction",
+        sessionId: session.id,
+        assistantMessageId: assistantMessage?.id,
+        part: {
+          type: "provider-context",
+          provider: "openai",
+          kind: "compaction",
+          itemId: "cmp_123",
+          encryptedContent: "encrypted-state",
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(
+      latest?.messages.find((message) => message.id === assistantMessage?.id)
+        ?.parts,
+    ).toContainEqual({
+      type: "provider-context",
+      provider: "openai",
+      kind: "compaction",
+      itemId: "cmp_123",
+      encryptedContent: "encrypted-state",
+    });
   });
 
   it("persists the selected chat permission mode and sends it with task execution", async () => {

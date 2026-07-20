@@ -41,11 +41,20 @@ export interface PlanMessagePart {
   plan: unknown;
 }
 
+export interface ProviderContextPart {
+  type: "provider-context";
+  provider: "openai";
+  kind: "compaction";
+  itemId: string;
+  encryptedContent?: string;
+}
+
 export type MessagePart =
   | TextPart
   | ReasoningPart
   | ToolPart
   | PlanMessagePart
+  | ProviderContextPart
   | ImagePart
   | AttachmentHistoryEntry;
 
@@ -54,9 +63,34 @@ export type MessagePart =
  * 排除 id、sessionId、timestamp 以减小负载体积。
  */
 export interface HistoryMessage {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   parts?: MessagePart[];
+}
+
+export interface ConvertedHistoryWithSourceIds {
+  messages: ModelMessage[];
+  sourceMessageIds: Array<string | null>;
+}
+
+export async function convertToCoreMessagesWithSourceIds(
+  history: HistoryMessage[],
+  opts?: { providerId?: string; replayOpenAICompaction?: boolean },
+): Promise<ConvertedHistoryWithSourceIds> {
+  const messages: ModelMessage[] = [];
+  const sourceMessageIds: Array<string | null> = [];
+  const preparedHistory = prepareHistoryForProvider(history, opts);
+
+  for (const sourceMessage of preparedHistory) {
+    const converted = await convertPreparedHistory([sourceMessage], opts);
+    messages.push(...converted);
+    sourceMessageIds.push(
+      ...converted.map(() => sourceMessage.id?.trim() || null),
+    );
+  }
+
+  return { messages, sourceMessageIds };
 }
 
 const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
@@ -78,7 +112,14 @@ const TOOL_RESULT_PLACEHOLDER = "[工具执行结果未记录]";
  */
 export async function convertToCoreMessages(
   history: HistoryMessage[],
-  opts?: { providerId?: string },
+  opts?: { providerId?: string; replayOpenAICompaction?: boolean },
+): Promise<ModelMessage[]> {
+  return convertPreparedHistory(prepareHistoryForProvider(history, opts), opts);
+}
+
+async function convertPreparedHistory(
+  history: HistoryMessage[],
+  opts?: { providerId?: string; replayOpenAICompaction?: boolean },
 ): Promise<ModelMessage[]> {
   const result: ModelMessage[] = [];
 
@@ -117,6 +158,17 @@ export async function convertToCoreMessages(
 
     const reasoningParts: Array<{ type: "reasoning"; text: string }> = [];
     const textParts: Array<{ type: "text"; text: string }> = [];
+    const providerContextParts: Array<{
+      type: "custom";
+      kind: "openai.compaction";
+      providerOptions: {
+        openai: {
+          type: "compaction";
+          itemId: string;
+          encryptedContent?: string;
+        };
+      };
+    }> = [];
     const toolCallParts: Array<{
       type: "tool-call";
       toolCallId: string;
@@ -143,6 +195,29 @@ export async function convertToCoreMessages(
           const rp = part as ReasoningPart;
           if (rp.text) {
             reasoningParts.push({ type: "reasoning", text: rp.text });
+          }
+          break;
+        }
+        case "provider-context": {
+          const context = part as ProviderContextPart;
+          if (
+            context.provider === "openai" &&
+            context.kind === "compaction" &&
+            shouldReplayOpenAICompaction(opts)
+          ) {
+            providerContextParts.push({
+              type: "custom",
+              kind: "openai.compaction",
+              providerOptions: {
+                openai: {
+                  type: "compaction",
+                  itemId: context.itemId,
+                  ...(context.encryptedContent && {
+                    encryptedContent: context.encryptedContent,
+                  }),
+                },
+              },
+            });
           }
           break;
         }
@@ -187,13 +262,19 @@ export async function convertToCoreMessages(
     const assistantContent: Array<
       | { type: "reasoning"; text: string }
       | { type: "text"; text: string }
+      | (typeof providerContextParts)[number]
       | {
           type: "tool-call";
           toolCallId: string;
           toolName: string;
           input: unknown;
         }
-    > = [...reasoningParts, ...textParts, ...toolCallParts];
+    > = [
+      ...providerContextParts,
+      ...reasoningParts,
+      ...textParts,
+      ...toolCallParts,
+    ];
 
     if (assistantContent.length > 0) {
       result.push({ role: "assistant", content: assistantContent });
@@ -225,6 +306,55 @@ export async function convertToCoreMessages(
   }
 
   return result;
+}
+
+function shouldReplayOpenAICompaction(opts?: {
+  providerId?: string;
+  replayOpenAICompaction?: boolean;
+}): boolean {
+  return (
+    opts?.replayOpenAICompaction ?? opts?.providerId?.toLowerCase() === "openai"
+  );
+}
+
+function prepareHistoryForProvider(
+  history: HistoryMessage[],
+  opts?: { providerId?: string; replayOpenAICompaction?: boolean },
+): HistoryMessage[] {
+  if (!shouldReplayOpenAICompaction(opts)) return history;
+
+  for (
+    let messageIndex = history.length - 1;
+    messageIndex >= 0;
+    messageIndex--
+  ) {
+    const message = history[messageIndex];
+    if (message.role !== "assistant" || !message.parts) continue;
+    for (
+      let partIndex = message.parts.length - 1;
+      partIndex >= 0;
+      partIndex--
+    ) {
+      const part = message.parts[partIndex];
+      if (
+        part.type !== "provider-context" ||
+        part.provider !== "openai" ||
+        part.kind !== "compaction"
+      ) {
+        continue;
+      }
+      return [
+        {
+          ...message,
+          content: "",
+          parts: message.parts.slice(partIndex),
+        },
+        ...history.slice(messageIndex + 1),
+      ];
+    }
+  }
+
+  return history;
 }
 
 async function buildGeneratedImageUserContent(

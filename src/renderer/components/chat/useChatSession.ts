@@ -41,6 +41,8 @@ export interface UsageInfo {
   totalTokens: number | null;
   modelId: string | null;
   provider: string | null;
+  latestStepContextTokens?: number | null;
+  maxStepContextTokens?: number | null;
 }
 
 const getLatestUsageInputTokens = (
@@ -51,7 +53,8 @@ const getLatestUsageInputTokens = (
     for (let j = parts.length - 1; j >= 0; j -= 1) {
       const part = parts[j];
       if (part.type !== "usage") continue;
-      const inputTokens = (part as UsagePart).inputTokens;
+      const usage = part as UsagePart;
+      const inputTokens = usage.latestStepContextTokens ?? usage.inputTokens;
       if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
         return inputTokens;
       }
@@ -508,6 +511,7 @@ export function useChatSession(
     // context that a regex-based IPC gate could not see.
     scheduleAfterPaint(() => {
       const history: Array<{
+        id: string;
         role: ChatMessage["role"];
         content: string;
         parts: MessagePart[] | undefined;
@@ -515,6 +519,7 @@ export function useChatSession(
       for (const { id, role, content, parts } of withBoth) {
         if (id === assistantId) continue;
         history.push({
+          id,
           role,
           content,
           parts: parts?.filter((p) => p.type !== "plan"),
@@ -647,7 +652,8 @@ export function useChatSession(
         executionWorkspacePath === workspacePath ? workspaceRefJson : undefined;
       const history = messages
         .filter((m) => m.id !== assistantId)
-        .map(({ role, content, parts }) => ({
+        .map(({ id, role, content, parts }) => ({
+          id,
           role,
           content,
           parts: parts?.filter((p) => p.type !== "plan"),

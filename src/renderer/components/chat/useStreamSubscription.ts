@@ -25,6 +25,7 @@ import type {
   ImagePart,
   MessagePart,
   PlanMessagePart,
+  ProviderContextPart,
   ReasoningPart,
   SubagentChildView,
   SubagentMessagePart,
@@ -404,6 +405,19 @@ export function useStreamSubscription({
       });
     });
 
+    const offProviderContext = window.filework.onStreamProviderContext(
+      ({ id, sessionId, assistantMessageId, part }) => {
+        if (sessionId || assistantMessageId) {
+          rememberTaskRoute({ taskId: id, sessionId, assistantMessageId });
+        }
+        if (!canRouteTask(id)) return;
+        updateParts(id, (parts) => {
+          parts.push(part as ProviderContextPart);
+          return parts;
+        });
+      },
+    );
+
     const offReasoning = window.filework.onStreamReasoning(({ id, delta }) => {
       if (!canRouteTask(id)) return;
       updateParts(id, (parts) => {
@@ -647,7 +661,7 @@ export function useStreamSubscription({
       }) ?? (() => {});
 
     const offDone = window.filework.onStreamDone(
-      ({ id, sessionId, assistantMessageId }) => {
+      ({ id, sessionId, assistantMessageId, contextUsage }) => {
         if (sessionId || assistantMessageId) {
           rememberTaskRoute({ taskId: id, sessionId, assistantMessageId });
         }
@@ -707,8 +721,14 @@ export function useStreamSubscription({
         window.filework.usage
           .getTaskUsage(id)
           .then((usage: UsageInfo | null) => {
-            const hasUsage = usage != null && usage.totalTokens != null;
-            if (isAttachedTask && hasUsage && usage) setLastUsage(usage);
+            const usageWithContext = usage
+              ? { ...usage, ...contextUsage }
+              : null;
+            const hasUsage =
+              usageWithContext != null && usageWithContext.totalTokens != null;
+            if (isAttachedTask && hasUsage && usageWithContext) {
+              setLastUsage(usageWithContext);
+            }
             if (!assistantId || !targetSessionId) return;
             updateSessionMessages(targetSessionId, (prev) => {
               const idx = prev.findIndex((m) => m.id === assistantId);
@@ -725,8 +745,8 @@ export function useStreamSubscription({
               const summary = buildTurnSummary(baseParts);
               const appended: MessagePart[] = [
                 ...(summary ? [summary] : []),
-                ...(hasUsage && usage
-                  ? [{ type: "usage", ...usage } as UsagePart]
+                ...(hasUsage && usageWithContext
+                  ? [{ type: "usage", ...usageWithContext } as UsagePart]
                   : []),
               ];
               const nextParts =
@@ -1105,6 +1125,7 @@ export function useStreamSubscription({
       offStreamEvent();
       offDelta();
       offMedia();
+      offProviderContext();
       offReasoning();
       offReasoningEnd();
       offToolCall();

@@ -447,6 +447,7 @@ export const PromptInputRichEditor = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        bold: false,
         codeBlock: false,
         heading: false,
         horizontalRule: false,

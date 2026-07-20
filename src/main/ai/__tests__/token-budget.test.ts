@@ -1,9 +1,11 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  COMPRESSION_TARGET_RATIO,
   COMPRESSION_TRIGGER_RATIO,
   DEFAULT_TOKEN_BUDGET,
   estimateTokens,
+  getCompressionTargetBudget,
   getCompressionTriggerBudget,
   getTokenBudget,
   getTokenBudgetForModel,
@@ -324,9 +326,9 @@ describe("getTokenBudgetForModel", () => {
     expect(getTokenBudgetForModel("gpt-4o-mini")).toBe(117_808);
   });
 
-  it("uses Codex-compatible 258K fallback budget for GPT-5.5 when provider metadata is missing", () => {
-    // 258K - 8192 - 2000 = 247808
-    expect(getTokenBudgetForModel("gpt-5.5")).toBe(247_808);
+  it("uses the API 1.05M fallback budget for GPT-5.5 when provider metadata is missing", () => {
+    // 1.05M - 8192 - 2000 = 1039808
+    expect(getTokenBudgetForModel("gpt-5.5")).toBe(1_039_808);
   });
 
   it("returns correct budget for DeepSeek models", () => {
@@ -367,27 +369,56 @@ describe("getTokenBudget", () => {
 });
 
 describe("getCompressionTriggerBudget", () => {
-  it("triggers compression at 85% of the context window for GPT-5.5", () => {
+  it("uses an 85% high-water trigger and a 50% low-water target for GPT-5.5", () => {
     expect(COMPRESSION_TRIGGER_RATIO).toBe(0.85);
+    expect(COMPRESSION_TARGET_RATIO).toBe(0.5);
     expect(
       getCompressionTriggerBudget({
         modelId: "gpt-5.5",
-        contextWindow: 258_000,
       }),
-    ).toBe(219_300);
+    ).toBe(892_500);
+    expect(
+      getCompressionTargetBudget({
+        modelId: "gpt-5.5",
+      }),
+    ).toBe(525_000);
   });
 
-  it("never returns a trigger above the hard input budget", () => {
+  it("reserves dynamic growth headroom below the hard input budget", () => {
     expect(
       getCompressionTriggerBudget({
         contextWindow: 32_000,
         maxOutputTokens: 8_192,
       }),
-    ).toBe(21_808);
+    ).toBe(18_608);
   });
 });
 
 describe("truncateToFitAsync", () => {
+  it("compresses from the high-water trigger toward the low-water target", async () => {
+    const msgs = [userMsg("a".repeat(3200))]; // ~800 tokens
+    const budgets: number[] = [];
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1_000,
+      async (_messages, budget) => {
+        budgets.push(budget);
+        return {
+          messages: [userMsg("compressed")],
+          wasCompressed: true,
+        };
+      },
+      {
+        compressionTriggerBudget: 700,
+        compressionTargetBudget: 500,
+      },
+    );
+
+    expect(budgets).toEqual([500]);
+    expect(result.compressionStage).toBe("llm-summary");
+  });
+
   it("runs LLM compression once history crosses the soft trigger budget", async () => {
     const msgs = [userMsg("a".repeat(3200))]; // ~800 tokens
     let compressorCalls = 0;
@@ -457,6 +488,48 @@ describe("truncateToFitAsync", () => {
     expect(result.wasTruncated).toBe(true);
     expect(result.compressionStage).toBe("llm-summary");
     expect(result.messages).toEqual([userMsg("compressed")]);
+  });
+
+  it("keeps original context below the hard budget when compression reports an error", async () => {
+    const msgs = [userMsg("old ".repeat(300)), userMsg("latest request")];
+
+    const result = await truncateToFitAsync(
+      msgs,
+      1_000,
+      async () => ({
+        messages: [userMsg("latest request")],
+        wasCompressed: false,
+        hadError: true,
+      }),
+      { compressionTriggerBudget: 100 },
+    );
+
+    expect(result.messages).toEqual(msgs);
+    expect(result.compressionStage).toBe("none");
+    expect(result.messagesDropped).toBe(0);
+  });
+
+  it("uses explicit safe truncation after a compression error above the hard budget", async () => {
+    const msgs = [
+      userMsg("old-1 ".repeat(300)),
+      assistantMsg("old-2 ".repeat(300)),
+      userMsg("latest request"),
+    ];
+
+    const result = await truncateToFitAsync(
+      msgs,
+      80,
+      async (messages) => ({
+        messages,
+        wasCompressed: false,
+        hadError: true,
+      }),
+      { recentMessageCount: 1 },
+    );
+
+    expect(result.compressionStage).toBe("safe-truncation");
+    expect(result.messagesDropped).toBeGreaterThan(0);
+    expect(result.messages).toContainEqual(userMsg("latest request"));
   });
 
   it("runs LLM compression when tool-result compaction is still over the soft trigger budget", async () => {

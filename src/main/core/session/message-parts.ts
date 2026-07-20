@@ -159,12 +159,26 @@ export interface UsagePart {
   totalTokens: number | null;
   modelId: string | null;
   provider: string | null;
+  latestStepContextTokens?: number | null;
+  maxStepContextTokens?: number | null;
 }
 
 export interface ContextCompressedPart {
   type: "context-compressed";
   originalTokens?: number | null;
   compressedTokens?: number | null;
+}
+
+/**
+ * Provider 返回的不可见上下文状态。它会持久化到 JSONL 并在后续请求中
+ * 原样回传,但不参与聊天正文渲染。
+ */
+export interface ProviderContextPart {
+  type: "provider-context";
+  provider: "openai";
+  kind: "compaction";
+  itemId: string;
+  encryptedContent?: string;
 }
 
 export interface ClarificationPart {
@@ -471,6 +485,7 @@ export type MessagePart =
   | ErrorPart
   | UsagePart
   | ContextCompressedPart
+  | ProviderContextPart
   | ClarificationPart
   | ImagePart
   | ImageGalleryPart

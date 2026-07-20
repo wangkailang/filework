@@ -65,4 +65,23 @@ describe("repairMissingToolResults", () => {
     expect(result.repairedToolCallIds).toEqual([]);
     expect(result.messages).toBe(messages);
   });
+
+  it("removes orphan tool results whose calls are no longer in context", () => {
+    const result = repairMissingToolResults([
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "orphan-call",
+            toolName: "readFile",
+            output: { type: "text", value: "orphan result" },
+          },
+        ],
+      },
+      { role: "user", content: "continue" },
+    ]);
+
+    expect(result.messages).toEqual([{ role: "user", content: "continue" }]);
+  });
 });

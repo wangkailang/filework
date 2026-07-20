@@ -6,7 +6,7 @@ import {
 } from "../native-compaction";
 
 describe("provider native compaction", () => {
-  it("enables OpenAI Responses native truncation only for official OpenAI configs", () => {
+  it("enables OpenAI Responses server-side compaction only for official OpenAI configs", () => {
     const config = {
       provider: "openai",
       apiKey: "test-key",
@@ -18,21 +18,23 @@ describe("provider native compaction", () => {
         supportsTools: true,
         supportsVision: true,
       },
-      compressionTriggerBudget: 219_300,
+      compressionTriggerBudget: 892_500,
     };
 
     expect(getProviderNativeCompaction(config)).toEqual({
       enabled: true,
-      mode: "openai-truncation-auto",
+      mode: "openai-context-management-compact",
       provider: "openai",
-      triggerTokens: null,
+      triggerTokens: 892_500,
     });
     expect(buildProviderNativeCompactionOptions(config)).toEqual({
-      openai: { truncation: "auto" },
+      openai: {
+        contextManagement: [{ type: "compaction", compactThreshold: 892_500 }],
+      },
     });
   });
 
-  it("does not send OpenAI native truncation to OpenAI-compatible custom endpoints", () => {
+  it("does not send OpenAI native compaction to OpenAI-compatible custom endpoints", () => {
     const config = {
       provider: "custom",
       apiKey: "test-key",
@@ -44,7 +46,7 @@ describe("provider native compaction", () => {
         supportsTools: true,
         supportsVision: true,
       },
-      compressionTriggerBudget: 219_300,
+      compressionTriggerBudget: 892_500,
     };
 
     expect(getProviderNativeCompaction(config)).toEqual({
@@ -55,7 +57,7 @@ describe("provider native compaction", () => {
     expect(buildProviderNativeCompactionOptions(config)).toEqual({});
   });
 
-  it("does not send OpenAI native truncation when OpenAI is pointed at a custom endpoint", () => {
+  it("does not send OpenAI native compaction when OpenAI is pointed at a custom endpoint", () => {
     const config = {
       provider: "openai",
       apiKey: "test-key",
@@ -67,7 +69,7 @@ describe("provider native compaction", () => {
         supportsTools: true,
         supportsVision: true,
       },
-      compressionTriggerBudget: 219_300,
+      compressionTriggerBudget: 892_500,
     };
 
     expect(getProviderNativeCompaction(config)).toEqual({

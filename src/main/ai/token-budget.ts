@@ -10,7 +10,10 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
 export const SAFETY_MARGIN = 2_000;
 export const TOOL_RESULT_COMPRESS_THRESHOLD_CHARS = 2_000;
 export const COMPRESSION_TRIGGER_RATIO = 0.85;
+export const COMPRESSION_TARGET_RATIO = 0.5;
 export const DEFAULT_RECENT_MESSAGE_COUNT = 6;
+export const CONTEXT_GROWTH_RESERVE_RATIO = 0.1;
+export const MAX_CONTEXT_GROWTH_RESERVE_TOKENS = 32_768;
 
 // ---------------------------------------------------------------------------
 // 模型上下文预算
@@ -78,7 +81,32 @@ export function getCompressionTriggerBudget(input: {
     contextWindow != null
       ? Math.floor(contextWindow * COMPRESSION_TRIGGER_RATIO)
       : Math.floor(hardBudget * COMPRESSION_TRIGGER_RATIO);
-  return Math.max(1, Math.min(hardBudget, triggerBudget));
+  const growthReserve = Math.min(
+    MAX_CONTEXT_GROWTH_RESERVE_TOKENS,
+    Math.floor((contextWindow ?? hardBudget) * CONTEXT_GROWTH_RESERVE_RATIO),
+  );
+  const headroomBudget = hardBudget - growthReserve;
+  return Math.max(1, Math.min(hardBudget, triggerBudget, headroomBudget));
+}
+
+export function getCompressionTargetBudget(input: {
+  modelId?: string | null;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+}): number {
+  const hardBudget = getTokenBudget(input);
+  const contextWindow =
+    input.contextWindow != null &&
+    Number.isFinite(input.contextWindow) &&
+    input.contextWindow > 0
+      ? input.contextWindow
+      : input.modelId
+        ? getContextWindowForModel(input.modelId)
+        : null;
+  const targetBudget = Math.floor(
+    (contextWindow ?? hardBudget) * COMPRESSION_TARGET_RATIO,
+  );
+  return Math.max(1, Math.min(hardBudget, targetBudget));
 }
 const TRUNCATION_NOTICE =
   "[系统提示] 部分早期对话已被省略，以下为最近的对话内容。";
@@ -227,9 +255,28 @@ function cloneMessage(msg: ModelMessage): ModelMessage {
  * 压缩消息数组中过大的 tool-result 值（对克隆副本进行变更）。
  * 返回包含已压缩消息的新数组。
  */
-export function compressToolResults(messages: ModelMessage[]): ModelMessage[] {
-  return messages.map((msg) => {
-    if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+export function compressToolResults(
+  messages: ModelMessage[],
+  options?: { preserveLatest?: boolean },
+): ModelMessage[] {
+  let latestToolMessageIndex = -1;
+  if (options?.preserveLatest) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].role === "tool") {
+        latestToolMessageIndex = index;
+        break;
+      }
+    }
+  }
+
+  return messages.map((msg, index) => {
+    if (
+      msg.role !== "tool" ||
+      index === latestToolMessageIndex ||
+      !Array.isArray(msg.content)
+    ) {
+      return msg;
+    }
 
     let needsClone = false;
     for (const part of msg.content) {
@@ -463,6 +510,7 @@ function truncateSingleMessage(
 // ---------------------------------------------------------------------------
 
 export interface CompressionResult {
+  hadError?: boolean;
   messages: ModelMessage[];
   wasCompressed: boolean;
 }
@@ -481,6 +529,7 @@ export async function truncateToFitAsync(
     budget: number,
   ) => Promise<CompressionResult>,
   options?: {
+    compressionTargetBudget?: number | null;
     compressionTriggerBudget?: number | null;
     forceCompression?: boolean;
     recentMessageCount?: number;
@@ -494,6 +543,12 @@ export async function truncateToFitAsync(
     options.compressionTriggerBudget > 0
       ? Math.min(effectiveBudget, Math.floor(options.compressionTriggerBudget))
       : null;
+  const compressionTargetBudget =
+    options?.compressionTargetBudget != null &&
+    Number.isFinite(options.compressionTargetBudget) &&
+    options.compressionTargetBudget > 0
+      ? Math.min(effectiveBudget, Math.floor(options.compressionTargetBudget))
+      : (compressionTriggerBudget ?? effectiveBudget);
 
   if (messages.length === 0) {
     return {
@@ -539,8 +594,11 @@ export async function truncateToFitAsync(
     }
 
     try {
-      const result = await compressor(compressed, compressionTriggerBudget);
-      if (estimateTokens(result.messages) <= effectiveBudget) {
+      const result = await compressor(compressed, compressionTargetBudget);
+      if (
+        !result.hadError &&
+        estimateTokens(result.messages) <= effectiveBudget
+      ) {
         return {
           messages: result.messages,
           wasTruncated: result.wasCompressed,
@@ -573,8 +631,11 @@ export async function truncateToFitAsync(
       compressedTokens > compressionTriggerBudget
     ) {
       try {
-        const result = await compressor(compressed, compressionTriggerBudget);
-        if (estimateTokens(result.messages) <= effectiveBudget) {
+        const result = await compressor(compressed, compressionTargetBudget);
+        if (
+          !result.hadError &&
+          estimateTokens(result.messages) <= effectiveBudget
+        ) {
           return {
             messages: result.messages,
             wasTruncated: result.wasCompressed,
@@ -606,11 +667,11 @@ export async function truncateToFitAsync(
   // 策略 2：如可用则尝试 LLM 压缩
   if (compressor) {
     try {
-      const result = await compressor(
-        compressed,
-        compressionTriggerBudget ?? effectiveBudget,
-      );
-      if (estimateTokens(result.messages) <= effectiveBudget) {
+      const result = await compressor(compressed, compressionTargetBudget);
+      if (
+        !result.hadError &&
+        estimateTokens(result.messages) <= effectiveBudget
+      ) {
         return {
           messages: result.messages,
           wasTruncated: result.wasCompressed,

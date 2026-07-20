@@ -10,7 +10,7 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/deepseek@3.0.2'
   - '@ai-sdk/gateway@4.0.6'
   - '@ai-sdk/mcp@2.0.4'
-  - '@ai-sdk/openai@4.0.4'
+  - '@ai-sdk/openai@4.0.11'
   - '@ai-sdk/provider-utils@5.0.2'
   - '@ai-sdk/provider@4.0.1'
   - '@ai-sdk/react@4.0.9'

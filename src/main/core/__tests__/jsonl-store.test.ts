@@ -185,6 +185,13 @@ describe("JsonlSessionStore", () => {
           modelId: "x",
           provider: "y",
         },
+        {
+          type: "provider-context",
+          provider: "openai",
+          kind: "compaction",
+          itemId: "cmp_123",
+          encryptedContent: "encrypted-state",
+        },
         { type: "clarification", question: "Which dir?", options: ["a", "b"] },
       ];
       await store.saveMessages(session.id, "/ws", [

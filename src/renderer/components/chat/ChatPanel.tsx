@@ -211,7 +211,8 @@ const getLatestUsageInputTokens = (messages: ChatMessage[]): number | null => {
     for (let j = parts.length - 1; j >= 0; j -= 1) {
       const part = parts[j];
       if (part.type !== "usage") continue;
-      const inputTokens = (part as UsagePart).inputTokens;
+      const usage = part as UsagePart;
+      const inputTokens = usage.latestStepContextTokens ?? usage.inputTokens;
       if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
         return inputTokens;
       }

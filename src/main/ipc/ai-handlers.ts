@@ -20,27 +20,38 @@ import {
   extractProviderNativeCompactionUsage,
   type ProviderNativeCompaction,
 } from "../ai/adapters/native-compaction";
-import { compressContext } from "../ai/context-compressor";
+import { applyContextCheckpoint } from "../ai/context-checkpoint";
+import {
+  compressContext,
+  createContextSummaryMessage,
+  isContextSummaryMessage,
+} from "../ai/context-compressor";
 import { repairMissingToolResults } from "../ai/context-safety";
 import { DeltaBatcher } from "../ai/delta-batcher";
 import { classifyError } from "../ai/error-classifier";
 import { emitMemoryEvent } from "../ai/memory-debug-store";
 import {
-  convertToCoreMessages,
+  convertToCoreMessagesWithSourceIds,
   type HistoryMessage,
 } from "../ai/message-converter";
 import { appendPattern } from "../ai/pattern-store";
-import { countOpenAIResponsesInputTokens } from "../ai/provider-token-count";
+import {
+  countOpenAIResponsesInputTokens,
+  estimateToolDefinitionTokens,
+  supportsOpenAIResponsesInputTokenCount,
+} from "../ai/provider-token-count";
 import { summarizeLargeToolResults } from "../ai/result-summarizer";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { emitTaskTraceEvent } from "../ai/task-trace-store";
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   estimateTokens,
+  getCompressionTargetBudget,
   getCompressionTriggerBudget,
   getContextWindowForModel,
   getTokenBudget,
   SAFETY_MARGIN,
+  truncateToFit,
   truncateToFitAsync,
 } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
@@ -200,41 +211,34 @@ const finishAutomationRunForTask = (
   }
 };
 
-const readLatestContextInputTokens = (
-  history: Array<{ parts?: unknown[] }> | undefined,
-): number => {
-  const messages = history ?? [];
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const parts = messages[i]?.parts ?? [];
-    for (let j = parts.length - 1; j >= 0; j -= 1) {
-      const part = parts[j];
-      if (part == null || typeof part !== "object") continue;
-      const record = part as { inputTokens?: unknown; type?: unknown };
-      if (record.type !== "usage") continue;
-      if (
-        typeof record.inputTokens === "number" &&
-        Number.isFinite(record.inputTokens)
-      ) {
-        return record.inputTokens;
-      }
-    }
-  }
-  return 0;
-};
-
-const readRollingSummary = (
-  summaryScopeId: string | undefined,
-): string | undefined => {
-  if (!summaryScopeId) return undefined;
+const readRollingSummaryCheckpoint = (summaryScopeId: string | undefined) => {
+  if (!summaryScopeId) return null;
   try {
-    return getTaskSummary(summaryScopeId)?.summary ?? undefined;
+    return getTaskSummary(summaryScopeId);
   } catch (error) {
     console.warn(
-      "[ai:executeTask] Failed to read rolling context summary:",
+      "[ai:executeTask] Failed to read rolling context checkpoint:",
       error instanceof Error ? error.message : error,
     );
-    return undefined;
+    return null;
   }
+};
+
+const stripContextSummaryMessages = (
+  messages: import("ai").ModelMessage[],
+  sourceMessageIds?: Array<string | null>,
+) => {
+  const strippedMessages: import("ai").ModelMessage[] = [];
+  const strippedSourceMessageIds: Array<string | null> = [];
+  messages.forEach((message, index) => {
+    if (isContextSummaryMessage(message)) return;
+    strippedMessages.push(message);
+    strippedSourceMessageIds.push(sourceMessageIds?.[index] ?? null);
+  });
+  return {
+    messages: strippedMessages,
+    sourceMessageIds: strippedSourceMessageIds,
+  };
 };
 
 const readContextMemoryChunks = (summaryScopeId: string | undefined) => {
@@ -277,7 +281,12 @@ const handleTaskExecutionInner = async (
     chatPermissionMode?: ChatPermissionMode;
     contextInputTokens?: number;
     llmConfigId?: string;
-    history?: Array<{ role: string; content: string; parts?: unknown[] }>;
+    history?: Array<{
+      id?: string;
+      role: string;
+      content: string;
+      parts?: unknown[];
+    }>;
   },
 ) => {
   const ref = resolveWorkspaceRef(payload);
@@ -532,9 +541,7 @@ const handleTaskExecutionInner = async (
       providerOptions,
       providerNativeCompaction,
     } = getModelAndAdapterByConfigId(resolvedLlmConfigId);
-    const providerManagesContextCompression =
-      providerNativeCompaction.enabled &&
-      providerNativeCompaction.mode === "anthropic-context-management-compact";
+    const providerManagesContextCompression = providerNativeCompaction.enabled;
     const contextWindow = llmConfig
       ? (llmConfig.modelContextWindow ??
         getContextWindowForModel(llmConfig.model))
@@ -704,18 +711,15 @@ const handleTaskExecutionInner = async (
     let convertedHistory: import("ai").ModelMessage[] | undefined;
     if (Array.isArray(payload.history) && payload.history.length > 0) {
       try {
-        const latestContextInputTokens =
-          typeof payload.contextInputTokens === "number" &&
-          Number.isFinite(payload.contextInputTokens) &&
-          payload.contextInputTokens > 0
-            ? payload.contextInputTokens
-            : readLatestContextInputTokens(payload.history);
-        const forceCompressionFromUsage =
-          !providerManagesContextCompression &&
-          compressionTriggerBudget != null &&
-          latestContextInputTokens > compressionTriggerBudget;
-        const coreMessages = await convertToCoreMessages(
+        const rollingSummaryCheckpoint = readRollingSummaryCheckpoint(
+          rollingSummaryScopeId,
+        );
+        const checkpointedHistory = applyContextCheckpoint(
           payload.history as HistoryMessage[],
+          rollingSummaryCheckpoint,
+        );
+        const converted = await convertToCoreMessagesWithSourceIds(
+          checkpointedHistory.history,
           {
             // 用「解析后的 adapter 名」做能力查表:MiMo 常以 host 覆盖路由到
             // xiaomi adapter,而 llmConfig.provider 未必是 "xiaomi"。对其它
@@ -723,16 +727,36 @@ const handleTaskExecutionInner = async (
             providerId: llmConfig?.provider
               ? resolveAdapterName(llmConfig.provider, llmConfig.baseUrl)
               : undefined,
+            replayOpenAICompaction:
+              providerNativeCompaction.enabled &&
+              providerNativeCompaction.provider === "openai",
           },
         );
+        const checkpointSummaryMessage = checkpointedHistory.applied
+          ? createContextSummaryMessage(checkpointedHistory.summary)
+          : null;
+        const coreMessages = checkpointSummaryMessage
+          ? [checkpointSummaryMessage, ...converted.messages]
+          : converted.messages;
+        const coreSourceMessageIds = checkpointSummaryMessage
+          ? [null, ...converted.sourceMessageIds]
+          : converted.sourceMessageIds;
 
         const inputRepair = repairMissingToolResults(coreMessages);
         const safeCoreMessages = inputRepair.messages;
+        const sourceIdByMessage = new Map(
+          coreMessages.map((message, index) => [
+            message,
+            coreSourceMessageIds[index] ?? null,
+          ]),
+        );
+        const safeSourceMessageIds = safeCoreMessages.map(
+          (message) => sourceIdByMessage.get(message) ?? null,
+        );
         const originalTokens = estimateTokens(safeCoreMessages);
         let preparedCoreMessages = safeCoreMessages;
         let semanticToolResultSummary = false;
         const shouldSummarizeToolResults =
-          forceCompressionFromUsage ||
           (!providerManagesContextCompression &&
             compressionTriggerBudget != null &&
             originalTokens > compressionTriggerBudget) ||
@@ -765,18 +789,25 @@ const handleTaskExecutionInner = async (
           budget: number,
         ) => {
           compressorCalled = true;
-
-          const result = await compressContext(msgs, {
+          const compressionInput = stripContextSummaryMessages(
+            msgs,
+            safeSourceMessageIds,
+          );
+          const latestCheckpoint = readRollingSummaryCheckpoint(
+            rollingSummaryScopeId,
+          );
+          const result = await compressContext(compressionInput.messages, {
             model,
             budget,
-            force: forceCompressionFromUsage,
-            tailBudget: forceCompressionFromUsage ? 4_000 : undefined,
             signal: controller.signal,
             taskId: id,
             summaryScopeId: rollingSummaryScopeId,
-            previousSummary: readRollingSummary(rollingSummaryScopeId),
+            previousSummary: latestCheckpoint?.summary,
+            previousSummaryVersion: latestCheckpoint?.summaryVersion,
             memoryChunks: readContextMemoryChunks(rollingSummaryScopeId),
             promptSnippet: payload.prompt,
+            recallQuery: payload.prompt,
+            sourceMessageIds: compressionInput.sourceMessageIds,
           });
           // 通过 IPC 转发给渲染层(compressContext 已写入 store)
           forwardContextCompressionResult(result);
@@ -790,7 +821,15 @@ const handleTaskExecutionInner = async (
             compressionTriggerBudget: providerManagesContextCompression
               ? undefined
               : compressionTriggerBudget,
-            forceCompression: forceCompressionFromUsage,
+            compressionTargetBudget: providerManagesContextCompression
+              ? undefined
+              : llmConfig
+                ? getCompressionTargetBudget({
+                    modelId: llmConfig.model,
+                    contextWindow,
+                    maxOutputTokens,
+                  })
+                : undefined,
           },
         );
         const repaired = repairMissingToolResults(truncationResult.messages);
@@ -1066,6 +1105,7 @@ const handleTaskExecutionInner = async (
       },
     });
     const agentTools = { ...registryTools, ...skillTools };
+    const toolDefinitionTokens = await estimateToolDefinitionTokens(agentTools);
 
     // 默认:在每个任务上附加零 LLM 的规则层(pdfParseFailure +
     // toolDeniedSequence)。当 skill 通过 `reflect: true` 选用时
@@ -1080,7 +1120,8 @@ const handleTaskExecutionInner = async (
         : { rules: defaultRules() },
     );
     const estimateAgentStepTokens = (messages: import("ai").ModelMessage[]) =>
-      estimateTokens([{ role: "system", content: systemPrompt }, ...messages]);
+      estimateTokens([{ role: "system", content: systemPrompt }, ...messages]) +
+      toolDefinitionTokens;
     const systemPromptTokens = estimateTokens([
       { role: "system", content: systemPrompt },
     ]);
@@ -1088,20 +1129,64 @@ const handleTaskExecutionInner = async (
       tokenBudget != null
         ? Math.max(
             1,
-            Math.min(tokenBudget, compressionTriggerBudget ?? tokenBudget) -
-              systemPromptTokens,
+            Math.min(
+              tokenBudget,
+              llmConfig
+                ? getCompressionTargetBudget({
+                    modelId: llmConfig.model,
+                    contextWindow,
+                    maxOutputTokens,
+                  })
+                : tokenBudget,
+            ) - systemPromptTokens,
           )
         : undefined;
-    let forceStepCompressionFromProviderCount = false;
+    const canCountProviderStepTokens =
+      llmConfig != null &&
+      supportsOpenAIResponsesInputTokenCount({
+        apiKey: llmConfig.apiKey || "",
+        baseUrl: llmConfig.baseUrl,
+        modelCapabilities: llmConfig.modelCapabilities,
+        provider: llmConfig.provider,
+      });
+    let providerCountUnavailable = false;
+    let exactTokenBaseline: {
+      estimatedTokens: number;
+      inputTokens: number;
+    } | null = null;
+    const exactRecheckThreshold = Math.floor(
+      Math.min(
+        compressionTriggerBudget ?? Number.POSITIVE_INFINITY,
+        tokenBudget ?? Number.POSITIVE_INFINITY,
+      ) * 0.85,
+    );
+    const countRenderedStepTokens = async (
+      messages: import("ai").ModelMessage[],
+      signal?: AbortSignal,
+      forceExact = false,
+    ) => {
+      const estimatedTokens = estimateAgentStepTokens(messages);
+      if (
+        !llmConfig ||
+        !canCountProviderStepTokens ||
+        providerCountUnavailable
+      ) {
+        return estimatedTokens;
+      }
+      const projectedTokens = exactTokenBaseline
+        ? Math.max(
+            1,
+            exactTokenBaseline.inputTokens +
+              estimatedTokens -
+              exactTokenBaseline.estimatedTokens,
+          )
+        : estimatedTokens;
+      const shouldCountExactly =
+        forceExact ||
+        exactTokenBaseline == null ||
+        projectedTokens >= exactRecheckThreshold;
+      if (!shouldCountExactly) return projectedTokens;
 
-    if (llmConfig) {
-      const messagesForProviderCount: import("ai").ModelMessage[] =
-        useMessagesMode && convertedHistory
-          ? [{ role: "system", content: systemPrompt }, ...convertedHistory]
-          : [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: payload.prompt },
-            ];
       const providerTokenCount = await countOpenAIResponsesInputTokens(
         {
           apiKey: llmConfig.apiKey || "",
@@ -1110,27 +1195,31 @@ const handleTaskExecutionInner = async (
           modelCapabilities: llmConfig.modelCapabilities,
           provider: llmConfig.provider,
         },
-        messagesForProviderCount,
-        { signal: controller.signal },
+        messages,
+        {
+          signal,
+          instructions: systemPrompt,
+          tools: agentTools,
+        },
       );
-      if (providerTokenCount) {
-        emitContextBudgetTrace({
-          source: "history",
-          originalTokens: providerTokenCount.inputTokens,
-          usedTokens: providerTokenCount.inputTokens,
-          tokenAccuracy: providerTokenCount.accuracy,
-          tokenCountSource: providerTokenCount.source,
-          providerNativeCompaction,
-        });
-        if (
-          !providerManagesContextCompression &&
-          compressionTriggerBudget != null &&
-          providerTokenCount.inputTokens > compressionTriggerBudget
-        ) {
-          forceStepCompressionFromProviderCount = true;
-        }
+      if (!providerTokenCount) {
+        providerCountUnavailable = true;
+        return projectedTokens;
       }
-    }
+      exactTokenBaseline = {
+        estimatedTokens,
+        inputTokens: providerTokenCount.inputTokens,
+      };
+      emitContextBudgetTrace({
+        source: "provider-step",
+        originalTokens: providerTokenCount.inputTokens,
+        usedTokens: providerTokenCount.inputTokens,
+        tokenAccuracy: providerTokenCount.accuracy,
+        tokenCountSource: providerTokenCount.source,
+        providerNativeCompaction,
+      });
+      return providerTokenCount.inputTokens;
+    };
 
     const agentLoop = new AgentLoop({
       workspace,
@@ -1146,45 +1235,75 @@ const handleTaskExecutionInner = async (
       agentId: id,
       hooks: {
         reflect: reflectHook,
-        transformStepContext: providerManagesContextCompression
-          ? undefined
-          : async (messages, signal) => {
-              const originalTokens = estimateAgentStepTokens(messages);
-              const exceedsTrigger =
-                compressionTriggerBudget != null &&
-                originalTokens > compressionTriggerBudget;
-              const exceedsHardBudget =
-                tokenBudget != null && originalTokens > tokenBudget;
-              const force =
-                forceStepCompressionFromProviderCount || exceedsTrigger;
-              if (!force && !exceedsHardBudget) {
-                return { messages };
-              }
+        transformStepContext: async (messages, signal) => {
+          if (providerManagesContextCompression) {
+            return { messages };
+          }
+          const originalTokens = await countRenderedStepTokens(
+            messages,
+            signal,
+          );
+          const exceedsTrigger =
+            compressionTriggerBudget != null &&
+            originalTokens > compressionTriggerBudget;
+          const exceedsHardBudget =
+            tokenBudget != null && originalTokens > tokenBudget;
+          const force = exceedsTrigger;
+          if (!force && !exceedsHardBudget) {
+            return { messages };
+          }
 
-              forceStepCompressionFromProviderCount = false;
-              const result = await compressContext(messages, {
-                model,
-                budget:
-                  stepMessageCompressionBudget ??
-                  tokenBudget ??
-                  compressionTriggerBudget ??
-                  1,
-                force,
-                tailBudget: force ? 4_000 : undefined,
-                signal,
-                taskId: id,
-                summaryScopeId: rollingSummaryScopeId,
-                previousSummary: readRollingSummary(rollingSummaryScopeId),
-                memoryChunks: readContextMemoryChunks(rollingSummaryScopeId),
-                promptSnippet: payload.prompt,
-              });
-              forwardContextCompressionResult(result);
-              return {
-                messages: result.messages,
-                originalTokens,
-                compressedTokens: estimateAgentStepTokens(result.messages),
-              };
-            },
+          const compressionInput = stripContextSummaryMessages(messages);
+          const latestCheckpoint = readRollingSummaryCheckpoint(
+            rollingSummaryScopeId,
+          );
+          const result = await compressContext(compressionInput.messages, {
+            model,
+            budget:
+              stepMessageCompressionBudget ??
+              tokenBudget ??
+              compressionTriggerBudget ??
+              1,
+            force,
+            signal,
+            taskId: id,
+            summaryScopeId: rollingSummaryScopeId,
+            previousSummary: latestCheckpoint?.summary,
+            previousSummaryVersion: latestCheckpoint?.summaryVersion,
+            memoryChunks: readContextMemoryChunks(rollingSummaryScopeId),
+            promptSnippet: payload.prompt,
+            recallQuery: payload.prompt,
+          });
+          forwardContextCompressionResult(result);
+          if (result.hadError && !exceedsHardBudget) {
+            return { messages };
+          }
+          if (result.hadError) {
+            const fallback = truncateToFit(
+              messages,
+              stepMessageCompressionBudget ?? tokenBudget,
+            );
+            emitContextBudgetTrace({
+              source: "agent-step",
+              originalTokens,
+              usedTokens: estimateAgentStepTokens(fallback.messages),
+              wasTruncated: fallback.wasTruncated,
+              messagesDropped: fallback.messagesDropped,
+              compressionStage: fallback.compressionStage,
+              providerNativeCompaction,
+            });
+            return {
+              messages: fallback.messages,
+              originalTokens,
+              compressedTokens: estimateAgentStepTokens(fallback.messages),
+            };
+          }
+          return {
+            messages: result.messages,
+            originalTokens,
+            compressedTokens: estimateAgentStepTokens(result.messages),
+          };
+        },
         contextUsage: ({ messages, preparedMessages }) => {
           emitContextBudgetTrace({
             source: "agent-step",
@@ -1342,6 +1461,17 @@ const handleTaskExecutionInner = async (
                 maxRetries: retryInfo.maxRetries,
               },
             });
+            break;
+          }
+          case "provider_context": {
+            deltaBatcher.drain();
+            if (!sender.isDestroyed()) {
+              sender.send("ai:stream-provider-context", {
+                id,
+                ...streamRoute,
+                part: ev.part,
+              });
+            }
             break;
           }
           case "agent_end": {
@@ -1504,7 +1634,11 @@ const handleTaskExecutionInner = async (
               durationMs: Date.now() - taskStartMs,
             });
             if (!sender.isDestroyed()) {
-              sender.send("ai:stream-done", { id, ...streamRoute });
+              sender.send("ai:stream-done", {
+                id,
+                ...streamRoute,
+                contextUsage: ev.contextUsage,
+              });
             }
             return { id, status: "completed" };
           }

@@ -70,7 +70,12 @@ export const initDatabase = async () => {
       summary TEXT NOT NULL,
       original_tokens INTEGER,
       compressed_tokens INTEGER,
-      summary_tokens INTEGER
+      summary_tokens INTEGER,
+      covered_through_message_id TEXT,
+      retained_tail_start_id TEXT,
+      summary_version INTEGER,
+      source_token_count INTEGER,
+      last_compacted_at TEXT
     );
     CREATE TABLE IF NOT EXISTS context_memory_chunks (
       id TEXT PRIMARY KEY,
@@ -581,7 +586,12 @@ export const initDatabase = async () => {
       summary TEXT NOT NULL,
       original_tokens INTEGER,
       compressed_tokens INTEGER,
-      summary_tokens INTEGER
+      summary_tokens INTEGER,
+      covered_through_message_id TEXT,
+      retained_tail_start_id TEXT,
+      summary_version INTEGER,
+      source_token_count INTEGER,
+      last_compacted_at TEXT
     );
     CREATE TABLE IF NOT EXISTS context_memory_chunks (
       id TEXT PRIMARY KEY,
@@ -594,6 +604,25 @@ export const initDatabase = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_context_memory_scope ON context_memory_chunks(scope_id, updated_at);
   `);
+
+  const taskSummaryColumns = sqlite.pragma("table_info(task_summaries)") as {
+    name: string;
+  }[];
+  const taskSummaryColumnNames = new Set(
+    taskSummaryColumns.map((column) => column.name),
+  );
+  const taskSummaryMigrations = [
+    ["covered_through_message_id", "TEXT"],
+    ["retained_tail_start_id", "TEXT"],
+    ["summary_version", "INTEGER"],
+    ["source_token_count", "INTEGER"],
+    ["last_compacted_at", "TEXT"],
+  ] as const;
+  for (const [column, type] of taskSummaryMigrations) {
+    if (!taskSummaryColumnNames.has(column)) {
+      sqlite.exec(`ALTER TABLE task_summaries ADD COLUMN ${column} ${type}`);
+    }
+  }
 
   // M3 PR 2:删除旧版聊天表。M3 PR 1+ 上的现有用户已经
   // 迁移到 ~/.filework/sessions/ 的 JSONL 存储。
@@ -882,6 +911,11 @@ export interface TaskSummary {
   originalTokens?: number | null;
   compressedTokens?: number | null;
   summaryTokens?: number | null;
+  coveredThroughMessageId?: string | null;
+  retainedTailStartId?: string | null;
+  summaryVersion?: number | null;
+  sourceTokenCount?: number | null;
+  lastCompactedAt?: string | null;
 }
 
 export interface ContextMemoryChunk {
@@ -1159,6 +1193,11 @@ export const upsertTaskSummary = (s: TaskSummary) => {
       originalTokens: s.originalTokens ?? null,
       compressedTokens: s.compressedTokens ?? null,
       summaryTokens: s.summaryTokens ?? null,
+      coveredThroughMessageId: s.coveredThroughMessageId ?? null,
+      retainedTailStartId: s.retainedTailStartId ?? null,
+      summaryVersion: s.summaryVersion ?? null,
+      sourceTokenCount: s.sourceTokenCount ?? null,
+      lastCompactedAt: s.lastCompactedAt ?? null,
     })
     .onConflictDoUpdate({
       target: schema.taskSummaries.taskId,
@@ -1168,6 +1207,11 @@ export const upsertTaskSummary = (s: TaskSummary) => {
         originalTokens: s.originalTokens ?? null,
         compressedTokens: s.compressedTokens ?? null,
         summaryTokens: s.summaryTokens ?? null,
+        coveredThroughMessageId: s.coveredThroughMessageId ?? null,
+        retainedTailStartId: s.retainedTailStartId ?? null,
+        summaryVersion: s.summaryVersion ?? null,
+        sourceTokenCount: s.sourceTokenCount ?? null,
+        lastCompactedAt: s.lastCompactedAt ?? null,
       },
     })
     .run();
@@ -1188,6 +1232,11 @@ export const getTaskSummary = (taskId: string): TaskSummary | null => {
     originalTokens: row.originalTokens ?? null,
     compressedTokens: row.compressedTokens ?? null,
     summaryTokens: row.summaryTokens ?? null,
+    coveredThroughMessageId: row.coveredThroughMessageId ?? null,
+    retainedTailStartId: row.retainedTailStartId ?? null,
+    summaryVersion: row.summaryVersion ?? null,
+    sourceTokenCount: row.sourceTokenCount ?? null,
+    lastCompactedAt: row.lastCompactedAt ?? null,
   };
 };
 
