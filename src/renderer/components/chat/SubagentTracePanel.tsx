@@ -1,7 +1,14 @@
 // 钻入面板:在 ContextDock 的 subagent 标签里回放单个子 agent 的执行过程。
 // 数据来自 chat context 的 messages(随子 agent 流式实时更新),按 batchId 定位
 // SubagentMessagePart、childTaskId 定位 child,复用主线程的工具/推理/文本渲染。
-import { useMemo } from "react";
+import {
+  BookOpenCheck,
+  ChevronRight,
+  CircleAlert,
+  Search,
+  Send,
+} from "lucide-react";
+import { type ReactNode, useMemo } from "react";
 
 import { useI18nContext } from "../../i18n/i18n-react";
 import { MessageResponse } from "../ai-elements/message";
@@ -27,6 +34,289 @@ function fmtTokens(n: number | null): string | null {
   if (n == null) return null;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return String(n);
+}
+
+const RESEARCH_SEARCH_TOOL = "webSearch";
+const RESEARCH_FETCH_TOOLS = new Set([
+  "webFetch",
+  "webFetchRendered",
+  "webScrape",
+]);
+const RESEARCH_SUBMIT_TOOL = "submitSubagentResult";
+const MIN_VERIFIED_CONTENT_CHARS = 120;
+
+type SubmissionState = "idle" | "running" | "complete" | "failed";
+
+interface ResearchTraceSummary {
+  calls: ToolPart[];
+  completedSearches: number;
+  completedFetches: number;
+  verifiedSources: number;
+  skippedCalls: number;
+  failedCalls: number;
+  submission: SubmissionState;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isWebResearchTool(part: MessagePart): boolean {
+  return (
+    part.type === "tool" &&
+    (part.toolName === RESEARCH_SEARCH_TOOL ||
+      RESEARCH_FETCH_TOOLS.has(part.toolName))
+  );
+}
+
+function isResearchTool(part: MessagePart): part is ToolPart {
+  return (
+    isWebResearchTool(part) ||
+    (part.type === "tool" && part.toolName === RESEARCH_SUBMIT_TOOL)
+  );
+}
+
+function isSkippedCall(part: ToolPart): boolean {
+  return asRecord(part.result)?.skipped === true;
+}
+
+function isFailedCall(part: ToolPart): boolean {
+  if (part.state === "output-error") return true;
+  const output = asRecord(part.result);
+  return Boolean(
+    output?.success === false ||
+      output?.error ||
+      (typeof output?.status === "number" && output.status >= 400),
+  );
+}
+
+function hasVerifiedContent(result: unknown): boolean {
+  const output = asRecord(result);
+  if (!output) {
+    return (
+      typeof result === "string" &&
+      result.trim().length >= MIN_VERIFIED_CONTENT_CHARS
+    );
+  }
+  return ["markdown", "raw", "html", "content", "text"].some((field) => {
+    const value = output[field];
+    return (
+      typeof value === "string" &&
+      value.trim().length >= MIN_VERIFIED_CONTENT_CHARS
+    );
+  });
+}
+
+function urlFromArgs(args: unknown): string | null {
+  const url = asRecord(args)?.url;
+  return typeof url === "string" && url.trim() ? url.trim() : null;
+}
+
+function summarizeSubmissionCall(part: ToolPart): string | undefined {
+  const result = asRecord(part.result);
+  const artifacts = asRecord(result?.artifacts);
+  const payload = artifacts ?? asRecord(part.args);
+  if (!payload) return undefined;
+  const status = payload.status;
+  if (status !== "complete" && status !== "partial" && status !== "no_result") {
+    return undefined;
+  }
+
+  const findings = Array.isArray(payload.findings)
+    ? payload.findings.length
+    : 0;
+  const missing = Array.isArray(payload.missing) ? payload.missing.length : 0;
+  const summary = [
+    status === "complete"
+      ? "完整结果"
+      : status === "partial"
+        ? "部分结果"
+        : "无可用结果",
+  ];
+  if (findings > 0) summary.push(`${findings} 条发现`);
+  if (missing > 0) summary.push(`${missing} 个待补缺口`);
+  return summary.join(" · ");
+}
+
+function summarizeResearchTrace(
+  parts: MessagePart[],
+): ResearchTraceSummary | null {
+  if (!parts.some(isWebResearchTool)) return null;
+  const calls = parts.filter(isResearchTool);
+
+  const verifiedUrls = new Set<string>();
+  let completedSearches = 0;
+  let completedFetches = 0;
+  let skippedCalls = 0;
+  let failedCalls = 0;
+  let submission: SubmissionState = "idle";
+
+  for (const call of calls) {
+    const skipped = isSkippedCall(call);
+    const failed = isFailedCall(call);
+    if (skipped) skippedCalls++;
+    if (failed) failedCalls++;
+
+    if (call.toolName === RESEARCH_SUBMIT_TOOL) {
+      submission = failed
+        ? "failed"
+        : call.state === "output-available"
+          ? "complete"
+          : "running";
+      continue;
+    }
+    if (skipped || failed || call.state !== "output-available") continue;
+
+    if (call.toolName === RESEARCH_SEARCH_TOOL) {
+      completedSearches++;
+      continue;
+    }
+
+    completedFetches++;
+    const url = urlFromArgs(call.args);
+    if (url && hasVerifiedContent(call.result)) verifiedUrls.add(url);
+  }
+
+  return {
+    calls,
+    completedSearches,
+    completedFetches,
+    verifiedSources: verifiedUrls.size,
+    skippedCalls,
+    failedCalls,
+    submission,
+  };
+}
+
+function ResearchStage({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail?: string;
+}) {
+  return (
+    <div className="min-w-0 px-2.5 py-2">
+      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="mt-0.5 truncate text-xs font-medium text-foreground/85">
+        {value}
+      </div>
+      {detail && (
+        <div className="mt-0.5 truncate text-[10px] text-muted-foreground/75">
+          {detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function submissionLabel(
+  state: SubmissionState,
+  childStatus: SubagentChildView["status"],
+): string {
+  if (state === "complete") return "已提交";
+  if (state === "failed") return "提交失败";
+  if (state === "running") return "提交中";
+  return childStatus === "queued" || childStatus === "running"
+    ? "待提交"
+    : "未提交";
+}
+
+function ResearchTrace({
+  summary,
+  childStatus,
+  workspacePath,
+}: {
+  summary: ResearchTraceSummary;
+  childStatus: SubagentChildView["status"];
+  workspacePath?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <section
+        aria-label="研究轨迹"
+        className="overflow-hidden rounded-md border border-border/70 bg-muted/10"
+      >
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
+          <BookOpenCheck className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-medium text-foreground/85">研究轨迹</span>
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            {summary.calls.length} 次调用
+          </span>
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-border/60 border-t border-border/60">
+          <ResearchStage
+            icon={<Search className="h-3 w-3" />}
+            label="发现"
+            value={`${summary.completedSearches} 次搜索`}
+          />
+          <ResearchStage
+            icon={<BookOpenCheck className="h-3 w-3" />}
+            label="核验"
+            value={`${summary.verifiedSources} 个已核验来源`}
+            detail={`${summary.completedFetches} 次抓取`}
+          />
+          <ResearchStage
+            icon={<Send className="h-3 w-3" />}
+            label="提交"
+            value={submissionLabel(summary.submission, childStatus)}
+          />
+        </div>
+        {(summary.skippedCalls > 0 || summary.failedCalls > 0) && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-2.5 py-1.5 text-[10px]">
+            {summary.skippedCalls > 0 && (
+              <span className="text-muted-foreground">
+                {summary.skippedCalls} 次阶段切换
+              </span>
+            )}
+            {summary.failedCalls > 0 && (
+              <span className="flex items-center gap-1 text-red-400">
+                <CircleAlert className="h-3 w-3" />
+                {summary.failedCalls} 次失败
+              </span>
+            )}
+          </div>
+        )}
+      </section>
+
+      <details className="group overflow-hidden rounded-md border border-border/50 bg-background/30">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/30 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+          <span>研究调用明细</span>
+          <span className="ml-auto font-mono text-[10px]">
+            {summary.calls.length} 次
+          </span>
+        </summary>
+        <div className="space-y-1 border-t border-border/50 px-1.5 py-1">
+          {summary.calls.map((part) => (
+            <TracePart
+              key={part.toolCallId}
+              part={part}
+              workspacePath={workspacePath}
+            />
+          ))}
+        </div>
+      </details>
+    </div>
+  );
 }
 
 /** 在所有消息里按 batchId 找到对应的 SubagentMessagePart。 */
@@ -68,13 +358,21 @@ function TracePart({
   }
   if (part.type === "tool") {
     const inv = part as ToolPart;
+    const summary =
+      inv.toolName === RESEARCH_SUBMIT_TOOL
+        ? summarizeSubmissionCall(inv)
+        : undefined;
     const resultText =
       typeof inv.result === "string"
         ? inv.result
         : JSON.stringify(inv.result, null, 2);
     return (
       <Tool defaultOpen={false}>
-        <ToolHeader toolName={inv.toolName} state={inv.state} />
+        <ToolHeader
+          toolName={inv.toolName}
+          state={inv.state}
+          summary={summary}
+        />
         <ToolContent>
           <ToolInput input={inv.args} />
           {inv.state === "output-available" && (
@@ -129,9 +427,12 @@ export function SubagentTracePanel({
 
   const total = fmtTokens(child.usage.totalTokens);
   const parts = child.parts ?? [];
-  const hasNoUsableResult =
-    child.resultQuality === "no_result" ||
-    child.resultQuality === "usable_partial";
+  const researchTrace = summarizeResearchTrace(parts);
+  const nonResearchParts = researchTrace
+    ? parts.filter((part) => !isResearchTool(part))
+    : parts;
+  const hasNoUsableResult = child.resultQuality === "no_result";
+  const hasPartialUsableResult = child.resultQuality === "usable_partial";
 
   return (
     <div className="flex h-full flex-col">
@@ -185,15 +486,27 @@ export function SubagentTracePanel({
                 ? "等待子 agent 输出…"
                 : "无过程记录(可能已重载,仅保留摘要)。"}
           </div>
-        ) : (
-          parts.map((p, i) => (
-            <TracePart
-              // biome-ignore lint/suspicious/noArrayIndexKey: 过程 parts 仅追加、不重排,index 稳定
-              key={i}
-              part={p}
-              workspacePath={workspacePath}
-            />
-          ))
+        ) : null}
+        {researchTrace && (
+          <ResearchTrace
+            summary={researchTrace}
+            childStatus={child.status}
+            workspacePath={workspacePath}
+          />
+        )}
+        {nonResearchParts.map((p, i) => (
+          <TracePart
+            // biome-ignore lint/suspicious/noArrayIndexKey: 过程 parts 仅追加、不重排,index 稳定
+            key={i}
+            part={p}
+            workspacePath={workspacePath}
+          />
+        ))}
+        {hasPartialUsableResult && child.status !== "queued" && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600">
+            已有可用证据，但覆盖仍不完整。父 agent
+            可采纳已提交结论，并需继续核验剩余缺口。
+          </div>
         )}
         {hasNoUsableResult && child.status !== "queued" && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-600">

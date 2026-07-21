@@ -50,6 +50,8 @@ const makeLL = (locale: "en" | "zh"): TranslationFunctions =>
     toolName_searchFiles: () => "searchFiles",
     toolName_spawnSubagent: () =>
       locale === "zh" ? "启动子任务" : "Start Subagents",
+    toolName_submitSubagentResult: () =>
+      locale === "zh" ? "提交结果" : "Submit Result",
     toolName_automationUpdate: () =>
       locale === "zh" ? "管理自动化" : "Manage Automations",
     toolName_webFetch: () => "webFetch",

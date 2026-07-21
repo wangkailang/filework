@@ -301,6 +301,25 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     expect(registry.has("spawnSubagent")).toBe(true);
   });
 
+  it("describes evidenced partial reports as usable evidence with explicit gaps", () => {
+    const registry = buildAgentToolRegistry({
+      sender,
+      taskId: "main-result-contract",
+      enableSubagent: true,
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    const tool = registry.get("spawnSubagent");
+    if (!tool) throw new Error("spawnSubagent tool was not registered");
+
+    expect(tool.description).toMatch(/usable_partial.*evidence/i);
+    expect(tool.description).toMatch(/gaps|caveat/i);
+    expect(tool.description).toMatch(/no_result.*diagnostic/i);
+    expect(tool.description).not.toMatch(
+      /`partial`, `usable_partial`, and `no_result` are diagnostic/i,
+    );
+  });
+
   it("子 agent 路径(enableSubagent 缺省)不注册 spawnSubagent —— 防递归委派", () => {
     const registry = buildAgentToolRegistry({
       sender,
@@ -476,9 +495,9 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
 
   it("uses larger default limits for researcher subagents while preserving explicit overrides", () => {
     expect(resolveSubagentTermination("researcher", {})).toEqual({
-      maxTurns: 16,
-      maxTotalTokens: 180_000,
-      maxWallMs: 300_000,
+      maxTurns: 10,
+      maxTotalTokens: 60_000,
+      maxWallMs: 180_000,
     });
     expect(
       resolveSubagentTermination("code_reviewer", {
@@ -504,7 +523,7 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     });
   });
 
-  it("marks only complete reports as usable for the parent agent", () => {
+  it("keeps evidenced partial reports consumable while leaving their goals incomplete", () => {
     const result = shapeSubagentToolResult({
       batchId: "batch-usable",
       goals: ["done", "partial", "startup"],
@@ -543,7 +562,7 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
 
     expect(result.summary).toEqual({
       total: 3,
-      usable: 1,
+      usable: 2,
       complete: 1,
       partial: 1,
       noResult: 1,
@@ -553,12 +572,12 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
       requiresFollowup: true,
     });
     expect(result.incompleteGoals).toEqual(["partial", "startup"]);
-    expect(result.reports.map((r) => r.usable)).toEqual([true, false, false]);
+    expect(result.reports.map((r) => r.usable)).toEqual([true, true, false]);
     expect(result.reports[1]).toMatchObject({
       resultQuality: "usable_partial",
-      summary: "",
-      artifacts: undefined,
-      unusableReason: "Sub-agent stopped before producing validated findings.",
+      summary: "Partial.",
+      artifacts: { status: "partial", findings: [{ claim: "B" }] },
+      unusableReason: undefined,
     });
     expect(result.reports[2]).toMatchObject({
       resultQuality: "no_result",

@@ -176,6 +176,81 @@ describe("ToolRegistry", () => {
       expect(result).toBe("pong");
     });
 
+    it("routes safe tools through beforeAnyToolCall and short-circuits on deny", async () => {
+      const reg = new ToolRegistry();
+      const ran = vi.fn();
+      reg.register({
+        name: "webSearch",
+        description: "Search",
+        safety: "safe",
+        inputSchema: z.object({ query: z.string() }),
+        execute: async () => {
+          ran();
+          return "should-not-run";
+        },
+      });
+
+      const beforeAnyToolCall: BeforeToolCallHook = vi.fn().mockResolvedValue({
+        allow: false,
+        reason: "Research budget exhausted; finalize now.",
+      });
+      const sdkTools = reg.toAiSdkTools({
+        ctxFactory: () => stubCtx(),
+        beforeAnyToolCall,
+      });
+      const exec = sdkTools.webSearch.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+
+      const result = await exec(
+        { query: "Svelte stores" },
+        { toolCallId: "search-1" },
+      );
+
+      expect(beforeAnyToolCall).toHaveBeenCalledTimes(1);
+      expect(ran).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: false,
+        denied: true,
+        reason: "Research budget exhausted; finalize now.",
+      });
+    });
+
+    it("returns a custom non-error result when a runtime guard skips a stale call", async () => {
+      const ran = vi.fn(async () => "ran");
+      const reg = new ToolRegistry();
+      reg.register({
+        name: "webSearch",
+        description: "",
+        safety: "safe",
+        inputSchema: z.object({ query: z.string() }),
+        execute: ran,
+      });
+      const skipped = {
+        success: true,
+        skipped: true,
+        nextAction: "verify_sources",
+      };
+      const sdkTools = reg.toAiSdkTools({
+        ctxFactory: () => stubCtx(),
+        beforeAnyToolCall: async () => ({
+          allow: false,
+          reason: "Discovery is complete.",
+          result: skipped,
+        }),
+      });
+      const exec = sdkTools.webSearch.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+
+      await expect(
+        exec({ query: "Svelte" }, { toolCallId: "search-stale" }),
+      ).resolves.toEqual(skipped);
+      expect(ran).not.toHaveBeenCalled();
+    });
+
     it("uses default reason when beforeToolCall returns no reason", async () => {
       const reg = new ToolRegistry();
       reg.register({

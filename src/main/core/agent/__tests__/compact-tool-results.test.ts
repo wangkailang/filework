@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { compactToolResults } from "../compact-tool-results";
 
-function toolMsg(id: string, value: string): ModelMessage {
+function toolMsg(
+  id: string,
+  value: string,
+  toolName = "webFetch",
+): ModelMessage {
   return {
     role: "tool",
     content: [
       {
         type: "tool-result",
         toolCallId: id,
-        toolName: "webFetch",
+        toolName,
         output: { type: "text", value },
       },
     ],
@@ -53,6 +57,36 @@ describe("compactToolResults", () => {
       toolMsg("new", big),
     ];
     expect(compactToolResults(messages)).toBeNull();
+  });
+
+  it("turns older webSearch snippets into a compact evidence ledger", () => {
+    const searchResult = [
+      "webSearch Svelte stores official docs",
+      "Answer: Svelte provides writable and readable stores.",
+      "Results: 2",
+      "1. Stores",
+      "URL: https://svelte.dev/docs/svelte/stores",
+      `Snippet: ${"details ".repeat(120)}`,
+      "2. Svelte API",
+      "URL: https://svelte.dev/docs/svelte/svelte-store",
+      `Snippet: ${"more ".repeat(120)}`,
+      "Images: 0",
+    ].join("\n");
+    const messages: ModelMessage[] = [
+      toolMsg("search-old", searchResult, "webSearch"),
+      toolMsg("latest", small),
+    ];
+
+    const out = compactToolResults(messages);
+    const ledger = (
+      out?.[0] as { content: Array<{ output: { value: string } }> }
+    ).content[0].output.value;
+
+    expect(ledger).toContain("Evidence ledger");
+    expect(ledger).toContain("https://svelte.dev/docs/svelte/stores");
+    expect(ledger).toContain("Answer: Svelte provides writable");
+    expect(ledger).not.toContain("Snippet:");
+    expect(ledger.length).toBeLessThan(searchResult.length);
   });
 
   it("preserves toolCallId/toolName when clamping", () => {

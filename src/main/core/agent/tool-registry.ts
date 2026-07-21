@@ -30,6 +30,11 @@ export interface BeforeToolCallDecision {
   allow: boolean;
   /** 当 allow=false 时呈现给模型的可选原因。 */
   reason?: string;
+  /**
+   * 运行时策略主动跳过调用时可返回一个非错误结果。省略则沿用标准
+   * ToolDeniedResult。用于阶段切换，不用于用户拒绝或权限错误。
+   */
+  result?: unknown;
 }
 
 export type BeforeToolCallHook = (
@@ -142,6 +147,8 @@ export class ToolRegistry {
    */
   toAiSdkTools(opts: {
     ctxFactory: (call: { toolName: string; toolCallId: string }) => ToolContext;
+    /** 对所有工具生效的运行时护栏；与仅审批 destructive 工具的钩子分离。 */
+    beforeAnyToolCall?: BeforeToolCallHook;
     beforeToolCall?: BeforeToolCallHook;
     planGate?: PlanGateHook;
     onToolResult?: ToolResultObserver;
@@ -160,6 +167,7 @@ export class ToolRegistry {
         toolName: string;
         toolCallId: string;
       }) => ToolContext;
+      beforeAnyToolCall?: BeforeToolCallHook;
       beforeToolCall?: BeforeToolCallHook;
       planGate?: PlanGateHook;
       onToolResult?: ToolResultObserver;
@@ -190,6 +198,26 @@ export class ToolRegistry {
               success: false,
               denied: true,
               reason: "计划被拒绝,未执行",
+            };
+            return denied;
+          }
+        }
+
+        if (opts.beforeAnyToolCall) {
+          const decision = await opts.beforeAnyToolCall(
+            {
+              toolName: def.name,
+              toolCallId: execOpts.toolCallId,
+              args,
+            },
+            ctx,
+          );
+          if (!decision.allow) {
+            if (decision.result !== undefined) return decision.result;
+            const denied: ToolDeniedResult = {
+              success: false,
+              denied: true,
+              reason: decision.reason ?? "Tool call denied",
             };
             return denied;
           }

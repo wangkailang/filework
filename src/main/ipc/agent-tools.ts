@@ -531,7 +531,8 @@ export interface ShapedSubagentToolResult {
 }
 
 const isUsableSubagentReport = (report: SubAgentReport): boolean =>
-  report.resultQuality === "complete";
+  report.resultQuality === "complete" ||
+  report.resultQuality === "usable_partial";
 
 const unusableSubagentReason = (report: SubAgentReport): string | undefined => {
   if (isUsableSubagentReport(report)) return undefined;
@@ -580,7 +581,7 @@ export const shapeSubagentToolResult = ({
     (report) => report.status === "failed",
   ).length;
   const incompleteGoals = shapedReports
-    .filter((report) => !report.usable)
+    .filter((report) => report.resultQuality !== "complete")
     .map((report) => report.goal);
   const allComplete = incompleteGoals.length === 0;
   return {
@@ -588,7 +589,7 @@ export const shapeSubagentToolResult = ({
     batchId,
     summary: {
       total: shapedReports.length,
-      usable: complete,
+      usable: complete + partial,
       complete,
       partial,
       noResult,
@@ -643,9 +644,9 @@ const SUBAGENT_DIRECT_WRITE_TOOL_SET = new Set<string>([
 ]);
 
 const SUBAGENT_RESEARCHER_DEFAULTS = {
-  maxTurns: 16,
-  maxTotalTokens: 180_000,
-  maxWallMs: 300_000,
+  maxTurns: 10,
+  maxTotalTokens: 60_000,
+  maxWallMs: 180_000,
 } as const;
 
 const SUBAGENT_TOOL_NAME_PREFIXES = [
@@ -803,7 +804,7 @@ const spawnSubagentTool = (
     "- Tasks with ordering dependencies — sub-agents run in parallel and cannot talk to each other; sequence those yourself across turns.",
     "",
     "HARD LIMITS: each sub-agent has turn / token / wall-clock caps; sub-agents cannot spawn their own sub-agents. Default child tools are capped to read-only inspection and cannot include write, memory, automation, or delegation tools. For isolated edits, set executionMode=worktree and request direct file write tools; the child writes only in a detached worktree and returns a patch artifact for the lead to merge.",
-    "RESULT: returns summary counts, `summary.requiresFollowup`, `incompleteGoals`, and a `reports` array. Consume only reports where `usable=true` AND `resultQuality=complete`; `partial`, `usable_partial`, and `no_result` are diagnostic trace, not evidence. If `requiresFollowup=true`, rerun a narrower sub-agent or inspect each `incompleteGoals` gap yourself before answering.",
+    "RESULT: returns summary counts, `summary.requiresFollowup`, `incompleteGoals`, and a `reports` array. Treat `resultQuality=complete` as finished. A report with `resultQuality=usable_partial` is usable evidence, but preserve its caveats and remaining gaps; `no_result` is diagnostic trace, not evidence. If `requiresFollowup=true`, rerun a narrower sub-agent or inspect each `incompleteGoals` gap yourself before answering.",
   ].join("\n"),
   safety: "destructive",
   inputSchema: spawnSubagentInputSchema,

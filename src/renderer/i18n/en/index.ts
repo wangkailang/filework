@@ -497,6 +497,7 @@ const en: BaseTranslation = {
   toolName_webScrape: "Scrape Page",
   toolName_youtubeTranscript: "YouTube Transcript",
   toolName_spawnSubagent: "Start Subagents",
+  toolName_submitSubagentResult: "Submit Result",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0:number} lines",
