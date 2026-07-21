@@ -233,6 +233,57 @@ describe("ConversationScrollButton", () => {
     expect(window.HTMLElement.prototype.scrollTo).not.toHaveBeenCalled();
   });
 
+  it("does not jump to newly appended children after the user scrolls upward", async () => {
+    await act(async () => {
+      root?.render(
+        <Conversation>
+          <ConversationContent>
+            <div key="message-1">first message</div>
+          </ConversationContent>
+        </Conversation>,
+      );
+    });
+
+    const scrollEl = document.querySelector(
+      ".overflow-y-auto",
+    ) as HTMLDivElement | null;
+    setScrollMetrics(scrollEl as HTMLDivElement, {
+      clientHeight: 300,
+      scrollHeight: 900,
+      scrollTop: 600,
+    });
+    await act(async () => {
+      scrollEl?.dispatchEvent(new window.Event("scroll"));
+    });
+    setScrollMetrics(scrollEl as HTMLDivElement, {
+      clientHeight: 300,
+      scrollHeight: 900,
+      scrollTop: 250,
+    });
+    await act(async () => {
+      scrollEl?.dispatchEvent(new window.Event("scroll"));
+    });
+    vi.mocked(window.HTMLElement.prototype.scrollTo).mockClear();
+
+    setScrollMetrics(scrollEl as HTMLDivElement, {
+      clientHeight: 300,
+      scrollHeight: 1_100,
+      scrollTop: 250,
+    });
+    await act(async () => {
+      root?.render(
+        <Conversation>
+          <ConversationContent>
+            <div key="message-1">first message</div>
+            <div key="message-2">new message</div>
+          </ConversationContent>
+        </Conversation>,
+      );
+    });
+
+    expect(window.HTMLElement.prototype.scrollTo).not.toHaveBeenCalled();
+  });
+
   it("scrolls to the bottom when a newly submitted user message changes the request key", async () => {
     await act(async () => {
       root?.render(

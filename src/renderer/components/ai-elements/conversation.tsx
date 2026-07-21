@@ -142,7 +142,8 @@ export const ConversationContent = ({
     );
   }, [scrollRef, setCanScroll, setIsAtBottom, shouldStickToBottomRef]);
 
-  // Track child count to auto-scroll on new messages
+  // Track child count to follow new messages only while the reader remains at
+  // the bottom. Explicit user submissions bypass this via scrollToBottomKey.
   const prevChildCountRef = useRef(0);
   const prevScrollToBottomKeyRef = useRef(scrollToBottomKey);
   const childCount = Array.isArray(children)
@@ -152,11 +153,14 @@ export const ConversationContent = ({
       : 0;
 
   useEffect(() => {
-    if (childCount > prevChildCountRef.current) {
+    if (
+      childCount > prevChildCountRef.current &&
+      shouldStickToBottomRef.current
+    ) {
       scrollToBottom();
     }
     prevChildCountRef.current = childCount;
-  }, [childCount, scrollToBottom]);
+  }, [childCount, scrollToBottom, shouldStickToBottomRef]);
 
   useEffect(() => {
     const changed = scrollToBottomKey !== prevScrollToBottomKeyRef.current;
