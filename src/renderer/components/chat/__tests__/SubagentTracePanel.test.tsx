@@ -90,6 +90,7 @@ describe("SubagentTracePanel", () => {
     );
 
     expect(html).toContain("runCommand");
+    expect(html).toContain("$ pnpm test");
     expect(html).not.toContain("Subagent command failed");
   });
 
@@ -277,8 +278,7 @@ describe("SubagentTracePanel", () => {
     expect(html).toContain("2 次失败");
     expect(html).toContain("研究调用明细");
     expect(html).toContain("10 次");
-    expect(html).toContain("<details");
-    expect(html).not.toContain("<details open");
+    expect(html).toContain("<details open");
   });
 
   it("does not show a research summary for a submit-only subagent", () => {

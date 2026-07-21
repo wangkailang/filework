@@ -66,13 +66,8 @@ import {
   PromptInputRichEditor,
   PromptInputSubmit,
 } from "../ai-elements/prompt-input";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "../ai-elements/tool";
+import { Tool, ToolContent, ToolHeader } from "../ai-elements/tool";
+import { ToolInvocation } from "../ai-elements/tool-invocation";
 import { getToolLabels } from "../ai-elements/tool-labels";
 import { toolPresenters } from "../ai-elements/tool-presenters";
 import { WorkspaceMemoryModal } from "../settings/WorkspaceMemoryModal";
@@ -1047,103 +1042,38 @@ export const ChatPanel = ({
   // Render helpers
   // ---------------------------------------------------------------------------
   const renderToolPart = (inv: ToolPart, opts?: { dense?: boolean }) => {
-    const presenter = toolPresenters[inv.toolName];
-    const presenterCtx = {
-      LL,
-      workspacePath,
-      toolCallId: inv.toolCallId,
-      previewSnapshot: inv.previewSnapshot,
-    };
-    const summary = presenter?.summary?.(
-      inv.args,
-      inv.result,
-      inv.state,
-      presenterCtx,
-    );
-    const customInput = presenter?.input?.(inv.args, presenterCtx);
-    const customOutput =
-      inv.state === "output-available"
-        ? presenter?.output?.(inv.result, inv.args, inv.state, presenterCtx)
-        : null;
-    const rowAction = presenter?.rowAction?.(inv.args, presenterCtx) ?? null;
-    // 审批 / 出错的行必须能展开看详情;其余交给 presenter 自判(缺省可展开)。
-    const forceBody = inv.state === "output-error" || !!inv.approval;
-    const collapsible =
-      forceBody ||
-      (presenter?.expandable
-        ? presenter.expandable(inv.args, inv.result, inv.state, presenterCtx)
-        : true);
-
     return (
-      <Tool
+      <ToolInvocation
         key={inv.toolCallId}
-        defaultOpen={false}
-        forceOpen={inv.approval?.state === "approval-requested"}
-      >
-        <ToolHeader
-          toolName={inv.toolName}
-          state={inv.state}
-          summary={summary}
-          dense={opts?.dense}
-          collapsible={collapsible}
-          action={rowAction}
-        />
-        {collapsible && (
-          <ToolContent>
-            {/* 有 presenter 的工具完全自管输入展示(可为 null);只有无 presenter
-                的工具才回落到通用 args dump —— 避免 writeFile 等把整段内容
-                作为参数 JSON 再次铺出来。 */}
-            {presenter ? customInput : <ToolInput input={inv.args} />}
-            {inv.approval && (
-              <div className="px-3 py-2 border-b border-border/35">
-                <Confirmation state={inv.approval.state}>
-                  {inv.approval.state === "approval-requested" &&
-                    renderApprovalRequest({
-                      approval: inv.approval,
-                      onDecide: (approved) =>
-                        chat.handleApproval(inv.toolCallId, approved),
-                      LL,
-                    })}
-                  {inv.approval.state === "approval-accepted" && (
-                    <ConfirmationAccepted>
-                      {LL.chat_approved()}
-                    </ConfirmationAccepted>
-                  )}
-                  {inv.approval.state === "approval-rejected" && (
-                    <ConfirmationRejected>
-                      {LL.chat_rejected()}
-                    </ConfirmationRejected>
-                  )}
-                </Confirmation>
-              </div>
-            )}
-            {inv.state === "output-available" &&
-              // presenter 的 output 自带 padding / 标签 / 滚动容器,直接渲染。
-              // 不再套 ToolOutput —— 否则叠加多余的「结果」标签和一层 max-h
-              // 内滚动,形成双重嵌套滚动条。仅无 presenter 时回落到通用框。
-              (customOutput ?? (
-                <ToolOutput
-                  output={
-                    <pre className="font-mono whitespace-pre-wrap break-all">
-                      {typeof inv.result === "string"
-                        ? inv.result
-                        : JSON.stringify(inv.result, null, 2)}
-                    </pre>
-                  }
-                />
-              ))}
-            {inv.state === "output-error" && (
-              <ToolOutput
-                errorText={
-                  typeof inv.result === "string"
-                    ? inv.result
-                    : JSON.stringify(inv.result, null, 2)
-                }
-              />
-            )}
-          </ToolContent>
-        )}
-      </Tool>
+        part={inv}
+        workspacePath={workspacePath}
+        dense={opts?.dense}
+        bodyAddon={
+          inv.approval ? (
+            <div className="px-3 py-2 border-b border-border/35">
+              <Confirmation state={inv.approval.state}>
+                {inv.approval.state === "approval-requested" &&
+                  renderApprovalRequest({
+                    approval: inv.approval,
+                    onDecide: (approved) =>
+                      chat.handleApproval(inv.toolCallId, approved),
+                    LL,
+                  })}
+                {inv.approval.state === "approval-accepted" && (
+                  <ConfirmationAccepted>
+                    {LL.chat_approved()}
+                  </ConfirmationAccepted>
+                )}
+                {inv.approval.state === "approval-rejected" && (
+                  <ConfirmationRejected>
+                    {LL.chat_rejected()}
+                  </ConfirmationRejected>
+                )}
+              </Confirmation>
+            </div>
+          ) : null
+        }
+      />
     );
   };
 
@@ -1560,6 +1490,11 @@ export const ChatPanel = ({
   };
 
   const hasMessages = chat.messages.length > 0;
+  const latestUserMessageId = useMemo(
+    () =>
+      chat.messages.findLast((message) => message.role === "user")?.id ?? null,
+    [chat.messages],
+  );
 
   // ★ telemetry 状态条数据 —— 从会话状态派生 Agent 当前状态(idle/running/awaiting/error)
   const telemetryLastParts =
@@ -1783,7 +1718,7 @@ export const ChatPanel = ({
       )}
 
       <Conversation className="group">
-        <ConversationContent>
+        <ConversationContent scrollToBottomKey={latestUserMessageId}>
           {!hasMessages ? (
             <ConversationEmptyState
               title={LL.chat_emptyTitle()}

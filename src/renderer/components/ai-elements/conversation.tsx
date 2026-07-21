@@ -28,6 +28,8 @@ import {
 
 interface ConversationContextType {
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  shouldStickToBottomRef: { current: boolean };
+  lastScrollTopRef: { current: number };
   canScroll: boolean;
   isAtBottom: boolean;
   setCanScroll: (v: boolean) => void;
@@ -37,6 +39,8 @@ interface ConversationContextType {
 
 const ConversationContext = createContext<ConversationContextType>({
   scrollRef: { current: null },
+  shouldStickToBottomRef: { current: true },
+  lastScrollTopRef: { current: 0 },
   canScroll: false,
   isAtBottom: true,
   setCanScroll: () => {},
@@ -58,12 +62,16 @@ export const Conversation = ({
   ...props
 }: ConversationProps) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const [canScroll, setCanScroll] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    shouldStickToBottomRef.current = true;
+    lastScrollTopRef.current = el.scrollTop;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, []);
 
@@ -71,6 +79,8 @@ export const Conversation = ({
     <ConversationContext.Provider
       value={{
         scrollRef,
+        shouldStickToBottomRef,
+        lastScrollTopRef,
         canScroll,
         isAtBottom,
         setCanScroll,
@@ -98,15 +108,26 @@ export const Conversation = ({
 // ---------------------------------------------------------------------------
 
 export interface ConversationContentProps
-  extends HTMLAttributes<HTMLDivElement> {}
+  extends HTMLAttributes<HTMLDivElement> {
+  /** Changing this key is an explicit request to resume following the newest
+   * message, even when the reader previously scrolled up through history. */
+  scrollToBottomKey?: string | number | null;
+}
 
 export const ConversationContent = ({
   children,
   className,
+  scrollToBottomKey,
   ...props
 }: ConversationContentProps) => {
-  const { scrollRef, setCanScroll, setIsAtBottom, scrollToBottom } =
-    useConversation();
+  const {
+    scrollRef,
+    shouldStickToBottomRef,
+    lastScrollTopRef,
+    setCanScroll,
+    setIsAtBottom,
+    scrollToBottom,
+  } = useConversation();
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -115,12 +136,15 @@ export const ConversationContent = ({
     const hasScrollableOverflow = maxScrollTop > threshold;
     setCanScroll(hasScrollableOverflow);
     setIsAtBottom(
-      !hasScrollableOverflow || maxScrollTop - el.scrollTop < threshold,
+      shouldStickToBottomRef.current ||
+        !hasScrollableOverflow ||
+        maxScrollTop - el.scrollTop < threshold,
     );
-  }, [scrollRef, setCanScroll, setIsAtBottom]);
+  }, [scrollRef, setCanScroll, setIsAtBottom, shouldStickToBottomRef]);
 
   // Track child count to auto-scroll on new messages
   const prevChildCountRef = useRef(0);
+  const prevScrollToBottomKeyRef = useRef(scrollToBottomKey);
   const childCount = Array.isArray(children)
     ? children.length
     : children
@@ -134,6 +158,14 @@ export const ConversationContent = ({
     prevChildCountRef.current = childCount;
   }, [childCount, scrollToBottom]);
 
+  useEffect(() => {
+    const changed = scrollToBottomKey !== prevScrollToBottomKeyRef.current;
+    prevScrollToBottomKeyRef.current = scrollToBottomKey;
+    if (changed && scrollToBottomKey != null) {
+      scrollToBottom();
+    }
+  }, [scrollToBottom, scrollToBottomKey]);
+
   // Keep overflow and bottom state in sync with layout changes.
   useLayoutEffect(() => {
     updateScrollState();
@@ -143,23 +175,33 @@ export const ConversationContent = ({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const handleScroll = () => updateScrollState();
+    const handleScroll = () => {
+      const threshold = 40;
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      const atBottom =
+        maxScrollTop <= threshold || maxScrollTop - el.scrollTop < threshold;
+
+      if (atBottom) {
+        shouldStickToBottomRef.current = true;
+      } else if (el.scrollTop <= lastScrollTopRef.current) {
+        shouldStickToBottomRef.current = false;
+      }
+      lastScrollTopRef.current = el.scrollTop;
+      updateScrollState();
+    };
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [scrollRef, updateScrollState]);
+  }, [lastScrollTopRef, scrollRef, shouldStickToBottomRef, updateScrollState]);
 
   // MutationObserver – auto-scroll while streaming if user is near bottom
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const observer = new MutationObserver(() => {
-      updateScrollState();
-      const threshold = 40;
-      const nearBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-      if (nearBottom) {
-        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      if (shouldStickToBottomRef.current) {
+        scrollToBottom();
       }
+      updateScrollState();
     });
     observer.observe(el, {
       childList: true,
@@ -167,7 +209,7 @@ export const ConversationContent = ({
       characterData: true,
     });
     return () => observer.disconnect();
-  }, [scrollRef, updateScrollState]);
+  }, [scrollRef, scrollToBottom, shouldStickToBottomRef, updateScrollState]);
 
   return (
     <div

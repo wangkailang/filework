@@ -1803,6 +1803,60 @@ type RootTranslation = {
 	 */
 	tool_hide_full: string
 	/**
+	 * P​a​g​e​ ​c​o​n​t​e​n​t
+	 */
+	tool_webFetch_content: string
+	/**
+	 * N​o​ ​p​a​g​e​ ​c​o​n​t​e​n​t​ ​e​x​t​r​a​c​t​e​d
+	 */
+	tool_webFetch_empty: string
+	/**
+	 * C​o​n​t​e​n​t​ ​t​r​u​n​c​a​t​e​d
+	 */
+	tool_webFetch_truncated: string
+	/**
+	 * {​0​}​ ​p​a​g​e​s
+	 * @param {number} 0
+	 */
+	tool_webFetch_pages: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​m​a​t​c​h​e​s
+	 * @param {number} 0
+	 */
+	tool_webFetch_matches: RequiredParams<'0'>
+	/**
+	 * C​o​m​p​l​e​t​e​ ​r​e​s​u​l​t
+	 */
+	tool_submit_complete: string
+	/**
+	 * P​a​r​t​i​a​l​ ​r​e​s​u​l​t
+	 */
+	tool_submit_partial: string
+	/**
+	 * N​o​ ​r​e​s​u​l​t
+	 */
+	tool_submit_noResult: string
+	/**
+	 * C​o​v​e​r​a​g​e
+	 */
+	tool_submit_coverage: string
+	/**
+	 * K​e​y​ ​f​i​n​d​i​n​g​s
+	 */
+	tool_submit_findings: string
+	/**
+	 * E​v​i​d​e​n​c​e
+	 */
+	tool_submit_evidence: string
+	/**
+	 * M​i​s​s​i​n​g
+	 */
+	tool_submit_missing: string
+	/**
+	 * F​a​i​l​u​r​e​ ​r​e​a​s​o​n
+	 */
+	tool_submit_failure: string
+	/**
 	 * A​p​p​r​o​v​e​ ​{​0​}​?
 	 * @param {string} 0
 	 */
@@ -4467,6 +4521,58 @@ export type TranslationFunctions = {
 	 * Hide
 	 */
 	tool_hide_full: () => LocalizedString
+	/**
+	 * Page content
+	 */
+	tool_webFetch_content: () => LocalizedString
+	/**
+	 * No page content extracted
+	 */
+	tool_webFetch_empty: () => LocalizedString
+	/**
+	 * Content truncated
+	 */
+	tool_webFetch_truncated: () => LocalizedString
+	/**
+	 * {0} pages
+	 */
+	tool_webFetch_pages: (arg0: number) => LocalizedString
+	/**
+	 * {0} matches
+	 */
+	tool_webFetch_matches: (arg0: number) => LocalizedString
+	/**
+	 * Complete result
+	 */
+	tool_submit_complete: () => LocalizedString
+	/**
+	 * Partial result
+	 */
+	tool_submit_partial: () => LocalizedString
+	/**
+	 * No result
+	 */
+	tool_submit_noResult: () => LocalizedString
+	/**
+	 * Coverage
+	 */
+	tool_submit_coverage: () => LocalizedString
+	/**
+	 * Key findings
+	 */
+	tool_submit_findings: () => LocalizedString
+	/**
+	 * Evidence
+	 */
+	tool_submit_evidence: () => LocalizedString
+	/**
+	 * Missing
+	 */
+	tool_submit_missing: () => LocalizedString
+	/**
+	 * Failure reason
+	 */
+	tool_submit_failure: () => LocalizedString
 	/**
 	 * Approve {0}?
 	 */
