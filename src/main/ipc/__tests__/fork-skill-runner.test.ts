@@ -26,6 +26,13 @@ let lastToAiSdkToolsOptions:
       {
         toAiSdkTools: (options: {
           beforeToolCall?: BeforeToolCallHook;
+          beforeAnyToolCall?: BeforeToolCallHook;
+          onToolResult?: (result: {
+            toolName: string;
+            toolCallId: string;
+            args: unknown;
+            rawOutput: unknown;
+          }) => void | Promise<void>;
         }) => void;
       }["toAiSdkTools"]
     >[0]
@@ -66,23 +73,32 @@ vi.mock("../../ai/token-budget", () => ({
   estimateTokens: estimateTokensMock,
 }));
 
-const buildAgentToolRegistry = vi.fn((..._args: unknown[]) => ({
-  register: vi.fn(
-    (tool: {
-      name: string;
-      description?: string;
-      execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
-    }) => {
-      registeredTools.set(tool.name, tool);
-    },
-  ),
-  toAiSdkTools: vi.fn((options) => {
-    lastToAiSdkToolsOptions = options;
-    return {};
+const buildAgentToolRegistry = vi.fn(
+  (options?: { allowedTools?: string[] }) => ({
+    register: vi.fn(
+      (tool: {
+        name: string;
+        description?: string;
+        execute?: (args: unknown, ctx: unknown) => Promise<unknown>;
+      }) => {
+        registeredTools.set(tool.name, tool);
+      },
+    ),
+    toAiSdkTools: vi.fn((toolOptions) => {
+      lastToAiSdkToolsOptions = toolOptions;
+      const names = new Set([
+        ...(options?.allowedTools ?? []),
+        ...registeredTools.keys(),
+      ]);
+      return Object.fromEntries(
+        Array.from(names, (toolName) => [toolName, {}]),
+      );
+    }),
   }),
-}));
+);
 vi.mock("../agent-tools", () => ({
-  buildAgentToolRegistry: (arg: unknown) => buildAgentToolRegistry(arg),
+  buildAgentToolRegistry: (arg: unknown) =>
+    buildAgentToolRegistry(arg as { allowedTools?: string[] }),
 }));
 
 const buildApprovalHook = vi.fn((..._args: unknown[]) => async () => ({
@@ -572,6 +588,8 @@ describe("createForkSkillRunner", () => {
     const submitTool = registeredTools.get("submitSubagentResult");
     expect(submitTool?.description).toMatch(/exactly once/i);
     expect(submitTool?.description).toMatch(/done or genuinely blocked/i);
+    expect(submitTool?.description).toMatch(/partial.*evidence/i);
+    expect(submitTool?.description).toMatch(/no_result.*diagnostic/i);
     expect(submitTool?.description).not.toMatch(/as soon as/i);
     expect(submitTool?.description).not.toMatch(/before final prose/i);
   });
@@ -612,16 +630,469 @@ describe("createForkSkillRunner", () => {
     expect(lastAgentLoopConfig).toMatchObject({
       maxTotalTokens: 100_000,
       maxWallMs: 60_000,
+      maxReflections: 1,
+      terminalTools: ["submitSubagentResult"],
       gracefulShutdown: {
         tokenBudgetRatio: 0.8,
         wallMsRemaining: 12_000,
+        finalTools: ["submitSubagentResult"],
         message: expect.stringMatching(/submitSubagentResult exactly once/i),
       },
     });
     expect(
       (lastAgentLoopConfig as { gracefulShutdown?: { message?: string } })
         .gracefulShutdown?.message,
-    ).toMatch(/Do not call more tools/i);
+    ).toMatch(/Do not call more research tools/i);
+  });
+
+  it("blocks a third identical research call and requires immediate finalization", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["webSearch"],
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: {},
+      },
+    });
+
+    const guard = lastToAiSdkToolsOptions?.beforeAnyToolCall;
+    if (!guard) throw new Error("research tool guard was not registered");
+    const ctx = {
+      workspace: {} as never,
+      signal: new AbortController().signal,
+      toolCallId: "search-1",
+    };
+    const args = { query: "Svelte stores official docs" };
+    await expect(
+      guard({ toolName: "webSearch", toolCallId: "search-1", args }, ctx),
+    ).resolves.toEqual({ allow: true });
+    await expect(
+      guard({ toolName: "webSearch", toolCallId: "search-2", args }, ctx),
+    ).resolves.toEqual({ allow: true });
+    await expect(
+      guard({ toolName: "webSearch", toolCallId: "search-3", args }, ctx),
+    ).resolves.toMatchObject({
+      allow: false,
+      reason: expect.stringMatching(/repeated|finalize/i),
+    });
+    await expect(
+      guard(
+        {
+          toolName: "webFetch",
+          toolCallId: "fetch-after-loop",
+          args: { url: "https://svelte.dev" },
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({ allow: true });
+    await expect(
+      guard(
+        {
+          toolName: "submitSubagentResult",
+          toolCallId: "submit-after-loop",
+          args: { status: "partial" },
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({ allow: true });
+  });
+
+  it("stops similar searches after two consecutive low-novelty results", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["webSearch"],
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: {},
+      },
+    });
+
+    const guard = lastToAiSdkToolsOptions?.beforeAnyToolCall;
+    const observe = lastToAiSdkToolsOptions?.onToolResult;
+    if (!guard || !observe) throw new Error("research guard was not wired");
+    const ctx = {
+      workspace: {} as never,
+      signal: new AbortController().signal,
+      toolCallId: "search-1",
+    };
+    const searches = [
+      "Svelte state management stores official documentation",
+      "Svelte state management store official docs",
+      "official Svelte state management stores docs",
+    ];
+    for (const [index, query] of searches.entries()) {
+      const toolCallId = `search-${index + 1}`;
+      await expect(
+        guard({ toolName: "webSearch", toolCallId, args: { query } }, ctx),
+      ).resolves.toEqual({ allow: true });
+      await observe({
+        toolName: "webSearch",
+        toolCallId,
+        args: { query },
+        rawOutput: {
+          results: [
+            { url: "https://svelte.dev/docs/svelte/stores" },
+            { url: "https://svelte.dev/docs/svelte/svelte-store" },
+          ],
+        },
+      });
+    }
+
+    await expect(
+      guard(
+        {
+          toolName: "webSearch",
+          toolCallId: "search-4",
+          args: { query: "Svelte official state management store docs" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({
+      allow: false,
+      reason: expect.stringMatching(/new sources|finalize/i),
+    });
+  });
+
+  it("switches from discovery to verification and then forced submission", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["webSearch", "webFetch"],
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: {},
+      },
+    });
+
+    const guard = lastToAiSdkToolsOptions?.beforeAnyToolCall;
+    const observe = lastToAiSdkToolsOptions?.onToolResult;
+    const resolveStepPolicy = (
+      lastAgentLoopConfig as {
+        hooks?: {
+          resolveStepPolicy?: () => {
+            activeTools: string[];
+            toolChoice: unknown;
+          } | null;
+        };
+      }
+    ).hooks?.resolveStepPolicy;
+    if (!guard || !observe || !resolveStepPolicy) {
+      throw new Error("research phase policy was not fully wired");
+    }
+    const ctx = {
+      workspace: {} as never,
+      signal: new AbortController().signal,
+      toolCallId: "research",
+    };
+
+    for (let index = 1; index <= 2; index++) {
+      const args = { query: `distinct Svelte coverage ${index}` };
+      await guard(
+        { toolName: "webSearch", toolCallId: `s-${index}`, args },
+        ctx,
+      );
+      await observe({
+        toolName: "webSearch",
+        toolCallId: `s-${index}`,
+        args,
+        rawOutput: {
+          results: [1, 2, 3].map((source) => ({
+            url: `https://source-${index}-${source}.example.com`,
+          })),
+        },
+      });
+    }
+    expect(resolveStepPolicy()).toMatchObject({
+      activeTools: ["webSearch", "webFetch", "submitSubagentResult"],
+      toolChoice: "auto",
+    });
+    await expect(
+      guard(
+        {
+          toolName: "webSearch",
+          toolCallId: "stale-search",
+          args: { query: "stale discovery call" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({
+      allow: false,
+      result: {
+        success: true,
+        skipped: true,
+        nextAction: "verify_sources",
+      },
+    });
+
+    for (let index = 1; index <= 3; index++) {
+      const args = { url: `https://source-${index}.example.com` };
+      await guard(
+        { toolName: "webFetch", toolCallId: `f-${index}`, args },
+        ctx,
+      );
+      await observe({
+        toolName: "webFetch",
+        toolCallId: `f-${index}`,
+        args,
+        rawOutput: { markdown: `verified source ${index} `.repeat(12) },
+      });
+    }
+    expect(resolveStepPolicy()).toEqual({
+      activeTools: ["webSearch", "webFetch", "submitSubagentResult"],
+      toolChoice: { type: "tool", toolName: "submitSubagentResult" },
+      message: expect.any(String),
+    });
+    await expect(
+      guard(
+        {
+          toolName: "webFetch",
+          toolCallId: "stale-fetch",
+          args: { url: "https://stale.example.com" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({
+      allow: false,
+      result: {
+        success: true,
+        skipped: true,
+        nextAction: "submit_result",
+      },
+    });
+  });
+
+  it("caps web search and fetch calls independently", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      allowedTools: ["webSearch", "webFetch"],
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: {},
+      },
+    });
+
+    const guard = lastToAiSdkToolsOptions?.beforeAnyToolCall;
+    if (!guard) throw new Error("research tool guard was not registered");
+    const ctx = {
+      workspace: {} as never,
+      signal: new AbortController().signal,
+      toolCallId: "call",
+    };
+    for (let index = 0; index < 4; index++) {
+      await expect(
+        guard(
+          {
+            toolName: "webSearch",
+            toolCallId: `search-${index}`,
+            args: { query: `distinct topic ${index}` },
+          },
+          ctx,
+        ),
+      ).resolves.toEqual({ allow: true });
+    }
+    await expect(
+      guard(
+        {
+          toolName: "webSearch",
+          toolCallId: "search-over",
+          args: { query: "another distinct topic" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ allow: false });
+
+    for (let index = 0; index < 4; index++) {
+      await expect(
+        guard(
+          {
+            toolName: "webFetch",
+            toolCallId: `fetch-${index}`,
+            args: { url: `https://example.com/${index}` },
+          },
+          ctx,
+        ),
+      ).resolves.toEqual({ allow: true });
+    }
+    await expect(
+      guard(
+        {
+          toolName: "webFetchRendered",
+          toolCallId: "fetch-over",
+          args: { url: "https://example.com/over" },
+        },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ allow: false });
+  });
+
+  it("forces a no-tool RESULT_JSON wrap-up when a subagent exhausts its step budget", async () => {
+    scriptedRuns.push({
+      events: [
+        {
+          type: "agent_start",
+          agentId: "child-1",
+          prompt: "p",
+          timestamp: "2026-05-09T22:00:00.000Z",
+        },
+        { type: "agent_end", agentId: "child-1", status: "completed" },
+      ],
+    });
+
+    const childRunner = createForkSkillRunner({
+      sender: fakeSender(),
+      taskId: "child-1",
+      parentTaskId: "parent-1",
+      batchId: "batch-1",
+      parentSignal: new AbortController().signal,
+      workspacePath: "/ws",
+    });
+    await childRunner({
+      systemPrompt: "sys",
+      workspacePath: "/ws",
+      prompt: "p",
+      contract: {
+        goal: "research",
+        input: { prompt: "p" },
+        output: { format: "json", schema: DEFAULT_SUB_AGENT_RESULT_SCHEMA },
+        termination: { maxTurns: 4 },
+      },
+    });
+
+    const reflect = (
+      lastAgentLoopConfig as {
+        hooks?: {
+          reflect?: (summary: {
+            endReason: string;
+            finalText: string;
+            toolCalls: Array<{
+              name: string;
+              success: boolean;
+              result: unknown;
+            }>;
+          }) => Promise<unknown>;
+        };
+      }
+    ).hooks?.reflect;
+    if (!reflect) throw new Error("subagent reflect hook was not registered");
+
+    const verdict = await reflect({
+      endReason: "tool_calls",
+      finalText: "",
+      toolCalls: [
+        {
+          name: "webSearch",
+          success: true,
+          result: {
+            results: [
+              { title: "Stores", url: "https://svelte.dev/docs/svelte/stores" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(verdict).toMatchObject({
+      kind: "retry",
+      forceNoTools: true,
+      feedback: expect.stringMatching(/RESULT_JSON/i),
+    });
+    expect((verdict as { feedback: string }).feedback).toContain(
+      "https://svelte.dev/docs/svelte/stores",
+    );
   });
 
   it("compresses spawned subagent step context before the hard token cap", async () => {
@@ -823,7 +1294,7 @@ describe("createForkSkillRunner", () => {
     });
 
     expect(report.status).toBe("token_limit");
-    expect(report.resultQuality).toBe("no_result");
+    expect(report.resultQuality).toBe("usable_partial");
     expect(report.artifacts).toMatchObject({
       status: "partial",
       findings: [

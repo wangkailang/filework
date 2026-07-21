@@ -17,7 +17,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
-import type { LanguageModel, ModelMessage, Tool } from "ai";
+import type { LanguageModel, ModelMessage, Tool, ToolChoice } from "ai";
 import { isStepCount, streamText } from "ai";
 import type { Workspace } from "../workspace/types";
 import { compactToolResults } from "./compact-tool-results";
@@ -62,6 +62,17 @@ export type ContextUsageHook = (payload: {
 
 export type DrainSteeringMessagesHook = () => string[];
 
+export interface AgentStepPolicy {
+  /** 本步骤可见的工具名；省略时保持默认工具集。 */
+  activeTools?: string[];
+  /** 本步骤的工具选择策略。 */
+  toolChoice?: ToolChoice<Record<string, Tool>>;
+  /** 与工具阶段切换同步注入给模型的简短指令。 */
+  message?: string;
+}
+
+export type ResolveStepPolicyHook = () => AgentStepPolicy | undefined;
+
 export interface AgentLoopHooks {
   beforeToolCall?: BeforeToolCallHook;
   transformContext?: TransformContextHook;
@@ -73,6 +84,8 @@ export interface AgentLoopHooks {
    * user message into that step's context.
    */
   drainSteeringMessages?: DrainSteeringMessagesHook;
+  /** 在每个内部步骤前动态约束工具选择，用于 discovery → verification → final。 */
+  resolveStepPolicy?: ResolveStepPolicyHook;
   /**
    * 可选的流后裁决钩子。存在时,AgentLoop 会在每次 `streamText` 调用后
    * 运行该钩子,并可附加反馈最多循环 `maxReflections` 次。
@@ -83,7 +96,7 @@ export interface AgentLoopHooks {
 
 export interface GracefulShutdownConfig {
   /**
-   * 累计 token 达到 maxTotalTokens 的这个比例后,下一 step 进入无工具收尾。
+   * 累计 token 达到 maxTotalTokens 的这个比例后,下一 step 进入受限工具收尾。
    * 默认不启用;调用方应只在需要 graceful wrap-up 的路径传入。
    */
   tokenBudgetRatio?: number;
@@ -91,6 +104,8 @@ export interface GracefulShutdownConfig {
   wallMsRemaining?: number;
   /** 注入给模型的收尾指令。 */
   message?: string;
+  /** 收尾步骤仍可调用的工具；省略时完全关闭工具。 */
+  finalTools?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -150,9 +165,11 @@ export interface AgentLoopConfig {
   maxWallMs?: number;
   /**
    * 预算接近耗尽时的软收尾策略。命中后不会立刻 abort,而是在下一
-   * prepareStep 关闭工具并追加一条 wrap-up 指令,让模型产出最终结果。
+   * prepareStep 限制工具并追加一条 wrap-up 指令,让模型产出最终结果。
    */
   gracefulShutdown?: GracefulShutdownConfig;
+  /** 成功执行其中任一工具后立即结束本次 run。用于一次性结果提交工具。 */
+  terminalTools?: string[];
 }
 
 function contentContainsPrompt(
@@ -325,6 +342,8 @@ export class AgentLoop {
     let pendingMessageText = "";
     let pendingMessageOpen = false;
     let gracefulWrapUp = false;
+    let terminalToolCompleted = false;
+    const terminalTools = new Set(this.cfg.terminalTools ?? []);
     const currentFinalText = () =>
       pendingMessageOpen ? finalTextAccum + pendingMessageText : finalTextAccum;
     const resetPendingMessage = () => {
@@ -374,6 +393,18 @@ export class AgentLoop {
           let preparedMessages = compacted ?? stepMessages;
           let shouldOverrideMessages = compacted !== null;
           const shouldWrapThisStep = gracefulWrapUp;
+          let stepPolicy: AgentStepPolicy | undefined;
+
+          if (!passNoTools && !shouldWrapThisStep) {
+            try {
+              stepPolicy = this.cfg.hooks?.resolveStepPolicy?.();
+            } catch (err) {
+              console.warn(
+                "[AgentLoop] resolveStepPolicy hook failed:",
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
 
           if (this.cfg.hooks?.transformStepContext) {
             try {
@@ -449,13 +480,36 @@ export class AgentLoop {
               },
             ];
             shouldOverrideMessages = true;
+          } else if (stepPolicy?.message) {
+            preparedMessages = [
+              ...preparedMessages,
+              {
+                role: "user",
+                content: `[Runtime step policy]\n${stepPolicy.message}`,
+              },
+            ];
+            shouldOverrideMessages = true;
           }
 
           return {
             ...(shouldOverrideMessages ? { messages: preparedMessages } : {}),
             ...(shouldWrapThisStep
-              ? { activeTools: [], toolChoice: "none" as const }
-              : {}),
+              ? this.cfg.gracefulShutdown?.finalTools?.length
+                ? {
+                    activeTools: this.cfg.gracefulShutdown.finalTools,
+                    toolChoice: "auto" as const,
+                  }
+                : { activeTools: [], toolChoice: "none" as const }
+              : stepPolicy
+                ? {
+                    ...(stepPolicy.activeTools !== undefined && {
+                      activeTools: stepPolicy.activeTools,
+                    }),
+                    ...(stepPolicy.toolChoice !== undefined && {
+                      toolChoice: stepPolicy.toolChoice,
+                    }),
+                  }
+                : {}),
           };
         },
         abortSignal: effectiveSignal,
@@ -587,6 +641,10 @@ export class AgentLoop {
               success,
               durationMs: 0,
             });
+            if (success && terminalTools.has(part.toolName)) {
+              terminalToolCompleted = true;
+              internalController.abort();
+            }
             break;
           }
           case "tool-error": {
@@ -862,7 +920,7 @@ export class AgentLoop {
       const isAbort = err instanceof Error && err.name === "AbortError";
       // 因 token/wall 硬上限触发的 internal abort:产出有效,视为完成 +
       // stopReason,而非 cancelled。
-      if (isAbort && stopReason) {
+      if (isAbort && (stopReason || terminalToolCompleted)) {
         emit({
           type: "agent_end",
           agentId,

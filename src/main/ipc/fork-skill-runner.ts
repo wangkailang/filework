@@ -27,6 +27,11 @@ import { StreamWatchdog } from "../ai/stream-watchdog";
 import { estimateTokens } from "../ai/token-budget";
 import { AgentLoop } from "../core/agent/agent-loop";
 import { consumePreview } from "../core/agent/preview/snapshot-store";
+import type {
+  ReflectionVerdict,
+  TurnSummary,
+} from "../core/agent/reflection-gate";
+import { ResearchLoopGuard } from "../core/agent/research-loop-guard";
 import type { ClassifiedRetryError } from "../core/agent/retry";
 import {
   buildReport,
@@ -129,7 +134,9 @@ const SUBAGENT_GRACEFUL_MIN_WALL_MS = 5_000;
 const SUBAGENT_GRACEFUL_MAX_WALL_MS = 30_000;
 const SUBAGENT_GRACEFUL_WALL_RATIO = 0.2;
 const SUBAGENT_GRACEFUL_MESSAGE =
-  "Wrap up now. Do not call more tools. Call submitSubagentResult exactly once with status=complete if the assigned goal is covered, otherwise status=partial or no_result with missing gaps, then stop.";
+  "Wrap up now. Do not call more research tools. Call submitSubagentResult exactly once with status=complete if the assigned goal is covered, otherwise status=partial or no_result with missing gaps, then stop.";
+const SUBAGENT_STEP_LIMIT_MESSAGE =
+  "The exploration step budget is exhausted. Do not call more tools. Return RESULT_JSON followed by one fenced JSON object using the required result schema. Preserve every validated finding and list remaining gaps; do not return a process note.";
 const SUBAGENT_DIRECT_WRITE_TOOL_SET = new Set([
   "writeFile",
   "moveFile",
@@ -198,12 +205,33 @@ const submittedArtifactsFromToolOutput = (
   return parsed.success ? (parsed.data as Record<string, unknown>) : undefined;
 };
 
+const clipFinalizationEvidence = (value: unknown, maxChars = 1_200): string => {
+  let text: string;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  return text.length <= maxChars
+    ? text
+    : `${text.slice(0, maxChars)}...[truncated]`;
+};
+
+const buildFinalizationEvidence = (summary: TurnSummary): string =>
+  summary.toolCalls
+    .slice(-8)
+    .map(
+      (call, index) =>
+        `${index + 1}. ${call.name} (${call.success ? "ok" : "failed"}): ${clipFinalizationEvidence(call.result)}`,
+    )
+    .join("\n");
+
 const buildSubmitSubagentResultTool = (
   onSubmit: (artifacts: Record<string, unknown>) => void,
 ): ToolDefinition<unknown, unknown> => ({
   name: SUBAGENT_RESULT_TOOL_NAME,
   description:
-    "Submit the sub-agent's structured result exactly once, when the assigned goal is done or genuinely blocked. Use status=complete only for a result the lead can rely on; use partial/no_result for diagnostics and then stop.",
+    "Submit the sub-agent's structured result exactly once, when the assigned goal is done or genuinely blocked. Use status=complete only for a result the lead can rely on; use partial to preserve evidenced findings with explicit gaps, or no_result for diagnostics, and then stop.",
   inputSchema: DEFAULT_SUB_AGENT_RESULT_SCHEMA,
   safety: "safe",
   execute: async (args) => {
@@ -275,6 +303,24 @@ export const createForkSkillRunner = (
     const workspace = new LocalWorkspace(effectiveWorkspacePath);
     const isGitWorkspace = isGitBackedWorkspace(workspace);
     let submittedArtifacts: Record<string, unknown> | undefined;
+    const researchLoopGuard = isSubagent ? new ResearchLoopGuard() : undefined;
+    const reflectSubagentFinalization = async (
+      summary: TurnSummary,
+    ): Promise<ReflectionVerdict> => {
+      if (submittedArtifacts || summary.endReason !== "tool_calls") {
+        return { kind: "continue" };
+      }
+      const evidence = buildFinalizationEvidence(summary);
+      return {
+        kind: "retry",
+        forceNoTools: true,
+        feedback: `${SUBAGENT_STEP_LIMIT_MESSAGE}${
+          evidence
+            ? `\n\nEvidence ledger from completed tool calls:\n${evidence}`
+            : ""
+        }`,
+      };
+    };
     // undefined 时强制为 [],使 registry 的 allow() 过滤(零工具
     // 默认)与旧的 `executor.ts:395-397` 行为一致。
     const toolRegistry = buildAgentToolRegistry({
@@ -375,7 +421,13 @@ export const createForkSkillRunner = (
         signal: childController.signal,
         toolCallId,
       }),
+      beforeAnyToolCall: researchLoopGuard
+        ? async (call) => researchLoopGuard.beforeToolCall(call)
+        : undefined,
       beforeToolCall,
+      onToolResult: researchLoopGuard
+        ? (result) => researchLoopGuard.observeToolResult(result)
+        : undefined,
     });
 
     const systemPrompt = `${opts.systemPrompt}\n\nCurrent workspace: ${effectiveWorkspacePath}`;
@@ -454,12 +506,28 @@ export const createForkSkillRunner = (
               ? SUBAGENT_GRACEFUL_TOKEN_RATIO
               : undefined,
             wallMsRemaining: gracefulWallMsRemaining,
+            finalTools: [SUBAGENT_RESULT_TOOL_NAME],
             message: SUBAGENT_GRACEFUL_MESSAGE,
           }
         : undefined,
-      hooks: transformSubagentStepContext
-        ? { transformStepContext: transformSubagentStepContext }
-        : undefined,
+      terminalTools: isSubagent ? [SUBAGENT_RESULT_TOOL_NAME] : undefined,
+      maxReflections: isSubagent ? 1 : undefined,
+      hooks: isSubagent
+        ? {
+            ...(transformSubagentStepContext
+              ? { transformStepContext: transformSubagentStepContext }
+              : {}),
+            ...(researchLoopGuard
+              ? {
+                  resolveStepPolicy: () =>
+                    researchLoopGuard.getStepPolicy(Object.keys(registryTools)),
+                }
+              : {}),
+            reflect: reflectSubagentFinalization,
+          }
+        : transformSubagentStepContext
+          ? { transformStepContext: transformSubagentStepContext }
+          : undefined,
       classifyError: (err): ClassifiedRetryError => {
         const c = classifyError(err);
         return {

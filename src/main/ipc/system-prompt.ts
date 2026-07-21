@@ -113,7 +113,7 @@ const OPERATING_PRINCIPLES = `## Operating Principles
 ### Delegation
 - Use \`spawnSubagent\` for independent parallel units: multi-topic research, per-item fan-out, or multi-directory/file analysis.
 - Do NOT delegate single-step, order-dependent, or user-clarification work.
-- Consume only \`complete\` sub-agent reports; \`partial\`, \`usable_partial\`, \`no_result\`, timeout, and token-limit reports are diagnostics.
+- Treat \`complete\` reports as finished work. You may use evidence from \`usable_partial\` reports with an explicit caveat, but their goals remain incomplete and require follow-up. \`no_result\` reports are diagnostics only.
 
 ### Deterministic Computation
 - Token generation is probabilistic; arithmetic is not. For math/conversions/hash/regex, call \`runProcess\` with \`python3\` argv (or \`runCommand\` for shell syntax; use \`BigInt\`). Reasoning blocks do not compute; don't quote multi-digit results without a tool.
@@ -349,6 +349,8 @@ const SUBAGENT_PROFILE_PROMPTS: Record<
       "Produce source-backed findings. Prefer verified evidence over broad commentary.",
       "Cite the concrete source, file, URL, command, or artifact behind each important claim.",
       "Separate confirmed facts from inferences and call out missing or stale evidence.",
+      "Start with one focused discovery search. Run a second search only for a specific coverage gap; do not keep reformulating a query after it returns enough candidate sources.",
+      "Verify the 2–3 best distinct primary sources, then submit. More searches are not a substitute for reading the strongest sources.",
     ],
   },
   code_reviewer: {

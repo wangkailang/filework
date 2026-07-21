@@ -40,6 +40,7 @@ vi.mock("ai", () => ({
   streamText: vi.fn(
     (options?: {
       messages?: unknown[];
+      abortSignal?: AbortSignal;
       prepareStep?: (args: {
         initialMessages: unknown[];
         messages: unknown[];
@@ -61,6 +62,11 @@ vi.mock("ai", () => ({
         );
         for (const p of run.parts) {
           yield p;
+          if (options?.abortSignal?.aborted) {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            throw error;
+          }
           if (p.type === "finish-step" && p.finishReason === "tool-calls") {
             responseMessages.push({ role: "assistant", content: "" });
             prepareStepResults.push(
@@ -191,6 +197,46 @@ describe("AgentLoop", () => {
     expect(end.finalText).toBe("Hello, world");
     expect(end.totalUsage?.inputTokens).toBe(5);
     expect(end.totalUsage?.totalTokens).toBe(8);
+  });
+
+  it("completes immediately after a successful terminal tool result", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "submit-1",
+          toolName: "submitSubagentResult",
+          input: { status: "complete" },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "submit-1",
+          toolName: "submitSubagentResult",
+          output: { success: true, accepted: true },
+        },
+        { type: "text-delta", text: "must not continue" },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      terminalTools: ["submitSubagentResult"],
+    });
+
+    const events = await collect(loop, "finish");
+    expect(
+      events.some(
+        (event) =>
+          event.type === "message_update" &&
+          event.deltaText === "must not continue",
+      ),
+    ).toBe(false);
+    const end = events.at(-1);
+    expect(end).toMatchObject({ type: "agent_end", status: "completed" });
   });
 
   it("keeps cumulative billing separate from latest and maximum step context", async () => {
@@ -1309,6 +1355,114 @@ describe("AgentLoop", () => {
     expect(secondPrepare.messages?.at(-1)).toMatchObject({
       role: "user",
       content: expect.stringContaining("Wrap up now"),
+    });
+  });
+
+  it("can leave only terminal submission tools active during graceful wrap-up", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "call-1",
+          toolName: "echo",
+          input: { msg: "scan" },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "echo",
+          output: "large result",
+        },
+        {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 80, outputTokens: 5 },
+        },
+        { type: "start-step" },
+        { type: "text-delta", text: "wrapped" },
+        {
+          type: "finish-step",
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
+      ],
+    });
+
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      maxTotalTokens: 100,
+      gracefulShutdown: {
+        tokenBudgetRatio: 0.8,
+        finalTools: ["submitSubagentResult"],
+      },
+    });
+    await collect(loop, "hi");
+
+    expect(prepareStepResults[1]).toMatchObject({
+      activeTools: ["submitSubagentResult"],
+      toolChoice: "auto",
+    });
+  });
+
+  it("applies a runtime step policy before the model can repeat stale research calls", async () => {
+    scriptedRuns.push({
+      parts: [
+        { type: "start-step" },
+        {
+          type: "tool-call",
+          toolCallId: "search-1",
+          toolName: "webSearch",
+          input: { query: "Svelte stores" },
+        },
+        {
+          type: "tool-result",
+          toolCallId: "search-1",
+          toolName: "webSearch",
+          output: { results: [{ url: "https://svelte.dev" }] },
+        },
+        { type: "finish-step", finishReason: "tool-calls", usage: {} },
+        { type: "start-step" },
+        { type: "text-delta", text: "submitted" },
+        { type: "finish-step", finishReason: "stop", usage: {} },
+      ],
+    });
+    let policyChecks = 0;
+    const loop = new AgentLoop({
+      workspace: stubWorkspace(),
+      model: fakeModel,
+      tools: emptyRegistry(),
+      systemPrompt: "system",
+      hooks: {
+        resolveStepPolicy: () => {
+          policyChecks++;
+          if (policyChecks === 1) return undefined;
+          return {
+            activeTools: ["submitSubagentResult"],
+            toolChoice: {
+              type: "tool" as const,
+              toolName: "submitSubagentResult",
+            },
+            message: "Research evidence is sufficient. Submit now.",
+          };
+        },
+      },
+    });
+
+    await collect(loop, "research");
+
+    expect(prepareStepResults[1]).toMatchObject({
+      activeTools: ["submitSubagentResult"],
+      toolChoice: { type: "tool", toolName: "submitSubagentResult" },
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("Research evidence is sufficient"),
+        }),
+      ]),
     });
   });
 

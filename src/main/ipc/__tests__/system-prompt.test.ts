@@ -363,6 +363,9 @@ describe("buildSubagentSystemPrompt", () => {
     expect(prompt).toContain("## Profile: Researcher");
     expect(prompt).toMatch(/source-backed/i);
     expect(prompt).toMatch(/cite|evidence/i);
+    expect(prompt).toMatch(/one focused discovery search/i);
+    expect(prompt).toMatch(/second search.*specific.*gap/i);
+    expect(prompt).toMatch(/2.?3.*primary sources/i);
     expect(prompt).toContain("You CANNOT delegate");
   });
 

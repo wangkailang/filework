@@ -47,6 +47,24 @@ function clamp(s: string, budget: number): string {
   return `${s.slice(0, head)}\n…[${dropped} chars elided to save context — re-run the tool or grep the file if you need them]…\n${s.slice(-tail)}`;
 }
 
+function compactWebSearchToLedger(value: string, budget: number): string {
+  const kept: string[] = ["Evidence ledger (older webSearch result)"];
+  for (const line of value.split(/\r?\n/)) {
+    if (line.startsWith("Snippet:")) continue;
+    if (
+      line.startsWith("webSearch ") ||
+      line.startsWith("Answer:") ||
+      line.startsWith("Results:") ||
+      line.startsWith("URL:") ||
+      line.startsWith("Additional results omitted:") ||
+      /^\d+\.\s/.test(line)
+    ) {
+      kept.push(line.startsWith("Answer:") ? clamp(line, 700) : line);
+    }
+  }
+  return clamp(kept.join("\n"), Math.min(budget, 2_000));
+}
+
 /**
  * 返回 `messages` 的压缩副本,若无任何改动则返回 `null`。
  * 保留最后一条 `tool` 角色消息的完整内容;裁剪较早的超大消息。
@@ -81,7 +99,20 @@ export function compactToolResults(
       }
       const tr = part as { output: unknown };
       const str = outputToString(tr.output);
-      if (str == null || str.length <= budget) return part;
+      if (str == null) return part;
+      const toolName = (part as { toolName?: unknown }).toolName;
+      if (toolName === "webSearch") {
+        const ledger = compactWebSearchToLedger(str, budget);
+        if (ledger !== str) {
+          changed = true;
+          return {
+            ...tr,
+            output: { type: "text" as const, value: ledger },
+          };
+        }
+        return part;
+      }
+      if (str.length <= budget) return part;
       changed = true;
       return {
         ...tr,

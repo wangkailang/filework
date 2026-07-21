@@ -162,7 +162,7 @@ describe("buildReport", () => {
     expect(r.artifacts).toBeUndefined();
   });
 
-  it("rejects truncated reports even when they submitted partial findings", () => {
+  it("salvages submitted partial findings when the run is truncated", () => {
     const r = buildReport({
       agentId: "a7-partial",
       contract: baseContract({
@@ -188,14 +188,14 @@ describe("buildReport", () => {
     });
 
     expect(r.status).toBe("token_limit");
-    expect(r.resultQuality).toBe("no_result");
+    expect(r.resultQuality).toBe("usable_partial");
     expect(r.artifacts).toMatchObject({
       status: "partial",
       coverage: ["src/main/ipc"],
     });
   });
 
-  it("rejects partial default artifacts for ok runs", () => {
+  it("marks evidenced partial artifacts as usable_partial for ok runs", () => {
     const r = buildReport({
       agentId: "a7-ok-partial",
       contract: baseContract({
@@ -221,11 +221,11 @@ describe("buildReport", () => {
     });
 
     expect(r.status).toBe("ok");
-    expect(r.resultQuality).toBe("no_result");
+    expect(r.resultQuality).toBe("usable_partial");
     expect(r.artifacts).toMatchObject({ status: "partial" });
   });
 
-  it("rejects default result artifacts for truncated non-json outputs", () => {
+  it("salvages partial result artifacts for truncated non-json outputs", () => {
     const r = buildReport({
       agentId: "a7-summary-partial",
       contract: baseContract({ output: { format: "summary" } }),
@@ -248,7 +248,7 @@ describe("buildReport", () => {
     });
 
     expect(r.status).toBe("timeout");
-    expect(r.resultQuality).toBe("no_result");
+    expect(r.resultQuality).toBe("usable_partial");
     expect(r.artifacts).toMatchObject({ status: "partial" });
   });
 

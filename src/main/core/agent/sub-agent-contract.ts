@@ -123,7 +123,7 @@ const hasUsableDefaultArtifact = (
     return { usable: false, quality: "no_result" };
   }
   if (parsed.data.status === "partial") {
-    return { usable: false, quality: "no_result" };
+    return { usable: true, quality: "usable_partial" };
   }
   return { usable: true, quality: "complete" };
 };
@@ -137,12 +137,11 @@ const classifyResultQuality = ({
   artifacts: Record<string, unknown> | undefined;
   summary: string;
 }): SubAgentResultQuality => {
-  if (status !== "ok") return "no_result";
-
   const defaultArtifactQuality = hasUsableDefaultArtifact(artifacts);
   if (defaultArtifactQuality) {
-    return defaultArtifactQuality.usable ? "complete" : "no_result";
+    return defaultArtifactQuality.quality;
   }
+  if (status !== "ok") return "no_result";
   return summary.trim().length > 0 ? "complete" : "no_result";
 };
 
