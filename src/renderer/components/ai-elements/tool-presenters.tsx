@@ -14,6 +14,7 @@ import { DiffHunkView } from "./preview/DiffHunkView";
 const MAX_OUTPUT_LINES = 30;
 const MAX_LIST_ENTRIES = 50;
 const MAX_COMMAND_SHORT = 60;
+const MAX_WEB_CONTENT_CHARS = 7000;
 const TOOL_SUMMARY_TEXT = "text-foreground/65";
 const TOOL_MUTED_TEXT = "text-muted-foreground/75";
 const TOOL_SUCCESS_TEXT = "text-status-success/75";
@@ -1229,6 +1230,348 @@ const urlPresenter: ToolPresenter = {
   groupSummary: urlGroupSummary,
 };
 
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      ),
+    ),
+  );
+}
+
+function matchCount(result: Record<string, unknown>): number {
+  const matchedPages = result.matchedPages;
+  const matchedChunks = result.matchedChunks;
+  if (Array.isArray(matchedPages)) return matchedPages.length;
+  if (Array.isArray(matchedChunks)) return matchedChunks.length;
+  if (typeof matchedPages === "number") return matchedPages;
+  return typeof matchedChunks === "number" ? matchedChunks : 0;
+}
+
+function WebFetchOutput({
+  result,
+  args,
+  LL,
+}: {
+  result: unknown;
+  args: unknown;
+  LL: TranslationFunctions;
+}) {
+  const r = asRecord(result);
+  const a = asRecord(args);
+  const link = useLinkRouter();
+  if (!r) return null;
+
+  const url =
+    typeof r.url === "string" ? r.url : typeof a?.url === "string" ? a.url : "";
+  const title = typeof r.title === "string" ? r.title.trim() : "";
+  const excerpt = typeof r.excerpt === "string" ? r.excerpt.trim() : "";
+  const error = typeof r.error === "string" ? r.error.trim() : "";
+  const contentType =
+    typeof r.contentType === "string" ? r.contentType.split(";")[0] : "";
+  const status = typeof r.status === "number" ? r.status : null;
+  const statusText =
+    typeof r.statusText === "string" ? r.statusText.trim() : "";
+  const pages = typeof r.pages === "number" ? r.pages : 0;
+  const matches = matchCount(r);
+  const fullContent =
+    typeof r.markdown === "string" && r.markdown.trim()
+      ? r.markdown.trim()
+      : typeof r.raw === "string" && r.raw.trim()
+        ? r.raw.trim()
+        : typeof r.content === "string" && r.content.trim()
+          ? r.content.trim()
+          : "";
+  const clippedByUi = fullContent.length > MAX_WEB_CONTENT_CHARS;
+  const content = clippedByUi
+    ? `${fullContent.slice(0, MAX_WEB_CONTENT_CHARS).trimEnd()}\n…`
+    : fullContent;
+  const truncated = r.truncated === true || clippedByUi;
+  const href = isHttpUrl(url) ? url : "";
+  const statusLabel =
+    status === null ? "" : `${status}${statusText ? ` ${statusText}` : ""}`;
+  const statusTone =
+    status !== null && status >= 400
+      ? "border-status-error/25 bg-status-error/8 text-status-error/80"
+      : "border-status-success/20 bg-status-success/8 text-status-success/80";
+
+  return (
+    <div
+      data-web-fetch-output="true"
+      data-web-fetch-truncated={truncated ? "true" : undefined}
+      className="bg-surface-sunken/35 text-xs"
+    >
+      <div className="border-border-faint border-b px-3 py-2.5">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground/85">
+              {title || shortUrl(url, 90) || LL.tool_webFetch_content()}
+            </div>
+            {href ? (
+              <a
+                href={href}
+                onClick={link.onClick}
+                onAuxClick={link.onAuxClick}
+                rel="noopener noreferrer"
+                className="mt-0.5 block truncate text-[11px] text-muted-foreground/75 hover:text-primary/85 hover:underline"
+              >
+                {compactUrl(url)}
+              </a>
+            ) : url ? (
+              <div className="mt-0.5 truncate text-[11px] text-muted-foreground/75">
+                {url}
+              </div>
+            ) : null}
+          </div>
+          {statusLabel && (
+            <span
+              className={cn(
+                "shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
+                statusTone,
+              )}
+            >
+              {statusLabel}
+            </span>
+          )}
+        </div>
+        {excerpt && (
+          <p className="mt-2 line-clamp-3 leading-relaxed text-muted-foreground/90">
+            {excerpt}
+          </p>
+        )}
+        {(contentType || pages > 0 || matches > 0 || truncated) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] text-muted-foreground/65">
+            {contentType && <span>{contentType}</span>}
+            {pages > 0 && <span>{LL.tool_webFetch_pages(pages)}</span>}
+            {matches > 0 && <span>{LL.tool_webFetch_matches(matches)}</span>}
+            {truncated && (
+              <span className="text-status-await/80">
+                {LL.tool_webFetch_truncated()}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {error ? (
+        <div className="border-status-error/20 border-l-2 px-3 py-2.5 leading-relaxed text-status-error/85">
+          {error}
+        </div>
+      ) : content ? (
+        <section aria-label={LL.tool_webFetch_content()}>
+          <div className="border-border-faint border-b px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {LL.tool_webFetch_content()}
+          </div>
+          <pre className="max-h-72 overflow-auto px-3 py-2.5 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words text-muted-foreground/95">
+            {renderWithLinks(content, link)}
+          </pre>
+        </section>
+      ) : (
+        <div className="px-3 py-3 italic text-muted-foreground/70">
+          {LL.tool_webFetch_empty()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SubmissionFinding {
+  claim: string;
+  evidence: string[];
+}
+
+interface SubmissionPayload {
+  status: "complete" | "partial" | "no_result";
+  coverage: string[];
+  findings: SubmissionFinding[];
+  evidence: string[];
+  missing: string[];
+  failureReason: string;
+}
+
+function submissionPayload(value: unknown): SubmissionPayload | null {
+  const root = asRecord(value);
+  const payload = asRecord(root?.artifacts) ?? root;
+  if (!payload) return null;
+  const status = payload.status;
+  if (status !== "complete" && status !== "partial" && status !== "no_result") {
+    return null;
+  }
+  const findings = Array.isArray(payload.findings)
+    ? payload.findings
+        .map((item): SubmissionFinding | null => {
+          const finding = asRecord(item);
+          const claim =
+            typeof finding?.claim === "string" ? finding.claim.trim() : "";
+          if (!claim) return null;
+          return { claim, evidence: stringArray(finding?.evidence) };
+        })
+        .filter((item): item is SubmissionFinding => item !== null)
+    : [];
+  return {
+    status,
+    coverage: stringArray(payload.coverage),
+    findings,
+    evidence: stringArray(payload.evidence),
+    missing: stringArray(payload.missing),
+    failureReason:
+      typeof payload.failureReason === "string"
+        ? payload.failureReason.trim()
+        : "",
+  };
+}
+
+function SubmissionList({
+  items,
+  tone = "default",
+}: {
+  items: string[];
+  tone?: "default" | "warning";
+}) {
+  const link = useLinkRouter();
+  return (
+    <ul className="space-y-1.5">
+      {items.map((item) => (
+        <li
+          key={item}
+          className="grid grid-cols-[0.75rem_minmax(0,1fr)] gap-1.5 leading-relaxed"
+        >
+          <span
+            className={cn(
+              "pt-px text-muted-foreground/45",
+              tone === "warning" && "text-status-await/75",
+            )}
+          >
+            •
+          </span>
+          <span>{renderWithLinks(item, link)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SubmissionResult({
+  payload,
+  LL,
+}: {
+  payload: SubmissionPayload;
+  LL: TranslationFunctions;
+}) {
+  const statusLabel =
+    payload.status === "complete"
+      ? LL.tool_submit_complete()
+      : payload.status === "partial"
+        ? LL.tool_submit_partial()
+        : LL.tool_submit_noResult();
+  const statusTone =
+    payload.status === "complete"
+      ? "border-status-success/25 bg-status-success/8 text-status-success/85"
+      : payload.status === "partial"
+        ? "border-status-await/25 bg-status-await/8 text-status-await/85"
+        : "border-status-error/25 bg-status-error/8 text-status-error/85";
+
+  return (
+    <div
+      data-subagent-result={payload.status}
+      className="bg-surface-sunken/35 text-xs"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-border-faint border-b px-3 py-2">
+        <span
+          className={cn(
+            "rounded-sm border px-1.5 py-0.5 text-[10px] font-medium",
+            statusTone,
+          )}
+        >
+          {statusLabel}
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground/65">
+          {payload.findings.length} {LL.tool_submit_findings()} ·{" "}
+          {payload.evidence.length} {LL.tool_submit_evidence()}
+        </span>
+      </div>
+
+      {payload.coverage.length > 0 && (
+        <section className="border-border-faint border-b px-3 py-2.5">
+          <h4 className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {LL.tool_submit_coverage()}
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {payload.coverage.map((item) => (
+              <span
+                key={item}
+                className="rounded-sm border border-border/55 bg-background/45 px-1.5 py-0.5 text-[11px] text-foreground/70"
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {payload.findings.length > 0 && (
+        <section className="border-border-faint border-b px-3 py-2.5">
+          <h4 className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {LL.tool_submit_findings()}
+          </h4>
+          <ol className="space-y-2.5">
+            {payload.findings.map((finding, index) => (
+              <li
+                key={`${finding.claim}-${finding.evidence.join("\u0000")}`}
+                className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-1.5"
+              >
+                <span className="pt-0.5 text-right font-mono text-[10px] text-muted-foreground/55 tabular-nums">
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="font-medium leading-relaxed text-foreground/85">
+                    {finding.claim}
+                  </p>
+                  {finding.evidence.length > 0 && (
+                    <div className="mt-1 border-border/50 border-l pl-2 text-[11px] text-muted-foreground/85">
+                      <SubmissionList items={finding.evidence} />
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {payload.evidence.length > 0 && (
+        <section className="border-border-faint border-b px-3 py-2.5 text-muted-foreground/90">
+          <h4 className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {LL.tool_submit_evidence()}
+          </h4>
+          <SubmissionList items={payload.evidence} />
+        </section>
+      )}
+
+      {payload.missing.length > 0 && (
+        <section className="border-status-await/25 border-l-2 px-3 py-2.5 text-muted-foreground/90">
+          <h4 className="mb-1.5 text-[10px] uppercase tracking-wider text-status-await/75">
+            {LL.tool_submit_missing()}
+          </h4>
+          <SubmissionList items={payload.missing} tone="warning" />
+        </section>
+      )}
+
+      {payload.failureReason && (
+        <section className="border-status-error/20 border-t px-3 py-2.5 text-status-error/85">
+          <h4 className="mb-1 text-[10px] uppercase tracking-wider text-status-error/70">
+            {LL.tool_submit_failure()}
+          </h4>
+          <p className="leading-relaxed">{payload.failureReason}</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
 const webFetchPresenter: ToolPresenter = {
   summary: (args) => {
     const u = urlArg(args);
@@ -1243,6 +1586,39 @@ const webFetchPresenter: ToolPresenter = {
     );
   },
   groupSummary: urlGroupSummary,
+  output: (result, args, _state, { LL }) => (
+    <WebFetchOutput result={result} args={args} LL={LL} />
+  ),
+};
+
+const submitSubagentResultPresenter: ToolPresenter = {
+  summary: (args, result, _state, { LL }) => {
+    const payload = submissionPayload(result) ?? submissionPayload(args);
+    if (!payload) return null;
+    const status =
+      payload.status === "complete"
+        ? LL.tool_submit_complete()
+        : payload.status === "partial"
+          ? LL.tool_submit_partial()
+          : LL.tool_submit_noResult();
+    return (
+      <span className={TOOL_SUMMARY_TEXT}>
+        {status}
+        {payload.findings.length > 0 && (
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>
+            {payload.findings.length} {LL.tool_submit_findings()}
+          </span>
+        )}
+      </span>
+    );
+  },
+  // The tool result is normally just an acknowledgement. Render the submitted
+  // payload from persisted args, while preferring normalized result artifacts
+  // when a provider returns them.
+  output: (result, args, _state, { LL }) => {
+    const payload = submissionPayload(result) ?? submissionPayload(args);
+    return payload ? <SubmissionResult payload={payload} LL={LL} /> : null;
+  },
 };
 
 export const toolPresenters: Record<string, ToolPresenter> = {
@@ -1259,7 +1635,8 @@ export const toolPresenters: Record<string, ToolPresenter> = {
   createDirectory: createDirectoryPresenter,
   directoryStats: directoryStatsPresenter,
   webFetch: webFetchPresenter,
-  webFetchRendered: urlPresenter,
-  webScrape: urlPresenter,
+  webFetchRendered: webFetchPresenter,
+  webScrape: webFetchPresenter,
   youtubeTranscript: urlPresenter,
+  submitSubagentResult: submitSubagentResultPresenter,
 };

@@ -12,9 +12,22 @@ const LL = {
   preview_written_snapshot_label: () => "Written content snapshot",
   tool_diff_label: () => "Diff",
   tool_stderr: () => "stderr",
+  tool_submit_coverage: () => "Coverage",
+  tool_submit_evidence: () => "Evidence",
+  tool_submit_failure: () => "Failure reason",
+  tool_submit_findings: () => "Key findings",
+  tool_submit_missing: () => "Missing",
+  tool_submit_noResult: () => "No result",
+  tool_submit_partial: () => "Partial result",
+  tool_submit_complete: () => "Complete result",
   tool_summary_exitCode: (n: number) => `exit ${n}`,
   tool_summary_more: (n: number) => `${n} more lines`,
   tool_summary_new_file: () => "new file",
+  tool_webFetch_content: () => "Page content",
+  tool_webFetch_empty: () => "No page content extracted",
+  tool_webFetch_matches: (n: number) => `${n} matches`,
+  tool_webFetch_pages: (n: number) => `${n} pages`,
+  tool_webFetch_truncated: () => "Content truncated",
 } as unknown as TranslationFunctions;
 
 describe("runCommand presenter", () => {
@@ -254,6 +267,85 @@ describe("webSearch presenter", () => {
     expect(html).toContain('href="https://example.com/jotai"');
     expect(html).toContain("Zustand vs Redux Toolkit");
     expect(html).toContain("A comparison of React state managers.");
+  });
+});
+
+describe("webFetch presenter", () => {
+  it("renders page metadata and readable content instead of raw JSON", () => {
+    const output = toolPresenters.webFetch.output?.(
+      {
+        status: 200,
+        statusText: "OK",
+        url: "https://example.com/docs/getting-started",
+        contentType: "text/html; charset=utf-8",
+        title: "Getting started",
+        excerpt: "A concise introduction to the product.",
+        markdown: "# Install\n\nRun the setup command and open the app.",
+        raw: "",
+        truncated: true,
+        pages: 3,
+        matchedChunks: [{ index: 1 }, { index: 4 }],
+      },
+      {
+        url: "https://example.com/docs/getting-started",
+        query: "installation",
+      },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-web-fetch",
+      },
+    );
+
+    const html = renderToStaticMarkup(output);
+
+    expect(html).toContain('data-web-fetch-output="true"');
+    expect(html).toContain('data-web-fetch-truncated="true"');
+    expect(html).toContain("200 OK");
+    expect(html).toContain("Getting started");
+    expect(html).toContain("A concise introduction to the product.");
+    expect(html).toContain("Run the setup command and open the app.");
+    expect(html).toContain("3 pages");
+    expect(html).toContain("2 matches");
+    expect(html).not.toContain("&quot;markdown&quot;");
+  });
+});
+
+describe("submitSubagentResult presenter", () => {
+  it("renders the submitted research as findings and evidence", () => {
+    const output = toolPresenters.submitSubagentResult.output?.(
+      { success: true, accepted: true },
+      {
+        status: "partial",
+        coverage: ["pricing", "security"],
+        findings: [
+          {
+            claim: "The team plan starts at $20 per member.",
+            evidence: ["Pricing page lists $20 per member per month."],
+          },
+        ],
+        evidence: ["https://example.com/pricing"],
+        missing: ["Enterprise contract minimum"],
+        failureReason: "The sales form requires a company email.",
+      },
+      "output-available",
+      {
+        LL,
+        toolCallId: "call-submit-result",
+      },
+    );
+
+    const html = renderToStaticMarkup(output);
+
+    expect(html).toContain('data-subagent-result="partial"');
+    expect(html).toContain("Partial result");
+    expect(html).toContain("pricing");
+    expect(html).toContain("The team plan starts at $20 per member.");
+    expect(html).toContain("Pricing page lists $20 per member per month.");
+    expect(html).toContain("https://example.com/pricing");
+    expect(html).toContain("Enterprise contract minimum");
+    expect(html).toContain("The sales form requires a company email.");
+    expect(html).not.toContain("&quot;findings&quot;");
   });
 });
 

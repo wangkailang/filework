@@ -12,13 +12,7 @@ import { type ReactNode, useMemo } from "react";
 
 import { useI18nContext } from "../../i18n/i18n-react";
 import { MessageResponse } from "../ai-elements/message";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "../ai-elements/tool";
+import { ToolInvocation } from "../ai-elements/tool-invocation";
 import { useChatSessionContext } from "./ChatSessionProvider";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { getSubagentDisplayStatus, StatusBadge } from "./SubagentCard";
@@ -297,7 +291,10 @@ function ResearchTrace({
         )}
       </section>
 
-      <details className="group overflow-hidden rounded-md border border-border/50 bg-background/30">
+      <details
+        open
+        className="group overflow-hidden rounded-md border border-border/50 bg-background/30"
+      >
         <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/30 [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
           <span>研究调用明细</span>
@@ -362,33 +359,12 @@ function TracePart({
       inv.toolName === RESEARCH_SUBMIT_TOOL
         ? summarizeSubmissionCall(inv)
         : undefined;
-    const resultText =
-      typeof inv.result === "string"
-        ? inv.result
-        : JSON.stringify(inv.result, null, 2);
     return (
-      <Tool defaultOpen={false}>
-        <ToolHeader
-          toolName={inv.toolName}
-          state={inv.state}
-          summary={summary}
-        />
-        <ToolContent>
-          <ToolInput input={inv.args} />
-          {inv.state === "output-available" && (
-            <ToolOutput
-              output={
-                <pre className="whitespace-pre-wrap break-all font-mono">
-                  {resultText}
-                </pre>
-              }
-            />
-          )}
-          {inv.state === "output-error" && (
-            <ToolOutput errorText={resultText} />
-          )}
-        </ToolContent>
-      </Tool>
+      <ToolInvocation
+        part={inv}
+        workspacePath={workspacePath}
+        summaryOverride={summary}
+      />
     );
   }
   return null;
