@@ -72,12 +72,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function isResearchTool(part: MessagePart): part is ToolPart {
+function isWebResearchTool(part: MessagePart): boolean {
   return (
     part.type === "tool" &&
     (part.toolName === RESEARCH_SEARCH_TOOL ||
-      RESEARCH_FETCH_TOOLS.has(part.toolName) ||
-      part.toolName === RESEARCH_SUBMIT_TOOL)
+      RESEARCH_FETCH_TOOLS.has(part.toolName))
+  );
+}
+
+function isResearchTool(part: MessagePart): part is ToolPart {
+  return (
+    isWebResearchTool(part) ||
+    (part.type === "tool" && part.toolName === RESEARCH_SUBMIT_TOOL)
   );
 }
 
@@ -120,8 +126,8 @@ function urlFromArgs(args: unknown): string | null {
 function summarizeResearchTrace(
   parts: MessagePart[],
 ): ResearchTraceSummary | null {
+  if (!parts.some(isWebResearchTool)) return null;
   const calls = parts.filter(isResearchTool);
-  if (calls.length === 0) return null;
 
   const verifiedUrls = new Set<string>();
   let completedSearches = 0;

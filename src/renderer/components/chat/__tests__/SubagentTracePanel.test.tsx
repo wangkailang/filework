@@ -281,6 +281,63 @@ describe("SubagentTracePanel", () => {
     expect(html).not.toContain("<details open");
   });
 
+  it("does not show a research summary for a submit-only subagent", () => {
+    state.messages = [
+      {
+        id: "assistant-subagent",
+        sessionId: "session-1",
+        role: "assistant",
+        content: "",
+        timestamp: "2026-06-23T11:07:00.000Z",
+        parts: [
+          {
+            type: "subagent",
+            batchId: "batch-submit-only",
+            toolCallId: "spawn-submit-only",
+            concurrency: 1,
+            children: [
+              {
+                childTaskId: "child-submit-only",
+                goal: "分析本地目录",
+                status: "ok",
+                stepCount: 1,
+                toolCalls: [],
+                usage: {
+                  inputTokens: null,
+                  outputTokens: null,
+                  totalTokens: null,
+                },
+                resultQuality: "complete",
+                parts: [
+                  {
+                    type: "tool",
+                    toolCallId: "submit-only",
+                    toolName: "submitSubagentResult",
+                    args: { status: "complete" },
+                    result: { success: true },
+                    state: "output-available",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      <SubagentTracePanel
+        batchId="batch-submit-only"
+        childTaskId="child-submit-only"
+        workspacePath="/workspace"
+      />,
+    );
+
+    expect(html).toContain("submitSubagentResult");
+    expect(html).not.toContain("研究轨迹");
+    expect(html).not.toContain("研究调用明细");
+  });
+
   it("shows truncated child results with no usable artifact as no result", () => {
     state.messages = [
       {
