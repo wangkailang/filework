@@ -14,6 +14,15 @@ describe("inferLlmModelCapabilities", () => {
       false,
     );
   });
+
+  it("marks DeepSeek V4 models as supporting reasoning", () => {
+    expect(inferLlmModelCapabilities("deepseek-v4-pro").supportsReasoning).toBe(
+      true,
+    );
+    expect(
+      inferLlmModelCapabilities("deepseek-v4-flash").supportsReasoning,
+    ).toBe(true);
+  });
 });
 
 describe("fetchOpenAICompatibleModels", () => {

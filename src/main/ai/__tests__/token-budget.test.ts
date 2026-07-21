@@ -331,9 +331,12 @@ describe("getTokenBudgetForModel", () => {
     expect(getTokenBudgetForModel("gpt-5.5")).toBe(1_039_808);
   });
 
-  it("returns correct budget for DeepSeek models", () => {
-    // 64K - 8192 - 2000 = 53808
-    expect(getTokenBudgetForModel("deepseek-chat")).toBe(53_808);
+  it("uses the current 1M context window for DeepSeek V4 and official aliases", () => {
+    // 1M - 8192 - 2000 = 989808
+    expect(getTokenBudgetForModel("deepseek-v4-pro")).toBe(989_808);
+    expect(getTokenBudgetForModel("deepseek-v4-flash")).toBe(989_808);
+    expect(getTokenBudgetForModel("deepseek-chat")).toBe(989_808);
+    expect(getTokenBudgetForModel("deepseek-reasoner")).toBe(989_808);
   });
 
   it("returns DEFAULT_TOKEN_BUDGET for unknown models", () => {

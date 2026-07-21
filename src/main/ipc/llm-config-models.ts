@@ -66,8 +66,10 @@ export function inferLlmModelCapabilities(
   const lowerId = modelId.toLowerCase();
   const isGpt5 = lowerId.includes("gpt-5");
   const isMini = lowerId.includes("mini");
+  const isDeepSeekV4 = lowerId.includes("deepseek-v4-");
   const isReasoningModel =
     (isGpt5 && !isMini) ||
+    isDeepSeekV4 ||
     lowerId.includes("o1") ||
     lowerId.includes("o3") ||
     lowerId.includes("o4") ||

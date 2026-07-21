@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { embedTextToVector } from "../memory-vector";
 import { buildRollingSummaryContext } from "../rolling-summary";
 
 describe("buildRollingSummaryContext", () => {
@@ -88,5 +89,28 @@ describe("buildRollingSummaryContext", () => {
     expect(result?.recalledChunks).toBe(1);
     expect(result?.text).toContain("auth session token renewal");
     expect(result?.text).not.toContain("sidebar color");
+  });
+
+  it("prefers lexical evidence over conflicting lightweight vector scores", () => {
+    const query = "oauth token renewal regression";
+    const result = buildRollingSummaryContext({
+      previousSummary: "## 已完成\n- initial setup",
+      memoryChunks: [
+        {
+          text: "sidebar color and spacing memory",
+          embedding: embedTextToVector(query),
+        },
+        {
+          text: "oauth token renewal regression memory",
+          embedding: embedTextToVector("unrelated visual polish"),
+        },
+      ],
+      query,
+      maxChars: 220,
+      maxSnippets: 1,
+    });
+
+    expect(result?.text).toContain("oauth token renewal regression memory");
+    expect(result?.text).not.toContain("sidebar color and spacing memory");
   });
 });

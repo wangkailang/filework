@@ -158,6 +158,37 @@ describe("ai-models LLM config selection", () => {
     );
   });
 
+  it("uses official DeepSeek V4 limits when catalog metadata is unavailable", () => {
+    const selected = makeConfig({
+      id: "selected",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      modelContextWindow: null,
+      modelMaxOutputTokens: null,
+      maxOutputTokens: null,
+    });
+    dbMock.getLlmConfig.mockReturnValue(selected);
+    dbMock.getLlmConfigs.mockReturnValue([selected]);
+    adapterMock.createModelWithAdapter.mockReturnValue({
+      model: "model",
+      adapter: { buildProviderOptions: () => ({}) },
+    });
+
+    const result = getModelAndAdapterByConfigId("selected");
+
+    expect(adapterMock.createModelWithAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compressionTriggerBudget: 581_232,
+        maxOutputTokens: 384_000,
+        modelContextWindow: 1_000_000,
+      }),
+    );
+    expect(result.modelLimits).toEqual({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 384_000,
+    });
+  });
+
   it("returns advanced generation options from the selected config", () => {
     const selected = makeConfig({
       id: "selected",

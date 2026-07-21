@@ -48,7 +48,6 @@ import {
   estimateTokens,
   getCompressionTargetBudget,
   getCompressionTriggerBudget,
-  getContextWindowForModel,
   getTokenBudget,
   SAFETY_MARGIN,
   truncateToFit,
@@ -538,18 +537,14 @@ const handleTaskExecutionInner = async (
       model,
       adapter,
       generationOptions,
+      modelLimits,
       providerOptions,
       providerNativeCompaction,
     } = getModelAndAdapterByConfigId(resolvedLlmConfigId);
     const providerManagesContextCompression = providerNativeCompaction.enabled;
-    const contextWindow = llmConfig
-      ? (llmConfig.modelContextWindow ??
-        getContextWindowForModel(llmConfig.model))
-      : null;
+    const contextWindow = modelLimits.contextWindow;
     const maxOutputTokens =
-      llmConfig?.maxOutputTokens ??
-      llmConfig?.modelMaxOutputTokens ??
-      DEFAULT_MAX_OUTPUT_TOKENS;
+      modelLimits.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
     const tokenBudget = llmConfig
       ? getTokenBudget({
           modelId: llmConfig.model,
