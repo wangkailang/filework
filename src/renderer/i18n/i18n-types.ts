@@ -1744,6 +1744,10 @@ type RootTranslation = {
 	 */
 	toolName_spawnSubagent: string
 	/**
+	 * S​u​b​m​i​t​ ​R​e​s​u​l​t
+	 */
+	toolName_submitSubagentResult: string
+	/**
 	 * {​0​}​ ​l​i​n​e​s
 	 * @param {number} 0
 	 */
@@ -4411,6 +4415,10 @@ export type TranslationFunctions = {
 	 * Start Subagents
 	 */
 	toolName_spawnSubagent: () => LocalizedString
+	/**
+	 * Submit Result
+	 */
+	toolName_submitSubagentResult: () => LocalizedString
 	/**
 	 * {0} lines
 	 */

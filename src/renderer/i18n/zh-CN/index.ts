@@ -469,6 +469,7 @@ const zhCN: Translation = {
   toolName_webScrape: "抓取内容",
   toolName_youtubeTranscript: "视频字幕",
   toolName_spawnSubagent: "启动子任务",
+  toolName_submitSubagentResult: "提交结果",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",

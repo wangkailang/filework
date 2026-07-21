@@ -22,4 +22,5 @@ export const getToolLabels = (
   webScrape: LL.toolName_webScrape(),
   youtubeTranscript: LL.toolName_youtubeTranscript(),
   spawnSubagent: LL.toolName_spawnSubagent(),
+  submitSubagentResult: LL.toolName_submitSubagentResult(),
 });

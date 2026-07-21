@@ -491,6 +491,7 @@ const ja: Translation = {
   toolName_webScrape: "スクレイピング",
   toolName_youtubeTranscript: "動画字幕",
   toolName_spawnSubagent: "サブタスク起動",
+  toolName_submitSubagentResult: "結果を送信",
 
   // Tool summary (folded one-liner)
   tool_summary_lines: "{0} 行",

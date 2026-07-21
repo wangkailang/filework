@@ -123,6 +123,32 @@ function urlFromArgs(args: unknown): string | null {
   return typeof url === "string" && url.trim() ? url.trim() : null;
 }
 
+function summarizeSubmissionCall(part: ToolPart): string | undefined {
+  const result = asRecord(part.result);
+  const artifacts = asRecord(result?.artifacts);
+  const payload = artifacts ?? asRecord(part.args);
+  if (!payload) return undefined;
+  const status = payload.status;
+  if (status !== "complete" && status !== "partial" && status !== "no_result") {
+    return undefined;
+  }
+
+  const findings = Array.isArray(payload.findings)
+    ? payload.findings.length
+    : 0;
+  const missing = Array.isArray(payload.missing) ? payload.missing.length : 0;
+  const summary = [
+    status === "complete"
+      ? "完整结果"
+      : status === "partial"
+        ? "部分结果"
+        : "无可用结果",
+  ];
+  if (findings > 0) summary.push(`${findings} 条发现`);
+  if (missing > 0) summary.push(`${missing} 个待补缺口`);
+  return summary.join(" · ");
+}
+
 function summarizeResearchTrace(
   parts: MessagePart[],
 ): ResearchTraceSummary | null {
@@ -332,13 +358,21 @@ function TracePart({
   }
   if (part.type === "tool") {
     const inv = part as ToolPart;
+    const summary =
+      inv.toolName === RESEARCH_SUBMIT_TOOL
+        ? summarizeSubmissionCall(inv)
+        : undefined;
     const resultText =
       typeof inv.result === "string"
         ? inv.result
         : JSON.stringify(inv.result, null, 2);
     return (
       <Tool defaultOpen={false}>
-        <ToolHeader toolName={inv.toolName} state={inv.state} />
+        <ToolHeader
+          toolName={inv.toolName}
+          state={inv.state}
+          summary={summary}
+        />
         <ToolContent>
           <ToolInput input={inv.args} />
           {inv.state === "output-available" && (

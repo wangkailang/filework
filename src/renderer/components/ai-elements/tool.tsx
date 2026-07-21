@@ -17,6 +17,7 @@ import {
   MoveRight,
   RotateCcw,
   Search,
+  Send,
   Terminal,
   Trash2,
   Wrench,
@@ -226,6 +227,11 @@ const toolIcons: Record<string, ToolIconConfig> = {
     Icon: Bot,
     name: "bot",
     tone: "text-muted-foreground/75",
+  },
+  submitSubagentResult: {
+    Icon: Send,
+    name: "send",
+    tone: "text-status-success/65",
   },
   webFetch: {
     Icon: Globe2,

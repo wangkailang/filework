@@ -24,6 +24,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
       toolName_runProcess: () => "Run process",
       toolName_searchFiles: () => "Search files",
       toolName_spawnSubagent: () => "Spawn subagent",
+      toolName_submitSubagentResult: () => "Submit result",
       toolName_webFetch: () => "Fetch",
       toolName_webFetchRendered: () => "Fetch rendered",
       toolName_webScrape: () => "Scrape",
@@ -95,6 +96,18 @@ describe("Tool chrome", () => {
 
     expect(html).toContain("Search files");
     expect(html).not.toContain(">searchFiles<");
+  });
+
+  it("renders the subagent result submission with a semantic label and icon", () => {
+    const html = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader state="output-available" toolName="submitSubagentResult" />
+      </Tool>,
+    );
+
+    expect(html).toContain("Submit result");
+    expect(html).not.toContain(">submitSubagentResult<");
+    expect(html).toContain('data-tool-icon="send"');
   });
 
   it("renders distinct leading icons for different tools", () => {

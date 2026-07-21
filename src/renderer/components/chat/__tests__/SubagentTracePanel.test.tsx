@@ -313,7 +313,16 @@ describe("SubagentTracePanel", () => {
                     type: "tool",
                     toolCallId: "submit-only",
                     toolName: "submitSubagentResult",
-                    args: { status: "complete" },
+                    args: {
+                      status: "complete",
+                      coverage: ["目录结构"],
+                      findings: [
+                        { claim: "发现一", evidence: ["证据一"] },
+                        { claim: "发现二", evidence: ["证据二"] },
+                      ],
+                      evidence: [],
+                      missing: ["依赖版本"],
+                    },
                     result: { success: true },
                     state: "output-available",
                   },
@@ -333,7 +342,9 @@ describe("SubagentTracePanel", () => {
       />,
     );
 
-    expect(html).toContain("submitSubagentResult");
+    expect(html).toContain("完整结果");
+    expect(html).toContain("2 条发现");
+    expect(html).toContain("1 个待补缺口");
     expect(html).not.toContain("研究轨迹");
     expect(html).not.toContain("研究调用明细");
   });
