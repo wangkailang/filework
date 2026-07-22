@@ -99,6 +99,7 @@ const buildAgentToolRegistry = vi.fn(
 vi.mock("../agent-tools", () => ({
   buildAgentToolRegistry: (arg: unknown) =>
     buildAgentToolRegistry(arg as { allowedTools?: string[] }),
+  getAgentBrowserToolsDependencies: vi.fn(() => null),
 }));
 
 const buildApprovalHook = vi.fn((..._args: unknown[]) => async () => ({

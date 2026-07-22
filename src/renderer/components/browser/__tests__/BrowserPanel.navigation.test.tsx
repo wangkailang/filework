@@ -38,7 +38,10 @@ const installDom = () => {
   Object.defineProperty(window, "filework", {
     configurable: true,
     value: {
-      browser: { setViewport: vi.fn(async () => undefined) },
+      browser: {
+        setViewport: vi.fn(async () => undefined),
+        onApprovalRequest: vi.fn(() => () => undefined),
+      },
       openExternal: vi.fn(async () => undefined),
     },
   });

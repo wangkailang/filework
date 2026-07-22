@@ -40,9 +40,33 @@ export interface BrowserElementRef {
   value?: string;
   href?: string;
   inputType?: string;
+  autocomplete?: string;
+  buttonType?: string;
+  inForm?: boolean;
+  formMethod?: string;
+  formAction?: string;
   rect: { x: number; y: number; width: number; height: number };
   visible: boolean;
 }
+
+export interface BrowserApprovalRequest {
+  requestId: string;
+  taskId: string;
+  kind: "origin" | "sensitive-action" | "developer-access";
+  origin: string;
+  action?: {
+    type: string;
+    target: string;
+    risk: BrowserRisk;
+  };
+}
+
+export type BrowserApprovalDecision =
+  | "allow-once"
+  | "always-allow"
+  | "block"
+  | "approve-once"
+  | "deny";
 
 export interface BrowserObservation {
   tabId: string;

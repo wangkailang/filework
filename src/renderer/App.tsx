@@ -160,6 +160,10 @@ export const App = () => {
     setDockTab("web");
     setDockOpen(true);
   }, []);
+  const showBrowserPanel = useCallback(() => {
+    setDockTab("web");
+    setDockOpen(true);
+  }, []);
   const resetDock = useCallback(() => {
     setDockOpen(false);
     setDockFilePath(null);
@@ -217,6 +221,12 @@ export const App = () => {
     window.addEventListener("filework:open-web", handler);
     return () => window.removeEventListener("filework:open-web", handler);
   }, [openInBrowserPanel]);
+
+  useEffect(() => {
+    window.addEventListener("filework:show-browser", showBrowserPanel);
+    return () =>
+      window.removeEventListener("filework:show-browser", showBrowserPanel);
+  }, [showBrowserPanel]);
 
   // 子任务卡点击某行 → 在 ContextDock 的 subagent tab 钻入查看其执行过程。
   useEffect(() => {

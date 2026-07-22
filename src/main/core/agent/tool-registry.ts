@@ -46,6 +46,23 @@ export type BeforeToolCallHook = (
   ctx: ToolContext,
 ) => Promise<BeforeToolCallDecision>;
 
+/** Run independent policy hooks in order, stopping at the first denial. */
+export const composeBeforeToolCallHooks = (
+  ...hooks: Array<BeforeToolCallHook | undefined>
+): BeforeToolCallHook | undefined => {
+  const active = hooks.filter(
+    (hook): hook is BeforeToolCallHook => hook !== undefined,
+  );
+  if (active.length === 0) return undefined;
+  return async (call, ctx) => {
+    for (const hook of active) {
+      const decision = await hook(call, ctx);
+      if (!decision.allow) return decision;
+    }
+    return { allow: true };
+  };
+};
+
 /**
  * 在每个非 `createPlan` 工具执行前运行的门控。返回 `true` 表示放行
  * (没有待审批的计划,或计划已被批准),返回 `false` 表示拒绝(用户

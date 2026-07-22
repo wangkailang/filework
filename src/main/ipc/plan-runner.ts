@@ -26,15 +26,20 @@ import {
   StepTimeoutError,
   StreamWatchdog,
 } from "../ai/stream-watchdog";
+import { buildBrowserPolicyHook } from "../browser/browser-policy";
 import { AgentLoop } from "../core/agent/agent-loop";
 import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type { ClassifiedRetryError } from "../core/agent/retry";
+import { composeBeforeToolCallHooks } from "../core/agent/tool-registry";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
 import { readWorkspaceMemory } from "../core/workspace/workspace-memory";
 import { manualStopFlags } from "../ipc/ai-task-control";
 import { getSkill } from "../skills";
-import { buildAgentToolRegistry } from "./agent-tools";
+import {
+  buildAgentToolRegistry,
+  getAgentBrowserToolsDependencies,
+} from "./agent-tools";
 import { buildApprovalHook } from "./approval-hook";
 import { readPlanFile, writePlanFile } from "./plan-file";
 import type { Plan, PlanStepArtifact } from "./plan-types";
@@ -200,12 +205,22 @@ export const executePlan = async ({
         taskId,
         workspace,
       });
+      const browserDependencies = getAgentBrowserToolsDependencies();
+      const browserPolicyHook = browserDependencies
+        ? buildBrowserPolicyHook({
+            manager: browserDependencies.manager,
+            observer: browserDependencies.observer,
+            sender,
+            taskId,
+          })
+        : undefined;
       const registryTools = toolRegistry.toAiSdkTools({
         ctxFactory: ({ toolCallId }) => ({
           workspace,
           signal: stepController.signal,
           toolCallId,
         }),
+        beforeAnyToolCall: composeBeforeToolCallHooks(browserPolicyHook),
         beforeToolCall,
       });
 

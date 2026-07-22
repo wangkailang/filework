@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 
 import {
   type BeforeToolCallHook,
+  composeBeforeToolCallHooks,
   type ToolContext,
   type ToolDefinition,
   ToolRegistry,
@@ -26,6 +27,30 @@ function stubCtx(toolCallId = "call-1"): ToolContext {
     toolCallId,
   };
 }
+
+describe("composeBeforeToolCallHooks", () => {
+  it("runs policies in order and stops before later hooks after a denial", async () => {
+    const order: string[] = [];
+    const browserPolicy: BeforeToolCallHook = async () => {
+      order.push("browser");
+      return { allow: false, reason: "blocked origin" };
+    };
+    const researchPolicy: BeforeToolCallHook = async () => {
+      order.push("research");
+      return { allow: true };
+    };
+    const composed = composeBeforeToolCallHooks(browserPolicy, researchPolicy);
+    if (!composed) throw new Error("expected composed hook");
+
+    await expect(
+      composed(
+        { toolName: "browserOpen", toolCallId: "call-1", args: {} },
+        stubCtx(),
+      ),
+    ).resolves.toEqual({ allow: false, reason: "blocked origin" });
+    expect(order).toEqual(["browser"]);
+  });
+});
 
 describe("ToolRegistry", () => {
   it("registers and looks up tools by name", () => {

@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { TrashEntry } from "../main/core/agent/tools/trash";
 import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
 import type {
+  BrowserApprovalDecision,
+  BrowserApprovalRequest,
   BrowserNavigationCommand,
   BrowserSettings,
   BrowserSettingsPatch,
@@ -1065,6 +1067,22 @@ const api = {
       ipcRenderer.invoke("settings:browser:set", patch),
   },
   browser: {
+    respondApproval: (
+      requestId: string,
+      decision: BrowserApprovalDecision,
+    ): Promise<boolean> =>
+      ipcRenderer.invoke("browser:respondApproval", { requestId, decision }),
+    onApprovalRequest: (
+      callback: (request: BrowserApprovalRequest) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        request: BrowserApprovalRequest,
+      ) => callback(request);
+      ipcRenderer.on("browser:approval-request", handler);
+      return () =>
+        ipcRenderer.removeListener("browser:approval-request", handler);
+    },
     createTab: (input: {
       url?: string;
       kind: BrowserSurfaceKind;

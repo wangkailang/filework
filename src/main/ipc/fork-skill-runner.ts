@@ -25,6 +25,7 @@ import { classifyError } from "../ai/error-classifier";
 import { appendPattern } from "../ai/pattern-store";
 import { StreamWatchdog } from "../ai/stream-watchdog";
 import { estimateTokens } from "../ai/token-budget";
+import { buildBrowserPolicyHook } from "../browser/browser-policy";
 import { AgentLoop } from "../core/agent/agent-loop";
 import { consumePreview } from "../core/agent/preview/snapshot-store";
 import type {
@@ -44,16 +45,20 @@ import {
   type SubAgentReport,
   type SubAgentStatus,
 } from "../core/agent/sub-agent-contract";
-import type {
-  BeforeToolCallDecision,
-  BeforeToolCallHook,
-  ToolDefinition,
+import {
+  type BeforeToolCallDecision,
+  type BeforeToolCallHook,
+  composeBeforeToolCallHooks,
+  type ToolDefinition,
 } from "../core/agent/tool-registry";
 import { isDeliverableCommand } from "../core/agent/tools/command-classify";
 import { prepareIsolatedGitWorktree } from "../core/workspace/git-worktree";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import { isGitBackedWorkspace } from "../core/workspace/workspace-factory";
-import { buildAgentToolRegistry } from "./agent-tools";
+import {
+  buildAgentToolRegistry,
+  getAgentBrowserToolsDependencies,
+} from "./agent-tools";
 import { getModelAndAdapterByConfigId } from "./ai-models";
 import { buildApprovalHook } from "./approval-hook";
 
@@ -357,6 +362,15 @@ export const createForkSkillRunner = (
       }
       return approvalHook(call, ctx);
     };
+    const browserDependencies = getAgentBrowserToolsDependencies();
+    const browserPolicyHook = browserDependencies
+      ? buildBrowserPolicyHook({
+          manager: browserDependencies.manager,
+          observer: browserDependencies.observer,
+          sender,
+          taskId,
+        })
+      : undefined;
 
     // 子 AbortController,使 runner 能对自身的
     // 失败做出反应而不中止父级。父级中止只转发一次。
@@ -421,9 +435,12 @@ export const createForkSkillRunner = (
         signal: childController.signal,
         toolCallId,
       }),
-      beforeAnyToolCall: researchLoopGuard
-        ? async (call) => researchLoopGuard.beforeToolCall(call)
-        : undefined,
+      beforeAnyToolCall: composeBeforeToolCallHooks(
+        browserPolicyHook,
+        researchLoopGuard
+          ? async (call) => researchLoopGuard.beforeToolCall(call)
+          : undefined,
+      ),
       beforeToolCall,
       onToolResult: researchLoopGuard
         ? (result) => researchLoopGuard.observeToolResult(result)

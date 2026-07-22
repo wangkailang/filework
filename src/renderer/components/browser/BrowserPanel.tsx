@@ -9,7 +9,12 @@ import {
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import type {
+  BrowserApprovalDecision,
+  BrowserApprovalRequest,
+} from "../../../shared/browser";
 import { useI18nContext } from "../../i18n/i18n-react";
+import { BrowserAccessPrompt } from "./BrowserAccessPrompt";
 import { BrowserTabStrip } from "./BrowserTabStrip";
 import { BrowserViewport } from "./BrowserViewport";
 import { useBrowserTabs } from "./useBrowserTabs";
@@ -41,6 +46,8 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
   const browser = useBrowserTabs();
   const current = browser.activeTab;
   const [draftUrl, setDraftUrl] = useState(url || current?.url || "");
+  const [accessRequest, setAccessRequest] =
+    useState<BrowserApprovalRequest | null>(null);
   const creatingBlankRef = useRef(false);
   const requestedUrlRef = useRef<string | null>(null);
   const currentUrl = current?.url ?? "";
@@ -70,6 +77,23 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
   useEffect(() => {
     setDraftUrl(currentUrl);
   }, [currentUrl]);
+
+  useEffect(() => {
+    const unsubscribe = window.filework.browser.onApprovalRequest((request) => {
+      setAccessRequest(request);
+      window.dispatchEvent(new CustomEvent("filework:show-browser"));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const respondToAccessRequest = (decision: BrowserApprovalDecision) => {
+    if (!accessRequest) return;
+    const { requestId } = accessRequest;
+    setAccessRequest(null);
+    void window.filework.browser.respondApproval(requestId, decision);
+  };
 
   const handleSubmitUrl = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -234,6 +258,12 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
           <div className="pointer-events-none absolute right-2 bottom-2 max-w-[80%] rounded border border-destructive/30 bg-background/95 px-2 py-1 font-mono text-[10px] text-destructive shadow-lg">
             {browser.error}
           </div>
+        )}
+        {accessRequest && (
+          <BrowserAccessPrompt
+            request={accessRequest}
+            onRespond={respondToAccessRequest}
+          />
         )}
       </div>
     </aside>

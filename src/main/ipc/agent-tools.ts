@@ -19,6 +19,7 @@ import crypto from "node:crypto";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
 import { resolveAdapterName } from "../ai/adapters";
+import type { BrowserObserver } from "../browser/browser-observer";
 import {
   DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
   DEFAULT_SUB_AGENT_MAX_TURNS,
@@ -161,6 +162,13 @@ export const shouldEnableMemoryToolsForPrompt = (prompt: string): boolean => {
  * 按任务调用;把代理感知的 fetch 放在这里,避免在每个 option 包里
  * 层层传递。
  */
+export type AgentBrowserRuntimeDependencies = Omit<
+  BuildBrowserToolsDependencies,
+  "observer" | "supportsMultimodalToolResults"
+> & {
+  observer: Pick<BrowserObserver, "observe" | "requireSnapshot">;
+};
+
 interface AgentRegistryDeps {
   fetchFn?: typeof fetch;
   /** 返回最近一次的 Tavily API key 或 null。决定 `webSearch` 是否可用。 */
@@ -168,15 +176,15 @@ interface AgentRegistryDeps {
   /** 返回最近一次的 Firecrawl API key 或 null。决定 `webScrape` 是否可用。 */
   resolveFirecrawlToken?: () => Promise<string | null>;
   /** Resolve the main-window shared browser stack lazily across window reloads. */
-  getBrowserToolsDependencies?: () => Omit<
-    BuildBrowserToolsDependencies,
-    "supportsMultimodalToolResults"
-  > | null;
+  getBrowserToolsDependencies?: () => AgentBrowserRuntimeDependencies | null;
 }
 let agentRegistryDeps: AgentRegistryDeps = {};
 export const setAgentRegistryDeps = (deps: AgentRegistryDeps): void => {
   agentRegistryDeps = deps;
 };
+
+export const getAgentBrowserToolsDependencies = () =>
+  agentRegistryDeps.getBrowserToolsDependencies?.() ?? null;
 
 /**
  * 适配器 —— 项目的 IncrementalScanner 返回 `FileEntry` 形态的对象,

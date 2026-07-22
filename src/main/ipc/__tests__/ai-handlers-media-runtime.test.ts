@@ -178,6 +178,7 @@ vi.mock("../agent-tools", () => ({
   buildAgentToolRegistry: vi.fn(() => ({
     toAiSdkTools: vi.fn(() => ({})),
   })),
+  getAgentBrowserToolsDependencies: vi.fn(() => null),
   shouldEnableMemoryToolsForPrompt: vi.fn(() => false),
 }));
 

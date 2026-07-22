@@ -87,6 +87,19 @@ const normalizeElement = (value: unknown): BrowserElementRef | null => {
     ...(boundedString(value.inputType, 128) && {
       inputType: boundedString(value.inputType, 128),
     }),
+    ...(boundedString(value.autocomplete, 128) && {
+      autocomplete: boundedString(value.autocomplete, 128),
+    }),
+    ...(boundedString(value.buttonType, 128) && {
+      buttonType: boundedString(value.buttonType, 128),
+    }),
+    ...(value.inForm === true && { inForm: true }),
+    ...(boundedString(value.formMethod, 16) && {
+      formMethod: boundedString(value.formMethod, 16),
+    }),
+    ...(boundedString(value.formAction, 2_048) && {
+      formAction: boundedString(value.formAction, 2_048),
+    }),
     rect: {
       x: finiteNumber(value.rect.x),
       y: finiteNumber(value.rect.y),
@@ -272,6 +285,23 @@ const createObserverScript = (
       visible: isVisible(element, tag, rect),
     };
     if (inputType) item.inputType = inputType;
+    const autocomplete = cleanText(
+      element.getAttribute && element.getAttribute("autocomplete"),
+      128,
+    ).toLowerCase();
+    if (autocomplete) item.autocomplete = autocomplete;
+    if (tag === "button") {
+      item.buttonType = cleanText(
+        element.getAttribute("type") || "submit",
+        128,
+      ).toLowerCase();
+    }
+    const form = element.form || (element.closest && element.closest("form"));
+    if (form) {
+      item.inForm = true;
+      item.formMethod = cleanText(form.method || "get", 16).toLowerCase();
+      item.formAction = cleanText(form.action || location.href, 2048);
+    }
     if (tag === "a") {
       const href = cleanText(element.href || element.getAttribute("href"), 2048);
       if (href) item.href = href;

@@ -2,12 +2,14 @@ import { type BrowserWindow, type IpcMainInvokeEvent, ipcMain } from "electron";
 import { z } from "zod/v4";
 
 import type {
+  BrowserApprovalDecision,
   BrowserNavigationCommand,
   BrowserStateEvent,
   BrowserSurfaceKind,
   BrowserTabState,
 } from "../../shared/browser";
 import type { BrowserManagerContract } from "../browser/browser-manager";
+import { respondBrowserApproval } from "../browser/browser-policy";
 import {
   ARTIFACT_BROWSER_PARTITION,
   assertAgentBrowserUrl,
@@ -50,6 +52,18 @@ const viewportSchema = z
   .strict();
 
 const occludedSchema = z.boolean();
+const approvalResponseSchema = z
+  .object({
+    requestId: z.string().min(1),
+    decision: z.enum([
+      "allow-once",
+      "always-allow",
+      "block",
+      "approve-once",
+      "deny",
+    ]),
+  })
+  .strict();
 
 const requireContext = (
   event: IpcMainInvokeEvent,
@@ -98,6 +112,15 @@ export const sendBrowserState = (
 export const registerBrowserHandlers = (
   dependencies: BrowserHandlerDependencies,
 ): void => {
+  ipcMain.handle("browser:respondApproval", async (event, raw: unknown) => {
+    requireContext(event, dependencies);
+    const input = approvalResponseSchema.parse(raw) as {
+      requestId: string;
+      decision: BrowserApprovalDecision;
+    };
+    return respondBrowserApproval(input.requestId, input.decision);
+  });
+
   ipcMain.handle("browser:listTabs", async (event) => {
     const { manager } = requireContext(event, dependencies);
     return manager.listTabs();

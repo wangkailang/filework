@@ -6,6 +6,7 @@
  */
 
 import type { WebContents } from "electron";
+import { clearBrowserPolicyTask } from "../browser/browser-policy";
 import type { RunEventLog, RunEventRecord } from "../core/run/event-log";
 import { cancelBatchesForTask } from "./approval-batcher";
 
@@ -404,6 +405,7 @@ export const initTaskExecution = (taskId: string): void => {
  * 清理某任务的全部跟踪数据
  */
 export const cleanupTask = (taskId: string): void => {
+  clearBrowserPolicyTask(taskId);
   // 清理 abort controller
   abortControllers.delete(taskId);
 
