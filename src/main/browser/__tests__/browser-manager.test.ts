@@ -221,6 +221,19 @@ describe("BrowserManager", () => {
     });
   });
 
+  it("hides native views while host UI is occluding the browser", async () => {
+    const manager = new BrowserManager(createWindow() as never);
+    await manager.createTab({ kind: "web" });
+    manager.setViewport({ x: 0, y: 0, width: 800, height: 600 });
+    expect(electronState.views[0].visible).toBe(true);
+
+    manager.setOccluded(true);
+    expect(electronState.views[0].visible).toBe(false);
+
+    manager.setOccluded(false);
+    expect(electronState.views[0].visible).toBe(true);
+  });
+
   it("mirrors serializable navigation and crash state", async () => {
     const onTabsChanged = vi.fn();
     const manager = new BrowserManager(createWindow() as never, {

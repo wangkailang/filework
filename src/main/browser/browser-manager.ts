@@ -7,7 +7,11 @@ import {
   WebContentsView,
 } from "electron";
 
-import type { BrowserSurfaceKind, BrowserTabState } from "../../shared/browser";
+import type {
+  BrowserNavigationCommand,
+  BrowserSurfaceKind,
+  BrowserTabState,
+} from "../../shared/browser";
 import { initializeBrowserProfile } from "./browser-profile";
 import {
   ARTIFACT_BROWSER_PARTITION,
@@ -18,8 +22,6 @@ import {
 
 export const SHARED_BROWSER_PARTITION = "persist:filework-browser";
 export const MAX_BROWSER_TABS = 8;
-
-export type BrowserCommand = "back" | "forward" | "reload" | "stop";
 
 export interface CreateBrowserTabInput {
   url?: string;
@@ -33,8 +35,9 @@ export interface BrowserManagerContract {
   activateTab(tabId: string): BrowserTabState;
   closeTab(tabId: string): Promise<void>;
   navigate(tabId: string, url: string): Promise<void>;
-  command(tabId: string, command: BrowserCommand): void;
+  command(tabId: string, command: BrowserNavigationCommand): void;
   setViewport(bounds: Rectangle | null): void;
+  setOccluded(occluded: boolean): void;
   getWebContents(tabId: string): WebContents;
   getActiveTabId(): string | null;
   dispose(): Promise<void>;
@@ -68,6 +71,7 @@ export class BrowserManager implements BrowserManagerContract {
   private readonly onTabsChanged?: (tabs: BrowserTabState[]) => void;
   private activeTabId: string | null = null;
   private viewport: Rectangle | null = null;
+  private occluded = false;
   private disposed = false;
 
   constructor(
@@ -179,7 +183,7 @@ export class BrowserManager implements BrowserManagerContract {
     await tab.view.webContents.loadURL(target);
   }
 
-  command(tabId: string, command: BrowserCommand): void {
+  command(tabId: string, command: BrowserNavigationCommand): void {
     this.assertAvailable();
     const tab = this.requireTab(tabId);
     const contents = tab.view.webContents;
@@ -210,6 +214,12 @@ export class BrowserManager implements BrowserManagerContract {
   setViewport(bounds: Rectangle | null): void {
     this.assertAvailable();
     this.viewport = bounds ? this.clampViewport(bounds) : null;
+    this.syncViews();
+  }
+
+  setOccluded(occluded: boolean): void {
+    this.assertAvailable();
+    this.occluded = occluded;
     this.syncViews();
   }
 
@@ -304,6 +314,7 @@ export class BrowserManager implements BrowserManagerContract {
     if (this.viewport) tab.view.setBounds(this.viewport);
     tab.view.setVisible(
       tab.state.active &&
+        !this.occluded &&
         this.viewport !== null &&
         this.viewport.width > 0 &&
         this.viewport.height > 0,

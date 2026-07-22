@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
+import { shouldOccludeBrowser } from "./components/browser/BrowserViewport";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
@@ -171,6 +172,23 @@ export const App = () => {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    const occluded = shouldOccludeBrowser({
+      hasWorkspace: workspace !== null,
+      dockOpen,
+      dockTab,
+      modalOpen: settingsOpen || githubModalOpen || gitlabModalOpen,
+    });
+    void window.filework.browser.setOccluded(occluded);
+  }, [
+    dockOpen,
+    dockTab,
+    githubModalOpen,
+    gitlabModalOpen,
+    settingsOpen,
+    workspace,
+  ]);
 
   // 设置入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
   useEffect(() => {

@@ -50,6 +50,10 @@ import {
   stopAutomationScheduler,
 } from "./ipc/automation-service";
 import { registerAutomationsHandlers } from "./ipc/automations-handlers";
+import {
+  registerBrowserHandlers,
+  sendBrowserState,
+} from "./ipc/browser-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import {
   firecrawlCredentialResolver,
@@ -148,9 +152,6 @@ const createWindow = (): BrowserWindow => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // 启用应用内右侧的 BrowserPanel —— webview 是 chrome guest 进程,
-      // 与宿主 renderer 完全沙箱隔离。
-      webviewTag: true,
     },
   });
 
@@ -202,7 +203,10 @@ const createWindow = (): BrowserWindow => {
     return { action: "deny" };
   });
 
-  windowBrowserManager = new BrowserManager(mainWindow);
+  const ownerWindow = mainWindow;
+  windowBrowserManager = new BrowserManager(ownerWindow, {
+    onTabsChanged: (tabs) => sendBrowserState(ownerWindow, tabs),
+  });
   browserManager = windowBrowserManager;
 
   return mainWindow;
@@ -344,18 +348,11 @@ app.whenReady().then(async () => {
 
   // 默认 session:宿主 renderer 的 <img> 缩略图、PDF / 视频预览。
   protocol.handle("local-file", handleLocalFile);
-  // 应用内浏览器(BrowserPanel)的 webview 用独立 partition,其 session
-  // 不共享默认 session 的协议处理器 —— 须单独注册,否则本地 HTML 的
-  // local-file:// 活页面预览会加载失败。涵盖:真实网页浏览的 dev / prod
-  // partition,以及本地 HTML 预览专用的隔离 partition(artifact-preview,
-  // 非 persist,与浏览的 cookies / 存储互不可见)。未被使用的名称无副作用。
-  for (const part of [
-    "persist:in-app-browser",
-    "in-app-browser",
-    "artifact-preview",
-  ]) {
-    session.fromPartition(part).protocol.handle("local-file", handleLocalFile);
-  }
+  // 本地产物预览使用独立的内存 Profile。真实网页 Profile 不注册
+  // local-file://，因此远端页面无法借自定义协议读取本地文件。
+  session
+    .fromPartition("artifact-preview")
+    .protocol.handle("local-file", handleLocalFile);
 
   // 初始化 SQLite 数据库
   await initDatabase();
@@ -472,6 +469,10 @@ app.whenReady().then(async () => {
   registerFileHandlers();
   registerAIHandlers();
   registerSettingsHandlers();
+  registerBrowserHandlers({
+    getBrowserManager: () => browserManager,
+    getMainWindow: () => mainWindow,
+  });
   registerLlmConfigHandlers();
   mediaJobWatcher.configure({ fetchFn: proxyAwareFetch });
   registerMediaHandlers({ fetchFn: proxyAwareFetch });

@@ -1,5 +1,7 @@
 export type BrowserSurfaceKind = "web" | "artifact";
 
+export type BrowserNavigationCommand = "back" | "forward" | "reload" | "stop";
+
 export type BrowserGrant = "once" | "always" | "blocked";
 
 export type BrowserRisk = "read" | "input" | "external-effect" | "forbidden";
@@ -15,6 +17,19 @@ export interface BrowserTabState {
   canGoForward: boolean;
   active: boolean;
   crashed: boolean;
+}
+
+export interface BrowserViewportBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BrowserStateEvent {
+  type: "state";
+  tabs: BrowserTabState[];
+  activeTabId: string | null;
 }
 
 export interface BrowserElementRef {

@@ -2,7 +2,15 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { TrashEntry } from "../main/core/agent/tools/trash";
 import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
-import type { BrowserSettings, BrowserSettingsPatch } from "../shared/browser";
+import type {
+  BrowserNavigationCommand,
+  BrowserSettings,
+  BrowserSettingsPatch,
+  BrowserStateEvent,
+  BrowserSurfaceKind,
+  BrowserTabState,
+  BrowserViewportBounds,
+} from "../shared/browser";
 import type { ChatPermissionMode } from "../shared/chat-permissions";
 import type { CredentialKind } from "../shared/credentials";
 import type { OfficePreviewResult } from "../shared/office-preview";
@@ -1055,6 +1063,39 @@ const api = {
       ipcRenderer.invoke("settings:browser:get"),
     set: (patch: BrowserSettingsPatch): Promise<BrowserSettings> =>
       ipcRenderer.invoke("settings:browser:set", patch),
+  },
+  browser: {
+    createTab: (input: {
+      url?: string;
+      kind: BrowserSurfaceKind;
+      activate?: boolean;
+    }): Promise<BrowserTabState> =>
+      ipcRenderer.invoke("browser:createTab", input),
+    listTabs: (): Promise<BrowserTabState[]> =>
+      ipcRenderer.invoke("browser:listTabs"),
+    activateTab: (tabId: string): Promise<void> =>
+      ipcRenderer.invoke("browser:activateTab", { tabId }),
+    closeTab: (tabId: string): Promise<void> =>
+      ipcRenderer.invoke("browser:closeTab", { tabId }),
+    navigate: (tabId: string, url: string): Promise<void> =>
+      ipcRenderer.invoke("browser:navigate", { tabId, url }),
+    command: (
+      tabId: string,
+      command: BrowserNavigationCommand,
+    ): Promise<void> =>
+      ipcRenderer.invoke("browser:command", { tabId, command }),
+    setViewport: (bounds: BrowserViewportBounds | null): Promise<void> =>
+      ipcRenderer.invoke("browser:setViewport", bounds),
+    setOccluded: (occluded: boolean): Promise<void> =>
+      ipcRenderer.invoke("browser:setOccluded", occluded),
+    onState: (callback: (event: BrowserStateEvent) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        state: BrowserStateEvent,
+      ) => callback(state);
+      ipcRenderer.on("browser:state", handler);
+      return () => ipcRenderer.removeListener("browser:state", handler);
+    },
   },
 
   // 自动化
