@@ -1,6 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../../../i18n/i18n-react", () => ({
+  useI18nContext: () => ({
+    LL: {
+      browserApproval_allowOnce: () => "允许一次",
+      browserApproval_alwaysAllow: () => "始终允许此站点",
+      browserApproval_approveOnce: () => "批准本次",
+      browserApproval_block: () => "阻止",
+      browserApproval_deny: () => "拒绝",
+      browserApproval_originTitle: () => "允许 Agent 访问此站点？",
+      browserApproval_sensitiveTitle: () => "批准网页敏感操作？",
+    },
+  }),
+}));
+
 import { BrowserAccessPrompt } from "../BrowserAccessPrompt";
 
 describe("BrowserAccessPrompt", () => {

@@ -12,7 +12,7 @@ const browserStorageKeys = new Set<string>(
   Object.values(BROWSER_SETTING_STORAGE_KEYS),
 );
 
-const readBrowserSettings = () => decodeBrowserSettings(getSetting);
+export const readBrowserSettings = () => decodeBrowserSettings(getSetting);
 
 export const registerSettingsHandlers = () => {
   ipcMain.handle("settings:get", async (_event, key: string) => {

@@ -3,13 +3,22 @@ import { z } from "zod/v4";
 
 import type {
   BrowserApprovalDecision,
+  BrowserDownloadState,
   BrowserNavigationCommand,
+  BrowserSettings,
   BrowserStateEvent,
   BrowserSurfaceKind,
   BrowserTabState,
 } from "../../shared/browser";
-import type { BrowserManagerContract } from "../browser/browser-manager";
+import {
+  type BrowserManagerContract,
+  SHARED_BROWSER_PARTITION,
+} from "../browser/browser-manager";
 import { respondBrowserApproval } from "../browser/browser-policy";
+import {
+  createControlledBrowserDownloadHandler,
+  setBrowserProfileDownloadHandler,
+} from "../browser/browser-profile";
 import {
   ARTIFACT_BROWSER_PARTITION,
   assertAgentBrowserUrl,
@@ -17,7 +26,10 @@ import {
 } from "../browser/security-policy";
 
 export interface BrowserHandlerDependencies {
+  clearBrowserProfileData: (partition: string) => Promise<void>;
+  getBrowserSettings: () => BrowserSettings;
   getBrowserManager: () => BrowserManagerContract | null;
+  getDefaultDownloadDirectory: () => string;
   getMainWindow: () => BrowserWindow | null;
 }
 
@@ -64,6 +76,7 @@ const approvalResponseSchema = z
     ]),
   })
   .strict();
+const clearDataSchema = z.object({ confirmed: z.literal(true) }).strict();
 
 const requireContext = (
   event: IpcMainInvokeEvent,
@@ -109,9 +122,36 @@ export const sendBrowserState = (
   window.webContents.send("browser:state", event);
 };
 
+export const sendBrowserDownloadState = (
+  window: BrowserWindow,
+  download: BrowserDownloadState,
+): void => {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  const event: BrowserStateEvent = { type: "download", download };
+  window.webContents.send("browser:state", event);
+};
+
 export const registerBrowserHandlers = (
   dependencies: BrowserHandlerDependencies,
 ): void => {
+  setBrowserProfileDownloadHandler(
+    SHARED_BROWSER_PARTITION,
+    createControlledBrowserDownloadHandler({
+      getDefaultDirectory: dependencies.getDefaultDownloadDirectory,
+      getPreferences: () => {
+        const settings = dependencies.getBrowserSettings();
+        return {
+          askEveryTime: settings.downloadAskEveryTime,
+          directory: settings.downloadDirectory,
+        };
+      },
+      onState: (download) => {
+        const window = dependencies.getMainWindow();
+        if (window) sendBrowserDownloadState(window, download);
+      },
+    }),
+  );
+
   ipcMain.handle("browser:respondApproval", async (event, raw: unknown) => {
     requireContext(event, dependencies);
     const input = approvalResponseSchema.parse(raw) as {
@@ -191,5 +231,17 @@ export const registerBrowserHandlers = (
   ipcMain.handle("browser:setOccluded", async (event, raw: unknown) => {
     const { manager } = requireContext(event, dependencies);
     manager.setOccluded(occludedSchema.parse(raw));
+  });
+
+  ipcMain.handle("browser:clearData", async (event, raw: unknown) => {
+    const { manager } = requireContext(event, dependencies);
+    clearDataSchema.parse(raw);
+    const webTabIds = manager
+      .listTabs()
+      .filter((tab) => tab.kind === "web")
+      .map((tab) => tab.id);
+    for (const tabId of webTabIds) await manager.closeTab(tabId);
+    await dependencies.clearBrowserProfileData(SHARED_BROWSER_PARTITION);
+    return { closedTabs: webTabIds.length };
   });
 };

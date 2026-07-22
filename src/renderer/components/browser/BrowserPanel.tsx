@@ -15,6 +15,7 @@ import type {
 } from "../../../shared/browser";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { BrowserAccessPrompt } from "./BrowserAccessPrompt";
+import { BrowserDownloadShelf } from "./BrowserDownloadShelf";
 import { BrowserTabStrip } from "./BrowserTabStrip";
 import { BrowserViewport } from "./BrowserViewport";
 import { useBrowserTabs } from "./useBrowserTabs";
@@ -259,6 +260,7 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
             {browser.error}
           </div>
         )}
+        <BrowserDownloadShelf downloads={browser.downloads ?? []} />
         {accessRequest && (
           <BrowserAccessPrompt
             request={accessRequest}

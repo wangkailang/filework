@@ -4,6 +4,7 @@ import type {
   BrowserApprovalDecision,
   BrowserApprovalRequest,
 } from "../../../shared/browser";
+import { useI18nContext } from "../../i18n/i18n-react";
 
 interface BrowserAccessPromptProps {
   request: BrowserApprovalRequest;
@@ -14,6 +15,7 @@ export function BrowserAccessPrompt({
   request,
   onRespond,
 }: BrowserAccessPromptProps) {
+  const { LL } = useI18nContext();
   const isOrigin = request.kind === "origin";
   return (
     <section
@@ -27,7 +29,9 @@ export function BrowserAccessPrompt({
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-xs font-semibold text-foreground">
-            {isOrigin ? "允许 Agent 访问此站点？" : "批准网页敏感操作？"}
+            {isOrigin
+              ? LL.browserApproval_originTitle()
+              : LL.browserApproval_sensitiveTitle()}
           </h3>
           <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
             {request.origin}
@@ -47,21 +51,21 @@ export function BrowserAccessPrompt({
               onClick={() => onRespond("block")}
               className="rounded-md px-2.5 py-1.5 text-xs text-destructive hover:bg-destructive/10"
             >
-              阻止
+              {LL.browserApproval_block()}
             </button>
             <button
               type="button"
               onClick={() => onRespond("allow-once")}
               className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
             >
-              允许一次
+              {LL.browserApproval_allowOnce()}
             </button>
             <button
               type="button"
               onClick={() => onRespond("always-allow")}
               className="rounded-md bg-primary px-2.5 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
             >
-              始终允许此站点
+              {LL.browserApproval_alwaysAllow()}
             </button>
           </>
         ) : (
@@ -71,14 +75,14 @@ export function BrowserAccessPrompt({
               onClick={() => onRespond("deny")}
               className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent"
             >
-              拒绝
+              {LL.browserApproval_deny()}
             </button>
             <button
               type="button"
               onClick={() => onRespond("approve-once")}
               className="rounded-md bg-primary px-2.5 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
             >
-              批准本次
+              {LL.browserApproval_approveOnce()}
             </button>
           </>
         )}

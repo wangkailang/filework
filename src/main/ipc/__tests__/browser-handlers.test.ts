@@ -55,8 +55,19 @@ const createHarness = () => {
     setViewport: vi.fn(),
     setOccluded: vi.fn(),
   };
+  const clearBrowserProfileData = vi.fn(async () => undefined);
   registerBrowserHandlers({
+    clearBrowserProfileData,
+    getBrowserSettings: () => ({
+      sharedSurfaceEnabled: true,
+      allowedOrigins: [],
+      blockedOrigins: [],
+      developerModeEnabled: false,
+      downloadAskEveryTime: true,
+      downloadDirectory: "",
+    }),
     getBrowserManager: () => manager as never,
+    getDefaultDownloadDirectory: () => "/Downloads",
     getMainWindow: () => window as never,
   });
 
@@ -66,7 +77,7 @@ const createHarness = () => {
     return handler({ sender: eventSender }, payload);
   };
 
-  return { invoke, manager, sender, window };
+  return { clearBrowserProfileData, invoke, manager, sender, window };
 };
 
 describe("browser IPC handlers", () => {
@@ -170,5 +181,40 @@ describe("browser IPC handlers", () => {
         height: 100,
       }),
     ).rejects.toThrow(/bounds/i);
+  });
+
+  it("closes ordinary web tabs before clearing the shared browser profile", async () => {
+    const { clearBrowserProfileData, invoke, manager } = createHarness();
+    manager.listTabs.mockReturnValue([
+      tab,
+      {
+        ...tab,
+        id: "artifact-1",
+        kind: "artifact",
+        url: "local-file://open?path=/tmp/report.pdf",
+      },
+    ] as never);
+
+    await expect(
+      invoke("browser:clearData", { confirmed: true }),
+    ).resolves.toEqual({ closedTabs: 1 });
+
+    expect(manager.closeTab).toHaveBeenCalledTimes(1);
+    expect(manager.closeTab).toHaveBeenCalledWith("tab-1");
+    expect(clearBrowserProfileData).toHaveBeenCalledWith(
+      "persist:filework-browser",
+    );
+    expect(manager.closeTab.mock.invocationCallOrder[0]).toBeLessThan(
+      clearBrowserProfileData.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("requires an explicit renderer confirmation before clearing data", async () => {
+    const { clearBrowserProfileData, invoke } = createHarness();
+
+    await expect(
+      invoke("browser:clearData", { confirmed: false }),
+    ).rejects.toThrow();
+    expect(clearBrowserProfileData).not.toHaveBeenCalled();
   });
 });

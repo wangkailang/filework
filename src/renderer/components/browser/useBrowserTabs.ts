@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  BrowserDownloadState,
   BrowserNavigationCommand,
   BrowserSurfaceKind,
   BrowserTabState,
@@ -11,6 +12,7 @@ const messageFor = (error: unknown): string =>
 
 export interface BrowserTabsController {
   tabs: BrowserTabState[];
+  downloads: BrowserDownloadState[];
   activeTab: BrowserTabState | null;
   ready: boolean;
   error: string | null;
@@ -28,6 +30,7 @@ export interface BrowserTabsController {
 
 export const useBrowserTabs = (): BrowserTabsController => {
   const [tabs, setTabs] = useState<BrowserTabState[]>([]);
+  const [downloads, setDownloads] = useState<BrowserDownloadState[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tabsRef = useRef(tabs);
@@ -36,7 +39,17 @@ export const useBrowserTabs = (): BrowserTabsController => {
   useEffect(() => {
     let mounted = true;
     const unsubscribe = window.filework.browser.onState((event) => {
-      if (mounted && event.type === "state") setTabs(event.tabs);
+      if (!mounted) return;
+      if (event.type === "state") {
+        setTabs(event.tabs);
+        return;
+      }
+      setDownloads((current) =>
+        [
+          event.download,
+          ...current.filter((item) => item.id !== event.download.id),
+        ].slice(0, 3),
+      );
     });
     window.filework.browser
       .listTabs()
@@ -130,6 +143,7 @@ export const useBrowserTabs = (): BrowserTabsController => {
 
   return {
     tabs,
+    downloads,
     activeTab,
     ready,
     error,

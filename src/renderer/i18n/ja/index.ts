@@ -793,6 +793,58 @@ const ja: Translation = {
   browser_failed_to_load: "ページの読み込みに失敗しました",
   browser_start_title: "ウェブを閲覧",
   browser_start_hint: "アドレスバーにURLを入力して閲覧を開始",
+
+  // ブラウザアクセス承認
+  browserApproval_originTitle: "Agent にこのサイトへのアクセスを許可しますか？",
+  browserApproval_sensitiveTitle: "この機密性の高いウェブ操作を承認しますか？",
+  browserApproval_block: "ブロック",
+  browserApproval_allowOnce: "今回のみ許可",
+  browserApproval_alwaysAllow: "このサイトを常に許可",
+  browserApproval_deny: "拒否",
+  browserApproval_approveOnce: "今回のみ承認",
+
+  // ブラウザ設定
+  browserSettings_title: "ブラウザ",
+  browserSettings_description:
+    "Agent と共有する分離ブラウザのサイトアクセス、ダウンロード、閲覧データを管理します。",
+  browserSettings_loading: "ブラウザ設定を読み込み中…",
+  browserSettings_error: "ブラウザ設定エラー：{reason}",
+  browserSettings_origins: "サイトアクセス",
+  browserSettings_originsHint:
+    "保存済みのサイト Origin のみを表示し、ページデータやログイン情報は表示しません。",
+  browserSettings_allowed: "許可済み",
+  browserSettings_blocked: "ブロック済み",
+  browserSettings_emptyOrigins: "保存済みサイトはありません",
+  browserSettings_revokeOrigin: "{origin} を取り消す",
+  browserSettings_downloads: "ダウンロード",
+  browserSettings_downloadsHint:
+    "ファイル名を安全化し、既存ファイルを確認なしで上書きしません。",
+  browserSettings_askEveryTime: "保存先を毎回確認",
+  browserSettings_askEveryTimeHint:
+    "ブラウザからのダウンロードごとにシステムの保存ダイアログを使用します。",
+  browserSettings_downloadDirectory: "ダウンロード先",
+  browserSettings_defaultDirectory: "システムのダウンロードフォルダ",
+  browserSettings_chooseDirectory: "フォルダを選択",
+  browserSettings_developerMode: "開発者モード",
+  browserSettings_developerModeHint:
+    "既定ではオフです。有効化後もタスクとサイト単位の承認が必要です。",
+  browserSettings_data: "閲覧データ",
+  browserSettings_dataHint:
+    "消去すると全ウェブタブが閉じ、すべてのサイトからログアウトします。ローカルプレビューは残ります。",
+  browserSettings_clearAction: "閲覧データを消去",
+  browserSettings_clearTitle: "ブラウザデータを消去しますか？",
+  browserSettings_clearDescription:
+    "全ウェブタブを閉じ、Cookie、サイトストレージ、キャッシュ、Service Worker、ナビゲーション履歴を消去します。すべてのサイトからログアウトします。",
+  browserSettings_clearConfirm: "今すぐ消去",
+  browserSettings_cancel: "キャンセル",
+  browserSettings_cleared: "ブラウザデータを消去しました。",
+
+  // ブラウザダウンロード
+  browserDownload_progress: "{percent}%",
+  browserDownload_completed: "ダウンロード完了",
+  browserDownload_cancelled: "ダウンロードをキャンセルしました",
+  browserDownload_interrupted: "ダウンロードが中断されました",
+  browserDownload_showInFinder: "ダウンロード済みファイルを表示",
 };
 
 export default ja;

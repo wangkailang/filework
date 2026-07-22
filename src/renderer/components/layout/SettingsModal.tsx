@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Brain,
+  Compass,
   Cpu,
   Globe,
   KeyRound,
@@ -22,6 +23,7 @@ import {
   setStoredThemePreference,
   type ThemePreference,
 } from "../../lib/theme";
+import { BrowserSettingsPanel } from "../settings/BrowserSettingsPanel";
 import { CommandSecurityPanel } from "../settings/CommandSecurityPanel";
 import { CredentialsPanel } from "../settings/CredentialsPanel";
 import { LlmConfigPanel } from "../settings/LlmConfigPanel";
@@ -34,6 +36,7 @@ import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 type Tab =
   | "general"
+  | "browser"
   | "llm"
   | "credentials"
   | "mcp"
@@ -97,6 +100,7 @@ export const SettingsModal = ({
 
   const tabs: { id: Tab; label: string; icon: typeof Settings }[] = [
     { id: "general", label: LL.settings_title(), icon: Settings },
+    { id: "browser", label: LL.browserSettings_title(), icon: Compass },
     { id: "llm", label: LL.llmConfig_title(), icon: Cpu },
     { id: "credentials", label: LL.settings_credentials(), icon: KeyRound },
     { id: "mcp", label: "MCP", icon: Plug },
@@ -212,6 +216,8 @@ export const SettingsModal = ({
             )}
 
             {activeTab === "llm" && <LlmConfigPanel />}
+
+            {activeTab === "browser" && <BrowserSettingsPanel />}
 
             {activeTab === "credentials" && <CredentialsPanel />}
 

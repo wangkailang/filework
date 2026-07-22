@@ -801,6 +801,58 @@ const en: BaseTranslation = {
   browser_failed_to_load: "Failed to load page",
   browser_start_title: "Browse the web",
   browser_start_hint: "Enter a URL in the address bar to start browsing",
+
+  // Browser access approval
+  browserApproval_originTitle: "Allow the agent to access this site?",
+  browserApproval_sensitiveTitle: "Approve this sensitive web action?",
+  browserApproval_block: "Block",
+  browserApproval_allowOnce: "Allow once",
+  browserApproval_alwaysAllow: "Always allow this site",
+  browserApproval_deny: "Deny",
+  browserApproval_approveOnce: "Approve once",
+
+  // Browser settings
+  browserSettings_title: "Browser",
+  browserSettings_description:
+    "Control site access, downloads, and the isolated browser profile shared with the agent.",
+  browserSettings_loading: "Loading browser settings…",
+  browserSettings_error: "Browser settings error: {reason:string}",
+  browserSettings_origins: "Site access",
+  browserSettings_originsHint:
+    "Only saved site origins are listed here; page data and sign-in secrets are never displayed.",
+  browserSettings_allowed: "Allowed",
+  browserSettings_blocked: "Blocked",
+  browserSettings_emptyOrigins: "No saved sites",
+  browserSettings_revokeOrigin: "Revoke {origin:string}",
+  browserSettings_downloads: "Downloads",
+  browserSettings_downloadsHint:
+    "Downloads use sanitized filenames and never silently replace an existing file.",
+  browserSettings_askEveryTime: "Ask where to save each file",
+  browserSettings_askEveryTimeHint:
+    "Use the native save dialog for every browser download.",
+  browserSettings_downloadDirectory: "Download directory",
+  browserSettings_defaultDirectory: "System Downloads folder",
+  browserSettings_chooseDirectory: "Choose directory",
+  browserSettings_developerMode: "Developer mode",
+  browserSettings_developerModeHint:
+    "Off by default. Developer access still requires task- and site-scoped approval.",
+  browserSettings_data: "Browsing data",
+  browserSettings_dataHint:
+    "Clearing data closes every web tab and signs you out of all sites. Local previews stay open.",
+  browserSettings_clearAction: "Clear browsing data",
+  browserSettings_clearTitle: "Clear browser data?",
+  browserSettings_clearDescription:
+    "All web tabs will close. Cookies, site storage, cache, service workers, and navigation history will be cleared, signing you out of every site.",
+  browserSettings_clearConfirm: "Clear now",
+  browserSettings_cancel: "Cancel",
+  browserSettings_cleared: "Browser data cleared.",
+
+  // Browser downloads
+  browserDownload_progress: "{percent:number}%",
+  browserDownload_completed: "Download complete",
+  browserDownload_cancelled: "Download cancelled",
+  browserDownload_interrupted: "Download interrupted",
+  browserDownload_showInFinder: "Show downloaded file",
 };
 
 export default en;

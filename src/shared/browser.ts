@@ -26,11 +26,35 @@ export interface BrowserViewportBounds {
   height: number;
 }
 
-export interface BrowserStateEvent {
+export interface BrowserTabsStateEvent {
   type: "state";
   tabs: BrowserTabState[];
   activeTabId: string | null;
 }
+
+export type BrowserDownloadStatus =
+  | "progressing"
+  | "completed"
+  | "cancelled"
+  | "interrupted";
+
+export interface BrowserDownloadState {
+  id: string;
+  filename: string;
+  status: BrowserDownloadStatus;
+  receivedBytes: number;
+  totalBytes: number;
+  savePath?: string;
+}
+
+export interface BrowserDownloadStateEvent {
+  type: "download";
+  download: BrowserDownloadState;
+}
+
+export type BrowserStateEvent =
+  | BrowserTabsStateEvent
+  | BrowserDownloadStateEvent;
 
 export interface BrowserElementRef {
   ref: string;

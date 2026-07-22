@@ -28,6 +28,7 @@ import { BrowserActionExecutor } from "./browser/browser-actions";
 import { BrowserCaptureStore } from "./browser/browser-capture-store";
 import { BrowserManager } from "./browser/browser-manager";
 import { BrowserObserver } from "./browser/browser-observer";
+import { clearBrowserProfileData } from "./browser/browser-profile";
 import {
   createControlledWindowOpenHandler,
   denyBrowserPermissionCheck,
@@ -76,7 +77,10 @@ import { registerLocalGitHandlers } from "./ipc/local-git-handlers";
 import { registerMcpHandlers } from "./ipc/mcp-handlers";
 import { registerMediaHandlers } from "./ipc/media-handlers";
 import { mediaJobWatcher } from "./ipc/media-job-watcher";
-import { registerSettingsHandlers } from "./ipc/settings-handlers";
+import {
+  readBrowserSettings,
+  registerSettingsHandlers,
+} from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerToolWhitelistHandlers } from "./ipc/tool-whitelist-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
@@ -511,7 +515,10 @@ app.whenReady().then(async () => {
   registerAIHandlers();
   registerSettingsHandlers();
   registerBrowserHandlers({
+    clearBrowserProfileData,
+    getBrowserSettings: readBrowserSettings,
     getBrowserManager: () => browserManager,
+    getDefaultDownloadDirectory: () => app.getPath("downloads"),
     getMainWindow: () => mainWindow,
   });
   registerLlmConfigHandlers();
