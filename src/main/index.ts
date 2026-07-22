@@ -24,6 +24,7 @@ config({ path: join(__dirname, "../../.env") });
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
 import { setProviderFetch } from "./ai/provider-fetch";
+import { BrowserManager } from "./browser/browser-manager";
 import {
   createControlledWindowOpenHandler,
   denyBrowserPermissionCheck,
@@ -80,6 +81,7 @@ import { initSkillDiscovery } from "./skills-runtime";
 import { parseRange } from "./utils/http-range";
 
 let mainWindow: BrowserWindow | null = null;
+let browserManager: BrowserManager | null = null;
 const RUN_EVENT_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 // 开发模式下抑制 Electron 安全警告(Vite HMR 需要 unsafe-eval)
@@ -131,6 +133,7 @@ app.on("web-contents-created", (_event, contents) => {
 });
 
 const createWindow = (): BrowserWindow => {
+  let windowBrowserManager: BrowserManager | null = null;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -159,6 +162,8 @@ const createWindow = (): BrowserWindow => {
   }
 
   mainWindow.on("closed", () => {
+    void windowBrowserManager?.dispose();
+    if (browserManager === windowBrowserManager) browserManager = null;
     mainWindow = null;
   });
 
@@ -196,6 +201,9 @@ const createWindow = (): BrowserWindow => {
     }
     return { action: "deny" };
   });
+
+  windowBrowserManager = new BrowserManager(mainWindow);
+  browserManager = windowBrowserManager;
 
   return mainWindow;
 };
@@ -646,6 +654,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  const manager = browserManager;
+  browserManager = null;
+  void manager?.dispose();
   stopAutomationScheduler();
   stopAllHeadWatchers();
   killAllShells();
