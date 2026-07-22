@@ -1067,6 +1067,8 @@ const api = {
       ipcRenderer.invoke("settings:browser:set", patch),
   },
   browser: {
+    captureActiveTabPreview: (): Promise<string | null> =>
+      ipcRenderer.invoke("browser:captureActiveTabPreview"),
     clearData: (): Promise<{ closedTabs: number }> =>
       ipcRenderer.invoke("browser:clearData", { confirmed: true }),
     respondApproval: (

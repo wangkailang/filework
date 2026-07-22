@@ -683,7 +683,7 @@ describe("AgentLoop", () => {
     );
   });
 
-  it("transforms prepared step context before reporting usage", async () => {
+  it("hoists compressed system summaries into step instructions", async () => {
     scriptedRuns.push({
       parts: [
         { type: "start-step" },
@@ -703,7 +703,10 @@ describe("AgentLoop", () => {
       history: [{ role: "user", content: "long history" }],
       hooks: {
         transformStepContext: async () => ({
-          messages: [{ role: "system", content: "compressed step" }],
+          messages: [
+            { role: "system", content: "compressed step" },
+            { role: "user", content: "continue" },
+          ],
           originalTokens: 1000,
           compressedTokens: 100,
         }),
@@ -723,6 +726,13 @@ describe("AgentLoop", () => {
     expect(JSON.stringify(reports[0].preparedMessages)).toContain(
       "compressed step",
     );
+    const prepared = prepareStepResults[0] as {
+      instructions?: unknown;
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(prepared.messages).toEqual([{ role: "user", content: "continue" }]);
+    expect(JSON.stringify(prepared.instructions)).toContain("system");
+    expect(JSON.stringify(prepared.instructions)).toContain("compressed step");
     const compressed = events.find(
       (event) => event.type === "context_compressed",
     );

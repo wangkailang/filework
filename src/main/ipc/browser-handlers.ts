@@ -166,6 +166,17 @@ export const registerBrowserHandlers = (
     return manager.listTabs();
   });
 
+  ipcMain.handle("browser:captureActiveTabPreview", async (event) => {
+    const { manager } = requireContext(event, dependencies);
+    const tabId = manager.getActiveTabId();
+    const tab = manager
+      .listTabs()
+      .find((candidate) => candidate.id === tabId && candidate.kind === "web");
+    if (!tab) return null;
+    const image = await manager.getWebContents(tab.id).capturePage();
+    return image.toDataURL();
+  });
+
   ipcMain.handle("browser:createTab", async (event, raw: unknown) => {
     const { manager } = requireContext(event, dependencies);
     const input = createTabSchema.parse(raw);

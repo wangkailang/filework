@@ -49,8 +49,12 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
   const [draftUrl, setDraftUrl] = useState(url || current?.url || "");
   const [accessRequest, setAccessRequest] =
     useState<BrowserApprovalRequest | null>(null);
+  const [approvalPreviewUrl, setApprovalPreviewUrl] = useState<string | null>(
+    null,
+  );
   const creatingBlankRef = useRef(false);
   const requestedUrlRef = useRef<string | null>(null);
+  const approvalSequenceRef = useRef(0);
   const currentUrl = current?.url ?? "";
   const isLocalCurrent = isLocalFileUrl(currentUrl);
   const showStart = !current || isBlank(currentUrl);
@@ -81,10 +85,19 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
 
   useEffect(() => {
     const unsubscribe = window.filework.browser.onApprovalRequest((request) => {
-      setAccessRequest(request);
+      const sequence = ++approvalSequenceRef.current;
       window.dispatchEvent(new CustomEvent("filework:show-browser"));
+      void window.filework.browser
+        .captureActiveTabPreview()
+        .catch(() => null)
+        .then((previewUrl) => {
+          if (approvalSequenceRef.current !== sequence) return;
+          setApprovalPreviewUrl(previewUrl);
+          setAccessRequest(request);
+        });
     });
     return () => {
+      approvalSequenceRef.current += 1;
       unsubscribe();
     };
   }, []);
@@ -93,6 +106,7 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
     if (!accessRequest) return;
     const { requestId } = accessRequest;
     setAccessRequest(null);
+    setApprovalPreviewUrl(null);
     void window.filework.browser.respondApproval(requestId, decision);
   };
 
@@ -261,6 +275,15 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
           <div className="pointer-events-none absolute right-2 bottom-2 max-w-[80%] rounded border border-destructive/30 bg-background/95 px-2 py-1 font-mono text-[10px] text-destructive shadow-lg">
             {browser.error}
           </div>
+        )}
+        {accessRequest && approvalPreviewUrl && (
+          <img
+            data-browser-approval-preview="true"
+            src={approvalPreviewUrl}
+            alt=""
+            draggable={false}
+            className="pointer-events-none absolute inset-0 z-10 size-full select-none object-fill"
+          />
         )}
         <BrowserDownloadShelf downloads={browser.downloads ?? []} />
         {accessRequest && (

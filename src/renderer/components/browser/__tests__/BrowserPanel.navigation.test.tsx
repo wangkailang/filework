@@ -53,6 +53,9 @@ const installDom = () => {
     configurable: true,
     value: {
       browser: {
+        captureActiveTabPreview: vi.fn(
+          async () => "data:image/png;base64,cGFnZS1wcmV2aWV3",
+        ),
         setViewport: vi.fn(async () => undefined),
         onApprovalRequest: vi.fn(
           (callback: (request: BrowserApprovalRequest) => void) => {
@@ -140,7 +143,7 @@ describe("BrowserPanel external URL requests", () => {
     expect(openUrl).toHaveBeenCalledTimes(1);
   });
 
-  it("hides the native browser view while an origin approval prompt is shown", async () => {
+  it("shows a centered approval prompt over a frozen page preview", async () => {
     const document = installDom();
     browserHookState.value = makeController(
       makeTab("https://example.com/"),
@@ -170,6 +173,16 @@ describe("BrowserPanel external URL requests", () => {
     expect(
       document.querySelector('[data-browser-access-prompt="origin"]'),
     ).not.toBeNull();
+    const prompt = document.querySelector(
+      '[data-browser-access-prompt="origin"]',
+    );
+    expect(prompt?.className).toContain("place-items-center");
+    expect(prompt?.className).not.toContain("bottom-3");
+    expect(
+      document
+        .querySelector('[data-browser-approval-preview="true"]')
+        ?.getAttribute("src"),
+    ).toBe("data:image/png;base64,cGFnZS1wcmV2aWV3");
     expect(setViewport).toHaveBeenLastCalledWith(null);
   });
 });

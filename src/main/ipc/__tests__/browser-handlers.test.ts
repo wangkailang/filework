@@ -52,6 +52,12 @@ const createHarness = () => {
     closeTab: vi.fn(async () => undefined),
     navigate: vi.fn(async () => undefined),
     command: vi.fn(),
+    getActiveTabId: vi.fn(() => tab.id),
+    getWebContents: vi.fn(() => ({
+      capturePage: vi.fn(async () => ({
+        toDataURL: () => "data:image/png;base64,cGFnZS1wcmV2aWV3",
+      })),
+    })),
     setViewport: vi.fn(),
     setOccluded: vi.fn(),
   };
@@ -116,6 +122,15 @@ describe("browser IPC handlers", () => {
       "https://example.com/next",
     );
     expect(manager.command).toHaveBeenCalledWith("tab-1", "reload");
+  });
+
+  it("captures the active web tab for an in-renderer approval backdrop", async () => {
+    const { invoke, manager } = createHarness();
+
+    await expect(invoke("browser:captureActiveTabPreview")).resolves.toBe(
+      "data:image/png;base64,cGFnZS1wcmV2aWV3",
+    );
+    expect(manager.getWebContents).toHaveBeenCalledWith("tab-1");
   });
 
   it("rejects calls not sent by the main renderer", async () => {
