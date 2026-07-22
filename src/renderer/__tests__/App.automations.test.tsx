@@ -105,6 +105,9 @@ const makeFilework = () => ({
   automations: {
     onOpenTriage: vi.fn(() => noop),
   },
+  browser: {
+    setOccluded: vi.fn(async () => undefined),
+  },
   getRecentWorkspaces: vi.fn(async () => [
     {
       label: "repo",

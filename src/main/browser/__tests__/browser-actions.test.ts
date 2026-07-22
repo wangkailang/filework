@@ -8,6 +8,7 @@ import {
   BrowserActionExecutor,
   BrowserActionForbiddenError,
 } from "../browser-actions";
+import type { BrowserSettleReason } from "../browser-settle";
 
 const makeObservation = (inputType = "text"): BrowserObservation => ({
   tabId: "tab-1",
@@ -62,7 +63,7 @@ const makeHarness = (observation = makeObservation()) => {
     getWebContents: vi.fn(() => webContents),
   };
   const settle = {
-    wait: vi.fn(async () => "dom-quiet" as const),
+    wait: vi.fn(async (): Promise<BrowserSettleReason> => "dom-quiet"),
     cancel: vi.fn(),
   };
   const beginSettle = vi.fn(async () => settle);
