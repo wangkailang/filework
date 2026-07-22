@@ -173,6 +173,49 @@ describe("ToolRegistry", () => {
       });
     });
 
+    it("projects policy denials without calling the tool success projector", async () => {
+      const reg = new ToolRegistry();
+      const projectSuccess = vi.fn(
+        ({ output }: { output: { elements: string[] } }) => ({
+          type: "text" as const,
+          value: output.elements.slice(0, 1).join(","),
+        }),
+      );
+      reg.register({
+        name: "browserType",
+        description: "Type into a browser element",
+        safety: "destructive",
+        inputSchema: z.object({ ref: z.string() }),
+        execute: async () => ({ elements: ["fresh page"] }),
+        toModelOutput: projectSuccess,
+      });
+
+      const sdkTools = reg.toAiSdkTools({
+        ctxFactory: () => stubCtx(),
+        beforeToolCall: async () => ({
+          allow: false,
+          reason: "Browser navigation changed; request a fresh observation",
+        }),
+      });
+      const exec = sdkTools.browserType.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+      const denied = await exec({ ref: "e3" }, { toolCallId: "browser-1" });
+
+      const projected = await sdkTools.browserType.toModelOutput?.({
+        toolCallId: "browser-1",
+        input: { ref: "e3" },
+        output: denied,
+      });
+      expect(projected).toEqual({
+        type: "text",
+        value:
+          "Tool call denied: Browser navigation changed; request a fresh observation",
+      });
+      expect(projectSuccess).not.toHaveBeenCalled();
+    });
+
     it("does not invoke beforeToolCall for safe tools", async () => {
       const reg = new ToolRegistry();
       reg.register({

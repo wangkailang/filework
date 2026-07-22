@@ -106,6 +106,21 @@ export interface ToolDeniedResult {
   reason: string;
 }
 
+const isToolDeniedResult = (value: unknown): value is ToolDeniedResult =>
+  value !== null &&
+  typeof value === "object" &&
+  "success" in value &&
+  value.success === false &&
+  "denied" in value &&
+  value.denied === true &&
+  "reason" in value &&
+  typeof value.reason === "string";
+
+const deniedToolModelOutput = (result: ToolDeniedResult): ToolResultOutput => ({
+  type: "text",
+  value: `Tool call denied: ${result.reason}`,
+});
+
 export interface ToolObservedResult {
   toolName: string;
   toolCallId: string;
@@ -190,12 +205,20 @@ export class ToolRegistry {
       onToolResult?: ToolResultObserver;
     },
   ): Tool {
+    const projectModelOutput = def.toModelOutput;
     return defineAiTool({
       description: def.description,
       inputSchema: def.inputSchema,
       ...(def.outputSchema !== undefined && { outputSchema: def.outputSchema }),
-      ...(def.toModelOutput !== undefined && {
-        toModelOutput: def.toModelOutput,
+      ...(projectModelOutput !== undefined && {
+        toModelOutput: (options: {
+          toolCallId: string;
+          input: unknown;
+          output: unknown;
+        }) =>
+          isToolDeniedResult(options.output)
+            ? deniedToolModelOutput(options.output)
+            : projectModelOutput(options),
       }),
       execute: async (
         args: unknown,
