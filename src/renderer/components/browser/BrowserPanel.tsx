@@ -51,7 +51,7 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
   useEffect(() => {
     if (!browser.ready) return;
     if (url) {
-      if (requestedUrlRef.current === url && currentUrl === url) return;
+      if (requestedUrlRef.current === url) return;
       requestedUrlRef.current = url;
       void browser.openUrl(url).catch(() => undefined);
       return;
@@ -65,7 +65,7 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
           creatingBlankRef.current = false;
         });
     }
-  }, [browser, currentUrl, url]);
+  }, [browser, url]);
 
   useEffect(() => {
     setDraftUrl(currentUrl);
