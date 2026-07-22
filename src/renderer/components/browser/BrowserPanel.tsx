@@ -212,7 +212,9 @@ export function BrowserPanel({ url, active = true }: BrowserPanelProps) {
       </header>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-background">
-        <BrowserViewport active={active && !showStart && !showCrash} />
+        <BrowserViewport
+          active={active && !showStart && !showCrash && !accessRequest}
+        />
 
         {showStart && !showCrash && (
           <div
