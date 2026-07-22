@@ -7,7 +7,10 @@ import type {
   BrowserObservation,
 } from "../../shared/browser";
 import type { BrowserManagerContract } from "./browser-manager";
-import type { BrowserObserver } from "./browser-observer";
+import type {
+  BrowserObserveOptions,
+  BrowserObserver,
+} from "./browser-observer";
 import {
   type BrowserSettleController,
   type BrowserSettleOptions,
@@ -55,7 +58,10 @@ export class BrowserActionExecutor {
       ((webContents) => beginBrowserSettle(webContents, options.settle));
   }
 
-  async execute(request: BrowserActionRequest): Promise<BrowserObservation> {
+  async execute(
+    request: BrowserActionRequest,
+    observeOptions: BrowserObserveOptions = {},
+  ): Promise<BrowserObservation> {
     const initialSnapshot = this.observer.requireSnapshot(
       request.tabId,
       request.navigationId,
@@ -81,7 +87,9 @@ export class BrowserActionExecutor {
       webContents.focus();
       await this.dispatch(webContents, currentSnapshot, request.action);
       await settle.wait();
-      return await this.observer.observe(request.tabId);
+      return observeOptions.capture === undefined
+        ? await this.observer.observe(request.tabId)
+        : await this.observer.observe(request.tabId, observeOptions);
     } catch (error) {
       settle.cancel();
       throw error;

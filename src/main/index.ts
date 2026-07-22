@@ -24,7 +24,10 @@ config({ path: join(__dirname, "../../.env") });
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
 import { setProviderFetch } from "./ai/provider-fetch";
+import { BrowserActionExecutor } from "./browser/browser-actions";
+import { BrowserCaptureStore } from "./browser/browser-capture-store";
 import { BrowserManager } from "./browser/browser-manager";
+import { BrowserObserver } from "./browser/browser-observer";
 import {
   createControlledWindowOpenHandler,
   denyBrowserPermissionCheck,
@@ -86,6 +89,9 @@ import { parseRange } from "./utils/http-range";
 
 let mainWindow: BrowserWindow | null = null;
 let browserManager: BrowserManager | null = null;
+let browserObserver: BrowserObserver | null = null;
+let browserActions: BrowserActionExecutor | null = null;
+let browserCaptureStore: BrowserCaptureStore | null = null;
 const RUN_EVENT_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 // 开发模式下抑制 Electron 安全警告(Vite HMR 需要 unsafe-eval)
@@ -138,6 +144,8 @@ app.on("web-contents-created", (_event, contents) => {
 
 const createWindow = (): BrowserWindow => {
   let windowBrowserManager: BrowserManager | null = null;
+  let windowBrowserObserver: BrowserObserver | null = null;
+  let windowBrowserCaptureStore: BrowserCaptureStore | null = null;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -163,8 +171,15 @@ const createWindow = (): BrowserWindow => {
   }
 
   mainWindow.on("closed", () => {
+    windowBrowserObserver?.dispose();
+    windowBrowserCaptureStore?.clear();
     void windowBrowserManager?.dispose();
     if (browserManager === windowBrowserManager) browserManager = null;
+    if (browserObserver === windowBrowserObserver) browserObserver = null;
+    if (browserCaptureStore === windowBrowserCaptureStore) {
+      browserCaptureStore = null;
+      browserActions = null;
+    }
     mainWindow = null;
   });
 
@@ -207,7 +222,17 @@ const createWindow = (): BrowserWindow => {
   windowBrowserManager = new BrowserManager(ownerWindow, {
     onTabsChanged: (tabs) => sendBrowserState(ownerWindow, tabs),
   });
+  windowBrowserCaptureStore = new BrowserCaptureStore();
+  windowBrowserObserver = new BrowserObserver(windowBrowserManager, {
+    captureStore: windowBrowserCaptureStore,
+  });
   browserManager = windowBrowserManager;
+  browserCaptureStore = windowBrowserCaptureStore;
+  browserObserver = windowBrowserObserver;
+  browserActions = new BrowserActionExecutor(
+    windowBrowserManager,
+    windowBrowserObserver,
+  );
 
   return mainWindow;
 };
@@ -463,6 +488,22 @@ app.whenReady().then(async () => {
     fetchFn: proxyAwareFetch,
     resolveTavilyToken: tavilyCredentialResolver,
     resolveFirecrawlToken: firecrawlCredentialResolver,
+    getBrowserToolsDependencies: () => {
+      if (
+        !browserManager ||
+        !browserObserver ||
+        !browserActions ||
+        !browserCaptureStore
+      ) {
+        return null;
+      }
+      return {
+        manager: browserManager,
+        observer: browserObserver,
+        actions: browserActions,
+        captureStore: browserCaptureStore,
+      };
+    },
   });
 
   // 注册 IPC handler

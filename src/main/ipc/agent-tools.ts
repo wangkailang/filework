@@ -18,6 +18,7 @@
 import crypto from "node:crypto";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
+import { resolveAdapterName } from "../ai/adapters";
 import {
   DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
   DEFAULT_SUB_AGENT_MAX_TURNS,
@@ -35,7 +36,10 @@ import {
   type WorkspaceEntryLike,
 } from "../core/agent/tools";
 import { buildAutomationUpdateTool } from "../core/agent/tools/automation";
-import { buildBrowserInteractiveTools } from "../core/agent/tools/browser-interactive";
+import {
+  type BuildBrowserToolsDependencies,
+  buildBrowserTools,
+} from "../core/agent/tools/browser";
 import { clearMemoryTool, updateMemoryTool } from "../core/agent/tools/memory";
 import { buildWebFetchTool } from "../core/agent/tools/web-fetch";
 import { buildWebFetchRenderedTool } from "../core/agent/tools/web-fetch-rendered";
@@ -44,7 +48,7 @@ import { buildWebSearchTool } from "../core/agent/tools/web-search";
 import { buildYoutubeTranscriptTool } from "../core/agent/tools/youtube-transcript";
 import { resolveSandboxConfig } from "../core/sandbox";
 import type { SandboxMode } from "../core/sandbox/types";
-import { getSetting } from "../db";
+import { getLlmConfig, getSetting } from "../db";
 import { mcpManager } from "../mcp/manager";
 import { searchFiles as nativeSearchFiles } from "../native";
 import { skillRegistry } from "../skills";
@@ -163,6 +167,11 @@ interface AgentRegistryDeps {
   resolveTavilyToken?: () => Promise<string | null>;
   /** 返回最近一次的 Firecrawl API key 或 null。决定 `webScrape` 是否可用。 */
   resolveFirecrawlToken?: () => Promise<string | null>;
+  /** Resolve the main-window shared browser stack lazily across window reloads. */
+  getBrowserToolsDependencies?: () => Omit<
+    BuildBrowserToolsDependencies,
+    "supportsMultimodalToolResults"
+  > | null;
 }
 let agentRegistryDeps: AgentRegistryDeps = {};
 export const setAgentRegistryDeps = (deps: AgentRegistryDeps): void => {
@@ -630,6 +639,7 @@ const SUBAGENT_DEFAULT_READ_ONLY_TOOLS = [
   "webScrape",
   "youtubeTranscript",
   "browserOpen",
+  "browserTabs",
   "browserSnapshot",
   "browserClose",
 ] as const;
@@ -641,6 +651,13 @@ const SUBAGENT_DIRECT_WRITE_TOOL_SET = new Set<string>([
   "writeFile",
   "moveFile",
   "deleteFile",
+]);
+const SUBAGENT_EXPLICIT_BROWSER_TOOLS = new Set([
+  "browserSwitchTab",
+  "browserClick",
+  "browserType",
+  "browserPress",
+  "browserScroll",
 ]);
 
 const SUBAGENT_RESEARCHER_DEFAULTS = {
@@ -696,12 +713,15 @@ export const resolveSubagentAllowedTools = (
 ): string[] => {
   const normalizedParentTools = normalizeSubagentToolList(parentAllowedTools);
   const normalizedRequestedTools = normalizeSubagentToolList(requestedTools);
-  const permittedToolSet = options.allowDirectWrite
-    ? new Set([
-        ...SUBAGENT_READ_ONLY_TOOL_SET,
-        ...SUBAGENT_DIRECT_WRITE_TOOL_SET,
-      ])
-    : SUBAGENT_READ_ONLY_TOOL_SET;
+  const explicitlyRequestedBrowserTools =
+    normalizedRequestedTools?.filter((toolName) =>
+      SUBAGENT_EXPLICIT_BROWSER_TOOLS.has(toolName),
+    ) ?? [];
+  const permittedToolSet = new Set([
+    ...SUBAGENT_READ_ONLY_TOOL_SET,
+    ...explicitlyRequestedBrowserTools,
+    ...(options.allowDirectWrite ? SUBAGENT_DIRECT_WRITE_TOOL_SET : []),
+  ]);
   const requestedList =
     normalizedRequestedTools && normalizedRequestedTools.length > 0
       ? normalizedRequestedTools
@@ -958,6 +978,21 @@ export const buildAgentToolRegistry = ({
     ? buildGitRunCommandProtocol(modelName ?? "filework-agent")
     : undefined;
 
+  const supportsMultimodalToolResults = (() => {
+    if (!llmConfigId) return false;
+    try {
+      const config = getLlmConfig(llmConfigId);
+      if (!config) return false;
+      if (config.modelCapabilities?.supportsVision != null) {
+        return config.modelCapabilities.supportsVision;
+      }
+      const provider = resolveAdapterName(config.provider, config.baseUrl);
+      return provider !== "ollama" && provider !== "xiaomi";
+    } catch {
+      return false;
+    }
+  })();
+
   // db 未初始化(如部分单测)时回落默认沙箱配置,不阻断工具装配。
   let sandboxModeSetting: string | null = sandboxMode ?? null;
   if (!sandboxModeSetting) {
@@ -1004,6 +1039,16 @@ export const buildAgentToolRegistry = ({
     );
   }
 
+  const browserDependencies = agentRegistryDeps.getBrowserToolsDependencies?.();
+  if (browserDependencies) {
+    for (const def of buildBrowserTools({
+      ...browserDependencies,
+      supportsMultimodalToolResults,
+    })) {
+      if (allow(def.name)) registry.register(def);
+    }
+  }
+
   // Web 工具(Layer 0 搜索 + Layer 1/2'/4 抽取)。仅当注入了 fetch 实现
   // 时才注册 —— 生产环境接入 `proxyAwareFetch`;测试通常省略,故也省略
   // 这些工具。search/scrape 还额外需要各自的 resolver,因为它们需要已
@@ -1015,13 +1060,6 @@ export const buildAgentToolRegistry = ({
     }
     {
       const def = buildWebFetchRenderedTool();
-      if (allow(def.name)) registry.register(def);
-    }
-    // 交互式浏览 —— 支持点击/输入的有状态 Chromium 会话。与
-    // `webFetchRendered` 共用同一 Electron 运行时,无额外依赖。与 web
-    // 工具栈一并注册,这样任何放行了 `webFetchRendered` 的 skill 都可通过
-    // 在其 `allowed-tools` 中加入 `browserOpen` 等来选用交互式流程。
-    for (const def of buildBrowserInteractiveTools()) {
       if (allow(def.name)) registry.register(def);
     }
     {

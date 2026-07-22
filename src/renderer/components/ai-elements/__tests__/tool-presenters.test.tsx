@@ -385,3 +385,48 @@ describe("searchFiles presenter", () => {
     expect(html).not.toContain("/Users/kailang/Desktop");
   });
 });
+
+describe("browser presenters", () => {
+  it("shows origin, action, target and active tab without leaking typed text or URL credentials", () => {
+    const summary = toolPresenters.browserType.summary?.(
+      {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "e7",
+        text: "super-secret-value",
+      },
+      {
+        tabId: "tab-1",
+        url: "https://user:pass@example.com/account?view=profile",
+        elements: [{ ref: "e7", name: "Search", tag: "input", visible: true }],
+      },
+      "output-available",
+      { LL, toolCallId: "call-browser" },
+    );
+    const input = toolPresenters.browserType.input?.(
+      {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "e7",
+        text: "super-secret-value",
+      },
+      { LL, toolCallId: "call-browser" },
+    );
+
+    const html = renderToStaticMarkup(
+      <>
+        {summary}
+        {input}
+      </>,
+    );
+    expect(html).toContain("https://example.com");
+    expect(html).toContain("type");
+    expect(html).toContain("Search · e7");
+    expect(html).toContain("tab-1");
+    expect(html).toContain("done");
+    expect(html).not.toContain("super-secret-value");
+    expect(html).not.toContain("user:pass");
+  });
+});

@@ -1736,6 +1736,42 @@ type RootTranslation = {
 	 */
 	toolName_webScrape: string
 	/**
+	 * O​p​e​n​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserOpen: string
+	/**
+	 * L​i​s​t​ ​B​r​o​w​s​e​r​ ​T​a​b​s
+	 */
+	toolName_browserTabs: string
+	/**
+	 * S​w​i​t​c​h​ ​B​r​o​w​s​e​r​ ​T​a​b
+	 */
+	toolName_browserSwitchTab: string
+	/**
+	 * R​e​a​d​ ​B​r​o​w​s​e​r​ ​P​a​g​e
+	 */
+	toolName_browserSnapshot: string
+	/**
+	 * C​l​i​c​k​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserClick: string
+	/**
+	 * T​y​p​e​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserType: string
+	/**
+	 * P​r​e​s​s​ ​K​e​y​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserPress: string
+	/**
+	 * S​c​r​o​l​l​ ​B​r​o​w​s​e​r​ ​P​a​g​e
+	 */
+	toolName_browserScroll: string
+	/**
+	 * C​l​o​s​e​ ​B​r​o​w​s​e​r​ ​T​a​b
+	 */
+	toolName_browserClose: string
+	/**
 	 * Y​o​u​T​u​b​e​ ​T​r​a​n​s​c​r​i​p​t
 	 */
 	toolName_youtubeTranscript: string
@@ -4461,6 +4497,42 @@ export type TranslationFunctions = {
 	 * Scrape Page
 	 */
 	toolName_webScrape: () => LocalizedString
+	/**
+	 * Open in Browser
+	 */
+	toolName_browserOpen: () => LocalizedString
+	/**
+	 * List Browser Tabs
+	 */
+	toolName_browserTabs: () => LocalizedString
+	/**
+	 * Switch Browser Tab
+	 */
+	toolName_browserSwitchTab: () => LocalizedString
+	/**
+	 * Read Browser Page
+	 */
+	toolName_browserSnapshot: () => LocalizedString
+	/**
+	 * Click in Browser
+	 */
+	toolName_browserClick: () => LocalizedString
+	/**
+	 * Type in Browser
+	 */
+	toolName_browserType: () => LocalizedString
+	/**
+	 * Press Key in Browser
+	 */
+	toolName_browserPress: () => LocalizedString
+	/**
+	 * Scroll Browser Page
+	 */
+	toolName_browserScroll: () => LocalizedString
+	/**
+	 * Close Browser Tab
+	 */
+	toolName_browserClose: () => LocalizedString
 	/**
 	 * YouTube Transcript
 	 */

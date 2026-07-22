@@ -190,8 +190,13 @@ const ESCALATION_TOOLS = new Set([
   "webFetchRendered",
   "webScrape",
   "browserOpen",
+  "browserTabs",
+  "browserSwitchTab",
+  "browserSnapshot",
   "browserClick",
   "browserType",
+  "browserPress",
+  "browserScroll",
 ]);
 
 // 任务级"放弃"措辞 —— 只匹配明确宣布不可行的表达,不含"无法确定 / 看不到
