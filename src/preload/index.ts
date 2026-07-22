@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { TrashEntry } from "../main/core/agent/tools/trash";
 import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
+import type { BrowserSettings, BrowserSettingsPatch } from "../shared/browser";
 import type { ChatPermissionMode } from "../shared/chat-permissions";
 import type { CredentialKind } from "../shared/credentials";
 import type { OfficePreviewResult } from "../shared/office-preview";
@@ -1049,6 +1050,12 @@ const api = {
   setSetting: (key: string, value: string) =>
     ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:getAll"),
+  browserSettings: {
+    get: (): Promise<BrowserSettings> =>
+      ipcRenderer.invoke("settings:browser:get"),
+    set: (patch: BrowserSettingsPatch): Promise<BrowserSettings> =>
+      ipcRenderer.invoke("settings:browser:set", patch),
+  },
 
   // 自动化
   automations: {
