@@ -1,3 +1,4 @@
+import { parseHTML } from "linkedom";
 import { describe, expect, it, vi } from "vitest";
 
 // Electron 仅在运行时的 BrowserWindow 路径中才需要,而我们这里
@@ -95,6 +96,57 @@ describe("SNAPSHOT_SCRIPT", () => {
   it("assigns refs as r1, r2, ... persisted via data-aix-ref", () => {
     expect(SNAPSHOT_SCRIPT).toContain("data-aix-ref");
     expect(SNAPSHOT_SCRIPT).toContain("'r' + next");
+  });
+
+  it("keeps refs unique and monotonic when dynamic elements are added", () => {
+    const { document, window } = parseHTML(`
+      <!doctype html>
+      <html><body>
+        <button data-aix-ref="r2">Existing 2</button>
+        <button data-aix-ref="r7">Existing 7</button>
+        <button>New 8</button>
+      </body></html>
+    `);
+    Object.defineProperty(window, "innerHeight", { value: 800 });
+    const installRects = () => {
+      for (const element of document.querySelectorAll("button")) {
+        Object.defineProperty(element, "getBoundingClientRect", {
+          configurable: true,
+          value: () => ({
+            width: 100,
+            height: 20,
+            top: 0,
+            bottom: 20,
+          }),
+        });
+      }
+    };
+    const evaluateSnapshot = new Function(
+      "document",
+      "window",
+      "location",
+      `return ${SNAPSHOT_SCRIPT}`,
+    );
+
+    installRects();
+    evaluateSnapshot(document, window, { href: "https://example.com" });
+    const firstRefs = [...document.querySelectorAll("button")].map((element) =>
+      element.getAttribute("data-aix-ref"),
+    );
+    expect(firstRefs).toEqual(["r2", "r7", "r8"]);
+    expect(new Set(firstRefs).size).toBe(firstRefs.length);
+
+    const next = document.createElement("button");
+    next.textContent = "New 9";
+    document.body.append(next);
+    installRects();
+    evaluateSnapshot(document, window, { href: "https://example.com" });
+
+    const secondRefs = [...document.querySelectorAll("button")].map((element) =>
+      element.getAttribute("data-aix-ref"),
+    );
+    expect(secondRefs).toEqual(["r2", "r7", "r8", "r9"]);
+    expect(new Set(secondRefs).size).toBe(secondRefs.length);
   });
 });
 

@@ -24,6 +24,13 @@ config({ path: join(__dirname, "../../.env") });
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
 import { setProviderFetch } from "./ai/provider-fetch";
+import {
+  createControlledWindowOpenHandler,
+  denyBrowserPermissionCheck,
+  denyBrowserPermissionRequest,
+  hardenGuestWebPreferences,
+  validateGuestAttachment,
+} from "./browser/security-policy";
 import { killAllShells } from "./core/agent/shells";
 import { JsonlRunEventLog } from "./core/run/event-log";
 import { recoverInterruptedRunEventLogs } from "./core/run/recovery";
@@ -92,6 +99,36 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+// 所有 Electron WebContents 共用同一条最小权限基线。页面弹窗永远
+// 不创建 BrowserWindow；合法 HTTP(S) 目标只在当前受控内容中导航。
+app.on("web-contents-created", (_event, contents) => {
+  contents.session.setPermissionCheckHandler(denyBrowserPermissionCheck);
+  contents.session.setPermissionRequestHandler(denyBrowserPermissionRequest);
+  contents.setWindowOpenHandler(
+    createControlledWindowOpenHandler((url) => {
+      void contents.loadURL(url);
+    }),
+  );
+
+  contents.on("will-attach-webview", (event, webPreferences, params) => {
+    hardenGuestWebPreferences(
+      webPreferences as unknown as Record<string, unknown>,
+    );
+    try {
+      validateGuestAttachment({
+        partition: params.partition ?? webPreferences.partition ?? "",
+        src: params.src ?? "",
+      });
+    } catch (error) {
+      event.preventDefault();
+      console.warn(
+        "[browser-security] Blocked unsafe webview attachment:",
+        error instanceof Error ? error.message : "invalid guest configuration",
+      );
+    }
+  });
+});
 
 const createWindow = (): BrowserWindow => {
   mainWindow = new BrowserWindow({
