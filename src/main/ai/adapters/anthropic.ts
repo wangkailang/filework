@@ -32,6 +32,10 @@ export class AnthropicAdapter implements ProviderAdapter {
     return anthropic(config.model);
   }
 
+  supportsMultimodalToolResults(config: ProviderConfig): boolean {
+    return config.modelCapabilities?.supportsVision !== false;
+  }
+
   buildProviderOptions(config?: ProviderConfig) {
     const nativeAnthropicOptions = config
       ? (buildProviderNativeCompactionOptions(config).anthropic ?? {})

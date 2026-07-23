@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 
 import type { BrowserWindow } from "electron";
 
+import { assertAgentBrowserUrl } from "../browser/security-policy";
 import {
   createHiddenWindow,
   destroyHiddenWindow,
@@ -98,6 +99,7 @@ export const fetchRenderedHtml = async (
   url: string,
   opts: RenderOpts = {},
 ): Promise<RenderedFetchResult> => {
+  const target = assertAgentBrowserUrl(url);
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const settleMs = opts.settleMs ?? 1_500;
 
@@ -108,7 +110,7 @@ export const fetchRenderedHtml = async (
     win = createHiddenWindow(partition);
     const wc = win.webContents;
     const loadPromise = waitForPageLoad(win, timeoutMs, opts.signal);
-    void wc.loadURL(url);
+    void wc.loadURL(target.href);
     const status = await loadPromise;
     await sleep(settleMs);
 

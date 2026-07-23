@@ -63,6 +63,46 @@ describe("OpenAIAdapter API selection", () => {
   });
 });
 
+describe("OpenAIAdapter multimodal tool results", () => {
+  it("disables image tool results for OpenAI-compatible Chat Completions", () => {
+    const adapter = new OpenAIAdapter();
+
+    expect(
+      adapter.supportsMultimodalToolResults({
+        provider: "openai",
+        apiKey: "test-key",
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        model: "minimaxai/minimax-m2.7",
+        modelCapabilities: {
+          preferredApi: "chat_completions",
+          supportsReasoning: true,
+          supportsTools: true,
+          supportsVision: true,
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("allows image tool results on a vision-capable Responses transport", () => {
+    const adapter = new OpenAIAdapter();
+
+    expect(
+      adapter.supportsMultimodalToolResults({
+        provider: "custom",
+        apiKey: "test-key",
+        baseUrl: "https://responses.example.com/v1",
+        model: "vision-model",
+        modelCapabilities: {
+          preferredApi: "responses",
+          supportsReasoning: true,
+          supportsTools: true,
+          supportsVision: true,
+        },
+      }),
+    ).toBe(true);
+  });
+});
+
 describe("OpenAIAdapter provider options", () => {
   it("enables native compaction for official OpenAI Responses models", () => {
     const adapter = new OpenAIAdapter();

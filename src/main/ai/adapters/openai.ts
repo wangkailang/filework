@@ -20,6 +20,17 @@ import { resolveOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
 type ResolveApiKey = NonNullable<ProviderConfig["resolveApiKey"]>;
 
+const usesOpenAIChatCompletions = (config: ProviderConfig): boolean => {
+  const isCustomEndpoint =
+    config.provider === "custom" ||
+    (config.baseUrl != null && !config.baseUrl.includes("api.openai.com"));
+  const preferredApi = config.modelCapabilities?.preferredApi ?? null;
+  return (
+    preferredApi === "chat_completions" ||
+    (isCustomEndpoint && preferredApi !== "responses")
+  );
+};
+
 export function buildGithubCopilotFetch(
   providerFetch: typeof globalThis.fetch,
   resolveApiKey?: ResolveApiKey,
@@ -60,9 +71,6 @@ export class OpenAIAdapter implements ProviderAdapter {
   readonly name = "openai";
 
   createModel(config: ProviderConfig): LanguageModel {
-    const isCustomEndpoint =
-      config.provider === "custom" ||
-      (config.baseUrl != null && !config.baseUrl.includes("api.openai.com"));
     const resolvedBaseUrl = resolveOpenAICompatibleBaseUrl(
       config.baseUrl,
       config.apiPath,
@@ -81,13 +89,16 @@ export class OpenAIAdapter implements ProviderAdapter {
       // 参见 provider-fetch.ts —— 启动时设置的、按 host 感知代理的 fetch。
       fetch,
     });
-    const preferredApi = config.modelCapabilities?.preferredApi ?? null;
-    const useChatCompletions =
-      preferredApi === "chat_completions" ||
-      (isCustomEndpoint && preferredApi !== "responses");
-    return useChatCompletions
+    return usesOpenAIChatCompletions(config)
       ? openai.chat(config.model)
       : openai(config.model);
+  }
+
+  supportsMultimodalToolResults(config: ProviderConfig): boolean {
+    return (
+      config.modelCapabilities?.supportsVision !== false &&
+      !usesOpenAIChatCompletions(config)
+    );
   }
 
   buildProviderOptions(config?: ProviderConfig) {

@@ -95,15 +95,18 @@ export const pdfParseFailure: ReflectionRule = (turn) => {
 };
 
 export const toolDeniedSequence: ReflectionRule = (turn) => {
-  let denied = 0;
+  let userDenied = 0;
   for (const call of turn.toolCalls) {
-    const r = call.result as { denied?: boolean } | null | undefined;
-    if (r && r.denied === true) denied++;
+    const r = call.result as
+      | { denied?: boolean; denialSource?: unknown }
+      | null
+      | undefined;
+    if (r?.denied === true && r.denialSource === "user") userDenied++;
   }
-  if (denied >= 2) {
+  if (userDenied >= 2) {
     return {
       kind: "abort",
-      reason: `User denied ${denied} tool call(s) this turn — stopping to avoid further denials.`,
+      reason: `User denied ${userDenied} tool call(s) this turn — stopping to avoid further denials.`,
     };
   }
   return null;
@@ -190,8 +193,13 @@ const ESCALATION_TOOLS = new Set([
   "webFetchRendered",
   "webScrape",
   "browserOpen",
+  "browserTabs",
+  "browserSwitchTab",
+  "browserSnapshot",
   "browserClick",
   "browserType",
+  "browserPress",
+  "browserScroll",
 ]);
 
 // 任务级"放弃"措辞 —— 只匹配明确宣布不可行的表达,不含"无法确定 / 看不到

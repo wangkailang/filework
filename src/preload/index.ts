@@ -2,6 +2,17 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type { TrashEntry } from "../main/core/agent/tools/trash";
 import type { NativeSearchOptions, NativeSearchResult } from "../main/native";
+import type {
+  BrowserApprovalDecision,
+  BrowserApprovalRequest,
+  BrowserNavigationCommand,
+  BrowserSettings,
+  BrowserSettingsPatch,
+  BrowserStateEvent,
+  BrowserSurfaceKind,
+  BrowserTabState,
+  BrowserViewportBounds,
+} from "../shared/browser";
 import type { ChatPermissionMode } from "../shared/chat-permissions";
 import type { CredentialKind } from "../shared/credentials";
 import type { OfficePreviewResult } from "../shared/office-preview";
@@ -1049,6 +1060,65 @@ const api = {
   setSetting: (key: string, value: string) =>
     ipcRenderer.invoke("settings:set", key, value),
   getAllSettings: () => ipcRenderer.invoke("settings:getAll"),
+  browserSettings: {
+    get: (): Promise<BrowserSettings> =>
+      ipcRenderer.invoke("settings:browser:get"),
+    set: (patch: BrowserSettingsPatch): Promise<BrowserSettings> =>
+      ipcRenderer.invoke("settings:browser:set", patch),
+  },
+  browser: {
+    captureActiveTabPreview: (): Promise<string | null> =>
+      ipcRenderer.invoke("browser:captureActiveTabPreview"),
+    clearData: (): Promise<{ closedTabs: number }> =>
+      ipcRenderer.invoke("browser:clearData", { confirmed: true }),
+    respondApproval: (
+      requestId: string,
+      decision: BrowserApprovalDecision,
+    ): Promise<boolean> =>
+      ipcRenderer.invoke("browser:respondApproval", { requestId, decision }),
+    onApprovalRequest: (
+      callback: (request: BrowserApprovalRequest) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        request: BrowserApprovalRequest,
+      ) => callback(request);
+      ipcRenderer.on("browser:approval-request", handler);
+      return () =>
+        ipcRenderer.removeListener("browser:approval-request", handler);
+    },
+    createTab: (input: {
+      url?: string;
+      kind: BrowserSurfaceKind;
+      activate?: boolean;
+    }): Promise<BrowserTabState> =>
+      ipcRenderer.invoke("browser:createTab", input),
+    listTabs: (): Promise<BrowserTabState[]> =>
+      ipcRenderer.invoke("browser:listTabs"),
+    activateTab: (tabId: string): Promise<void> =>
+      ipcRenderer.invoke("browser:activateTab", { tabId }),
+    closeTab: (tabId: string): Promise<void> =>
+      ipcRenderer.invoke("browser:closeTab", { tabId }),
+    navigate: (tabId: string, url: string): Promise<void> =>
+      ipcRenderer.invoke("browser:navigate", { tabId, url }),
+    command: (
+      tabId: string,
+      command: BrowserNavigationCommand,
+    ): Promise<void> =>
+      ipcRenderer.invoke("browser:command", { tabId, command }),
+    setViewport: (bounds: BrowserViewportBounds | null): Promise<void> =>
+      ipcRenderer.invoke("browser:setViewport", bounds),
+    setOccluded: (occluded: boolean): Promise<void> =>
+      ipcRenderer.invoke("browser:setOccluded", occluded),
+    onState: (callback: (event: BrowserStateEvent) => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        state: BrowserStateEvent,
+      ) => callback(state);
+      ipcRenderer.on("browser:state", handler);
+      return () => ipcRenderer.removeListener("browser:state", handler);
+    },
+  },
 
   // 自动化
   automations: {

@@ -309,19 +309,13 @@ export const ContextDock = ({
               />
             </TabsContent>
           )}
-          {/* 网页:对所有工作区常驻挂载。无 URL 时 BrowserPanel 自行展示
-              起始页(地址栏可用);本地 HTML 预览经 local-file:// 加载。
-              key 按 local / web 切换:本地预览与真实浏览用隔离 partition,
-              scheme 变化时整组件重挂载,使 webview 以正确 partition 重建。 */}
+          {/* 网页外壳常驻挂载；页面内容由主进程 WebContentsView 绘制。 */}
           <TabsContent
             forceMount
             value="web"
             className="h-full data-[state=inactive]:hidden"
           >
-            <BrowserPanel
-              key={(url ?? "").startsWith("local-file://") ? "local" : "web"}
-              url={url ?? ""}
-            />
+            <BrowserPanel url={url ?? ""} active={effectiveTab === "web"} />
           </TabsContent>
           {/* subagent 钻入:仅在有选中项时挂载(数据来自 chat context,
               随子 agent 流式实时更新)。 */}

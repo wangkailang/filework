@@ -53,6 +53,7 @@ import {
   truncateToFit,
   truncateToFitAsync,
 } from "../ai/token-budget";
+import { buildBrowserPolicyHook } from "../browser/browser-policy";
 import { AgentLoop } from "../core/agent/agent-loop";
 import type { AgentEvent } from "../core/agent/events";
 import { consumePreview } from "../core/agent/preview/snapshot-store";
@@ -62,6 +63,7 @@ import {
   defaultRules,
 } from "../core/agent/reflection-gate";
 import type { ClassifiedRetryError } from "../core/agent/retry";
+import { composeBeforeToolCallHooks } from "../core/agent/tool-registry";
 import type { ImagePart, VideoJobPart } from "../core/session/message-parts";
 import { LocalWorkspace } from "../core/workspace/local-workspace";
 import {
@@ -105,6 +107,7 @@ import {
 import type { UnifiedSkill } from "../skills-runtime/types";
 import {
   buildAgentToolRegistry,
+  getAgentBrowserToolsDependencies,
   shouldEnableMemoryToolsForPrompt,
 } from "./agent-tools";
 import {
@@ -1085,12 +1088,22 @@ const handleTaskExecutionInner = async (
       taskId: id,
       workspace,
     });
+    const browserDependencies = getAgentBrowserToolsDependencies();
+    const browserPolicyHook = browserDependencies
+      ? buildBrowserPolicyHook({
+          manager: browserDependencies.manager,
+          observer: browserDependencies.observer,
+          sender,
+          taskId: id,
+        })
+      : undefined;
     const registryTools = toolRegistry.toAiSdkTools({
       ctxFactory: ({ toolCallId }) => ({
         workspace,
         signal: controller.signal,
         toolCallId,
       }),
+      beforeAnyToolCall: composeBeforeToolCallHooks(browserPolicyHook),
       beforeToolCall,
       // 当此任务的草稿计划在等待审批时,阻塞任何工具;无计划待审时
       // 立即解决。

@@ -416,8 +416,32 @@ describe("spawnSubagent tool — 注册门控与递归防护", () => {
     expect(defaultTools).toContain("webSearch");
     expect(defaultTools).toContain("runCommand");
     expect(defaultTools).toContain("runProcess");
+    expect(defaultTools).toContain("browserOpen");
+    expect(defaultTools).toContain("browserTabs");
+    expect(defaultTools).toContain("browserSnapshot");
+    expect(defaultTools).toContain("browserClose");
+    expect(defaultTools).not.toContain("browserClick");
+    expect(defaultTools).not.toContain("browserType");
     expect(defaultTools).not.toContain("writeFile");
     expect(defaultTools).not.toContain("automation_update");
+  });
+
+  it("grants browser interaction tools only when the child explicitly requests them", () => {
+    expect(
+      resolveSubagentAllowedTools(undefined, [
+        "browserOpen",
+        "browserClick",
+        "browserType",
+        "browserPress",
+        "browserScroll",
+      ]),
+    ).toEqual([
+      "browserOpen",
+      "browserClick",
+      "browserType",
+      "browserPress",
+      "browserScroll",
+    ]);
   });
 
   it("allows direct file-write tools only for explicit worktree-isolated subagents", () => {

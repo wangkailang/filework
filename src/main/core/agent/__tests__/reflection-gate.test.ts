@@ -113,23 +113,59 @@ describe("pdfParseFailure 规则", () => {
 });
 
 describe("toolDeniedSequence 规则", () => {
-  it("2 个及以上工具被拒时 abort", () => {
+  it("2 个及以上用户审批拒绝时 abort", () => {
     const v = toolDeniedSequence(
       mkTurn({
         toolCalls: [
-          { name: "rm", success: false, result: { denied: true } },
-          { name: "rm", success: false, result: { denied: true } },
+          {
+            name: "rm",
+            success: false,
+            result: { denied: true, denialSource: "user" },
+          },
+          {
+            name: "rm",
+            success: false,
+            result: { denied: true, denialSource: "user" },
+          },
         ],
       }),
     );
     expect(v?.kind).toBe("abort");
   });
 
-  it("仅 1 次拒绝时弃权", () => {
+  it("不会把旧快照和安全策略拒绝误判为用户拒绝", () => {
     expect(
       toolDeniedSequence(
         mkTurn({
-          toolCalls: [{ name: "rm", success: false, result: { denied: true } }],
+          toolCalls: [
+            {
+              name: "browserType",
+              success: false,
+              result: { denied: true, denialSource: "stale" },
+            },
+            {
+              name: "browserType",
+              success: false,
+              result: { denied: true, denialSource: "policy" },
+            },
+          ],
+          finalText: "请手动输入密码。",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("仅 1 次用户拒绝时弃权", () => {
+    expect(
+      toolDeniedSequence(
+        mkTurn({
+          toolCalls: [
+            {
+              name: "rm",
+              success: false,
+              result: { denied: true, denialSource: "user" },
+            },
+          ],
         }),
       ),
     ).toBeNull();
@@ -428,8 +464,16 @@ describe("defaultRules 规则集", () => {
     const v = await hook(
       mkTurn({
         toolCalls: [
-          { name: "rm", success: false, result: { denied: true } },
-          { name: "rm", success: false, result: { denied: true } },
+          {
+            name: "rm",
+            success: false,
+            result: { denied: true, denialSource: "user" },
+          },
+          {
+            name: "rm",
+            success: false,
+            result: { denied: true, denialSource: "user" },
+          },
         ],
       }),
     );

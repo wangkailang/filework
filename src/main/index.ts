@@ -24,6 +24,18 @@ config({ path: join(__dirname, "../../.env") });
 import { ATTACHMENT_PICKER_EXTENSIONS, sniffMimeType } from "../shared/mime";
 import { initPatternStore } from "./ai/pattern-store";
 import { setProviderFetch } from "./ai/provider-fetch";
+import { BrowserActionExecutor } from "./browser/browser-actions";
+import { BrowserCaptureStore } from "./browser/browser-capture-store";
+import { BrowserManager } from "./browser/browser-manager";
+import { BrowserObserver } from "./browser/browser-observer";
+import { clearBrowserProfileData } from "./browser/browser-profile";
+import {
+  createControlledWindowOpenHandler,
+  denyBrowserPermissionCheck,
+  denyBrowserPermissionRequest,
+  hardenGuestWebPreferences,
+  validateGuestAttachment,
+} from "./browser/security-policy";
 import { killAllShells } from "./core/agent/shells";
 import { JsonlRunEventLog } from "./core/run/event-log";
 import { recoverInterruptedRunEventLogs } from "./core/run/recovery";
@@ -42,6 +54,10 @@ import {
   stopAutomationScheduler,
 } from "./ipc/automation-service";
 import { registerAutomationsHandlers } from "./ipc/automations-handlers";
+import {
+  registerBrowserHandlers,
+  sendBrowserState,
+} from "./ipc/browser-handlers";
 import { registerChatHandlers } from "./ipc/chat-handlers";
 import {
   firecrawlCredentialResolver,
@@ -61,7 +77,10 @@ import { registerLocalGitHandlers } from "./ipc/local-git-handlers";
 import { registerMcpHandlers } from "./ipc/mcp-handlers";
 import { registerMediaHandlers } from "./ipc/media-handlers";
 import { mediaJobWatcher } from "./ipc/media-job-watcher";
-import { registerSettingsHandlers } from "./ipc/settings-handlers";
+import {
+  readBrowserSettings,
+  registerSettingsHandlers,
+} from "./ipc/settings-handlers";
 import { registerTaskTraceHandlers } from "./ipc/task-trace-handlers";
 import { registerToolWhitelistHandlers } from "./ipc/tool-whitelist-handlers";
 import { registerWorkspaceHandlers } from "./ipc/workspace-handlers";
@@ -73,6 +92,10 @@ import { initSkillDiscovery } from "./skills-runtime";
 import { parseRange } from "./utils/http-range";
 
 let mainWindow: BrowserWindow | null = null;
+let browserManager: BrowserManager | null = null;
+let browserObserver: BrowserObserver | null = null;
+let browserActions: BrowserActionExecutor | null = null;
+let browserCaptureStore: BrowserCaptureStore | null = null;
 const RUN_EVENT_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 // 开发模式下抑制 Electron 安全警告(Vite HMR 需要 unsafe-eval)
@@ -93,7 +116,40 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// 所有 Electron WebContents 共用同一条最小权限基线。页面弹窗永远
+// 不创建 BrowserWindow；合法 HTTP(S) 目标只在当前受控内容中导航。
+app.on("web-contents-created", (_event, contents) => {
+  contents.session.setPermissionCheckHandler(denyBrowserPermissionCheck);
+  contents.session.setPermissionRequestHandler(denyBrowserPermissionRequest);
+  contents.setWindowOpenHandler(
+    createControlledWindowOpenHandler((url) => {
+      void contents.loadURL(url);
+    }),
+  );
+
+  contents.on("will-attach-webview", (event, webPreferences, params) => {
+    hardenGuestWebPreferences(
+      webPreferences as unknown as Record<string, unknown>,
+    );
+    try {
+      validateGuestAttachment({
+        partition: params.partition ?? webPreferences.partition ?? "",
+        src: params.src ?? "",
+      });
+    } catch (error) {
+      event.preventDefault();
+      console.warn(
+        "[browser-security] Blocked unsafe webview attachment:",
+        error instanceof Error ? error.message : "invalid guest configuration",
+      );
+    }
+  });
+});
+
 const createWindow = (): BrowserWindow => {
+  let windowBrowserManager: BrowserManager | null = null;
+  let windowBrowserObserver: BrowserObserver | null = null;
+  let windowBrowserCaptureStore: BrowserCaptureStore | null = null;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -108,9 +164,6 @@ const createWindow = (): BrowserWindow => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // 启用应用内右侧的 BrowserPanel —— webview 是 chrome guest 进程,
-      // 与宿主 renderer 完全沙箱隔离。
-      webviewTag: true,
     },
   });
 
@@ -122,6 +175,15 @@ const createWindow = (): BrowserWindow => {
   }
 
   mainWindow.on("closed", () => {
+    windowBrowserObserver?.dispose();
+    windowBrowserCaptureStore?.clear();
+    void windowBrowserManager?.dispose();
+    if (browserManager === windowBrowserManager) browserManager = null;
+    if (browserObserver === windowBrowserObserver) browserObserver = null;
+    if (browserCaptureStore === windowBrowserCaptureStore) {
+      browserCaptureStore = null;
+      browserActions = null;
+    }
     mainWindow = null;
   });
 
@@ -159,6 +221,22 @@ const createWindow = (): BrowserWindow => {
     }
     return { action: "deny" };
   });
+
+  const ownerWindow = mainWindow;
+  windowBrowserManager = new BrowserManager(ownerWindow, {
+    onTabsChanged: (tabs) => sendBrowserState(ownerWindow, tabs),
+  });
+  windowBrowserCaptureStore = new BrowserCaptureStore();
+  windowBrowserObserver = new BrowserObserver(windowBrowserManager, {
+    captureStore: windowBrowserCaptureStore,
+  });
+  browserManager = windowBrowserManager;
+  browserCaptureStore = windowBrowserCaptureStore;
+  browserObserver = windowBrowserObserver;
+  browserActions = new BrowserActionExecutor(
+    windowBrowserManager,
+    windowBrowserObserver,
+  );
 
   return mainWindow;
 };
@@ -299,18 +377,11 @@ app.whenReady().then(async () => {
 
   // 默认 session:宿主 renderer 的 <img> 缩略图、PDF / 视频预览。
   protocol.handle("local-file", handleLocalFile);
-  // 应用内浏览器(BrowserPanel)的 webview 用独立 partition,其 session
-  // 不共享默认 session 的协议处理器 —— 须单独注册,否则本地 HTML 的
-  // local-file:// 活页面预览会加载失败。涵盖:真实网页浏览的 dev / prod
-  // partition,以及本地 HTML 预览专用的隔离 partition(artifact-preview,
-  // 非 persist,与浏览的 cookies / 存储互不可见)。未被使用的名称无副作用。
-  for (const part of [
-    "persist:in-app-browser",
-    "in-app-browser",
-    "artifact-preview",
-  ]) {
-    session.fromPartition(part).protocol.handle("local-file", handleLocalFile);
-  }
+  // 本地产物预览使用独立的内存 Profile。真实网页 Profile 不注册
+  // local-file://，因此远端页面无法借自定义协议读取本地文件。
+  session
+    .fromPartition("artifact-preview")
+    .protocol.handle("local-file", handleLocalFile);
 
   // 初始化 SQLite 数据库
   await initDatabase();
@@ -421,12 +492,35 @@ app.whenReady().then(async () => {
     fetchFn: proxyAwareFetch,
     resolveTavilyToken: tavilyCredentialResolver,
     resolveFirecrawlToken: firecrawlCredentialResolver,
+    getBrowserToolsDependencies: () => {
+      if (
+        !browserManager ||
+        !browserObserver ||
+        !browserActions ||
+        !browserCaptureStore
+      ) {
+        return null;
+      }
+      return {
+        manager: browserManager,
+        observer: browserObserver,
+        actions: browserActions,
+        captureStore: browserCaptureStore,
+      };
+    },
   });
 
   // 注册 IPC handler
   registerFileHandlers();
   registerAIHandlers();
   registerSettingsHandlers();
+  registerBrowserHandlers({
+    clearBrowserProfileData,
+    getBrowserSettings: readBrowserSettings,
+    getBrowserManager: () => browserManager,
+    getDefaultDownloadDirectory: () => app.getPath("downloads"),
+    getMainWindow: () => mainWindow,
+  });
   registerLlmConfigHandlers();
   mediaJobWatcher.configure({ fetchFn: proxyAwareFetch });
   registerMediaHandlers({ fetchFn: proxyAwareFetch });
@@ -609,6 +703,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  const manager = browserManager;
+  browserManager = null;
+  void manager?.dispose();
   stopAutomationScheduler();
   stopAllHeadWatchers();
   killAllShells();

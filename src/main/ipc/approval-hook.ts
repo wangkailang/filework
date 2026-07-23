@@ -12,6 +12,7 @@
 
 import path from "node:path";
 import type { WebContents } from "electron";
+import { isBrowserToolName } from "../browser/browser-policy";
 import { dispatchPreview, PREVIEW_TIMEOUT_MS } from "../core/agent/preview";
 import { rememberPreview } from "../core/agent/preview/snapshot-store";
 import type { BeforeToolCallHook } from "../core/agent/tool-registry";
@@ -75,6 +76,9 @@ export const buildApprovalHook = ({
   workspace,
 }: BuildApprovalHookOptions): BeforeToolCallHook => {
   return async (call) => {
+    // Browser calls are independently gated by origin and element risk in
+    // beforeAnyToolCall; do not show a second generic approval card.
+    if (isBrowserToolName(call.toolName)) return { allow: true };
     const approvalPolicy =
       approvalPolicyOverride ??
       resolveApprovalPolicy(safeGetSetting("approvalPolicy"));
@@ -189,6 +193,12 @@ export const buildApprovalHook = ({
       undefined,
       workspace,
     );
-    return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
+    return approved
+      ? { allow: true }
+      : {
+          allow: false,
+          denialSource: "user",
+          reason: DENIED_REASON,
+        };
   };
 };

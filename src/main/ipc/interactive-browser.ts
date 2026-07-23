@@ -37,6 +37,7 @@ import { randomUUID } from "node:crypto";
 
 import { app, type BrowserWindow } from "electron";
 
+import { assertAgentBrowserUrl } from "../browser/security-policy";
 import { extractReadable } from "../core/agent/tools/web-extract";
 import {
   createHiddenWindow,
@@ -105,16 +106,41 @@ export const SNAPSHOT_SCRIPT = `(() => {
   const REF_ATTR = 'data-aix-ref';
   const sel = 'a[href], button, input:not([type="hidden"]), textarea, select, [role="button"], [role="link"], [role="textbox"], [role="combobox"], [role="searchbox"], [role="checkbox"], [role="radio"], [contenteditable="true"]';
   const nodes = document.querySelectorAll(sel);
-  let next = 0;
+  const root = document.documentElement;
+  let next = Number.parseInt(root.dataset.aixRefCounter || '0', 10);
+  if (!Number.isFinite(next) || next < 0) next = 0;
+  const used = new Set();
+  for (const el of document.querySelectorAll('[' + REF_ATTR + ']')) {
+    const ref = el.getAttribute(REF_ATTR);
+    const match = ref && /^r(\\d+)$/.exec(ref);
+    if (!match || used.has(ref)) {
+      el.removeAttribute(REF_ATTR);
+      continue;
+    }
+    used.add(ref);
+    next = Math.max(next, Number.parseInt(match[1], 10));
+  }
   for (const el of nodes) {
     if (!el.getAttribute(REF_ATTR)) {
-      next += 1;
-      el.setAttribute(REF_ATTR, 'r' + next);
+      let ref;
+      do {
+        next += 1;
+        ref = 'r' + next;
+      } while (used.has(ref));
+      el.setAttribute(REF_ATTR, ref);
+      used.add(ref);
     }
   }
+  root.dataset.aixRefCounter = String(next);
   const out = [];
+  const returnedRefs = new Set();
   const all = document.querySelectorAll('[' + REF_ATTR + ']');
   for (const el of all) {
+    const ref = el.getAttribute(REF_ATTR);
+    if (!ref || returnedRefs.has(ref)) {
+      throw new Error('duplicate-browser-ref');
+    }
+    returnedRefs.add(ref);
     const rect = el.getBoundingClientRect();
     const visible = rect.width > 0 && rect.height > 0
       && rect.bottom > -200 && rect.top < (window.innerHeight + 200);
@@ -128,7 +154,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
       value = el.value.length > 200 ? el.value.slice(0, 200) : el.value;
     }
     out.push({
-      ref: el.getAttribute(REF_ATTR),
+      ref,
       tag: el.tagName.toLowerCase(),
       role,
       type,
@@ -435,6 +461,7 @@ export const openBrowserSession = async (
   url: string,
   opts: OpenSessionOptions = {},
 ): Promise<InteractiveSnapshot> => {
+  const target = assertAgentBrowserUrl(url);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
   const settleMs = opts.settleMs ?? DEFAULT_SETTLE_MS;
 
@@ -448,7 +475,7 @@ export const openBrowserSession = async (
   // 互相重叠。
   try {
     const loadPromise = waitForPageLoad(s.window, timeoutMs, opts.signal);
-    void s.window.webContents.loadURL(url);
+    void s.window.webContents.loadURL(target.href);
     await loadPromise;
     await sleep(settleMs);
     return await takeSnapshot(s);

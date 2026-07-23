@@ -1621,6 +1621,185 @@ const submitSubagentResultPresenter: ToolPresenter = {
   },
 };
 
+const sanitizedBrowserUrl = (raw: unknown): string => {
+  if (typeof raw !== "string" || raw.length === 0) return "";
+  try {
+    const url = new URL(raw);
+    url.username = "";
+    url.password = "";
+    return url.href;
+  } catch {
+    return "[invalid URL]";
+  }
+};
+
+const browserOrigin = (raw: unknown): string => {
+  const safe = sanitizedBrowserUrl(raw);
+  if (!safe || safe === "[invalid URL]") return safe;
+  try {
+    return new URL(safe).origin;
+  } catch {
+    return "[invalid URL]";
+  }
+};
+
+const browserTargetSummary = (
+  args: Record<string, unknown> | null,
+  result: Record<string, unknown> | null,
+): string => {
+  const ref = typeof args?.ref === "string" ? args.ref : "";
+  if (!ref) return "";
+  const elements = Array.isArray(result?.elements) ? result.elements : [];
+  const target = elements.map(asRecord).find((element) => element?.ref === ref);
+  const name = typeof target?.name === "string" ? target.name : "";
+  return name ? `${name} · ${ref}` : ref;
+};
+
+const browserPresenter = (action: string): ToolPresenter => ({
+  summary: (args, result, state) => {
+    const a = asRecord(args);
+    const r = asRecord(result);
+    const rawUrl = r?.url ?? a?.url;
+    const origin = browserOrigin(rawUrl);
+    const tabId =
+      typeof r?.tabId === "string"
+        ? r.tabId
+        : typeof a?.tabId === "string"
+          ? a.tabId
+          : "";
+    const target = browserTargetSummary(a, r);
+    const actionResult = asRecord(r?.actionResult);
+    const actionOutcome =
+      actionResult?.outcome === "changed" ||
+      actionResult?.outcome === "unchanged" ||
+      actionResult?.outcome === "navigated"
+        ? actionResult.outcome
+        : "";
+    const execution =
+      state === "output-available"
+        ? actionOutcome || "done"
+        : state === "output-error"
+          ? "failed"
+          : "pending";
+    return (
+      <span data-browser-tool-summary={action} className={TOOL_SUMMARY_TEXT}>
+        {origin || action}
+        <span className={cn("ml-2", TOOL_MUTED_TEXT)}>{action}</span>
+        {target && (
+          <span className={cn("ml-2", TOOL_MUTED_TEXT)}>{target}</span>
+        )}
+        {tabId && (
+          <span className={cn("ml-2 font-mono", TOOL_MUTED_TEXT)}>{tabId}</span>
+        )}
+        <span
+          className={cn(
+            "ml-2",
+            execution === "failed" ? TOOL_ERROR_TEXT : TOOL_MUTED_TEXT,
+          )}
+        >
+          {execution}
+        </span>
+      </span>
+    );
+  },
+  input: (args) => {
+    const a = asRecord(args);
+    if (!a) return null;
+    const rows = [
+      typeof a.url === "string" ? ["URL", sanitizedBrowserUrl(a.url)] : null,
+      typeof a.tabId === "string" ? ["Tab", a.tabId] : null,
+      typeof a.navigationId === "string"
+        ? ["Navigation", a.navigationId]
+        : null,
+      typeof a.snapshotId === "string" ? ["Snapshot", a.snapshotId] : null,
+      typeof a.ref === "string" ? ["Target ref", a.ref] : null,
+      typeof a.key === "string" ? ["Key", a.key] : null,
+    ].filter((row): row is string[] => row !== null);
+    if (rows.length === 0) return null;
+    return (
+      <dl
+        data-browser-tool-input={action}
+        className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-border/35 border-b px-3 py-2 text-xs"
+      >
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className={TOOL_MUTED_TEXT}>{label}</dt>
+            <dd className="truncate font-mono text-foreground/70" title={value}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  },
+  output: (result) => {
+    const r = asRecord(result);
+    if (!r) return null;
+    const url = sanitizedBrowserUrl(r.url);
+    const title = typeof r.title === "string" ? r.title : "";
+    const snapshotId = typeof r.snapshotId === "string" ? r.snapshotId : "";
+    const elements = Array.isArray(r.elements) ? r.elements.length : 0;
+    if (!url && !title && !snapshotId && elements === 0) return null;
+    return (
+      <div
+        data-browser-tool-output={action}
+        className="space-y-1 bg-surface-sunken/35 px-3 py-2 text-xs text-muted-foreground"
+      >
+        {title && <div className="font-medium text-foreground/75">{title}</div>}
+        {url && <div className="truncate font-mono">{url}</div>}
+        <div className="flex gap-3 text-[10px]">
+          {snapshotId && <span>snapshot {snapshotId}</span>}
+          <span>{elements} refs</span>
+        </div>
+      </div>
+    );
+  },
+});
+
+const browserTabsPresenter: ToolPresenter = {
+  summary: (_args, result) => {
+    const r = asRecord(result);
+    const tabs = Array.isArray(r?.tabs) ? r.tabs : [];
+    const activeTabId = typeof r?.activeTabId === "string" ? r.activeTabId : "";
+    return (
+      <span data-browser-tool-summary="tabs" className={TOOL_SUMMARY_TEXT}>
+        {tabs.length} tabs
+        {activeTabId && (
+          <span className={cn("ml-2 font-mono", TOOL_MUTED_TEXT)}>
+            active {activeTabId}
+          </span>
+        )}
+      </span>
+    );
+  },
+  output: (result) => {
+    const r = asRecord(result);
+    const tabs = Array.isArray(r?.tabs)
+      ? r.tabs.map(asRecord).filter(Boolean)
+      : [];
+    if (tabs.length === 0) return null;
+    return (
+      <div
+        data-browser-tool-output="tabs"
+        className="space-y-1 px-3 py-2 text-xs"
+      >
+        {tabs.map((tab, index) => {
+          const id = typeof tab?.id === "string" ? tab.id : `tab-${index}`;
+          const url = sanitizedBrowserUrl(tab?.url);
+          const title = typeof tab?.title === "string" ? tab.title : "";
+          return (
+            <div key={id} className="flex min-w-0 gap-2 text-muted-foreground">
+              <span className="shrink-0 font-mono">{id}</span>
+              <span className="truncate">{title || url}</span>
+              {tab?.active === true && <span className="shrink-0">active</span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  },
+};
+
 export const toolPresenters: Record<string, ToolPresenter> = {
   runCommand: runCommandPresenter,
   readFile: readFilePresenter,
@@ -1637,6 +1816,15 @@ export const toolPresenters: Record<string, ToolPresenter> = {
   webFetch: webFetchPresenter,
   webFetchRendered: webFetchPresenter,
   webScrape: webFetchPresenter,
+  browserOpen: browserPresenter("open"),
+  browserTabs: browserTabsPresenter,
+  browserSwitchTab: browserPresenter("switch"),
+  browserSnapshot: browserPresenter("snapshot"),
+  browserClick: browserPresenter("click"),
+  browserType: browserPresenter("type"),
+  browserPress: browserPresenter("press"),
+  browserScroll: browserPresenter("scroll"),
+  browserClose: browserPresenter("close"),
   youtubeTranscript: urlPresenter,
   submitSubagentResult: submitSubagentResultPresenter,
 };

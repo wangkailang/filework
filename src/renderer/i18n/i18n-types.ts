@@ -1736,6 +1736,42 @@ type RootTranslation = {
 	 */
 	toolName_webScrape: string
 	/**
+	 * O​p​e​n​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserOpen: string
+	/**
+	 * L​i​s​t​ ​B​r​o​w​s​e​r​ ​T​a​b​s
+	 */
+	toolName_browserTabs: string
+	/**
+	 * S​w​i​t​c​h​ ​B​r​o​w​s​e​r​ ​T​a​b
+	 */
+	toolName_browserSwitchTab: string
+	/**
+	 * R​e​a​d​ ​B​r​o​w​s​e​r​ ​P​a​g​e
+	 */
+	toolName_browserSnapshot: string
+	/**
+	 * C​l​i​c​k​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserClick: string
+	/**
+	 * T​y​p​e​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserType: string
+	/**
+	 * P​r​e​s​s​ ​K​e​y​ ​i​n​ ​B​r​o​w​s​e​r
+	 */
+	toolName_browserPress: string
+	/**
+	 * S​c​r​o​l​l​ ​B​r​o​w​s​e​r​ ​P​a​g​e
+	 */
+	toolName_browserScroll: string
+	/**
+	 * C​l​o​s​e​ ​B​r​o​w​s​e​r​ ​T​a​b
+	 */
+	toolName_browserClose: string
+	/**
 	 * Y​o​u​T​u​b​e​ ​T​r​a​n​s​c​r​i​p​t
 	 */
 	toolName_youtubeTranscript: string
@@ -2782,6 +2818,165 @@ type RootTranslation = {
 	 * E​n​t​e​r​ ​a​ ​U​R​L​ ​i​n​ ​t​h​e​ ​a​d​d​r​e​s​s​ ​b​a​r​ ​t​o​ ​s​t​a​r​t​ ​b​r​o​w​s​i​n​g
 	 */
 	browser_start_hint: string
+	/**
+	 * A​l​l​o​w​ ​t​h​e​ ​a​g​e​n​t​ ​t​o​ ​a​c​c​e​s​s​ ​t​h​i​s​ ​s​i​t​e​?
+	 */
+	browserApproval_originTitle: string
+	/**
+	 * A​p​p​r​o​v​e​ ​t​h​i​s​ ​s​e​n​s​i​t​i​v​e​ ​w​e​b​ ​a​c​t​i​o​n​?
+	 */
+	browserApproval_sensitiveTitle: string
+	/**
+	 * B​l​o​c​k
+	 */
+	browserApproval_block: string
+	/**
+	 * A​l​l​o​w​ ​o​n​c​e
+	 */
+	browserApproval_allowOnce: string
+	/**
+	 * A​l​w​a​y​s​ ​a​l​l​o​w​ ​t​h​i​s​ ​s​i​t​e
+	 */
+	browserApproval_alwaysAllow: string
+	/**
+	 * D​e​n​y
+	 */
+	browserApproval_deny: string
+	/**
+	 * A​p​p​r​o​v​e​ ​o​n​c​e
+	 */
+	browserApproval_approveOnce: string
+	/**
+	 * B​r​o​w​s​e​r
+	 */
+	browserSettings_title: string
+	/**
+	 * C​o​n​t​r​o​l​ ​s​i​t​e​ ​a​c​c​e​s​s​,​ ​d​o​w​n​l​o​a​d​s​,​ ​a​n​d​ ​t​h​e​ ​i​s​o​l​a​t​e​d​ ​b​r​o​w​s​e​r​ ​p​r​o​f​i​l​e​ ​s​h​a​r​e​d​ ​w​i​t​h​ ​t​h​e​ ​a​g​e​n​t​.
+	 */
+	browserSettings_description: string
+	/**
+	 * L​o​a​d​i​n​g​ ​b​r​o​w​s​e​r​ ​s​e​t​t​i​n​g​s​…
+	 */
+	browserSettings_loading: string
+	/**
+	 * B​r​o​w​s​e​r​ ​s​e​t​t​i​n​g​s​ ​e​r​r​o​r​:​ ​{​r​e​a​s​o​n​}
+	 * @param {string} reason
+	 */
+	browserSettings_error: RequiredParams<'reason'>
+	/**
+	 * S​i​t​e​ ​a​c​c​e​s​s
+	 */
+	browserSettings_origins: string
+	/**
+	 * O​n​l​y​ ​s​a​v​e​d​ ​s​i​t​e​ ​o​r​i​g​i​n​s​ ​a​r​e​ ​l​i​s​t​e​d​ ​h​e​r​e​;​ ​p​a​g​e​ ​d​a​t​a​ ​a​n​d​ ​s​i​g​n​-​i​n​ ​s​e​c​r​e​t​s​ ​a​r​e​ ​n​e​v​e​r​ ​d​i​s​p​l​a​y​e​d​.
+	 */
+	browserSettings_originsHint: string
+	/**
+	 * A​l​l​o​w​e​d
+	 */
+	browserSettings_allowed: string
+	/**
+	 * B​l​o​c​k​e​d
+	 */
+	browserSettings_blocked: string
+	/**
+	 * N​o​ ​s​a​v​e​d​ ​s​i​t​e​s
+	 */
+	browserSettings_emptyOrigins: string
+	/**
+	 * R​e​v​o​k​e​ ​{​o​r​i​g​i​n​}
+	 * @param {string} origin
+	 */
+	browserSettings_revokeOrigin: RequiredParams<'origin'>
+	/**
+	 * D​o​w​n​l​o​a​d​s
+	 */
+	browserSettings_downloads: string
+	/**
+	 * D​o​w​n​l​o​a​d​s​ ​u​s​e​ ​s​a​n​i​t​i​z​e​d​ ​f​i​l​e​n​a​m​e​s​ ​a​n​d​ ​n​e​v​e​r​ ​s​i​l​e​n​t​l​y​ ​r​e​p​l​a​c​e​ ​a​n​ ​e​x​i​s​t​i​n​g​ ​f​i​l​e​.
+	 */
+	browserSettings_downloadsHint: string
+	/**
+	 * A​s​k​ ​w​h​e​r​e​ ​t​o​ ​s​a​v​e​ ​e​a​c​h​ ​f​i​l​e
+	 */
+	browserSettings_askEveryTime: string
+	/**
+	 * U​s​e​ ​t​h​e​ ​n​a​t​i​v​e​ ​s​a​v​e​ ​d​i​a​l​o​g​ ​f​o​r​ ​e​v​e​r​y​ ​b​r​o​w​s​e​r​ ​d​o​w​n​l​o​a​d​.
+	 */
+	browserSettings_askEveryTimeHint: string
+	/**
+	 * D​o​w​n​l​o​a​d​ ​d​i​r​e​c​t​o​r​y
+	 */
+	browserSettings_downloadDirectory: string
+	/**
+	 * S​y​s​t​e​m​ ​D​o​w​n​l​o​a​d​s​ ​f​o​l​d​e​r
+	 */
+	browserSettings_defaultDirectory: string
+	/**
+	 * C​h​o​o​s​e​ ​d​i​r​e​c​t​o​r​y
+	 */
+	browserSettings_chooseDirectory: string
+	/**
+	 * D​e​v​e​l​o​p​e​r​ ​m​o​d​e
+	 */
+	browserSettings_developerMode: string
+	/**
+	 * O​f​f​ ​b​y​ ​d​e​f​a​u​l​t​.​ ​D​e​v​e​l​o​p​e​r​ ​a​c​c​e​s​s​ ​s​t​i​l​l​ ​r​e​q​u​i​r​e​s​ ​t​a​s​k​-​ ​a​n​d​ ​s​i​t​e​-​s​c​o​p​e​d​ ​a​p​p​r​o​v​a​l​.
+	 */
+	browserSettings_developerModeHint: string
+	/**
+	 * B​r​o​w​s​i​n​g​ ​d​a​t​a
+	 */
+	browserSettings_data: string
+	/**
+	 * C​l​e​a​r​i​n​g​ ​d​a​t​a​ ​c​l​o​s​e​s​ ​e​v​e​r​y​ ​w​e​b​ ​t​a​b​ ​a​n​d​ ​s​i​g​n​s​ ​y​o​u​ ​o​u​t​ ​o​f​ ​a​l​l​ ​s​i​t​e​s​.​ ​L​o​c​a​l​ ​p​r​e​v​i​e​w​s​ ​s​t​a​y​ ​o​p​e​n​.
+	 */
+	browserSettings_dataHint: string
+	/**
+	 * C​l​e​a​r​ ​b​r​o​w​s​i​n​g​ ​d​a​t​a
+	 */
+	browserSettings_clearAction: string
+	/**
+	 * C​l​e​a​r​ ​b​r​o​w​s​e​r​ ​d​a​t​a​?
+	 */
+	browserSettings_clearTitle: string
+	/**
+	 * A​l​l​ ​w​e​b​ ​t​a​b​s​ ​w​i​l​l​ ​c​l​o​s​e​.​ ​C​o​o​k​i​e​s​,​ ​s​i​t​e​ ​s​t​o​r​a​g​e​,​ ​c​a​c​h​e​,​ ​s​e​r​v​i​c​e​ ​w​o​r​k​e​r​s​,​ ​a​n​d​ ​n​a​v​i​g​a​t​i​o​n​ ​h​i​s​t​o​r​y​ ​w​i​l​l​ ​b​e​ ​c​l​e​a​r​e​d​,​ ​s​i​g​n​i​n​g​ ​y​o​u​ ​o​u​t​ ​o​f​ ​e​v​e​r​y​ ​s​i​t​e​.
+	 */
+	browserSettings_clearDescription: string
+	/**
+	 * C​l​e​a​r​ ​n​o​w
+	 */
+	browserSettings_clearConfirm: string
+	/**
+	 * C​a​n​c​e​l
+	 */
+	browserSettings_cancel: string
+	/**
+	 * B​r​o​w​s​e​r​ ​d​a​t​a​ ​c​l​e​a​r​e​d​.
+	 */
+	browserSettings_cleared: string
+	/**
+	 * {​p​e​r​c​e​n​t​}​%
+	 * @param {number} percent
+	 */
+	browserDownload_progress: RequiredParams<'percent'>
+	/**
+	 * D​o​w​n​l​o​a​d​ ​c​o​m​p​l​e​t​e
+	 */
+	browserDownload_completed: string
+	/**
+	 * D​o​w​n​l​o​a​d​ ​c​a​n​c​e​l​l​e​d
+	 */
+	browserDownload_cancelled: string
+	/**
+	 * D​o​w​n​l​o​a​d​ ​i​n​t​e​r​r​u​p​t​e​d
+	 */
+	browserDownload_interrupted: string
+	/**
+	 * S​h​o​w​ ​d​o​w​n​l​o​a​d​e​d​ ​f​i​l​e
+	 */
+	browserDownload_showInFinder: string
 }
 
 export type TranslationFunctions = {
@@ -4462,6 +4657,42 @@ export type TranslationFunctions = {
 	 */
 	toolName_webScrape: () => LocalizedString
 	/**
+	 * Open in Browser
+	 */
+	toolName_browserOpen: () => LocalizedString
+	/**
+	 * List Browser Tabs
+	 */
+	toolName_browserTabs: () => LocalizedString
+	/**
+	 * Switch Browser Tab
+	 */
+	toolName_browserSwitchTab: () => LocalizedString
+	/**
+	 * Read Browser Page
+	 */
+	toolName_browserSnapshot: () => LocalizedString
+	/**
+	 * Click in Browser
+	 */
+	toolName_browserClick: () => LocalizedString
+	/**
+	 * Type in Browser
+	 */
+	toolName_browserType: () => LocalizedString
+	/**
+	 * Press Key in Browser
+	 */
+	toolName_browserPress: () => LocalizedString
+	/**
+	 * Scroll Browser Page
+	 */
+	toolName_browserScroll: () => LocalizedString
+	/**
+	 * Close Browser Tab
+	 */
+	toolName_browserClose: () => LocalizedString
+	/**
 	 * YouTube Transcript
 	 */
 	toolName_youtubeTranscript: () => LocalizedString
@@ -5457,6 +5688,162 @@ export type TranslationFunctions = {
 	 * Enter a URL in the address bar to start browsing
 	 */
 	browser_start_hint: () => LocalizedString
+	/**
+	 * Allow the agent to access this site?
+	 */
+	browserApproval_originTitle: () => LocalizedString
+	/**
+	 * Approve this sensitive web action?
+	 */
+	browserApproval_sensitiveTitle: () => LocalizedString
+	/**
+	 * Block
+	 */
+	browserApproval_block: () => LocalizedString
+	/**
+	 * Allow once
+	 */
+	browserApproval_allowOnce: () => LocalizedString
+	/**
+	 * Always allow this site
+	 */
+	browserApproval_alwaysAllow: () => LocalizedString
+	/**
+	 * Deny
+	 */
+	browserApproval_deny: () => LocalizedString
+	/**
+	 * Approve once
+	 */
+	browserApproval_approveOnce: () => LocalizedString
+	/**
+	 * Browser
+	 */
+	browserSettings_title: () => LocalizedString
+	/**
+	 * Control site access, downloads, and the isolated browser profile shared with the agent.
+	 */
+	browserSettings_description: () => LocalizedString
+	/**
+	 * Loading browser settings…
+	 */
+	browserSettings_loading: () => LocalizedString
+	/**
+	 * Browser settings error: {reason}
+	 */
+	browserSettings_error: (arg: { reason: string }) => LocalizedString
+	/**
+	 * Site access
+	 */
+	browserSettings_origins: () => LocalizedString
+	/**
+	 * Only saved site origins are listed here; page data and sign-in secrets are never displayed.
+	 */
+	browserSettings_originsHint: () => LocalizedString
+	/**
+	 * Allowed
+	 */
+	browserSettings_allowed: () => LocalizedString
+	/**
+	 * Blocked
+	 */
+	browserSettings_blocked: () => LocalizedString
+	/**
+	 * No saved sites
+	 */
+	browserSettings_emptyOrigins: () => LocalizedString
+	/**
+	 * Revoke {origin}
+	 */
+	browserSettings_revokeOrigin: (arg: { origin: string }) => LocalizedString
+	/**
+	 * Downloads
+	 */
+	browserSettings_downloads: () => LocalizedString
+	/**
+	 * Downloads use sanitized filenames and never silently replace an existing file.
+	 */
+	browserSettings_downloadsHint: () => LocalizedString
+	/**
+	 * Ask where to save each file
+	 */
+	browserSettings_askEveryTime: () => LocalizedString
+	/**
+	 * Use the native save dialog for every browser download.
+	 */
+	browserSettings_askEveryTimeHint: () => LocalizedString
+	/**
+	 * Download directory
+	 */
+	browserSettings_downloadDirectory: () => LocalizedString
+	/**
+	 * System Downloads folder
+	 */
+	browserSettings_defaultDirectory: () => LocalizedString
+	/**
+	 * Choose directory
+	 */
+	browserSettings_chooseDirectory: () => LocalizedString
+	/**
+	 * Developer mode
+	 */
+	browserSettings_developerMode: () => LocalizedString
+	/**
+	 * Off by default. Developer access still requires task- and site-scoped approval.
+	 */
+	browserSettings_developerModeHint: () => LocalizedString
+	/**
+	 * Browsing data
+	 */
+	browserSettings_data: () => LocalizedString
+	/**
+	 * Clearing data closes every web tab and signs you out of all sites. Local previews stay open.
+	 */
+	browserSettings_dataHint: () => LocalizedString
+	/**
+	 * Clear browsing data
+	 */
+	browserSettings_clearAction: () => LocalizedString
+	/**
+	 * Clear browser data?
+	 */
+	browserSettings_clearTitle: () => LocalizedString
+	/**
+	 * All web tabs will close. Cookies, site storage, cache, service workers, and navigation history will be cleared, signing you out of every site.
+	 */
+	browserSettings_clearDescription: () => LocalizedString
+	/**
+	 * Clear now
+	 */
+	browserSettings_clearConfirm: () => LocalizedString
+	/**
+	 * Cancel
+	 */
+	browserSettings_cancel: () => LocalizedString
+	/**
+	 * Browser data cleared.
+	 */
+	browserSettings_cleared: () => LocalizedString
+	/**
+	 * {percent}%
+	 */
+	browserDownload_progress: (arg: { percent: number }) => LocalizedString
+	/**
+	 * Download complete
+	 */
+	browserDownload_completed: () => LocalizedString
+	/**
+	 * Download cancelled
+	 */
+	browserDownload_cancelled: () => LocalizedString
+	/**
+	 * Download interrupted
+	 */
+	browserDownload_interrupted: () => LocalizedString
+	/**
+	 * Show downloaded file
+	 */
+	browserDownload_showInFinder: () => LocalizedString
 }
 
 export type Formatters = {}

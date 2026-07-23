@@ -467,6 +467,15 @@ const zhCN: Translation = {
   toolName_webFetch: "抓取网页",
   toolName_webFetchRendered: "渲染抓取",
   toolName_webScrape: "抓取内容",
+  toolName_browserOpen: "在浏览器中打开",
+  toolName_browserTabs: "查看浏览器标签页",
+  toolName_browserSwitchTab: "切换浏览器标签页",
+  toolName_browserSnapshot: "读取浏览器页面",
+  toolName_browserClick: "点击网页元素",
+  toolName_browserType: "在网页中输入",
+  toolName_browserPress: "发送网页按键",
+  toolName_browserScroll: "滚动网页",
+  toolName_browserClose: "关闭浏览器标签页",
   toolName_youtubeTranscript: "视频字幕",
   toolName_spawnSubagent: "启动子任务",
   toolName_submitSubagentResult: "提交结果",
@@ -758,6 +767,57 @@ const zhCN: Translation = {
   browser_failed_to_load: "页面加载失败",
   browser_start_title: "浏览网页",
   browser_start_hint: "在上方地址栏输入网址开始浏览",
+
+  // 浏览器访问审批
+  browserApproval_originTitle: "允许 Agent 访问此站点？",
+  browserApproval_sensitiveTitle: "批准网页敏感操作？",
+  browserApproval_block: "阻止",
+  browserApproval_allowOnce: "允许一次",
+  browserApproval_alwaysAllow: "始终允许此站点",
+  browserApproval_deny: "拒绝",
+  browserApproval_approveOnce: "批准本次",
+
+  // 浏览器设置
+  browserSettings_title: "浏览器",
+  browserSettings_description:
+    "管理 Agent 共用隔离浏览器的站点访问、下载位置和浏览数据。",
+  browserSettings_loading: "正在加载浏览器设置…",
+  browserSettings_error: "浏览器设置出错：{reason}",
+  browserSettings_origins: "站点访问",
+  browserSettings_originsHint:
+    "这里只显示已保存的站点来源，不展示页面数据或登录凭据。",
+  browserSettings_allowed: "已允许",
+  browserSettings_blocked: "已阻止",
+  browserSettings_emptyOrigins: "暂无已保存站点",
+  browserSettings_revokeOrigin: "撤销 {origin}",
+  browserSettings_downloads: "下载",
+  browserSettings_downloadsHint:
+    "下载文件名会经过安全处理，且不会静默覆盖已有文件。",
+  browserSettings_askEveryTime: "每次询问保存位置",
+  browserSettings_askEveryTimeHint: "每次网页下载都使用系统原生保存对话框。",
+  browserSettings_downloadDirectory: "下载目录",
+  browserSettings_defaultDirectory: "系统下载文件夹",
+  browserSettings_chooseDirectory: "选择目录",
+  browserSettings_developerMode: "开发者模式",
+  browserSettings_developerModeHint:
+    "默认关闭；开启后，开发者访问仍需按任务和站点单独审批。",
+  browserSettings_data: "浏览数据",
+  browserSettings_dataHint:
+    "清理会关闭所有网页标签并退出全部站点登录，本地预览不会关闭。",
+  browserSettings_clearAction: "清理浏览数据",
+  browserSettings_clearTitle: "清理浏览器数据？",
+  browserSettings_clearDescription:
+    "所有网页标签将被关闭；Cookie、站点存储、缓存、Service Worker 和导航历史将被清除，你会退出全部站点登录。",
+  browserSettings_clearConfirm: "立即清理",
+  browserSettings_cancel: "取消",
+  browserSettings_cleared: "浏览数据已清理。",
+
+  // 浏览器下载
+  browserDownload_progress: "{percent}%",
+  browserDownload_completed: "下载完成",
+  browserDownload_cancelled: "下载已取消",
+  browserDownload_interrupted: "下载已中断",
+  browserDownload_showInFinder: "显示已下载文件",
 };
 
 export default zhCN;

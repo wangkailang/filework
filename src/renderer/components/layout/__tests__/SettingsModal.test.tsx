@@ -33,6 +33,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
     locale: "zh-CN",
     LL: {
+      browserSettings_title: () => "浏览器",
       llmConfig_title: () => "LLM 配置",
       memoryDebug_title: () => "记忆调试",
       settings_credentials: () => "凭据",
@@ -49,6 +50,9 @@ vi.mock("../../../i18n/i18n-react", () => ({
 
 vi.mock("../../settings/CommandSecurityPanel", () => ({
   CommandSecurityPanel: () => <div data-panel="command-security" />,
+}));
+vi.mock("../../settings/BrowserSettingsPanel", () => ({
+  BrowserSettingsPanel: () => <div data-panel="browser" />,
 }));
 vi.mock("../../settings/CredentialsPanel", () => ({
   CredentialsPanel: () => <div data-panel="credentials" />,

@@ -26,10 +26,17 @@ export interface ToolContext {
   toolCallId: string;
 }
 
+export type ToolDenialSource = "user" | "policy" | "stale";
+
 export interface BeforeToolCallDecision {
   allow: boolean;
   /** 当 allow=false 时呈现给模型的可选原因。 */
   reason?: string;
+  /**
+   * 拒绝来源。只有明确来自用户审批交互的拒绝才使用 `user`；
+   * 运行时策略默认归为 `policy`，页面版本失效使用 `stale`。
+   */
+  denialSource?: ToolDenialSource;
   /**
    * 运行时策略主动跳过调用时可返回一个非错误结果。省略则沿用标准
    * ToolDeniedResult。用于阶段切换，不用于用户拒绝或权限错误。
@@ -45,6 +52,23 @@ export type BeforeToolCallHook = (
   },
   ctx: ToolContext,
 ) => Promise<BeforeToolCallDecision>;
+
+/** Run independent policy hooks in order, stopping at the first denial. */
+export const composeBeforeToolCallHooks = (
+  ...hooks: Array<BeforeToolCallHook | undefined>
+): BeforeToolCallHook | undefined => {
+  const active = hooks.filter(
+    (hook): hook is BeforeToolCallHook => hook !== undefined,
+  );
+  if (active.length === 0) return undefined;
+  return async (call, ctx) => {
+    for (const hook of active) {
+      const decision = await hook(call, ctx);
+      if (!decision.allow) return decision;
+    }
+    return { allow: true };
+  };
+};
 
 /**
  * 在每个非 `createPlan` 工具执行前运行的门控。返回 `true` 表示放行
@@ -86,8 +110,24 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
 export interface ToolDeniedResult {
   success: false;
   denied: true;
+  denialSource?: ToolDenialSource;
   reason: string;
 }
+
+const isToolDeniedResult = (value: unknown): value is ToolDeniedResult =>
+  value !== null &&
+  typeof value === "object" &&
+  "success" in value &&
+  value.success === false &&
+  "denied" in value &&
+  value.denied === true &&
+  "reason" in value &&
+  typeof value.reason === "string";
+
+const deniedToolModelOutput = (result: ToolDeniedResult): ToolResultOutput => ({
+  type: "text",
+  value: `Tool call denied: ${result.reason}`,
+});
 
 export interface ToolObservedResult {
   toolName: string;
@@ -173,12 +213,20 @@ export class ToolRegistry {
       onToolResult?: ToolResultObserver;
     },
   ): Tool {
+    const projectModelOutput = def.toModelOutput;
     return defineAiTool({
       description: def.description,
       inputSchema: def.inputSchema,
       ...(def.outputSchema !== undefined && { outputSchema: def.outputSchema }),
-      ...(def.toModelOutput !== undefined && {
-        toModelOutput: def.toModelOutput,
+      ...(projectModelOutput !== undefined && {
+        toModelOutput: (options: {
+          toolCallId: string;
+          input: unknown;
+          output: unknown;
+        }) =>
+          isToolDeniedResult(options.output)
+            ? deniedToolModelOutput(options.output)
+            : projectModelOutput(options),
       }),
       execute: async (
         args: unknown,
@@ -197,6 +245,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: "user",
               reason: "计划被拒绝,未执行",
             };
             return denied;
@@ -217,6 +266,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: decision.denialSource ?? "policy",
               reason: decision.reason ?? "Tool call denied",
             };
             return denied;
@@ -236,6 +286,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: decision.denialSource ?? "policy",
               reason: decision.reason ?? "Tool call denied",
             };
             return denied;

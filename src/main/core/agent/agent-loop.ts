@@ -16,7 +16,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type {
+  ProviderOptions,
+  SystemModelMessage,
+} from "@ai-sdk/provider-utils";
 import type { LanguageModel, ModelMessage, Tool, ToolChoice } from "ai";
 import { isStepCount, streamText } from "ai";
 import type { Workspace } from "../workspace/types";
@@ -203,6 +206,32 @@ function shouldAppendPrompt(history: ModelMessage[], prompt: string): boolean {
   return last?.role !== "user" || !contentContainsPrompt(last.content, prompt);
 }
 
+const splitSystemMessages = (
+  messages: ModelMessage[],
+): { messages: ModelMessage[]; systemMessages: SystemModelMessage[] } => {
+  const modelMessages: ModelMessage[] = [];
+  const systemMessages: SystemModelMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "system") {
+      systemMessages.push(message);
+    } else {
+      modelMessages.push(message);
+    }
+  }
+  return { messages: modelMessages, systemMessages };
+};
+
+const mergeSystemInstructions = (
+  base: string,
+  additional: SystemModelMessage[],
+): string | SystemModelMessage[] => {
+  if (additional.length === 0) return base;
+  return [
+    ...(base ? [{ role: "system" as const, content: base }] : []),
+    ...additional,
+  ];
+};
+
 // ---------------------------------------------------------------------------
 // AgentLoop
 // ---------------------------------------------------------------------------
@@ -366,13 +395,17 @@ export class AgentLoop {
       const toolResults = reflectEnabled
         ? new Map<string, ToolCallSummary>()
         : undefined;
+      const initialPrompt = splitSystemMessages(messages);
 
       const result = streamText({
         model: this.cfg.model,
         tools: passNoTools ? {} : aiTools,
         stopWhen: isStepCount(this.cfg.maxStepsPerTurn ?? 20),
-        instructions: this.cfg.systemPrompt,
-        messages,
+        instructions: mergeSystemInstructions(
+          this.cfg.systemPrompt,
+          initialPrompt.systemMessages,
+        ),
+        messages: initialPrompt.messages,
         // 在每个内部步骤前收缩较早的工具结果,避免大体量的
         // webFetch/runCommand 结果在每一步都以全尺寸重发
         //(输入 token 的倍增因素)。最新结果保持完整。
@@ -491,8 +524,24 @@ export class AgentLoop {
             shouldOverrideMessages = true;
           }
 
+          const splitPrompt = splitSystemMessages(preparedMessages);
+          const stepInstructions =
+            splitPrompt.systemMessages.length > 0
+              ? mergeSystemInstructions(
+                  this.cfg.systemPrompt,
+                  splitPrompt.systemMessages,
+                )
+              : undefined;
+          if (splitPrompt.systemMessages.length > 0) {
+            preparedMessages = splitPrompt.messages;
+            shouldOverrideMessages = true;
+          }
+
           return {
             ...(shouldOverrideMessages ? { messages: preparedMessages } : {}),
+            ...(stepInstructions !== undefined && {
+              instructions: stepInstructions,
+            }),
             ...(shouldWrapThisStep
               ? this.cfg.gracefulShutdown?.finalTools?.length
                 ? {

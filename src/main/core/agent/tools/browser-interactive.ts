@@ -14,10 +14,9 @@
  * `data-aix-ref` 属性),而非 CSS 选择器。
  * LLM 从返回的 `elements[]` 中挑选 `ref` 值。
  *
- * 安全性:全部五个工具都标记为 `safe`,与 `webFetch` /
- * `webFetchRendered` 保持一致。注意,在实时页面上的点击/提交可能
- * 触发第三方副作用(例如表单提交);需要
- * 审批门控浏览的调用方应在上游将其标记为 `destructive`。
+ * 安全性:打开、观察和关闭不直接产生外部副作用。实时页面点击和
+ * 输入可能提交表单、购买或修改远端状态,因此在共享浏览器策略门
+ * 接管前统一标记为 `destructive` 并走现有审批。
  */
 import { z } from "zod/v4";
 
@@ -128,7 +127,7 @@ export const buildBrowserClickTool = (): ToolDefinition => ({
     "Click an element in a live browser session, addressed by its `ref` from the latest snapshot. " +
     "If the click triggers navigation, waits for the new page to load and returns a snapshot of the result. " +
     "Side-effects warning: clicks on live pages may post forms, submit purchases, etc. — pick refs carefully.",
-  safety: "safe",
+  safety: "destructive",
   inputSchema: clickSchema,
   execute: async (args, ctx) => {
     const a = args as z.infer<typeof clickSchema>;
@@ -144,7 +143,7 @@ export const buildBrowserTypeTool = (): ToolDefinition => ({
     "Type text into an input/textarea/contenteditable in a live browser session. " +
     "Replaces (does not append to) the existing value. Set `submit: true` to also press Enter / submit " +
     "the form afterward — useful for search boxes.",
-  safety: "safe",
+  safety: "destructive",
   inputSchema: typeSchema,
   execute: async (args, ctx) => {
     const a = args as z.infer<typeof typeSchema>;

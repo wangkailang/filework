@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "../tool";
+import { ToolInvocation } from "../tool-invocation";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -13,6 +14,15 @@ vi.mock("../../../i18n/i18n-react", () => ({
       tool_result: () => "Result",
       tool_running: () => "Running",
       toolName_automationUpdate: () => "Manage automations",
+      toolName_browserClick: () => "Click page element",
+      toolName_browserClose: () => "Close browser tab",
+      toolName_browserOpen: () => "Open browser",
+      toolName_browserPress: () => "Press browser key",
+      toolName_browserScroll: () => "Scroll page",
+      toolName_browserSnapshot: () => "Inspect page",
+      toolName_browserSwitchTab: () => "Switch browser tab",
+      toolName_browserTabs: () => "List browser tabs",
+      toolName_browserType: () => "Type on page",
       toolName_createDirectory: () => "Create directory",
       toolName_deleteFile: () => "Delete file",
       toolName_directoryStats: () => "Directory stats",
@@ -96,6 +106,39 @@ describe("Tool chrome", () => {
 
     expect(html).toContain("Search files");
     expect(html).not.toContain(">searchFiles<");
+  });
+
+  it("shows unchanged browser action outcomes in the tool summary", () => {
+    const html = renderToStaticMarkup(
+      <ToolInvocation
+        part={{
+          type: "tool",
+          toolCallId: "browser-1",
+          toolName: "browserClick",
+          args: {
+            tabId: "tab-1",
+            navigationId: "nav-1",
+            snapshotId: "snap-1",
+            ref: "e1",
+          },
+          result: {
+            tabId: "tab-1",
+            url: "https://example.com",
+            snapshotId: "snap-2",
+            elements: [],
+            actionResult: {
+              outcome: "unchanged",
+              settleReason: "dom-quiet",
+              previousSnapshotId: "snap-1",
+            },
+          },
+          state: "output-available",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-browser-tool-summary="click"');
+    expect(html).toContain("unchanged");
   });
 
   it("renders the subagent result submission with a semantic label and icon", () => {

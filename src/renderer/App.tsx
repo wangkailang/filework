@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
+import { shouldOccludeBrowser } from "./components/browser/BrowserViewport";
 import { BrowserRouterProvider } from "./components/browser/context";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { ChatSessionProvider } from "./components/chat/ChatSessionProvider";
@@ -159,6 +160,10 @@ export const App = () => {
     setDockTab("web");
     setDockOpen(true);
   }, []);
+  const showBrowserPanel = useCallback(() => {
+    setDockTab("web");
+    setDockOpen(true);
+  }, []);
   const resetDock = useCallback(() => {
     setDockOpen(false);
     setDockFilePath(null);
@@ -171,6 +176,23 @@ export const App = () => {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => {
+    const occluded = shouldOccludeBrowser({
+      hasWorkspace: workspace !== null,
+      dockOpen,
+      dockTab,
+      modalOpen: settingsOpen || githubModalOpen || gitlabModalOpen,
+    });
+    void window.filework.browser.setOccluded(occluded);
+  }, [
+    dockOpen,
+    dockTab,
+    githubModalOpen,
+    gitlabModalOpen,
+    settingsOpen,
+    workspace,
+  ]);
 
   // 设置入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
   useEffect(() => {
@@ -199,6 +221,12 @@ export const App = () => {
     window.addEventListener("filework:open-web", handler);
     return () => window.removeEventListener("filework:open-web", handler);
   }, [openInBrowserPanel]);
+
+  useEffect(() => {
+    window.addEventListener("filework:show-browser", showBrowserPanel);
+    return () =>
+      window.removeEventListener("filework:show-browser", showBrowserPanel);
+  }, [showBrowserPanel]);
 
   // 子任务卡点击某行 → 在 ContextDock 的 subagent tab 钻入查看其执行过程。
   useEffect(() => {

@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 
 import {
   type BeforeToolCallHook,
+  composeBeforeToolCallHooks,
   type ToolContext,
   type ToolDefinition,
   ToolRegistry,
@@ -26,6 +27,30 @@ function stubCtx(toolCallId = "call-1"): ToolContext {
     toolCallId,
   };
 }
+
+describe("composeBeforeToolCallHooks", () => {
+  it("runs policies in order and stops before later hooks after a denial", async () => {
+    const order: string[] = [];
+    const browserPolicy: BeforeToolCallHook = async () => {
+      order.push("browser");
+      return { allow: false, reason: "blocked origin" };
+    };
+    const researchPolicy: BeforeToolCallHook = async () => {
+      order.push("research");
+      return { allow: true };
+    };
+    const composed = composeBeforeToolCallHooks(browserPolicy, researchPolicy);
+    if (!composed) throw new Error("expected composed hook");
+
+    await expect(
+      composed(
+        { toolName: "browserOpen", toolCallId: "call-1", args: {} },
+        stubCtx(),
+      ),
+    ).resolves.toEqual({ allow: false, reason: "blocked origin" });
+    expect(order).toEqual(["browser"]);
+  });
+});
 
 describe("ToolRegistry", () => {
   it("registers and looks up tools by name", () => {
@@ -125,9 +150,11 @@ describe("ToolRegistry", () => {
         },
       });
 
-      const beforeToolCall: BeforeToolCallHook = vi
-        .fn()
-        .mockResolvedValue({ allow: false, reason: "operator denied" });
+      const beforeToolCall: BeforeToolCallHook = vi.fn().mockResolvedValue({
+        allow: false,
+        denialSource: "user",
+        reason: "operator denied",
+      });
 
       const sdkTools = reg.toAiSdkTools({
         ctxFactory: () => stubCtx(),
@@ -144,8 +171,52 @@ describe("ToolRegistry", () => {
       expect(result).toEqual({
         success: false,
         denied: true,
+        denialSource: "user",
         reason: "operator denied",
       });
+    });
+
+    it("projects policy denials without calling the tool success projector", async () => {
+      const reg = new ToolRegistry();
+      const projectSuccess = vi.fn(
+        ({ output }: { output: { elements: string[] } }) => ({
+          type: "text" as const,
+          value: output.elements.slice(0, 1).join(","),
+        }),
+      );
+      reg.register({
+        name: "browserType",
+        description: "Type into a browser element",
+        safety: "destructive",
+        inputSchema: z.object({ ref: z.string() }),
+        execute: async () => ({ elements: ["fresh page"] }),
+        toModelOutput: projectSuccess,
+      });
+
+      const sdkTools = reg.toAiSdkTools({
+        ctxFactory: () => stubCtx(),
+        beforeToolCall: async () => ({
+          allow: false,
+          reason: "Browser navigation changed; request a fresh observation",
+        }),
+      });
+      const exec = sdkTools.browserType.execute as (
+        a: unknown,
+        o: { toolCallId: string },
+      ) => Promise<unknown>;
+      const denied = await exec({ ref: "e3" }, { toolCallId: "browser-1" });
+
+      const projected = await sdkTools.browserType.toModelOutput?.({
+        toolCallId: "browser-1",
+        input: { ref: "e3" },
+        output: denied,
+      });
+      expect(projected).toEqual({
+        type: "text",
+        value:
+          "Tool call denied: Browser navigation changed; request a fresh observation",
+      });
+      expect(projectSuccess).not.toHaveBeenCalled();
     });
 
     it("does not invoke beforeToolCall for safe tools", async () => {
@@ -213,6 +284,7 @@ describe("ToolRegistry", () => {
       expect(result).toEqual({
         success: false,
         denied: true,
+        denialSource: "policy",
         reason: "Research budget exhausted; finalize now.",
       });
     });
