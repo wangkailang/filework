@@ -150,9 +150,11 @@ describe("ToolRegistry", () => {
         },
       });
 
-      const beforeToolCall: BeforeToolCallHook = vi
-        .fn()
-        .mockResolvedValue({ allow: false, reason: "operator denied" });
+      const beforeToolCall: BeforeToolCallHook = vi.fn().mockResolvedValue({
+        allow: false,
+        denialSource: "user",
+        reason: "operator denied",
+      });
 
       const sdkTools = reg.toAiSdkTools({
         ctxFactory: () => stubCtx(),
@@ -169,6 +171,7 @@ describe("ToolRegistry", () => {
       expect(result).toEqual({
         success: false,
         denied: true,
+        denialSource: "user",
         reason: "operator denied",
       });
     });
@@ -281,6 +284,7 @@ describe("ToolRegistry", () => {
       expect(result).toEqual({
         success: false,
         denied: true,
+        denialSource: "policy",
         reason: "Research budget exhausted; finalize now.",
       });
     });

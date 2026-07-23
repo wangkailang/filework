@@ -200,19 +200,31 @@ export const buildBrowserPolicyHook = (
         .find((tab) => tab.id === tabId && tab.kind === "web")?.url;
     }
     if (!rawUrl) {
-      return { allow: false, reason: "Browser target is unavailable" };
+      return {
+        allow: false,
+        denialSource: "policy",
+        reason: "Browser target is unavailable",
+      };
     }
 
     let origin: string;
     try {
       origin = parseBrowserUrl(rawUrl).origin;
     } catch {
-      return { allow: false, reason: "Browser target URL is invalid" };
+      return {
+        allow: false,
+        denialSource: "policy",
+        reason: "Browser target URL is invalid",
+      };
     }
 
     let settings = getSettings();
     if (settings.blockedOrigins.includes(origin)) {
-      return { allow: false, reason: `Browser origin is blocked: ${origin}` };
+      return {
+        allow: false,
+        denialSource: "policy",
+        reason: `Browser origin is blocked: ${origin}`,
+      };
     }
     if (
       !settings.allowedOrigins.includes(origin) &&
@@ -237,6 +249,7 @@ export const buildBrowserPolicyHook = (
         onceGrantsFor(dependencies.taskId).delete(origin);
         return {
           allow: false,
+          denialSource: "user",
           reason: `Browser origin was blocked: ${origin}`,
         };
       }
@@ -250,7 +263,11 @@ export const buildBrowserPolicyHook = (
       } else if (decision === "allow-once") {
         onceGrantsFor(dependencies.taskId).add(origin);
       } else {
-        return { allow: false, reason: "Browser origin access was denied" };
+        return {
+          allow: false,
+          denialSource: "user",
+          reason: "Browser origin access was denied",
+        };
       }
     }
 
@@ -263,7 +280,13 @@ export const buildBrowserPolicyHook = (
     const snapshotId =
       typeof args.snapshotId === "string" ? args.snapshotId : "";
     const action = actionFromCall(call.toolName, args);
-    if (!action) return { allow: false, reason: "Browser action is invalid" };
+    if (!action) {
+      return {
+        allow: false,
+        denialSource: "policy",
+        reason: "Browser action is invalid",
+      };
+    }
 
     let snapshot: BrowserObservation;
     try {
@@ -275,6 +298,7 @@ export const buildBrowserPolicyHook = (
     } catch (error) {
       return {
         allow: false,
+        denialSource: "stale",
         reason:
           error instanceof Error
             ? error.message
@@ -290,6 +314,7 @@ export const buildBrowserPolicyHook = (
     if (risk === "forbidden") {
       return {
         allow: false,
+        denialSource: "policy",
         reason:
           "Browser action targets a forbidden secret, payment, or file control",
       };
@@ -312,6 +337,10 @@ export const buildBrowserPolicyHook = (
     );
     return decision === "approve-once"
       ? { allow: true }
-      : { allow: false, reason: "Sensitive browser action was denied" };
+      : {
+          allow: false,
+          denialSource: "user",
+          reason: "Sensitive browser action was denied",
+        };
   };
 };

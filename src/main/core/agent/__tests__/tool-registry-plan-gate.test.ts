@@ -42,7 +42,11 @@ describe("toAiSdkTools planGate", () => {
     const res = await tools.webSearch.execute?.({}, execOpts);
 
     expect(execute).not.toHaveBeenCalled();
-    expect(res).toMatchObject({ success: false, denied: true });
+    expect(res).toMatchObject({
+      success: false,
+      denied: true,
+      denialSource: "user",
+    });
   });
 
   it("runs the tool when the gate resolves true (approved / no plan)", async () => {

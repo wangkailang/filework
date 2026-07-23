@@ -26,10 +26,17 @@ export interface ToolContext {
   toolCallId: string;
 }
 
+export type ToolDenialSource = "user" | "policy" | "stale";
+
 export interface BeforeToolCallDecision {
   allow: boolean;
   /** 当 allow=false 时呈现给模型的可选原因。 */
   reason?: string;
+  /**
+   * 拒绝来源。只有明确来自用户审批交互的拒绝才使用 `user`；
+   * 运行时策略默认归为 `policy`，页面版本失效使用 `stale`。
+   */
+  denialSource?: ToolDenialSource;
   /**
    * 运行时策略主动跳过调用时可返回一个非错误结果。省略则沿用标准
    * ToolDeniedResult。用于阶段切换，不用于用户拒绝或权限错误。
@@ -103,6 +110,7 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
 export interface ToolDeniedResult {
   success: false;
   denied: true;
+  denialSource?: ToolDenialSource;
   reason: string;
 }
 
@@ -237,6 +245,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: "user",
               reason: "计划被拒绝,未执行",
             };
             return denied;
@@ -257,6 +266,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: decision.denialSource ?? "policy",
               reason: decision.reason ?? "Tool call denied",
             };
             return denied;
@@ -276,6 +286,7 @@ export class ToolRegistry {
             const denied: ToolDeniedResult = {
               success: false,
               denied: true,
+              denialSource: decision.denialSource ?? "policy",
               reason: decision.reason ?? "Tool call denied",
             };
             return denied;

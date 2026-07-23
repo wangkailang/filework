@@ -82,6 +82,7 @@ const call = (
 const setup = (
   decisions: BrowserApprovalDecision[],
   initial: Partial<BrowserSettings> = {},
+  requireSnapshot: () => BrowserObservation = page,
 ) => {
   let currentTab = browserTab();
   let settings: BrowserSettings = { ...DEFAULT_BROWSER_SETTINGS, ...initial };
@@ -94,7 +95,7 @@ const setup = (
   });
   const hook = buildBrowserPolicyHook({
     manager: { listTabs: () => [currentTab] },
-    observer: { requireSnapshot: () => page() },
+    observer: { requireSnapshot },
     sender: { isDestroyed: () => false, send: vi.fn() } as never,
     taskId: "task-policy",
     getSettings: () => settings,
@@ -185,7 +186,10 @@ describe("browser origin and sensitive-action policy", () => {
         ref: "password",
         text: "do-not-send",
       }),
-    ).resolves.toMatchObject({ allow: false });
+    ).resolves.toMatchObject({
+      allow: false,
+      denialSource: "policy",
+    });
 
     const sensitive = setup(["approve-once"], {
       allowedOrigins: ["https://example.com"],
@@ -205,6 +209,49 @@ describe("browser origin and sensitive-action policy", () => {
         target: "Buy now",
         risk: "external-effect",
       },
+    });
+  });
+
+  it("marks stale snapshots separately from user denials", async () => {
+    const harness = setup(
+      [],
+      { allowedOrigins: ["https://example.com"] },
+      () => {
+        throw new Error(
+          "Browser snapshot is stale; request a fresh observation",
+        );
+      },
+    );
+
+    await expect(
+      call(harness.hook, "browserType", {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "password",
+        text: "do-not-send",
+      }),
+    ).resolves.toMatchObject({
+      allow: false,
+      denialSource: "stale",
+    });
+  });
+
+  it("marks an explicit sensitive-action rejection as a user denial", async () => {
+    const harness = setup(["deny"], {
+      allowedOrigins: ["https://example.com"],
+    });
+
+    await expect(
+      call(harness.hook, "browserClick", {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "buy",
+      }),
+    ).resolves.toMatchObject({
+      allow: false,
+      denialSource: "user",
     });
   });
 });

@@ -193,6 +193,12 @@ export const buildApprovalHook = ({
       undefined,
       workspace,
     );
-    return approved ? { allow: true } : { allow: false, reason: DENIED_REASON };
+    return approved
+      ? { allow: true }
+      : {
+          allow: false,
+          denialSource: "user",
+          reason: DENIED_REASON,
+        };
   };
 };
