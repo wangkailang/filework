@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { WebContents } from "electron";
 
@@ -372,8 +372,6 @@ const createObserverScript = (
   visitedDocuments.add(document);
   walkRoot(document, 0, 0, true);
   const visible = elements.filter((element) => element.visible);
-  const hidden = elements.filter((element) => !element.visible);
-  const prioritized = visible.concat(hidden);
 
   return {
     url: cleanText(location && location.href, 2048),
@@ -385,8 +383,8 @@ const createObserverScript = (
     },
     text: textChunks.join("").slice(0, MAX_TEXT_CHARS),
     textTruncated,
-    elements: prioritized.slice(0, MAX_ELEMENTS),
-    elementsTruncated: prioritized.length > MAX_ELEMENTS,
+    elements: visible.slice(0, MAX_ELEMENTS),
+    elementsTruncated: visible.length > MAX_ELEMENTS,
   };
 })()`;
 
@@ -573,31 +571,50 @@ export class BrowserObserver {
     const normalizedElements = rawElements
       .map(normalizeElement)
       .filter((element): element is BrowserElementRef => element !== null);
-    const prioritizedElements = [
-      ...normalizedElements.filter((element) => element.visible),
-      ...normalizedElements.filter((element) => !element.visible),
-    ];
-    const elements = prioritizedElements.slice(0, this.maxElements);
+    const actionableElements = normalizedElements.filter(
+      (element) =>
+        element.visible && element.rect.width > 0 && element.rect.height > 0,
+    );
+    const elements = actionableElements.slice(0, this.maxElements);
+    const url = boundedString(rawRecord.url, 2_048) ?? tab.url;
+    const title = boundedString(rawRecord.title, 1_000) ?? tab.title;
+    const normalizedViewport = {
+      width: Math.max(0, finiteNumber(viewport.width)),
+      height: Math.max(0, finiteNumber(viewport.height)),
+      deviceScaleFactor: Math.max(
+        0.1,
+        finiteNumber(viewport.deviceScaleFactor, 1),
+      ),
+    };
+    const text = `${UNTRUSTED_CONTENT_START}\n${boundedText}\n${UNTRUSTED_CONTENT_END}`;
+    const elementsTruncated =
+      rawRecord.elementsTruncated === true ||
+      actionableElements.length > elements.length;
+    const stateHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          url,
+          title,
+          viewport: normalizedViewport,
+          text,
+          elements,
+          elementsTruncated,
+        }),
+      )
+      .digest("hex")
+      .slice(0, 16);
 
     return {
       tabId: tab.id,
       navigationId,
       snapshotId,
-      url: boundedString(rawRecord.url, 2_048) ?? tab.url,
-      title: boundedString(rawRecord.title, 1_000) ?? tab.title,
-      viewport: {
-        width: Math.max(0, finiteNumber(viewport.width)),
-        height: Math.max(0, finiteNumber(viewport.height)),
-        deviceScaleFactor: Math.max(
-          0.1,
-          finiteNumber(viewport.deviceScaleFactor, 1),
-        ),
-      },
-      text: `${UNTRUSTED_CONTENT_START}\n${boundedText}\n${UNTRUSTED_CONTENT_END}`,
+      url,
+      title,
+      viewport: normalizedViewport,
+      text,
       elements,
-      elementsTruncated:
-        rawRecord.elementsTruncated === true ||
-        normalizedElements.length > elements.length,
+      elementsTruncated,
+      stateHash,
       ...(captureId && { captureId }),
       sourceTrust: "untrusted-web",
     };

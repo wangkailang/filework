@@ -1668,9 +1668,16 @@ const browserPresenter = (action: string): ToolPresenter => ({
           ? a.tabId
           : "";
     const target = browserTargetSummary(a, r);
+    const actionResult = asRecord(r?.actionResult);
+    const actionOutcome =
+      actionResult?.outcome === "changed" ||
+      actionResult?.outcome === "unchanged" ||
+      actionResult?.outcome === "navigated"
+        ? actionResult.outcome
+        : "";
     const execution =
       state === "output-available"
-        ? "done"
+        ? actionOutcome || "done"
         : state === "output-error"
           ? "failed"
           : "pending";

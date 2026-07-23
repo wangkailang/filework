@@ -29,6 +29,7 @@ const makeObservation = (inputType = "text"): BrowserObservation => ({
     },
   ],
   elementsTruncated: false,
+  stateHash: "state-1",
   sourceTrust: "untrusted-web",
 });
 
@@ -154,7 +155,13 @@ describe("BrowserActionExecutor", () => {
     ]);
     expect(harness.settle.wait).toHaveBeenCalledOnce();
     expect(harness.observer.observe).toHaveBeenCalledWith("tab-1");
-    expect(result).toBe(harness.freshObservation);
+    expect(result).toMatchObject({
+      actionResult: {
+        outcome: "unchanged",
+        settleReason: "dom-quiet",
+        previousSnapshotId: "snap-1",
+      },
+    });
   });
 
   it("focuses, selects existing content, and inserts trusted text", async () => {
@@ -220,7 +227,46 @@ describe("BrowserActionExecutor", () => {
     );
 
     expect(harness.observer.observe).toHaveBeenCalledWith("tab-1");
-    expect(result).toBe(harness.freshObservation);
+    expect(result).toMatchObject({
+      actionResult: {
+        outcome: "unchanged",
+        settleReason: "timeout",
+      },
+    });
+  });
+
+  it("reports changed when the resulting page state differs", async () => {
+    const harness = makeHarness();
+    harness.freshObservation.text =
+      "--- BEGIN UNTRUSTED WEB CONTENT ---\nupdated page\n--- END UNTRUSTED WEB CONTENT ---";
+
+    const result = await harness.executor.execute(
+      request({ type: "click", ref: "e1" }),
+    );
+
+    expect(result).toMatchObject({
+      actionResult: {
+        outcome: "changed",
+        settleReason: "dom-quiet",
+      },
+    });
+  });
+
+  it("reports navigated when the navigation identity changes", async () => {
+    const harness = makeHarness();
+    harness.freshObservation.navigationId = "nav-2";
+    harness.settle.wait.mockResolvedValueOnce("navigation");
+
+    const result = await harness.executor.execute(
+      request({ type: "click", ref: "e1" }),
+    );
+
+    expect(result).toMatchObject({
+      actionResult: {
+        outcome: "navigated",
+        settleReason: "navigation",
+      },
+    });
   });
 
   it("dispatches press as trusted keyboard input", async () => {

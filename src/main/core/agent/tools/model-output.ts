@@ -59,10 +59,12 @@ export const projectBrowserObservationModelOutput = ({
   output,
   supportsMultimodalToolResults,
   resolveCapture,
+  compact = false,
 }: {
   output: BrowserObservation;
   supportsMultimodalToolResults: boolean;
   resolveCapture: (captureId: string) => BrowserCaptureProjection;
+  compact?: boolean;
 }): ToolResultOutput => {
   const elements = output.elements.slice(0, BROWSER_ELEMENT_LIMIT);
   const text = [
@@ -73,18 +75,30 @@ export const projectBrowserObservationModelOutput = ({
     `Snapshot: ${output.snapshotId}`,
     `URL: ${safeBrowserUrl(output.url)}`,
     output.title ? `Title: ${output.title}` : null,
-    "Elements:",
-    ...elements.map(browserElementLine),
-    output.elements.length > elements.length || output.elementsTruncated
+    output.actionResult
+      ? `Action result: ${output.actionResult.outcome} (settled: ${output.actionResult.settleReason})`
+      : null,
+    output.actionResult
+      ? "This action already returned the fresh observation; do not call browserSnapshot unless its refs become stale."
+      : null,
+    output.actionResult?.outcome === "unchanged"
+      ? "Do not repeat the same action against this unchanged page state; choose a different visible ref or report the blocker."
+      : null,
+    compact
+      ? "Page state unchanged from the previous observation; reuse its element refs with the new action identity above."
+      : "Elements:",
+    ...(compact ? [] : elements.map(browserElementLine)),
+    !compact &&
+    (output.elements.length > elements.length || output.elementsTruncated)
       ? "Additional elements omitted; request a fresh snapshot after narrowing the page."
       : null,
-    "Page text:",
-    clipForModel(output.text, BROWSER_TEXT_BUDGET),
+    compact ? null : "Page text:",
+    compact ? null : clipForModel(output.text, BROWSER_TEXT_BUDGET),
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
 
-  if (!supportsMultimodalToolResults || !output.captureId) {
+  if (compact || !supportsMultimodalToolResults || !output.captureId) {
     return textModelOutput(text);
   }
 

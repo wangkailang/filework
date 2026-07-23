@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 
 import type {
+  BrowserAction,
   BrowserActionRequest,
   BrowserObservation,
   BrowserTabState,
@@ -54,6 +55,33 @@ export interface BuildBrowserToolsDependencies {
   captureStore: BrowserToolCaptureStore;
   supportsMultimodalToolResults?: boolean;
 }
+
+interface BrowserToolExecutionState {
+  snapshotStateHashes: Map<string, string>;
+  unchangedActionKeys: Set<string>;
+}
+
+const snapshotStateKey = (tabId: string, snapshotId: string): string =>
+  `${tabId}\u0000${snapshotId}`;
+
+const unchangedActionKey = (
+  tabId: string,
+  navigationId: string,
+  stateHash: string,
+  action: BrowserAction,
+): string =>
+  `${tabId}\u0000${navigationId}\u0000${stateHash}\u0000${JSON.stringify(action)}`;
+
+const rememberObservation = (
+  state: BrowserToolExecutionState,
+  observation: BrowserObservation,
+): BrowserObservation => {
+  state.snapshotStateHashes.set(
+    snapshotStateKey(observation.tabId, observation.snapshotId),
+    observation.stateHash,
+  );
+  return observation;
+};
 
 const tabIdSchema = z.object({ tabId: z.string().min(1) }).strict();
 
@@ -117,19 +145,29 @@ const requireWebTab = (
   return tab;
 };
 
-const browserObservationProjection =
-  (dependencies: BuildBrowserToolsDependencies) =>
-  ({ output }: { output: BrowserObservation }) =>
-    projectBrowserObservationModelOutput({
+const browserObservationProjection = (
+  dependencies: BuildBrowserToolsDependencies,
+) => {
+  const latestStateHashByTab = new Map<string, string>();
+
+  return ({ output }: { output: BrowserObservation }) => {
+    const compact = latestStateHashByTab.get(output.tabId) === output.stateHash;
+    latestStateHashByTab.set(output.tabId, output.stateHash);
+    return projectBrowserObservationModelOutput({
       output,
+      compact,
       supportsMultimodalToolResults:
         dependencies.supportsMultimodalToolResults !== false,
       resolveCapture: (captureId) =>
         dependencies.captureStore.toModelOutput(captureId),
     });
+  };
+};
 
 const actionTool = <TInput extends object>(
   dependencies: BuildBrowserToolsDependencies,
+  executionState: BrowserToolExecutionState,
+  observationOutput: ReturnType<typeof browserObservationProjection>,
   definition: {
     name: "browserClick" | "browserType" | "browserPress" | "browserScroll";
     description: string;
@@ -140,17 +178,44 @@ const actionTool = <TInput extends object>(
   ...definition,
   safety: "destructive",
   execute: async (input) => {
-    requireWebTab(dependencies.manager, definition.request(input).tabId);
-    return dependencies.actions.execute(definition.request(input), {
+    const request = definition.request(input);
+    requireWebTab(dependencies.manager, request.tabId);
+    const stateHash = executionState.snapshotStateHashes.get(
+      snapshotStateKey(request.tabId, request.snapshotId),
+    );
+    const retryKey = stateHash
+      ? unchangedActionKey(
+          request.tabId,
+          request.navigationId,
+          stateHash,
+          request.action,
+        )
+      : undefined;
+    if (retryKey && executionState.unchangedActionKeys.has(retryKey)) {
+      throw new Error(
+        "This exact browser action already returned an unchanged page state. Choose a different visible ref or report the blocker.",
+      );
+    }
+
+    const output = await dependencies.actions.execute(request, {
       capture: true,
     });
+    rememberObservation(executionState, output);
+    if (retryKey && output.actionResult?.outcome === "unchanged") {
+      executionState.unchangedActionKeys.add(retryKey);
+    }
+    return output;
   },
-  toModelOutput: browserObservationProjection(dependencies),
+  toModelOutput: observationOutput,
 });
 
 export const buildBrowserTools = (
   dependencies: BuildBrowserToolsDependencies,
 ): ToolDefinition[] => {
+  const executionState: BrowserToolExecutionState = {
+    snapshotStateHashes: new Map(),
+    unchangedActionKeys: new Set(),
+  };
   const observationOutput = browserObservationProjection(dependencies);
 
   const open: ToolDefinition<z.infer<typeof openSchema>, BrowserObservation> = {
@@ -186,7 +251,10 @@ export const buildBrowserTools = (
           await dependencies.manager.navigate(tabId, url);
         }
       }
-      return dependencies.observer.observe(tabId, { capture: true });
+      return rememberObservation(
+        executionState,
+        await dependencies.observer.observe(tabId, { capture: true }),
+      );
     },
     toModelOutput: observationOutput,
   };
@@ -220,7 +288,10 @@ export const buildBrowserTools = (
     execute: async ({ tabId }) => {
       requireWebTab(dependencies.manager, tabId);
       dependencies.manager.activateTab(tabId);
-      return dependencies.observer.observe(tabId, { capture: true });
+      return rememberObservation(
+        executionState,
+        await dependencies.observer.observe(tabId, { capture: true }),
+      );
     },
     toModelOutput: observationOutput,
   };
@@ -236,12 +307,15 @@ export const buildBrowserTools = (
     inputSchema: tabIdSchema,
     execute: async ({ tabId }) => {
       requireWebTab(dependencies.manager, tabId);
-      return dependencies.observer.observe(tabId, { capture: true });
+      return rememberObservation(
+        executionState,
+        await dependencies.observer.observe(tabId, { capture: true }),
+      );
     },
     toModelOutput: observationOutput,
   };
 
-  const click = actionTool(dependencies, {
+  const click = actionTool(dependencies, executionState, observationOutput, {
     name: "browserClick",
     description:
       "Click a ref from the latest shared-browser snapshot. Requires tabId, navigationId and snapshotId so stale refs fail safely.",
@@ -254,7 +328,7 @@ export const buildBrowserTools = (
     }),
   });
 
-  const type = actionTool(dependencies, {
+  const type = actionTool(dependencies, executionState, observationOutput, {
     name: "browserType",
     description:
       "Type non-sensitive text into a ref from the latest snapshot. Password, secret, payment and file inputs are forbidden. Use browserPress separately to submit.",
@@ -267,7 +341,7 @@ export const buildBrowserTools = (
     }),
   });
 
-  const press = actionTool(dependencies, {
+  const press = actionTool(dependencies, executionState, observationOutput, {
     name: "browserPress",
     description:
       "Send one keyboard key to the current page or a ref from the latest snapshot. Requires the full snapshot identity.",
@@ -280,7 +354,7 @@ export const buildBrowserTools = (
     }),
   });
 
-  const scroll = actionTool(dependencies, {
+  const scroll = actionTool(dependencies, executionState, observationOutput, {
     name: "browserScroll",
     description:
       "Scroll the current page by trusted wheel input. Requires the full snapshot identity and at least one delta.",

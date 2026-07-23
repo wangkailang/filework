@@ -62,6 +62,7 @@ const page = (): BrowserObservation => ({
     },
   ],
   elementsTruncated: false,
+  stateHash: "state-1",
   sourceTrust: "untrusted-web",
 });
 

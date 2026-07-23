@@ -83,7 +83,29 @@ describe("isolated browser observation script", () => {
     expect(parsed.document.querySelector("[data-browser-ref]")).toBeNull();
   });
 
-  it("redacts password, token, hidden, and credential autofill values", () => {
+  it("exposes only visible interactive elements as action refs", () => {
+    const parsed = parseHTML(`<!doctype html><html><body>
+      <button>Visible action</button>
+      <button hidden>Hidden action</button>
+      <div role="menuitem" aria-hidden="true">Collapsed menu item</div>
+      <input type="hidden" value="hidden-secret">
+    </body></html>`);
+    Object.defineProperty(parsed.window, "innerWidth", { value: 800 });
+    Object.defineProperty(parsed.window, "innerHeight", { value: 600 });
+    installRects(parsed.document);
+
+    const result = evaluateObserverScript(
+      parsed.document,
+      parsed.window as unknown as Window,
+      {},
+    );
+
+    expect(result.elements.map((element) => element.name)).toEqual([
+      "Visible action",
+    ]);
+  });
+
+  it("redacts password, token, and credential autofill values", () => {
     const parsed = parseHTML(`<!doctype html><html><body>
       <input type="text" value="public">
       <input type="password" value="hunter2">
@@ -103,7 +125,6 @@ describe("isolated browser observation script", () => {
 
     expect(result.elements[0]?.value).toBe("public");
     expect(result.elements.slice(1).map((element) => element.value)).toEqual([
-      "[REDACTED]",
       "[REDACTED]",
       "[REDACTED]",
       "[REDACTED]",
@@ -274,6 +295,30 @@ const makeTab = () => ({
 });
 
 describe("BrowserObserver", () => {
+  it("assigns a stable state hash independent of snapshot ids", async () => {
+    let id = 0;
+    const webContents = new FakeWebContents();
+    const observer = new BrowserObserver(
+      {
+        listTabs: () => [makeTab()],
+        getWebContents: () => webContents,
+      } as never,
+      { createId: () => `id-${++id}` },
+    );
+
+    const first = await observer.observe("tab-1");
+    const second = await observer.observe("tab-1");
+    const firstStateHash = Reflect.get(first, "stateHash");
+    const secondStateHash = Reflect.get(second, "stateHash");
+
+    expect(firstStateHash).toMatch(/^[a-f0-9]{16}$/);
+    expect(secondStateHash).toBe(firstStateHash);
+
+    webContents.raw = { ...webContents.raw, text: "updated page body" };
+    const third = await observer.observe("tab-1");
+    expect(Reflect.get(third, "stateHash")).not.toBe(firstStateHash);
+  });
+
   it("invalidates navigation and snapshot guards after navigation", async () => {
     let id = 0;
     const webContents = new FakeWebContents();
@@ -339,11 +384,9 @@ describe("BrowserObserver", () => {
 
     expect(result.text).toContain("BEGIN UNTRUSTED WEB CONTENT");
     expect(result.text.length).toBeLessThan(200);
-    expect(result.elements).toHaveLength(150);
-    expect(
-      result.elements.slice(0, 100).every((element) => element.visible),
-    ).toBe(true);
-    expect(result.elementsTruncated).toBe(true);
+    expect(result.elements).toHaveLength(100);
+    expect(result.elements.every((element) => element.visible)).toBe(true);
+    expect(result.elementsTruncated).toBe(false);
   });
 
   it("stores screenshot bytes out of band and returns only a capture id", async () => {

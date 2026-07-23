@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "../tool";
+import { ToolInvocation } from "../tool-invocation";
 
 vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
@@ -105,6 +106,39 @@ describe("Tool chrome", () => {
 
     expect(html).toContain("Search files");
     expect(html).not.toContain(">searchFiles<");
+  });
+
+  it("shows unchanged browser action outcomes in the tool summary", () => {
+    const html = renderToStaticMarkup(
+      <ToolInvocation
+        part={{
+          type: "tool",
+          toolCallId: "browser-1",
+          toolName: "browserClick",
+          args: {
+            tabId: "tab-1",
+            navigationId: "nav-1",
+            snapshotId: "snap-1",
+            ref: "e1",
+          },
+          result: {
+            tabId: "tab-1",
+            url: "https://example.com",
+            snapshotId: "snap-2",
+            elements: [],
+            actionResult: {
+              outcome: "unchanged",
+              settleReason: "dom-quiet",
+              previousSnapshotId: "snap-1",
+            },
+          },
+          state: "output-available",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-browser-tool-summary="click"');
+    expect(html).toContain("unchanged");
   });
 
   it("renders the subagent result submission with a semantic label and icon", () => {

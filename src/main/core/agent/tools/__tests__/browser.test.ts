@@ -40,6 +40,7 @@ const observation = (
     },
   ],
   elementsTruncated: false,
+  stateHash: "state-1",
   captureId: "capture-1",
   sourceTrust: "untrusted-web",
   ...overrides,
@@ -228,5 +229,160 @@ describe("shared browser agent tools", () => {
     expect(projected.value.indexOf("Ref e1")).toBeLessThan(
       projected.value.indexOf("Page text:"),
     );
+  });
+
+  it("projects unchanged action outcomes with retry guidance", async () => {
+    const { tools } = setup({ supportsMultimodalToolResults: false });
+    const click = tools.get("browserClick");
+    const projected = await click?.toModelOutput?.({
+      toolCallId: "call-1",
+      input: {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-0",
+        ref: "e1",
+      },
+      output: observation({
+        actionResult: {
+          outcome: "unchanged",
+          settleReason: "dom-quiet",
+          previousSnapshotId: "snap-0",
+        },
+      }),
+    });
+    if (!projected || projected.type !== "text") {
+      throw new Error("expected text browser projection");
+    }
+
+    expect(projected.value).toContain("Action result: unchanged");
+    expect(projected.value).toContain("Do not repeat the same action");
+    expect(projected.value).toContain(
+      "This action already returned the fresh observation",
+    );
+  });
+
+  it("deduplicates an unchanged action observation across browser tools", async () => {
+    const { tools } = setup({ supportsMultimodalToolResults: false });
+    const snapshot = tools.get("browserSnapshot");
+    const click = tools.get("browserClick");
+
+    await snapshot?.toModelOutput?.({
+      toolCallId: "snapshot-1",
+      input: { tabId: "tab-1" },
+      output: observation({ snapshotId: "snap-1" }),
+    });
+    const projected = await click?.toModelOutput?.({
+      toolCallId: "click-1",
+      input: {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "e1",
+      },
+      output: observation({
+        snapshotId: "snap-2",
+        actionResult: {
+          outcome: "unchanged",
+          settleReason: "dom-quiet",
+          previousSnapshotId: "snap-1",
+        },
+      }),
+    });
+    if (!projected || projected.type !== "text") {
+      throw new Error("expected text browser projection");
+    }
+
+    expect(projected.value).toContain(
+      "Page state unchanged from the previous observation",
+    );
+    expect(projected.value).toContain("Snapshot: snap-2");
+    expect(projected.value).not.toContain("Page body");
+  });
+
+  it("blocks an exact action retry after an unchanged outcome", async () => {
+    const { actions, tools } = setup({
+      supportsMultimodalToolResults: false,
+    });
+    const snapshot = tools.get("browserSnapshot");
+    const click = tools.get("browserClick");
+    await snapshot?.execute({ tabId: "tab-1" }, context);
+    actions.execute.mockResolvedValueOnce(
+      observation({
+        snapshotId: "snap-2",
+        actionResult: {
+          outcome: "unchanged",
+          settleReason: "dom-quiet",
+          previousSnapshotId: "snap-1",
+        },
+      }),
+    );
+
+    await click?.execute(
+      {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "e1",
+      },
+      context,
+    );
+    await expect(
+      click?.execute(
+        {
+          tabId: "tab-1",
+          navigationId: "nav-1",
+          snapshotId: "snap-2",
+          ref: "e1",
+        },
+        context,
+      ),
+    ).rejects.toThrow(/already returned an unchanged page state/i);
+    expect(actions.execute).toHaveBeenCalledOnce();
+  });
+
+  it("allows the same action after navigation even when page state matches", async () => {
+    const { actions, observer, tools } = setup({
+      supportsMultimodalToolResults: false,
+    });
+    const snapshot = tools.get("browserSnapshot");
+    const click = tools.get("browserClick");
+    await snapshot?.execute({ tabId: "tab-1" }, context);
+    actions.execute.mockResolvedValueOnce(
+      observation({
+        snapshotId: "snap-2",
+        actionResult: {
+          outcome: "unchanged",
+          settleReason: "dom-quiet",
+          previousSnapshotId: "snap-1",
+        },
+      }),
+    );
+    await click?.execute(
+      {
+        tabId: "tab-1",
+        navigationId: "nav-1",
+        snapshotId: "snap-1",
+        ref: "e1",
+      },
+      context,
+    );
+
+    observer.observe.mockResolvedValueOnce(
+      observation({ navigationId: "nav-2", snapshotId: "snap-3" }),
+    );
+    await snapshot?.execute({ tabId: "tab-1" }, context);
+
+    await expect(
+      click?.execute(
+        {
+          tabId: "tab-1",
+          navigationId: "nav-2",
+          snapshotId: "snap-3",
+          ref: "e1",
+        },
+        context,
+      ),
+    ).resolves.toBeDefined();
+    expect(actions.execute).toHaveBeenCalledTimes(2);
   });
 });

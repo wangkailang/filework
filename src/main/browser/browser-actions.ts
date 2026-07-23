@@ -86,10 +86,24 @@ export class BrowserActionExecutor {
 
       webContents.focus();
       await this.dispatch(webContents, currentSnapshot, request.action);
-      await settle.wait();
-      return observeOptions.capture === undefined
-        ? await this.observer.observe(request.tabId)
-        : await this.observer.observe(request.tabId, observeOptions);
+      const settleReason = await settle.wait();
+      const freshObservation =
+        observeOptions.capture === undefined
+          ? await this.observer.observe(request.tabId)
+          : await this.observer.observe(request.tabId, observeOptions);
+      return {
+        ...freshObservation,
+        actionResult: {
+          outcome:
+            freshObservation.navigationId !== currentSnapshot.navigationId
+              ? "navigated"
+              : observationsMatch(currentSnapshot, freshObservation)
+                ? "unchanged"
+                : "changed",
+          settleReason,
+          previousSnapshotId: currentSnapshot.snapshotId,
+        },
+      };
     } catch (error) {
       settle.cancel();
       throw error;
@@ -286,3 +300,24 @@ const clampDelta = (value: number, viewportSize: number): number => {
   const limit = Math.max(0, Math.floor(viewportSize));
   return clamp(Math.round(value), -limit, limit);
 };
+
+const observationsMatch = (
+  previous: BrowserObservation,
+  current: BrowserObservation,
+): boolean =>
+  JSON.stringify({
+    url: previous.url,
+    title: previous.title,
+    viewport: previous.viewport,
+    text: previous.text,
+    elements: previous.elements,
+    elementsTruncated: previous.elementsTruncated,
+  }) ===
+  JSON.stringify({
+    url: current.url,
+    title: current.title,
+    viewport: current.viewport,
+    text: current.text,
+    elements: current.elements,
+    elementsTruncated: current.elementsTruncated,
+  });

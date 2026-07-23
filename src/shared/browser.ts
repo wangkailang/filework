@@ -106,7 +106,13 @@ export interface BrowserObservation {
   text: string;
   elements: BrowserElementRef[];
   elementsTruncated: boolean;
+  stateHash: string;
   captureId?: string;
+  actionResult?: {
+    outcome: "changed" | "unchanged" | "navigated";
+    settleReason: "navigation" | "dom-quiet" | "timeout" | "cancelled";
+    previousSnapshotId: string;
+  };
   sourceTrust: "untrusted-web";
 }
 
