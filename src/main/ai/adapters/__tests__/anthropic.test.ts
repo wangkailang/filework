@@ -7,6 +7,26 @@ vi.mock("@ai-sdk/anthropic", () => ({
 import { AnthropicAdapter } from "../anthropic";
 
 describe("AnthropicAdapter provider options", () => {
+  it("supports image content in tool results unless vision is disabled", () => {
+    const adapter = new AnthropicAdapter();
+
+    expect(
+      adapter.supportsMultimodalToolResults({
+        provider: "anthropic",
+        apiKey: "test-key",
+        model: "claude-sonnet-4-5",
+      }),
+    ).toBe(true);
+    expect(
+      adapter.supportsMultimodalToolResults({
+        provider: "anthropic",
+        apiKey: "test-key",
+        model: "text-only-model",
+        modelCapabilities: { supportsVision: false },
+      }),
+    ).toBe(false);
+  });
+
   it("enables native context-management compaction", () => {
     const adapter = new AnthropicAdapter();
 

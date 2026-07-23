@@ -18,7 +18,7 @@
 import crypto from "node:crypto";
 import type { WebContents } from "electron";
 import { z } from "zod/v4";
-import { resolveAdapterName } from "../ai/adapters";
+import { getAdapter, resolveAdapterName } from "../ai/adapters";
 import type { BrowserObserver } from "../browser/browser-observer";
 import {
   DEFAULT_SUB_AGENT_MAX_TOTAL_TOKENS,
@@ -991,11 +991,15 @@ export const buildAgentToolRegistry = ({
     try {
       const config = getLlmConfig(llmConfigId);
       if (!config) return false;
-      if (config.modelCapabilities?.supportsVision != null) {
-        return config.modelCapabilities.supportsVision;
-      }
       const provider = resolveAdapterName(config.provider, config.baseUrl);
-      return provider !== "ollama" && provider !== "xiaomi";
+      return getAdapter(provider).supportsMultimodalToolResults({
+        provider: config.provider,
+        apiKey: config.apiKey ?? "",
+        baseUrl: config.baseUrl,
+        apiPath: config.apiPath,
+        model: config.model,
+        modelCapabilities: config.modelCapabilities,
+      });
     } catch {
       return false;
     }

@@ -176,6 +176,10 @@ export class XiaomiAdapter implements ProviderAdapter {
     });
   }
 
+  supportsMultimodalToolResults(): boolean {
+    return false;
+  }
+
   buildProviderOptions() {
     return NO_PROVIDER_OPTIONS;
   }

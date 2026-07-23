@@ -248,6 +248,7 @@ const createObserverScript = (
   const textChunks = [];
   let textLength = 0;
   let textTruncated = false;
+  const ignoredTextTags = new Set(["script", "style", "template", "noscript"]);
   const appendText = (value) => {
     if (textLength >= MAX_TEXT_CHARS) {
       textTruncated = true;
@@ -265,6 +266,23 @@ const createObserverScript = (
     textChunks.push(separator + bounded);
     textLength += separator.length + bounded.length;
     if (bounded.length < text.length) textTruncated = true;
+  };
+  const collectPageText = (root) => {
+    const chunks = [];
+    const visitNode = (node) => {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        chunks.push(node.nodeValue || "");
+        return;
+      }
+      if (node.nodeType !== 1 && node.nodeType !== 9 && node.nodeType !== 11) {
+        return;
+      }
+      if (node.nodeType === 1 && ignoredTextTags.has(elementTag(node))) return;
+      for (const child of Array.from(node.childNodes || [])) visitNode(child);
+    };
+    visitNode(root);
+    return chunks.join(" ");
   };
   const addElement = (element, offsetX, offsetY, frameUnavailable) => {
     const tag = elementTag(element);
@@ -317,7 +335,7 @@ const createObserverScript = (
   const visitedDocuments = new Set();
   const walkRoot = (root, offsetX, offsetY, includeRootText) => {
     if (!root) return;
-    if (includeRootText) appendText(root.body ? root.body.textContent : root.textContent);
+    if (includeRootText) appendText(collectPageText(root.body || root));
     const start = root.documentElement || root;
     const visit = (element) => {
       if (!element || element.nodeType !== 1) return;
@@ -338,10 +356,7 @@ const createObserverScript = (
       }
       if (element.shadowRoot) {
         const shadowChildren = Array.from(element.shadowRoot.children || []);
-        appendText(
-          element.shadowRoot.textContent ||
-            shadowChildren.map((child) => child.textContent || "").join(" "),
-        );
+        appendText(collectPageText(element.shadowRoot));
         for (const child of shadowChildren) visit(child);
       }
       for (const child of Array.from(element.children || [])) visit(child);

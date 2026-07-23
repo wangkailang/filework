@@ -199,6 +199,31 @@ describe("isolated browser observation script", () => {
 
     expect(result.text.length).toBe(60_000);
   });
+
+  it("excludes script, style, template, and noscript payloads from page text", () => {
+    const parsed = parseHTML(`<!doctype html><html><body>
+      <main>Visible login form</main>
+      <script>self.__next_f.push("large hydration payload")</script>
+      <style>.secret { display: none }</style>
+      <template>hidden template payload</template>
+      <noscript>hidden fallback payload</noscript>
+    </body></html>`);
+    Object.defineProperty(parsed.window, "innerWidth", { value: 800 });
+    Object.defineProperty(parsed.window, "innerHeight", { value: 600 });
+    installRects(parsed.document);
+
+    const result = evaluateObserverScript(
+      parsed.document,
+      parsed.window as unknown as Window,
+      {},
+    );
+
+    expect(result.text).toContain("Visible login form");
+    expect(result.text).not.toContain("large hydration payload");
+    expect(result.text).not.toContain("display: none");
+    expect(result.text).not.toContain("hidden template payload");
+    expect(result.text).not.toContain("hidden fallback payload");
+  });
 });
 
 class FakeWebContents {

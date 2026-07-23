@@ -350,6 +350,7 @@ describe("ai:executeTask media modality routing", () => {
           cacheWriteTokens: null,
         })),
         name: "openai",
+        supportsMultimodalToolResults: vi.fn(() => true),
       },
       generationOptions: {},
       model: "chat-model",

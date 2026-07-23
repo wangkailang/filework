@@ -26,6 +26,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
     return deepseek(config.model);
   }
 
+  supportsMultimodalToolResults(): boolean {
+    return false;
+  }
+
   buildProviderOptions() {
     return NO_PROVIDER_OPTIONS;
   }

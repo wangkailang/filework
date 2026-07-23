@@ -59,6 +59,13 @@ export interface ProviderAdapter {
   /** 根据 config 创建 LanguageModel 实例 */
   createModel(config: ProviderConfig): LanguageModel;
 
+  /**
+   * 当前传输是否能把图片作为工具结果内容块发送给模型。
+   * 这与“模型支持用户图片输入”不是同一个能力；例如 OpenAI-compatible
+   * Chat Completions 会把 content Tool Result JSON 化，不能承载截图。
+   */
+  supportsMultimodalToolResults(config: ProviderConfig): boolean;
+
   /** 构建 provider 特有的选项(例如 prompt 缓存 headers) */
   buildProviderOptions(config?: ProviderConfig): ProviderOptionMap;
 

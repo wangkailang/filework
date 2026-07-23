@@ -204,4 +204,29 @@ describe("shared browser agent tools", () => {
     });
     expect(captureStore.toModelOutput).not.toHaveBeenCalled();
   });
+
+  it("places exact action identity and refs before untrusted page text", async () => {
+    const { tools } = setup({ supportsMultimodalToolResults: false });
+    const snapshot = tools.get("browserSnapshot");
+    const projected = await snapshot?.toModelOutput?.({
+      toolCallId: "call-1",
+      input: { tabId: "tab-1" },
+      output: observation(),
+    });
+    if (!projected || projected.type !== "text") {
+      throw new Error("expected text browser projection");
+    }
+
+    expect(projected.value).toContain(
+      "Action identity (copy these exact values into the next browser action)",
+    );
+    expect(projected.value).toContain("Navigation: nav-1");
+    expect(projected.value).toContain("Snapshot: snap-1");
+    expect(projected.value.indexOf("Elements:")).toBeLessThan(
+      projected.value.indexOf("Page text:"),
+    );
+    expect(projected.value.indexOf("Ref e1")).toBeLessThan(
+      projected.value.indexOf("Page text:"),
+    );
+  });
 });
