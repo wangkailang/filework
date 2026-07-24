@@ -13,9 +13,9 @@ const PAD_TOP = 4;
 const PAD_BOTTOM = 2;
 const BAR_GAP = 2;
 
-const COLORS = {
-  "cache-write": "#60a5fa", // blue-400
-  "cache-hit": "#4ade80", // green-400
+const CHART_COLORS: Record<CacheBucket["type"], string> = {
+  "cache-write": "var(--color-chart-cache-write)",
+  "cache-hit": "var(--color-chart-cache-hit)",
 };
 
 export const CacheEfficiencyChart = ({ data }: Props) => {
@@ -48,7 +48,7 @@ export const CacheEfficiencyChart = ({ data }: Props) => {
         <span className="flex items-center gap-1">
           <span
             className="inline-block w-2 h-2 rounded-sm"
-            style={{ backgroundColor: COLORS["cache-write"] }}
+            style={{ backgroundColor: CHART_COLORS["cache-write"] }}
           />
           <span className="text-[9px] text-muted-foreground">
             {LL.memoryDebug_written()}
@@ -57,7 +57,7 @@ export const CacheEfficiencyChart = ({ data }: Props) => {
         <span className="flex items-center gap-1">
           <span
             className="inline-block w-2 h-2 rounded-sm"
-            style={{ backgroundColor: COLORS["cache-hit"] }}
+            style={{ backgroundColor: CHART_COLORS["cache-hit"] }}
           />
           <span className="text-[9px] text-muted-foreground">
             {LL.memoryDebug_read()}
@@ -84,7 +84,7 @@ export const CacheEfficiencyChart = ({ data }: Props) => {
               width={barWidth}
               height={h}
               rx={1}
-              fill={COLORS[d.type]}
+              fill={CHART_COLORS[d.type]}
               opacity={hover === i ? 1 : 0.8}
               onPointerEnter={() => setHover(i)}
               onPointerLeave={() => setHover(null)}
@@ -101,7 +101,7 @@ export const CacheEfficiencyChart = ({ data }: Props) => {
             top: 20,
           }}
         >
-          <div style={{ color: COLORS[data[hover].type] }}>
+          <div style={{ color: CHART_COLORS[data[hover].type] }}>
             {data[hover].type === "cache-write"
               ? LL.memoryDebug_written()
               : LL.memoryDebug_read()}

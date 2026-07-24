@@ -239,7 +239,7 @@ function BranchDiffLine({
     >
       <span
         className={cn(
-          "select-none border-r border-border-faint px-2 text-right text-[11px]",
+          "select-none border-r border-border-faint px-2 text-right text-xs",
           kind === "added" && "text-status-success",
           kind === "removed" && "text-status-error",
           kind === "context" && "text-muted-foreground/70",
@@ -250,7 +250,7 @@ function BranchDiffLine({
       </span>
       <span
         className={cn(
-          "select-none text-center text-[11px]",
+          "select-none text-center text-xs",
           kind === "added" && "text-status-success",
           kind === "removed" && "text-status-error",
           kind === "context" && "text-muted-foreground/45",
@@ -319,7 +319,7 @@ function OmittedLine({
         data-diff-marker="…"
         className={cn(
           BRANCH_DIFF_OMITTED_GRID_CLASS,
-          "border-y border-border-faint bg-muted/50 text-[11px] text-muted-foreground",
+          "border-y border-border-faint bg-muted/50 text-xs text-muted-foreground",
         )}
       >
         <span className="flex items-center justify-center border-r border-border-faint">
@@ -389,7 +389,7 @@ function markerClassName(kind: PreviewDiffHunk["kind"] | "hunk" | "omitted") {
 
 function gutterClassName(kind: PreviewDiffHunk["kind"] | "hunk" | "omitted") {
   return cn(
-    "select-none border-r px-2 text-right text-[10px]",
+    "select-none border-r px-2 text-right text-xs",
     kind === "added" &&
       "border-status-success/15 bg-status-success/5 text-status-success/65",
     kind === "removed" &&

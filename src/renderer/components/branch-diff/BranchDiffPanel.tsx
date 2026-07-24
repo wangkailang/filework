@@ -147,10 +147,10 @@ export function BranchDiffPanel({
               : LL.branch_diff_open()}
           </div>
           {data && !data.notAvailable && (
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-xs text-muted-foreground">
               <span>
-                <span className="text-emerald-500">+{data.totalAdded}</span>{" "}
-                <span className="text-red-400">-{data.totalRemoved}</span>
+                <span className="text-status-success">+{data.totalAdded}</span>{" "}
+                <span className="text-status-error">-{data.totalRemoved}</span>
               </span>
               <span className="text-muted-foreground/70">
                 {data.base === data.head
@@ -233,7 +233,7 @@ function BaseBranchSelect({
       <SelectTrigger
         aria-label={label}
         title={label}
-        className="h-7 max-w-[140px] gap-1 rounded-md border-border bg-muted/60 px-2 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground"
+        className="h-7 max-w-[140px] gap-1 rounded-md border-border bg-muted/60 px-2 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground"
       >
         <GitBranch className="size-3 shrink-0" />
         <SelectValue aria-label={value}>
@@ -247,7 +247,7 @@ function BaseBranchSelect({
             <SelectItem key={b} value={b} className="font-mono text-xs">
               <span className="truncate">{b}</span>
               {b === currentBranch && (
-                <span className="ml-auto shrink-0 rounded bg-muted px-1 py-0.5 font-sans text-[9px] text-muted-foreground">
+                <span className="ml-auto shrink-0 rounded bg-muted px-1 py-0.5 font-sans text-xs text-muted-foreground">
                   HEAD
                 </span>
               )}
@@ -270,7 +270,7 @@ function StatusBadges({ data, LL }: StatusBadgesProps) {
     items.push(
       <span
         key="uncommitted"
-        className="px-1.5 rounded bg-amber-500/15 text-amber-400 normal-case"
+        className="rounded bg-status-await/15 px-1.5 text-status-await normal-case"
       >
         {LL.branch_diff_uncommitted(data.uncommitted)}
       </span>,
@@ -280,7 +280,7 @@ function StatusBadges({ data, LL }: StatusBadgesProps) {
     items.push(
       <span
         key="ahead"
-        className="px-1.5 rounded bg-emerald-500/15 text-emerald-400 normal-case"
+        className="rounded bg-status-success/15 px-1.5 text-status-success normal-case"
       >
         {LL.branch_diff_ahead(data.ahead)}
       </span>,
@@ -290,7 +290,7 @@ function StatusBadges({ data, LL }: StatusBadgesProps) {
     items.push(
       <span
         key="behind"
-        className="px-1.5 rounded bg-red-500/15 text-red-400 normal-case"
+        className="rounded bg-status-error/15 px-1.5 text-status-error normal-case"
       >
         {LL.branch_diff_behind(data.behind)}
       </span>,
@@ -319,7 +319,7 @@ function renderBody({
     return <div className="text-xs text-muted-foreground italic">…</div>;
   }
   if (error) {
-    return <div className="text-xs text-red-400">{error}</div>;
+    return <div className="text-xs text-status-error">{error}</div>;
   }
   if (!data) {
     return null;
@@ -336,7 +336,7 @@ function renderBody({
       <div className="text-xs text-muted-foreground italic">
         {LL.branch_diff_no_base()}
         {data.errorMessage && (
-          <div className="mt-1 font-mono text-[10px] text-foreground/60">
+          <div className="mt-1 font-mono text-xs text-foreground/60">
             {data.errorMessage}
           </div>
         )}
@@ -345,10 +345,10 @@ function renderBody({
   }
   if (data.notAvailable) {
     return (
-      <div className="text-xs text-red-400">
+      <div className="text-xs text-status-error">
         {LL.branch_diff_exec_failed()}
         {data.errorMessage && (
-          <div className="mt-1 font-mono text-[10px] text-foreground/60">
+          <div className="mt-1 font-mono text-xs text-foreground/60">
             {data.errorMessage}
           </div>
         )}

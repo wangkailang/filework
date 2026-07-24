@@ -18,6 +18,9 @@ interface AgentTelemetryProps {
   state: AgentState;
   /** running 时的当前动作(通常是工具名) */
   action?: string | null;
+  /** 当前任务标识和标题,让主工作区始终保留任务上下文。 */
+  taskId?: string | null;
+  taskTitle?: string | null;
   /** 左栏折叠时,为左上角浮动展开按钮预留左侧空间 */
   reserveLeft?: boolean;
 }
@@ -29,6 +32,8 @@ interface AgentTelemetryProps {
 export const AgentTelemetry = ({
   state,
   action,
+  taskId,
+  taskTitle,
   reserveLeft,
 }: AgentTelemetryProps) => {
   const { LL } = useI18nContext();
@@ -64,8 +69,9 @@ export const AgentTelemetry = ({
 
   return (
     <div
+      data-task-identity={taskId || undefined}
       className={cn(
-        "relative flex h-[34px] shrink-0 items-center gap-3.5 overflow-hidden border-b border-border-faint bg-surface pr-16 font-mono text-[11px] tracking-wide",
+        "relative flex h-[34px] shrink-0 items-center gap-3.5 overflow-hidden border-b border-border-faint bg-surface pr-16 font-mono text-xs tracking-wide",
         // 左栏折叠 → 让开左上角浮动展开按钮;否则正常左内边距
         reserveLeft ? "pl-16" : "pl-3.5",
       )}
@@ -85,6 +91,15 @@ export const AgentTelemetry = ({
         </span>
         {stateLabel[state]}
       </span>
+
+      {taskTitle && (
+        <>
+          <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
+          <span className="min-w-0 truncate font-sans text-xs font-medium normal-case leading-none tracking-normal text-foreground">
+            {taskTitle}
+          </span>
+        </>
+      )}
 
       {/* 当前动作 */}
       {action && (

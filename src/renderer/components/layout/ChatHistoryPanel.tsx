@@ -7,7 +7,9 @@ import {
   Check,
   GitBranch,
   Loader2,
+  MoreHorizontal,
   Pencil,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -15,10 +17,24 @@ import { useMemo, useState } from "react";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { cn } from "../../lib/utils";
 import { useChatSessionLite } from "../chat/ChatSessionProvider";
+import type { SessionRunStateMap } from "../chat/session-run-state";
 import type { ChatSession } from "../chat/types";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
-type BucketKey = "today" | "yesterday" | "week" | "month" | "earlier";
+type BucketKey =
+  | "attention"
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "earlier";
 
 const DAY_MS = 86_400_000;
 const PREVIEW_WIDTH = 320;
@@ -95,6 +111,49 @@ const isAutomationSession = (session: ChatSession): boolean => {
   return AUTOMATION_TITLE_PREFIXES.some((prefix) => prefix.test(session.title));
 };
 
+export type HistoryFilter = "all" | "attention" | "duplicates" | "empty";
+
+const EMPTY_SESSION_TITLES = new Set([
+  "",
+  "new chat",
+  "新对话",
+  "新しいチャット",
+]);
+
+const normalizeSessionTitle = (title: string, locale: string): string =>
+  title.trim().replace(/\s+/g, " ").toLocaleLowerCase(locale);
+
+const isEmptySession = (session: ChatSession, locale: string): boolean =>
+  EMPTY_SESSION_TITLES.has(normalizeSessionTitle(session.title, locale));
+
+export const filterHistorySessions = (
+  sessions: ChatSession[],
+  filter: HistoryFilter,
+  sessionRunStates: SessionRunStateMap,
+  locale: string,
+): ChatSession[] => {
+  if (filter === "all") return sessions;
+  if (filter === "attention") {
+    return sessions.filter((session) => sessionRunStates[session.id] != null);
+  }
+  if (filter === "empty") {
+    return sessions.filter((session) => isEmptySession(session, locale));
+  }
+
+  const titleCounts = new Map<string, number>();
+  for (const session of sessions) {
+    if (isEmptySession(session, locale)) continue;
+    const title = normalizeSessionTitle(session.title, locale);
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+  }
+  return sessions.filter((session) => {
+    if (isEmptySession(session, locale)) return false;
+    return (
+      (titleCounts.get(normalizeSessionTitle(session.title, locale)) ?? 0) > 1
+    );
+  });
+};
+
 const sessionBranchOf = (session: ChatSession): string | null => {
   const branch = session.lastActiveBranch?.trim();
   return branch ? branch : null;
@@ -109,6 +168,8 @@ export const ChatHistoryPanel = ({
   const chat = useChatSessionLite();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<HistoryFilter>("all");
   // 待二次确认删除的会话(null 表示无弹框)。
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
   const [preview, setPreview] = useState<SessionPreview | null>(null);
@@ -116,6 +177,23 @@ export const ChatHistoryPanel = ({
     () => chat.sessions.filter((session) => !isAutomationSession(session)),
     [chat.sessions],
   );
+  const governedSessions = useMemo(
+    () =>
+      filterHistorySessions(
+        projectSessions,
+        filter,
+        chat.sessionRunStates,
+        locale,
+      ),
+    [chat.sessionRunStates, filter, locale, projectSessions],
+  );
+  const matchingSessions = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase(locale);
+    if (!normalizedQuery) return governedSessions;
+    return governedSessions.filter((session) =>
+      session.title.toLocaleLowerCase(locale).includes(normalizedQuery),
+    );
+  }, [governedSessions, locale, query]);
 
   const groups = useMemo(() => {
     const now = new Date();
@@ -125,6 +203,7 @@ export const ChatHistoryPanel = ({
       now.getDate(),
     ).getTime();
     const order: BucketKey[] = [
+      "attention",
       "today",
       "yesterday",
       "week",
@@ -132,14 +211,19 @@ export const ChatHistoryPanel = ({
       "earlier",
     ];
     const map = new Map<BucketKey, ChatSession[]>();
-    const sorted = [...projectSessions].sort((a, b) => {
+    const sorted = [...matchingSessions].sort((a, b) => {
       const byUpdatedAt =
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       if (byUpdatedAt !== 0) return byUpdatedAt;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
     for (const s of sorted) {
-      const k = bucketOf(s.updatedAt, startOfToday);
+      const status = chat.sessionRunStates[s.id]?.status;
+      const needsAttention =
+        status === "pending" || status === "running" || status === "unread";
+      const k: BucketKey = needsAttention
+        ? "attention"
+        : bucketOf(s.updatedAt, startOfToday);
       const arr = map.get(k);
       if (arr) arr.push(s);
       else map.set(k, [s]);
@@ -147,9 +231,10 @@ export const ChatHistoryPanel = ({
     return order
       .map((key) => ({ key, items: map.get(key) ?? [] }))
       .filter((g) => g.items.length > 0);
-  }, [projectSessions]);
+  }, [chat.sessionRunStates, matchingSessions]);
 
   const groupLabel: Record<BucketKey, () => string> = {
+    attention: LL.session_group_attention,
     today: LL.session_group_today,
     yesterday: LL.session_group_yesterday,
     week: LL.session_group_week,
@@ -171,6 +256,12 @@ export const ChatHistoryPanel = ({
   const cancelRename = () => setEditingId(null);
   const hidePreview = () => setPreview(null);
   const previewBranch = preview ? sessionBranchOf(preview.session) : null;
+  const filters: Array<{ id: HistoryFilter; label: string }> = [
+    { id: "all", label: LL.session_filter_all() },
+    { id: "attention", label: LL.session_filter_attention() },
+    { id: "duplicates", label: LL.session_filter_duplicates() },
+    { id: "empty", label: LL.session_filter_empty() },
+  ];
 
   const showPreview = (
     session: ChatSession,
@@ -199,10 +290,53 @@ export const ChatHistoryPanel = ({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mt-2 flex-1 overflow-y-auto" onScroll={hidePreview}>
+      <div className="space-y-1.5 px-2 pt-2">
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+          />
+          <input
+            data-session-search="true"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label={LL.session_search()}
+            placeholder={LL.session_search()}
+            className="h-8 w-full rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+          />
+        </div>
+        <fieldset
+          className="flex gap-1 overflow-x-auto pb-0.5"
+          aria-label={LL.session_filter_label()}
+        >
+          {filters.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              data-session-filter={item.id}
+              aria-pressed={filter === item.id}
+              onClick={() => setFilter(item.id)}
+              className={cn(
+                "h-6 shrink-0 rounded-md px-2 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                filter === item.id
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </fieldset>
+      </div>
+      <div className="mt-1 flex-1 overflow-y-auto" onScroll={hidePreview}>
         {projectSessions.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             {LL.session_empty()}
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            {LL.session_searchEmpty()}
           </div>
         ) : (
           groups.map((group) => (
@@ -234,7 +368,7 @@ export const ChatHistoryPanel = ({
                     data-session-row={s.id}
                     data-session-age={relativeAge}
                     className={cn(
-                      "group relative flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-accent",
+                      "group relative flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-accent active:bg-accent/80",
                       s.id === chat.activeSessionId &&
                         "bg-accent shadow-[inset_2px_0_0_var(--color-primary)]",
                     )}
@@ -261,7 +395,7 @@ export const ChatHistoryPanel = ({
                     ) : (
                       <button
                         type="button"
-                        className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-left"
+                        className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => chat.handleSelectSession(s.id)}
                         onDoubleClick={() => startRename(s)}
                         onPointerEnter={(event) =>
@@ -278,7 +412,7 @@ export const ChatHistoryPanel = ({
                         </span>
                         <div
                           data-session-row-meta={s.id}
-                          className="ml-auto inline-flex h-5 shrink-0 items-center justify-end text-xs tabular-nums text-muted-foreground transition-opacity group-hover:opacity-0"
+                          className="ml-auto inline-flex h-5 shrink-0 items-center justify-end text-xs tabular-nums text-muted-foreground transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
                         >
                           {runState && runStateLabel ? (
                             <span
@@ -335,30 +469,37 @@ export const ChatHistoryPanel = ({
                     ) : (
                       <div
                         data-session-row-actions={s.id}
-                        className="absolute top-1/2 right-3 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                        className="absolute top-1/2 right-2 z-20 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                       >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startRename(s);
-                          }}
-                          className="p-1 text-muted-foreground hover:text-foreground"
-                          aria-label={LL.session_rename()}
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDelete(s);
-                          }}
-                          className="p-1 text-muted-foreground hover:text-destructive"
-                          aria-label={LL.session_delete()}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              data-session-action-menu={s.id}
+                              className="flex size-7 items-center justify-center rounded-md bg-background/85 text-muted-foreground shadow-sm outline-none hover:bg-accent hover:text-foreground active:bg-accent/80 focus-visible:ring-2 focus-visible:ring-ring"
+                              aria-label={LL.session_actions()}
+                            >
+                              <MoreHorizontal
+                                className="size-3.5"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-36">
+                            <DropdownMenuItem onSelect={() => startRename(s)}>
+                              <Pencil className="size-3.5" />
+                              {LL.session_rename()}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => setPendingDelete(s)}
+                            >
+                              <Trash2 className="size-3.5" />
+                              {LL.session_delete()}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
                     {!isEditing && isGitRepo && sessionBranch && (

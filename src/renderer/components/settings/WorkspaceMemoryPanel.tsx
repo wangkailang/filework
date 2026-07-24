@@ -195,7 +195,7 @@ export const WorkspaceMemoryPanel = ({
                     setEditingId(id);
                     setDraft(entry.text);
                   }}
-                  className="p-1 text-muted-foreground opacity-0 transition-all hover:text-foreground group-hover:opacity-100"
+                  className="p-1 text-muted-foreground opacity-0 transition-[color,opacity] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100"
                   title="编辑"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -203,7 +203,7 @@ export const WorkspaceMemoryPanel = ({
                 <button
                   type="button"
                   onClick={() => handleDelete(scope, entry.key)}
-                  className="p-1 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+                  className="p-1 text-muted-foreground opacity-0 transition-[color,opacity] hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
                   title="删除"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

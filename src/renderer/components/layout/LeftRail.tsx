@@ -288,7 +288,8 @@ export const LeftRail = ({
           <button
             type="button"
             onClick={chat.handleNewChat}
-            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground transition-[color,background-color,border-color,transform] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
+            aria-label={LL.session_newChat()}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-[color,background-color,border-color,transform] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-95"
             title={LL.session_newChat()}
           >
             <MessageSquarePlus className="size-4" />
@@ -344,7 +345,8 @@ export const LeftRail = ({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                aria-label={LL.topbar_settings()}
+                className="flex size-8 items-center justify-center rounded-md text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 title={LL.topbar_settings()}
               >
                 <Menu className="size-4" />
@@ -364,7 +366,8 @@ export const LeftRail = ({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            className="rounded p-1 transition-colors hover:bg-accent"
+            aria-label={LL.sidebar_collapse()}
+            className="flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent active:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             title={LL.sidebar_collapse()}
           >
             <PanelLeftClose className="size-3.5 text-muted-foreground" />

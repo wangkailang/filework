@@ -20,4 +20,10 @@ describe("LeftRail design", () => {
       "h-[34px] w-12 items-center justify-center",
     );
   });
+
+  it("uses one menu icon and accessible hit targets for rail actions", () => {
+    expect(leftRailSource.split('<Menu className="size-4" />')).toHaveLength(2);
+    expect(leftRailSource).toContain("aria-label={LL.session_newChat()}");
+    expect(leftRailSource).toContain("size-8");
+  });
 });

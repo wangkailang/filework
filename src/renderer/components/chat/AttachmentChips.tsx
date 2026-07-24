@@ -1,5 +1,6 @@
 import { FileCodeIcon, FileIcon, FileTextIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
 import { ImageLightbox } from "./ImageLightbox";
 import type { AttachmentKind, AttachmentPart } from "./types";
@@ -14,8 +15,9 @@ const formatBytes = (bytes: number): string => {
 type ChipData = Omit<AttachmentPart, "type">;
 
 const KindIcon = ({ kind }: { kind: AttachmentKind }) => {
-  if (kind === "pdf") return <FileTextIcon className="size-4 text-red-500" />;
-  if (kind === "text") return <FileCodeIcon className="size-4 text-blue-500" />;
+  if (kind === "pdf") return <FileTextIcon className="size-4 text-file-doc" />;
+  if (kind === "text")
+    return <FileCodeIcon className="size-4 text-file-code" />;
   return <FileIcon className="size-4 text-muted-foreground" />;
 };
 
@@ -32,6 +34,7 @@ export const AttachmentChips = ({
   attachments: ChipData[];
   onRemove: (id: string) => void;
 }) => {
+  const { LL } = useI18nContext();
   const [previewId, setPreviewId] = useState<string | null>(null);
   if (attachments.length === 0) return null;
   const previewing = previewId
@@ -48,7 +51,7 @@ export const AttachmentChips = ({
             <button
               type="button"
               onClick={() => setPreviewId(a.attachmentId)}
-              aria-label={`预览 ${a.name}`}
+              aria-label={LL.attachment_preview(a.name)}
               className="focus:outline-none focus:ring-2 focus:ring-primary rounded"
             >
               <img
@@ -72,7 +75,7 @@ export const AttachmentChips = ({
           <button
             type="button"
             onClick={() => onRemove(a.attachmentId)}
-            aria-label={`Remove ${a.name}`}
+            aria-label={LL.attachment_remove(a.name)}
             className="ml-1 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <XIcon className="size-3" />
@@ -102,6 +105,7 @@ export const AttachmentList = ({
 }: {
   attachments: ChipData[];
 }) => {
+  const { LL } = useI18nContext();
   const [previewId, setPreviewId] = useState<string | null>(null);
   if (attachments.length === 0) return null;
   const previewing = previewId
@@ -122,8 +126,8 @@ export const AttachmentList = ({
             }
             title={
               isImage
-                ? `${a.name} — 点击查看`
-                : `${a.name} — click to reveal in Finder`
+                ? LL.attachment_preview(a.name)
+                : LL.attachment_reveal(a.name)
             }
             className="group flex items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5 text-xs hover:bg-accent"
           >

@@ -708,6 +708,8 @@ export type PromptInputSubmitProps = HTMLAttributes<HTMLButtonElement> & {
   disabled?: boolean;
   status?: ChatStatus;
   onStop?: () => void;
+  sendLabel?: string;
+  stopLabel?: string;
 };
 
 export const PromptInputSubmit = ({
@@ -715,6 +717,8 @@ export const PromptInputSubmit = ({
   disabled,
   status,
   onStop,
+  sendLabel = "Send",
+  stopLabel = "Stop",
   ...props
 }: PromptInputSubmitProps) => {
   const isActive = status === "submitted" || status === "streaming";
@@ -733,7 +737,7 @@ export const PromptInputSubmit = ({
           : "bg-primary text-primary-foreground hover:bg-primary-bright active:scale-95",
         className,
       )}
-      aria-label={isActive ? "Stop" : "Send"}
+      aria-label={isActive ? stopLabel : sendLabel}
       onClick={
         isActive
           ? (e) => {

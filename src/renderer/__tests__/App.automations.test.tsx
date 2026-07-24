@@ -73,7 +73,30 @@ vi.mock("../components/layout/LeftRail", () => ({
 }));
 
 vi.mock("../components/layout/SettingsModal", () => ({
-  SettingsModal: () => null,
+  isSettingsTab: (value: unknown) =>
+    typeof value === "string" &&
+    [
+      "general",
+      "browser",
+      "llm",
+      "credentials",
+      "mcp",
+      "tool-whitelist",
+      "usage",
+      "memory-debug",
+      "task-trace",
+      "command-security",
+    ].includes(value),
+  SettingsModal: ({
+    initialTab,
+    open,
+  }: {
+    initialTab?: string;
+    open: boolean;
+  }) =>
+    open ? (
+      <div data-settings-initial-tab={initialTab} data-settings-modal="true" />
+    ) : null,
 }));
 
 vi.mock("../components/onboarding/GitHubConnectModal", () => ({
@@ -237,5 +260,30 @@ describe("App automations dock behavior", () => {
         .querySelector('[data-context-dock="true"]')
         ?.getAttribute("data-active-tab"),
     ).toBe("automations");
+  });
+
+  it("opens the settings panel requested by a recovery action", async () => {
+    const { document } = installDom();
+    root = createRoot(document.getElementById("root") as HTMLElement);
+
+    await act(async () => {
+      root?.render(<App />);
+    });
+    await flushEffects();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new window.CustomEvent("filework:open-settings", {
+          detail: { tab: "llm" },
+        }),
+      );
+    });
+    await flushEffects();
+
+    expect(
+      document
+        .querySelector('[data-settings-modal="true"]')
+        ?.getAttribute("data-settings-initial-tab"),
+    ).toBe("llm");
   });
 });

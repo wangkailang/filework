@@ -82,9 +82,9 @@ function statusIcon(status: GitFileStatus) {
 }
 
 function statusColor(status: GitFileStatus): string {
-  if (status === "added") return "text-emerald-500";
-  if (status === "deleted") return "text-red-400";
-  if (status === "renamed") return "text-amber-400";
+  if (status === "added") return "text-status-success";
+  if (status === "deleted") return "text-status-error";
+  if (status === "renamed") return "text-status-await";
   return "text-muted-foreground";
 }
 

@@ -163,7 +163,7 @@ export const WelcomeScreen = ({
                     <button
                       type="button"
                       onClick={(e) => handleRemoveRecent(e, ws.path)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-all"
+                      className="rounded p-1 opacity-0 transition-[background-color,opacity] hover:bg-muted group-hover:opacity-100 group-focus-within:opacity-100"
                       title={LL.welcome_remove()}
                     >
                       <X className="w-3 h-3 text-muted-foreground" />

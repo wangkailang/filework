@@ -47,11 +47,13 @@ export type {
 const StepIcon = ({ status }: { status: PlanStepView["status"] }) => {
   switch (status) {
     case "completed":
-      return <CheckCircle2 className="size-4 text-green-500 shrink-0" />;
+      return <CheckCircle2 className="size-4 shrink-0 text-status-success" />;
     case "running":
-      return <Loader2 className="size-4 text-blue-500 animate-spin shrink-0" />;
+      return (
+        <Loader2 className="size-4 shrink-0 animate-spin text-status-running" />
+      );
     case "failed":
-      return <XCircle className="size-4 text-red-500 shrink-0" />;
+      return <XCircle className="size-4 shrink-0 text-status-error" />;
     case "skipped":
       return <SkipForward className="size-4 text-muted-foreground shrink-0" />;
     default:
@@ -83,8 +85,8 @@ const RunningStepTimer = ({ isStalled }: { isStalled: boolean }) => {
   return (
     <span
       className={cn(
-        "ml-1 text-[10px] tabular-nums",
-        isStalled ? "text-amber-500" : "text-muted-foreground",
+        "ml-1 text-xs tabular-nums",
+        isStalled ? "text-status-await" : "text-muted-foreground",
       )}
     >
       {isStalled && <AlertTriangle className="inline size-3 mr-0.5 -mt-0.5" />}
@@ -127,14 +129,14 @@ const SubStepList = ({
         return (
           <div
             key={`${id}-${sub.label}`}
-            className="flex items-center gap-1.5 text-[11px]"
+            className="flex items-center gap-1.5 text-xs"
           >
             {sub.status === "done" ? (
-              <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+              <CheckCircle2 className="size-3 shrink-0 text-status-success" />
             ) : isUnfinished ? (
-              <XCircle className="size-3 text-red-400/60 shrink-0" />
+              <XCircle className="size-3 shrink-0 text-status-error/60" />
             ) : isFirstPending ? (
-              <Loader2 className="size-3 text-blue-500 animate-spin shrink-0" />
+              <Loader2 className="size-3 shrink-0 animate-spin text-status-running" />
             ) : (
               <Circle className="size-3 text-muted-foreground/40 shrink-0" />
             )}
@@ -143,7 +145,7 @@ const SubStepList = ({
                 sub.status === "done"
                   ? "text-muted-foreground line-through"
                   : isUnfinished
-                    ? "text-red-400/60 line-through"
+                    ? "text-status-error/60 line-through"
                     : "text-foreground/70",
               )}
             >
@@ -194,16 +196,16 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
   const summary = formatArgsSummary(artifact.args);
 
   return (
-    <div className="text-[11px]">
+    <div className="text-xs">
       <button
         type="button"
         className="flex items-center gap-1.5 w-full text-left bg-transparent border-none p-0 cursor-pointer select-none"
         onClick={() => setOpen((o) => !o)}
       >
         {artifact.success ? (
-          <CheckCircle2 className="size-3 text-green-500 shrink-0" />
+          <CheckCircle2 className="size-3 shrink-0 text-status-success" />
         ) : (
-          <XCircle className="size-3 text-red-400 shrink-0" />
+          <XCircle className="size-3 shrink-0 text-status-error" />
         )}
         <span className="text-foreground/80 font-medium shrink-0">{label}</span>
         {summary && (
@@ -220,7 +222,7 @@ const ArtifactItem = ({ artifact }: { artifact: PlanStepArtifactView }) => {
         </span>
       </button>
       {open && artifact.result != null && (
-        <pre className="mt-0.5 ml-4.5 px-2 py-1 rounded bg-muted/60 text-[10px] font-mono text-foreground/70 whitespace-pre-wrap break-all max-h-40 overflow-auto">
+        <pre className="ml-4.5 mt-0.5 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/60 px-2 py-1 font-mono text-xs text-foreground/70">
           {formatResult(artifact.result)}
         </pre>
       )}
@@ -232,7 +234,7 @@ const ArtifactList = ({ artifacts }: { artifacts: PlanStepArtifactView[] }) => {
   const { LL } = useI18nContext();
   return (
     <div className="ml-6 mt-1.5 space-y-1 border-l border-border/50 pl-2">
-      <div className="text-[10px] text-muted-foreground/60 mb-0.5">
+      <div className="mb-0.5 text-xs text-muted-foreground/60">
         {LL.plan_artifacts(String(artifacts.length))}
       </div>
       {artifacts.map((a) => (
@@ -259,7 +261,7 @@ const StepReasoning = ({
     <div className="ml-6 mt-1.5 border-l border-border/50 pl-2">
       <button
         type="button"
-        className="flex items-center gap-1.5 w-full text-left bg-transparent border-none p-0 cursor-pointer select-none text-[11px] text-muted-foreground/80"
+        className="flex w-full cursor-pointer select-none items-center gap-1.5 border-none bg-transparent p-0 text-left text-xs text-muted-foreground/80"
         onClick={() => setOpen((o) => !o)}
       >
         <Brain className="size-3 shrink-0" />
@@ -271,7 +273,7 @@ const StepReasoning = ({
         )}
       </button>
       {open && (
-        <div className="mt-0.5 px-2 py-1 rounded bg-muted/40 text-[10.5px] leading-relaxed text-foreground/70 whitespace-pre-wrap break-words max-h-60 overflow-auto">
+        <div className="mt-0.5 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1 text-xs leading-relaxed text-foreground/70">
           {text}
         </div>
       )}
@@ -316,7 +318,7 @@ const StepRowImpl = ({
             "text-xs",
             step.status === "completed" && "text-muted-foreground line-through",
             step.status === "running" && "text-foreground font-medium",
-            step.status === "failed" && "text-red-400",
+            step.status === "failed" && "text-status-error",
             step.status === "skipped" && "text-muted-foreground",
             step.status === "pending" && "text-foreground/80",
           )}
@@ -327,12 +329,12 @@ const StepRowImpl = ({
           )}
         </span>
         {step.verification && (
-          <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+          <div className="mt-0.5 text-xs text-muted-foreground/70">
             {LL.plan_verify()}: {step.verification}
           </div>
         )}
         {step.error && (
-          <div className="text-xs text-red-400 mt-0.5">
+          <div className="mt-0.5 text-xs text-status-error">
             {LL.plan_stepError(step.error)}
           </div>
         )}
@@ -525,8 +527,8 @@ export const PlanViewer = ({
         <div
           className={cn(
             "flex items-center gap-2 px-3 py-2 border-t border-border text-xs",
-            plan.status === "completed" && "text-green-500",
-            plan.status === "failed" && "text-red-400",
+            plan.status === "completed" && "text-status-success",
+            plan.status === "failed" && "text-status-error",
             plan.status === "cancelled" && "text-muted-foreground",
           )}
         >

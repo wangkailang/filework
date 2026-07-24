@@ -1,5 +1,32 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../../i18n/i18n-react", () => ({
+  useI18nContext: () => ({
+    LL: {
+      subagent_delegation: () => "Delegated tasks",
+      subagent_failedCount: (count: string) => `Failed ${count}`,
+      subagent_partialCount: (count: string) => `Partial ${count}`,
+      subagent_statusCancelled: () => "Cancelled",
+      subagent_statusFailed: () => "Failed",
+      subagent_statusNoResult: () => "No result",
+      subagent_statusOk: () => "Complete",
+      subagent_statusPartial: () => "Partial",
+      subagent_statusQueued: () => "Queued",
+      subagent_statusRunning: () => "Running",
+      subagent_statusTimeout: () => "Timed out",
+      subagent_statusTokenLimit: () => "Token limit",
+      subagent_statusTruncated: () => "Truncated",
+      subagent_steps: (count: string) => `${count} steps`,
+      subagent_summary: (children: string, concurrency: string, done: string) =>
+        `${children} tasks · concurrency ${concurrency} · ${done} complete`,
+      subagent_truncatedCount: (count: string) => `Truncated ${count}`,
+      subagent_usable: (usable: string, total: string) =>
+        `${usable}/${total} usable`,
+      subagent_viewTrace: (goal: string) => `View execution for ${goal}`,
+    },
+  }),
+}));
 
 import { SubagentCard } from "../SubagentCard";
 import type { SubagentMessagePart } from "../types";
@@ -43,9 +70,9 @@ describe("SubagentCard", () => {
 
     const html = renderToStaticMarkup(<SubagentCard part={part} />);
 
-    expect(html.match(/进行中/g)).toHaveLength(4);
-    expect(html.match(/排队中/g)).toHaveLength(2);
-    expect(html).toContain("完成 0/6");
+    expect(html.match(/>Running<\/span>/g)).toHaveLength(4);
+    expect(html.match(/>Queued<\/span>/g)).toHaveLength(2);
+    expect(html).toContain("6 tasks · concurrency 4 · 0 complete");
   });
 
   it("counts partial results as usable evidence while preserving follow-up state", () => {
@@ -62,11 +89,12 @@ describe("SubagentCard", () => {
 
     const html = renderToStaticMarkup(<SubagentCard part={part} />);
 
-    expect(html.match(/部分可用/g)).toHaveLength(3);
-    expect(html).toContain("可用 2/2");
+    expect(html.match(/>Partial<\/span>/g)).toHaveLength(2);
+    expect(html).toContain("Partial 2");
+    expect(html).toContain("2/2 usable");
     expect(html).not.toContain("含失败");
-    expect(html).not.toContain("token 超限");
-    expect(html).not.toContain("超时");
+    expect(html).not.toContain("Token limit");
+    expect(html).not.toContain("Timed out");
   });
 
   it("does not treat startup summaries as partial results", () => {
@@ -83,9 +111,25 @@ describe("SubagentCard", () => {
 
     const html = renderToStaticMarkup(<SubagentCard part={part} />);
 
-    expect(html).toContain("可用 0/2");
-    expect(html).toContain("截断 2");
-    expect(html.match(/已截断/g)).toHaveLength(2);
-    expect(html).not.toContain("部分可用");
+    expect(html).toContain("0/2 usable");
+    expect(html).toContain("Truncated 2");
+    expect(html.match(/>Truncated<\/span>/g)).toHaveLength(2);
+    expect(html).not.toContain("Partial");
+  });
+
+  it("uses semantic status colors instead of palette utilities", () => {
+    const part: SubagentMessagePart = {
+      type: "subagent",
+      batchId: "batch-1",
+      toolCallId: "spawn-1",
+      concurrency: 2,
+      children: [child("child-1", "running"), child("child-2", "failed")],
+    };
+
+    const html = renderToStaticMarkup(<SubagentCard part={part} />);
+
+    expect(html).toContain("text-status-running");
+    expect(html).toContain("text-status-error");
+    expect(html).not.toMatch(/text-(?:blue|emerald|red|amber)-[0-9]+/);
   });
 });

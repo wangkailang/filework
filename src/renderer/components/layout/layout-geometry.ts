@@ -10,8 +10,8 @@ export const DOCK_MIN_WIDTH = 280;
 export const DOCK_MAX_WIDTH = 720;
 export const DOCK_DEFAULT_WIDTH = 420;
 
-/** 对话区的最小可读宽度;低于它时 Dock 改用浮层,避免重演"聊天被压到 30%"。 */
-export const MIN_CHAT_WIDTH = 420;
+/** 对话区的最小可读宽度;低于它时 Dock 改用浮层,避免长任务输出失去可扫读性。 */
+export const MIN_CHAT_WIDTH = 560;
 
 const clamp = (
   n: number,
@@ -28,17 +28,34 @@ export const clampDockWidth = (n: number): number =>
 
 export type DockMode = "split" | "overlay";
 
-/** 窗口放不下"左栏 + 最小对话宽 + Dock"时返回 "overlay",否则 "split"。 */
-export const resolveDockMode = (args: {
+export type DockGeometryArgs = {
   windowWidth: number;
   railWidth: number;
   railCollapsed: boolean;
   dockWidth: number;
-}): DockMode => {
-  const rail = args.railCollapsed ? 0 : args.railWidth;
-  const remainingForChat = args.windowWidth - rail - args.dockWidth;
-  return remainingForChat < MIN_CHAT_WIDTH ? "overlay" : "split";
 };
+
+const maxSplitDockWidth = (args: DockGeometryArgs): number => {
+  const rail = args.railCollapsed ? 0 : args.railWidth;
+  return args.windowWidth - rail - MIN_CHAT_WIDTH;
+};
+
+/**
+ * 分栏时优先保住聊天阅读宽度，必要时临时收窄 Dock。用户保存的 Dock 宽度
+ * 不会被窗口变化覆盖；窗口再次变宽后会恢复。
+ */
+export const resolveSplitDockWidth = (args: DockGeometryArgs): number =>
+  Math.max(
+    DOCK_MIN_WIDTH,
+    Math.min(clampDockWidth(args.dockWidth), maxSplitDockWidth(args)),
+  );
+
+/**
+ * 只在"最小 Dock + 最小聊天宽度"都无法并排时使用浮层。若只是用户把 Dock
+ * 拉得较宽，则保持分栏并临时收窄 Dock，避免浮层遮住聊天内容。
+ */
+export const resolveDockMode = (args: DockGeometryArgs): DockMode =>
+  maxSplitDockWidth(args) < DOCK_MIN_WIDTH ? "overlay" : "split";
 
 /** 全屏 Dock 不应盖住展开中的左侧栏;折叠时铺满到窗口左边。 */
 export const resolveFullscreenDockLeft = (args: {
