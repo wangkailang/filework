@@ -43,7 +43,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
         <span className="flex items-center gap-1">
           <span
             className="inline-block w-2 h-2 rounded-sm"
-            style={{ backgroundColor: "rgba(251, 146, 60, 0.3)" }}
+            style={{ backgroundColor: "var(--color-chart-token-muted)" }}
           />
           <span className="text-[9px] text-muted-foreground">
             {LL.memoryDebug_original()}
@@ -52,7 +52,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
         <span className="flex items-center gap-1">
           <span
             className="inline-block w-2 h-2 rounded-sm"
-            style={{ backgroundColor: "#fb923c" }}
+            style={{ backgroundColor: "var(--color-chart-token)" }}
           />
           <span className="text-[9px] text-muted-foreground">
             {LL.memoryDebug_compressed()}
@@ -85,7 +85,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
                 width={barWidth}
                 height={origH}
                 rx={1}
-                fill="rgba(251, 146, 60, 0.3)"
+                fill="var(--color-chart-token-muted)"
               />
               {/* Compressed tokens bar */}
               <rect
@@ -94,7 +94,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
                 width={barWidth}
                 height={compH}
                 rx={1}
-                fill="#fb923c"
+                fill="var(--color-chart-token)"
               />
             </g>
           );
@@ -119,7 +119,7 @@ export const TokenTimelineChart = ({ data }: Props) => {
             {formatTokens(data[hover].compressedTokens)}
           </div>
           {data[hover].originalTokens > 0 && (
-            <div className="text-green-400">
+            <div className="text-status-success">
               -
               {Math.round(
                 ((data[hover].originalTokens - data[hover].compressedTokens) /

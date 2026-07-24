@@ -33,4 +33,12 @@ describe("PromptInput skill command theme", () => {
   it("disables the StarterKit bold mark in chat prompts", () => {
     expect(promptInputSource).toContain("bold: false");
   });
+
+  it("lets the caller localize send and stop labels", () => {
+    expect(promptInputSource).toContain('sendLabel = "Send"');
+    expect(promptInputSource).toContain('stopLabel = "Stop"');
+    expect(promptInputSource).toContain(
+      "aria-label={isActive ? stopLabel : sendLabel}",
+    );
+  });
 });

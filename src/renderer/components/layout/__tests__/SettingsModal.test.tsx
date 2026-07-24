@@ -37,12 +37,18 @@ vi.mock("../../../i18n/i18n-react", () => ({
       llmConfig_title: () => "LLM 配置",
       memoryDebug_title: () => "记忆调试",
       settings_credentials: () => "凭据",
+      settings_groupCapabilities: () => "能力与安全",
+      settings_groupDiagnostics: () => "诊断",
+      settings_groupPreferences: () => "偏好",
+      settings_commandSecurity: () => "命令安全",
       settings_language: () => "语言",
+      settings_taskTrace: () => "任务轨迹",
       settings_theme: () => "主题",
       settings_themeDark: () => "深色",
       settings_themeLight: () => "浅色",
       settings_themeSystem: () => "跟随系统",
       settings_title: () => "设置",
+      settings_toolWhitelist: () => "可审批工具",
       usage_title: () => "用量统计",
     },
   }),
@@ -91,5 +97,27 @@ describe("SettingsModal", () => {
     expect(html).toContain("min-h-0 flex-1 overflow-hidden");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(html).toContain(">设置<");
+  });
+
+  it("opens a requested panel and groups settings by user intent", () => {
+    const html = renderToStaticMarkup(
+      <SettingsModal
+        open
+        onClose={vi.fn()}
+        onLocaleChange={vi.fn()}
+        {...({ initialTab: "llm" } as Record<string, unknown>)}
+      />,
+    );
+
+    expect(html).toContain('data-settings-active-tab="llm"');
+    expect(html).toContain('data-settings-group="preferences"');
+    expect(html).toContain('data-settings-group="capabilities"');
+    expect(html).toContain('data-settings-group="diagnostics"');
+    expect(html).toContain(">偏好<");
+    expect(html).toContain(">能力与安全<");
+    expect(html).toContain(">诊断<");
+    expect(html).toContain(">可审批工具<");
+    expect(html).toContain(">命令安全<");
+    expect(html).toContain(">任务轨迹<");
   });
 });

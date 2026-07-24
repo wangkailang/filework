@@ -11,6 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useI18nContext } from "../../i18n/i18n-react";
+import type { TranslationFunctions } from "../../i18n/i18n-types";
 
 import type { SubagentChildView, SubagentMessagePart } from "./types";
 
@@ -47,44 +49,67 @@ export const getSubagentDisplayStatus = (
         ? "no_result"
         : child.status;
 
-const STATUS_META: Record<
+const getStatusMeta = (
+  LL: TranslationFunctions,
+): Record<
   SubagentDisplayStatus,
   { label: string; className: string; Icon: typeof Check }
-> = {
+> => ({
   queued: {
-    label: "排队中",
+    label: LL.subagent_statusQueued(),
     className: "text-muted-foreground",
     Icon: Hourglass,
   },
-  running: { label: "进行中", className: "text-blue-400", Icon: Loader2 },
-  ok: { label: "完成", className: "text-emerald-500", Icon: Check },
-  failed: { label: "失败", className: "text-red-400", Icon: X },
-  cancelled: { label: "已取消", className: "text-muted-foreground", Icon: Ban },
-  timeout: { label: "超时", className: "text-amber-500", Icon: Clock },
+  running: {
+    label: LL.subagent_statusRunning(),
+    className: "text-status-running",
+    Icon: Loader2,
+  },
+  ok: {
+    label: LL.subagent_statusOk(),
+    className: "text-status-success",
+    Icon: Check,
+  },
+  failed: {
+    label: LL.subagent_statusFailed(),
+    className: "text-status-error",
+    Icon: X,
+  },
+  cancelled: {
+    label: LL.subagent_statusCancelled(),
+    className: "text-muted-foreground",
+    Icon: Ban,
+  },
+  timeout: {
+    label: LL.subagent_statusTimeout(),
+    className: "text-status-await",
+    Icon: Clock,
+  },
   token_limit: {
-    label: "token 超限",
-    className: "text-amber-500",
+    label: LL.subagent_statusTokenLimit(),
+    className: "text-status-await",
     Icon: Coins,
   },
   partial: {
-    label: "部分可用",
-    className: "text-amber-500",
+    label: LL.subagent_statusPartial(),
+    className: "text-status-await",
     Icon: CircleAlert,
   },
   truncated: {
-    label: "已截断",
-    className: "text-amber-500",
+    label: LL.subagent_statusTruncated(),
+    className: "text-status-await",
     Icon: CircleAlert,
   },
   no_result: {
-    label: "无有效结果",
-    className: "text-amber-500",
+    label: LL.subagent_statusNoResult(),
+    className: "text-status-await",
     Icon: CircleAlert,
   },
-};
+});
 
 export function StatusBadge({ status }: { status: SubagentDisplayStatus }) {
-  const { label, className, Icon } = STATUS_META[status];
+  const { LL } = useI18nContext();
+  const { label, className, Icon } = getStatusMeta(LL)[status];
   return (
     <span
       className={`flex shrink-0 items-center gap-1 text-[10px] ${className}`}
@@ -110,6 +135,7 @@ function ChildRow({
   batchId: string;
   child: SubagentChildView;
 }) {
+  const { LL } = useI18nContext();
   const total = fmtTokens(child.usage.totalTokens);
   // 点击整行 → 在 ContextDock 钻入查看该子 agent 的执行过程(App 监听该事件)。
   const openTrace = () =>
@@ -123,11 +149,13 @@ function ChildRow({
       type="button"
       onClick={openTrace}
       className="group flex w-full items-center gap-2 border-t border-border/60 px-3 py-1.5 text-left text-xs first:border-t-0 hover:bg-accent/40"
-      title={`查看「${child.goal}」的执行过程`}
+      title={LL.subagent_viewTrace(child.goal)}
     >
       <span className="truncate text-foreground/80">{child.goal}</span>
       <span className="ml-auto flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
-        {child.stepCount > 0 && <span>{child.stepCount} 步</span>}
+        {child.stepCount > 0 && (
+          <span>{LL.subagent_steps(String(child.stepCount))}</span>
+        )}
         {total && <span className="font-mono">{total} tok</span>}
         <StatusBadge status={getSubagentDisplayStatus(child)} />
         <ChevronRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -137,6 +165,7 @@ function ChildRow({
 }
 
 export function SubagentCard({ part }: { part: SubagentMessagePart }) {
+  const { LL } = useI18nContext();
   const [expanded, setExpanded] = useState(true);
   const { children, concurrency } = part;
   const doneCount = children.filter((c) => isDone(c.status)).length;
@@ -159,26 +188,36 @@ export function SubagentCard({ part }: { part: SubagentMessagePart }) {
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
         )}
         {!allDone && (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-status-running" />
         )}
-        <span className="text-foreground/80">子任务委派</span>
+        <span className="text-foreground/80">{LL.subagent_delegation()}</span>
         <span className="text-muted-foreground">
-          · {children.length} 子任务 · 并发 {concurrency} · 完成 {doneCount}/
-          {children.length}
+          ·{" "}
+          {LL.subagent_summary(
+            String(children.length),
+            String(concurrency),
+            String(doneCount),
+          )}
         </span>
         {allDone && (
           <span className="text-muted-foreground">
-            · 可用 {usableCount}/{children.length}
+            · {LL.subagent_usable(String(usableCount), String(children.length))}
           </span>
         )}
         {allDone && partialCount > 0 && (
-          <span className="text-amber-500">· 部分可用 {partialCount}</span>
+          <span className="text-status-await">
+            · {LL.subagent_partialCount(String(partialCount))}
+          </span>
         )}
         {allDone && truncatedCount > 0 && (
-          <span className="text-amber-500">· 截断 {truncatedCount}</span>
+          <span className="text-status-await">
+            · {LL.subagent_truncatedCount(String(truncatedCount))}
+          </span>
         )}
         {allDone && failedCount > 0 && (
-          <span className="text-amber-500">· 失败 {failedCount}</span>
+          <span className="text-status-await">
+            · {LL.subagent_failedCount(String(failedCount))}
+          </span>
         )}
       </button>
       {expanded && (

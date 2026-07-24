@@ -18,8 +18,13 @@ import {
   DOCK_DEFAULT_WIDTH,
   RAIL_DEFAULT_WIDTH,
   resolveDockMode,
+  resolveSplitDockWidth,
 } from "./components/layout/layout-geometry";
-import { SettingsModal } from "./components/layout/SettingsModal";
+import {
+  isSettingsTab,
+  SettingsModal,
+  type SettingsTab,
+} from "./components/layout/SettingsModal";
 import { GitHubConnectModal } from "./components/onboarding/GitHubConnectModal";
 import { GitLabConnectModal } from "./components/onboarding/GitLabConnectModal";
 import { WelcomeScreen } from "./components/onboarding/WelcomeScreen";
@@ -95,6 +100,8 @@ export const App = () => {
   const [gitlabModalOpen, setGitlabModalOpen] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] =
+    useState<SettingsTab>("general");
   // 每当破坏性工具执行完成时自增;branch-diff hook 以此作为失效信号,
   // 使停靠区的 Diff 标签能反映写入后的实际状态,而无需等待 30 秒 TTL。
   const [diffInvalidator, setDiffInvalidator] = useState(0);
@@ -196,7 +203,12 @@ export const App = () => {
 
   // 设置入口从侧栏迁到顶栏齿轮 / 错误恢复按钮,统一通过事件打开。
   useEffect(() => {
-    const handler = () => setSettingsOpen(true);
+    const handler = (event: Event) => {
+      const requestedTab = (event as CustomEvent<{ tab?: unknown }>).detail
+        ?.tab;
+      if (isSettingsTab(requestedTab)) setSettingsInitialTab(requestedTab);
+      setSettingsOpen(true);
+    };
     window.addEventListener("filework:open-settings", handler);
     return () => window.removeEventListener("filework:open-settings", handler);
   }, []);
@@ -506,6 +518,15 @@ export const App = () => {
     railCollapsed,
     dockWidth,
   });
+  const renderedDockWidth =
+    dockMode === "split"
+      ? resolveSplitDockWidth({
+          windowWidth: winWidth,
+          railWidth,
+          railCollapsed,
+          dockWidth,
+        })
+      : dockWidth;
 
   return (
     <TypesafeI18n key={locale} locale={locale}>
@@ -573,6 +594,8 @@ export const App = () => {
                   <div className="relative min-w-0 flex-1 overflow-hidden">
                     <ChatPanel
                       workspacePath={workspace.localPath}
+                      currentBranch={branchForChip}
+                      isGitRepo={workspace.isGitRepo}
                       railCollapsed={railCollapsed}
                     />
                     {/* 顶部右上角面板菜单:垂直居中嵌入 telemetry 状态条右端(h-[34px]),
@@ -590,7 +613,7 @@ export const App = () => {
                   {dockOpen && (
                     <ContextDock
                       mode={dockMode}
-                      width={dockWidth}
+                      width={renderedDockWidth}
                       activeTab={dockTab}
                       onTabChange={setDockTab}
                       onClose={() => setDockOpen(false)}
@@ -623,11 +646,14 @@ export const App = () => {
                 isGitRepo={workspace.isGitRepo}
                 hasSubagent={dockSubagent != null}
                 onOpenDockTab={openDockTab}
+                onOpenFile={openFileInDock}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onSwitchWorkspace={() => setWorkspace(null)}
+                workspaceRoot={workspace.localPath}
               />
             </BrowserRouterProvider>
             <SettingsModal
+              initialTab={settingsInitialTab}
               open={settingsOpen}
               onClose={() => setSettingsOpen(false)}
               onLocaleChange={setLocale}

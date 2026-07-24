@@ -24,13 +24,22 @@ vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
     LL: {
       chat_connectionTimeout: () => "连接超时",
+      chat_attachFiles: () => "添加附件",
+      chat_branchContext: (branch: string) => `分支 ${branch}`,
       chat_copied: () => "已复制",
       chat_copy: () => "复制",
+      chat_dropFiles: () => "松开即可添加文件",
       chat_emptyDescription: () => "空状态描述",
       chat_emptyTitle: () => "空状态",
       chat_error: () => "错误",
       chat_forkHere: () => "从这里分叉",
       chat_inputPlaceholder: () => "输入消息",
+      chat_panelLabel: () => "任务对话",
+      chat_send: () => "发送消息",
+      chat_stop: () => "停止生成",
+      chat_workspaceGit: () => "Git 仓库",
+      chat_workspaceLocal: () => "本地工作区",
+      chat_workspaceMemory: () => "工作区记忆",
       chatPermission_autoDesc: () => "在工作区沙箱内自动批准工具调用",
       chatPermission_autoLabel: () => "替我审批",
       chatPermission_fullDesc: () => "不限制文件系统或网络访问",
@@ -60,16 +69,30 @@ vi.mock("../../../i18n/i18n-react", () => ({
       recovery_newChat: () => "新对话",
       recovery_retry: () => "重试",
       recovery_settings: () => "设置",
+      clarification_replyPlaceholder: () => "说明你的选择…",
+      clarification_send: () => "提交说明",
+      clarification_title: () => "需要确认",
+      automations_runDetailsPrompt: () => "执行指令",
+      automations_runDetailsTitle: () => "运行详情",
+      automations_viewDetails: () => "查看详情",
       retry_contextOverflow: () => "上下文",
       retry_rateLimit: () => "限流",
       retry_serverError: () => "服务",
       retry_timeout: () => "超时",
       sidebar_skills: () => "技能",
+      suggestion_gitDiagnose: () => "诊断失败的测试并修复",
+      suggestion_gitExplain: () => "解释这个仓库的架构和关键入口",
+      suggestion_gitImplement: () => "实现一个功能并验证改动",
+      suggestion_gitReview: () => "审查当前改动并指出风险",
       suggestion_duplicates: () => "查找重复文件",
       suggestion_organize: () => "整理文件",
       suggestion_report: () => "生成报告",
       suggestion_screenshots: () => "整理截图",
       suggestion_stats: () => "统计文件",
+      suggestion_workspaceFind: () => "查找与目标相关的文件和上下文",
+      suggestion_workspaceImprove: () => "审视这个工作区并提出改进建议",
+      suggestion_workspacePlan: () => "把一个目标拆成可执行计划",
+      suggestion_workspaceSummarize: () => "总结这个工作区的结构和用途",
       tool_done: () => "完成",
       tool_error: () => "错误",
       tool_errorLabel: () => "错误",
@@ -77,6 +100,8 @@ vi.mock("../../../i18n/i18n-react", () => ({
       tool_preparing: () => "准备中",
       tool_result: () => "结果",
       tool_running: () => "运行中",
+      usage_input: () => "输入",
+      usage_output: () => "输出",
     },
   }),
 }));
@@ -142,7 +167,11 @@ vi.mock("../../ai-elements/prompt-input", () => ({
   PromptInput: ({ children }: { children: React.ReactNode }) => (
     <form>{children}</form>
   ),
-  PromptInputAttachButton: () => null,
+  PromptInputAttachButton: ({
+    "aria-label": ariaLabel = "Attach files",
+  }: {
+    "aria-label"?: string;
+  }) => <button aria-label={ariaLabel} data-testid="attach" type="button" />,
   PromptInputBody: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -150,15 +179,34 @@ vi.mock("../../ai-elements/prompt-input", () => ({
     <div>{children}</div>
   ),
   PromptInputRichEditor: () => <div data-testid="composer" />,
-  PromptInputSubmit: () => (
-    <button aria-label="Send" type="submit">
+  PromptInputSubmit: ({
+    sendLabel = "Send",
+    status,
+    stopLabel = "Stop",
+  }: {
+    sendLabel?: string;
+    status?: string;
+    stopLabel?: string;
+  }) => (
+    <button
+      aria-label={
+        status === "submitted" || status === "streaming" ? stopLabel : sendLabel
+      }
+      type="submit"
+    >
       Enter
     </button>
   ),
 }));
 
 vi.mock("../AgentTelemetry", () => ({
-  AgentTelemetry: () => null,
+  AgentTelemetry: ({
+    taskId,
+    taskTitle,
+  }: {
+    taskId?: string;
+    taskTitle?: string;
+  }) => <div data-task-identity={taskId}>{taskTitle}</div>,
 }));
 
 vi.mock("../AttachmentChips", () => ({
@@ -268,6 +316,192 @@ describe("ChatPanel message rendering", () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     root = null;
+  });
+
+  it("shows goal-oriented suggestions for a Git workspace", async () => {
+    chatState.value = createChatState([]);
+
+    await act(async () => {
+      root?.render(
+        <ChatPanel
+          workspacePath="/workspace"
+          {...({ isGitRepo: true } as Record<string, unknown>)}
+        />,
+      );
+    });
+
+    const text = document.getElementById("root")?.textContent ?? "";
+    expect(text).toContain("解释这个仓库的架构和关键入口");
+    expect(text).toContain("实现一个功能并验证改动");
+    expect(text).toContain("诊断失败的测试并修复");
+    expect(text).toContain("审查当前改动并指出风险");
+    expect(text).not.toContain("查找重复文件");
+  });
+
+  it("shows the active repository and branch before a new task starts", async () => {
+    chatState.value = createChatState([]);
+
+    await act(async () => {
+      root?.render(
+        <ChatPanel
+          workspacePath="/workspace"
+          {...({
+            currentBranch: "main",
+            isGitRepo: true,
+          } as Record<string, unknown>)}
+        />,
+      );
+    });
+
+    expect(
+      document.querySelector('[data-workspace-context="true"]')?.textContent,
+    ).toContain("Git 仓库");
+    expect(
+      document.querySelector('[data-workspace-context="true"]')?.textContent,
+    ).toContain("分支 main");
+  });
+
+  it("localizes the chat surface and composer controls", async () => {
+    chatState.value = createChatState([]);
+
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(document.querySelector("section")?.getAttribute("aria-label")).toBe(
+      "任务对话",
+    );
+    expect(
+      document
+        .querySelector('[data-testid="attach"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("添加附件");
+    expect(
+      document.querySelector('button[aria-label="发送消息"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('button[aria-label="工作区记忆"]'),
+    ).not.toBeNull();
+  });
+
+  it("localizes the free-text clarification response", async () => {
+    const assistant: ChatMessage = {
+      id: "assistant-clarification",
+      sessionId: "session-1",
+      role: "assistant",
+      content: "",
+      parts: [
+        {
+          type: "clarification",
+          clarificationId: "clarification-1",
+          question: "请补充目标",
+          options: [],
+        },
+      ],
+      timestamp: "2026-06-23T11:00:00.000Z",
+    };
+    chatState.value = createChatState([assistant]);
+
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(
+      document.querySelector("textarea")?.getAttribute("placeholder"),
+    ).toBe("说明你的选择…");
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      "提交说明",
+    );
+  });
+
+  it("keeps the active task title visible in the main work area", async () => {
+    const userMessage: ChatMessage = {
+      id: "user-task",
+      sessionId: "session-1",
+      role: "user",
+      content: "修复设置深链",
+      timestamp: "2026-06-23T10:59:00.000Z",
+    };
+    chatState.value = createChatState([userMessage], {
+      sessions: [
+        {
+          id: "session-1",
+          workspacePath: "/workspace",
+          title: "修复设置深链",
+          createdAt: "2026-06-23T10:59:00.000Z",
+          updatedAt: "2026-06-23T10:59:00.000Z",
+        },
+      ],
+    });
+
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    expect(
+      document.querySelector('[data-task-identity="session-1"]')?.textContent,
+    ).toContain("修复设置深链");
+  });
+
+  it("summarizes automation metadata until the user opens run details", async () => {
+    const automationPrompt = [
+      "Run automation now: 每日仓库巡检",
+      "Automation run id: run-42",
+      "Workspace paths: /workspace",
+      "",
+      "Instructions:",
+      '{"workflowInput":{"large":"raw payload"}}',
+    ].join("\n");
+    const userMessage: ChatMessage = {
+      id: "automation-user",
+      sessionId: "session-1",
+      role: "user",
+      content: automationPrompt,
+      timestamp: "2026-06-23T10:59:00.000Z",
+    };
+    chatState.value = createChatState([userMessage], {
+      sessions: [
+        {
+          id: "session-1",
+          workspacePath: "/workspace",
+          title: "每日仓库巡检",
+          createdAt: "2026-06-23T10:59:00.000Z",
+          updatedAt: "2026-06-23T10:59:00.000Z",
+          automationRun: {
+            id: "run-42",
+            automationId: "automation-1",
+            title: "每日仓库巡检",
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    const summary = document.querySelector(
+      '[data-automation-prompt-summary="true"]',
+    );
+    expect(summary?.textContent).toContain("每日仓库巡检");
+    expect(summary?.textContent).toContain("run-42");
+    expect(document.getElementById("root")?.textContent ?? "").not.toContain(
+      '"workflowInput"',
+    );
+
+    const detailsButton = document.querySelector(
+      'button[aria-label="查看详情"]',
+    );
+    expect(detailsButton).not.toBeNull();
+    await act(async () => {
+      detailsButton?.dispatchEvent(
+        new window.Event("click", { bubbles: true }),
+      );
+    });
+
+    expect(document.getElementById("root")?.textContent ?? "").toContain(
+      '"workflowInput"',
+    );
   });
 
   it("does not rerender unchanged non-last assistant messages when another message is appended", async () => {

@@ -104,6 +104,7 @@ import type {
   BatchApprovalEntry,
   BatchApprovalPart,
   ChatMessage,
+  ChatSession,
   ClarificationPart,
   ErrorPart,
   ImageGalleryPart,
@@ -235,7 +236,66 @@ const CopyMessageAction = ({ content }: { content: string }) => {
   );
 };
 
+const AutomationPromptCard = ({
+  automationRun,
+  content,
+}: {
+  automationRun: NonNullable<ChatSession["automationRun"]>;
+  content: string;
+}) => {
+  const { LL } = useI18nContext();
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = `automation-prompt-${automationRun.id}`;
+
+  return (
+    <div
+      data-automation-prompt-summary="true"
+      className="w-full min-w-0 rounded-lg border border-border/70 bg-muted/35 p-3"
+    >
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Zap className="size-3.5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-muted-foreground">
+            {LL.automations_runDetailsTitle()}
+          </p>
+          <p className="truncate text-sm font-medium text-foreground">
+            {automationRun.title}
+          </p>
+          <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+            {automationRun.id}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-controls={detailsId}
+          aria-expanded={expanded}
+          aria-label={LL.automations_viewDetails()}
+          onClick={() => setExpanded((value) => !value)}
+          className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+        >
+          {LL.automations_viewDetails()}
+        </Button>
+      </div>
+      {expanded && (
+        <div id={detailsId} className="mt-3 border-t border-border/70 pt-3">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+            {LL.automations_runDetailsPrompt()}
+          </p>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background/70 p-2.5 font-mono text-xs text-foreground">
+            {collapseBlankLines(content)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
 type ChatMessageRowProps = {
+  automationRun?: NonNullable<ChatSession["automationRun"]> | null;
   forkLabel: string;
   isLast: boolean;
   isLoading: boolean;
@@ -246,6 +306,7 @@ type ChatMessageRowProps = {
 
 const ChatMessageRow = memo(
   function ChatMessageRow({
+    automationRun,
     forkLabel,
     isLast,
     isLoading,
@@ -279,7 +340,14 @@ const ChatMessageRow = memo(
                 {userAttachments.length > 0 && (
                   <AttachmentList attachments={userAttachments} />
                 )}
-                <MessageSkillText text={collapseBlankLines(msg.content)} />
+                {automationRun ? (
+                  <AutomationPromptCard
+                    automationRun={automationRun}
+                    content={msg.content}
+                  />
+                ) : (
+                  <MessageSkillText text={collapseBlankLines(msg.content)} />
+                )}
               </MessageContent>
             </Message>
             {!isLoading && (
@@ -323,6 +391,7 @@ const ChatMessageRow = memo(
     prev.msg === next.msg &&
     prev.isLast === next.isLast &&
     prev.isLoading === next.isLoading &&
+    prev.automationRun === next.automationRun &&
     prev.forkLabel === next.forkLabel,
 );
 
@@ -713,7 +782,7 @@ const ClarificationCard = ({
                   }
                 }}
                 rows={2}
-                placeholder="输入回复…"
+                placeholder={LL.clarification_replyPlaceholder()}
                 className="flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <Button
@@ -722,7 +791,7 @@ const ClarificationCard = ({
                 disabled={!freeText.trim()}
                 size="sm"
               >
-                发送
+                {LL.clarification_send()}
               </Button>
             </div>
           )}
@@ -739,9 +808,13 @@ const ClarificationCard = ({
 
 export const ChatPanel = ({
   workspacePath,
+  currentBranch,
+  isGitRepo = false,
   railCollapsed,
 }: {
   workspacePath: string;
+  currentBranch?: string | null;
+  isGitRepo?: boolean;
   /** 左栏折叠时,telemetry 左侧为浮动展开按钮预留空间,避免压住读数。 */
   railCollapsed?: boolean;
 }) => {
@@ -1031,12 +1104,19 @@ export const ChatPanel = ({
   const ERROR_TYPE_LABELS = useMemo(() => getErrorTypeLabels(LL), [LL]);
   const RETRY_TYPE_LABELS = useMemo(() => getRetryTypeLabels(LL), [LL]);
   const toolLabels = useMemo(() => getToolLabels(LL), [LL]);
-  const suggestions = [
-    LL.suggestion_organize(),
-    LL.suggestion_report(),
-    LL.suggestion_duplicates(),
-    LL.suggestion_stats(),
-  ];
+  const suggestions = isGitRepo
+    ? [
+        LL.suggestion_gitExplain(),
+        LL.suggestion_gitImplement(),
+        LL.suggestion_gitDiagnose(),
+        LL.suggestion_gitReview(),
+      ]
+    : [
+        LL.suggestion_workspaceSummarize(),
+        LL.suggestion_workspacePlan(),
+        LL.suggestion_workspaceFind(),
+        LL.suggestion_workspaceImprove(),
+      ];
 
   // ---------------------------------------------------------------------------
   // Render helpers
@@ -1490,6 +1570,16 @@ export const ChatPanel = ({
   };
 
   const hasMessages = chat.messages.length > 0;
+  const activeTask =
+    chat.sessions?.find((session) => session.id === chat.activeSessionId) ??
+    null;
+  const automationPromptMessageId = useMemo(
+    () =>
+      activeTask?.automationRun
+        ? (chat.messages.find((message) => message.role === "user")?.id ?? null)
+        : null,
+    [activeTask?.automationRun, chat.messages],
+  );
   const latestUserMessageId = useMemo(
     () =>
       chat.messages.findLast((message) => message.role === "user")?.id ?? null,
@@ -1689,7 +1779,7 @@ export const ChatPanel = ({
   // ---------------------------------------------------------------------------
   return (
     <section
-      aria-label="Chat panel"
+      aria-label={LL.chat_panelLabel()}
       className="relative flex flex-col h-full"
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
@@ -1699,7 +1789,7 @@ export const ChatPanel = ({
       {isDragging && (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-primary/5 backdrop-blur-sm">
           <div className="rounded-xl border-2 border-dashed border-primary bg-background/80 px-6 py-4 text-sm font-medium text-primary shadow-lg">
-            Drop files to attach
+            {LL.chat_dropFiles()}
           </div>
         </div>
       )}
@@ -1713,6 +1803,8 @@ export const ChatPanel = ({
         <AgentTelemetry
           state={agentState}
           action={telemetryAction}
+          taskId={activeTask?.id}
+          taskTitle={activeTask?.title}
           reserveLeft={railCollapsed}
         />
       )}
@@ -1724,18 +1816,43 @@ export const ChatPanel = ({
               title={LL.chat_emptyTitle()}
               description={LL.chat_emptyDescription()}
             >
-              <div className="grid w-full max-w-lg grid-cols-2 gap-2">
-                {suggestions.map((suggestion) => (
-                  <Button
-                    key={suggestion}
-                    type="button"
-                    variant="outline"
-                    onClick={() => chat.setInput(suggestion)}
-                    className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-muted-foreground"
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
+              <div className="flex w-full max-w-xl flex-col items-center gap-3">
+                <div
+                  data-workspace-context="true"
+                  className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 shrink-0 rounded-full bg-status-success"
+                  />
+                  <span>
+                    {isGitRepo
+                      ? LL.chat_workspaceGit()
+                      : LL.chat_workspaceLocal()}
+                  </span>
+                  {isGitRepo && currentBranch && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <GitBranch className="size-3.5" aria-hidden="true" />
+                      <span className="max-w-52 truncate">
+                        {LL.chat_branchContext(currentBranch)}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="grid w-full grid-cols-2 gap-2 max-sm:grid-cols-1">
+                  {suggestions.map((suggestion) => (
+                    <Button
+                      key={suggestion}
+                      type="button"
+                      variant="outline"
+                      onClick={() => chat.setInput(suggestion)}
+                      className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-muted-foreground"
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </ConversationEmptyState>
           ) : (
@@ -1743,6 +1860,11 @@ export const ChatPanel = ({
               {chat.messages.map((msg, index) => (
                 <ChatMessageRow
                   key={msg.id}
+                  automationRun={
+                    msg.id === automationPromptMessageId
+                      ? activeTask?.automationRun
+                      : null
+                  }
                   forkLabel={LL.chat_forkHere()}
                   isLast={index === chat.messages.length - 1}
                   isLoading={chat.isLoading}
@@ -1855,8 +1977,10 @@ export const ChatPanel = ({
                   <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Zap className="w-3 h-3" />
-                      {formatTokens(chat.lastUsage.inputTokens)} in /{" "}
-                      {formatTokens(chat.lastUsage.outputTokens)} out
+                      {formatTokens(chat.lastUsage.inputTokens)}{" "}
+                      {LL.usage_input()} /{" "}
+                      {formatTokens(chat.lastUsage.outputTokens)}{" "}
+                      {LL.usage_output()}
                     </span>
                     {chat.lastUsage.modelId && (
                       <span className="opacity-60">
@@ -1875,7 +1999,7 @@ export const ChatPanel = ({
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="px-6 py-4">
+      <div className="px-6 py-4 max-[900px]:px-4 max-[900px]:py-3">
         <div className="max-w-3xl mx-auto">
           <PromptInput
             onSubmit={chat.handleSubmit}
@@ -1902,16 +2026,17 @@ export const ChatPanel = ({
               </div>
             </PromptInputBody>
             <PromptInputFooter>
-              <div className="flex items-center gap-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-1">
                 <PromptInputAttachButton
                   onClick={handlePickFiles}
                   disabled={chat.isLoading}
+                  aria-label={LL.chat_attachFiles()}
                 />
                 <Button
                   type="button"
                   onClick={() => setMemoryOpen(true)}
-                  aria-label="工作目录记忆"
-                  title="工作目录记忆"
+                  aria-label={LL.chat_workspaceMemory()}
+                  title={LL.chat_workspaceMemory()}
                   variant="ghost"
                   size="icon-sm"
                   className="text-muted-foreground"
@@ -1928,12 +2053,14 @@ export const ChatPanel = ({
                   onSelect={chat.setSelectedLlmConfigId}
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="ml-auto flex items-center gap-1">
                 <ContextUsageButton usage={contextUsage} />
                 <PromptInputSubmit
                   disabled={false}
                   status={chat.isLoading ? "streaming" : "ready"}
                   onStop={chat.handleStopGeneration}
+                  sendLabel={LL.chat_send()}
+                  stopLabel={LL.chat_stop()}
                 />
               </div>
             </PromptInputFooter>

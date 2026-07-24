@@ -12,6 +12,7 @@ import {
   resolveFullscreenDockLeft,
   resolveFullscreenDockTop,
   resolveRailMetaLayout,
+  resolveSplitDockWidth,
 } from "../layout-geometry";
 
 describe("clampRailWidth", () => {
@@ -34,6 +35,42 @@ describe("clampDockWidth", () => {
 });
 
 describe("resolveDockMode", () => {
+  it.each([
+    {
+      label: "800px / rail 展开",
+      windowWidth: 800,
+      railCollapsed: false,
+      expected: "overlay",
+    },
+    {
+      label: "1200px / rail 展开",
+      windowWidth: 1200,
+      railCollapsed: false,
+      expected: "split",
+    },
+    {
+      label: "1440px / rail 展开",
+      windowWidth: 1440,
+      railCollapsed: false,
+      expected: "split",
+    },
+    {
+      label: "1200px / rail 折叠",
+      windowWidth: 1200,
+      railCollapsed: true,
+      expected: "split",
+    },
+  ])("$label 遵循阅读宽度断点", ({ windowWidth, railCollapsed, expected }) => {
+    expect(
+      resolveDockMode({
+        windowWidth,
+        railWidth: 256,
+        railCollapsed,
+        dockWidth: 420,
+      }),
+    ).toBe(expected);
+  });
+
   it("空间够 → split", () => {
     expect(
       resolveDockMode({
@@ -45,7 +82,7 @@ describe("resolveDockMode", () => {
     ).toBe("split");
   });
   it("空间不足以容纳最小对话宽 → overlay", () => {
-    // 1000 - 256 - 420 = 324 < MIN_CHAT_WIDTH(420)
+    // 1000 - 256 - 420 = 324 < MIN_CHAT_WIDTH
     expect(
       resolveDockMode({
         windowWidth: 1000,
@@ -55,8 +92,18 @@ describe("resolveDockMode", () => {
       }),
     ).toBe("overlay");
   });
+  it("1200px 桌面窗口通过收窄 Dock 保持分栏，避免遮挡聊天", () => {
+    expect(
+      resolveDockMode({
+        windowWidth: 1200,
+        railWidth: 256,
+        railCollapsed: false,
+        dockWidth: 420,
+      }),
+    ).toBe("split");
+  });
   it("rail 折叠时把其宽度计为 0", () => {
-    // 折叠:1000 - 0 - 420 = 580 >= 420 → split
+    // 折叠:1000 - 0 - 420 = 580，恢复为足够宽的分栏。
     expect(
       resolveDockMode({
         windowWidth: 1000,
@@ -65,6 +112,21 @@ describe("resolveDockMode", () => {
         dockWidth: 420,
       }),
     ).toBe("split");
+  });
+});
+
+describe("resolveSplitDockWidth", () => {
+  it("复现截图尺寸时只收窄 Dock，不让浮层覆盖聊天", () => {
+    // 截图为 3004px @2x：1502 - 258 - 690 = 554，旧逻辑触发 overlay。
+    // Dock 收窄到 684 后，聊天保留 560px 且两栏不再互相覆盖。
+    expect(
+      resolveSplitDockWidth({
+        windowWidth: 1502,
+        railWidth: 258,
+        railCollapsed: false,
+        dockWidth: 690,
+      }),
+    ).toBe(684);
   });
 });
 

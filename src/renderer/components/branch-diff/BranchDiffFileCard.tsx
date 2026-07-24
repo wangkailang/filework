@@ -59,7 +59,7 @@ export function BranchDiffFileCard({
         ) : (
           <span className="font-mono truncate">{file.path}</span>
         )}
-        <span className="ml-auto whitespace-nowrap font-mono text-[11px]">
+        <span className="ml-auto whitespace-nowrap font-mono text-xs">
           <Badge file={file} />
         </span>
       </summary>
@@ -75,8 +75,8 @@ function Badge({ file }: { file: GitFileDiff }): ReactNode {
   }
   return (
     <>
-      <span className="text-emerald-500">+{file.added}</span>{" "}
-      <span className="text-red-400">-{file.removed}</span>
+      <span className="text-status-success">+{file.added}</span>{" "}
+      <span className="text-status-error">-{file.removed}</span>
     </>
   );
 }

@@ -21,7 +21,13 @@ vi.mock("../../../i18n/i18n-react", () => ({
       session_delete_confirm_desc: () => "删除后不可恢复",
       session_delete_confirm_title: () => "删除会话?",
       session_empty: () => "暂无会话",
+      session_filter_all: () => "全部",
+      session_filter_attention: () => "需关注",
+      session_filter_duplicates: () => "重复",
+      session_filter_empty: () => "空会话",
+      session_filter_label: () => "筛选任务",
       session_group_earlier: () => "更早",
+      session_group_attention: () => "需要关注",
       session_group_month: () => "近 30 天",
       session_group_today: () => "今天",
       session_group_week: () => "近 7 天",
@@ -30,6 +36,9 @@ vi.mock("../../../i18n/i18n-react", () => ({
       session_branch_hint: () =>
         "聊天分支反映上次使用时的活动分支；发送消息将更新聊天分支",
       session_rename: () => "重命名",
+      session_actions: () => "更多操作",
+      session_search: () => "搜索任务",
+      session_searchEmpty: () => "没有匹配的任务",
       session_unread: () => "未读",
       automations_title: () => "自动化",
       task_pending: () => "等待中",
@@ -38,7 +47,7 @@ vi.mock("../../../i18n/i18n-react", () => ({
   }),
 }));
 
-import { ChatHistoryPanel } from "../ChatHistoryPanel";
+import { ChatHistoryPanel, filterHistorySessions } from "../ChatHistoryPanel";
 
 const session = (id: string, title: string): ChatSession => ({
   id,
@@ -92,6 +101,37 @@ describe("ChatHistoryPanel", () => {
     expect(html.indexOf("新会话")).toBeLessThan(html.indexOf("旧会话"));
   });
 
+  it("moves running and unread tasks into an attention group above recency", () => {
+    chatState.value = {
+      ...(chatState.value as Record<string, unknown>),
+      sessions: [
+        {
+          ...session("recent-idle", "最近的普通任务"),
+          updatedAt: "2026-06-13T07:00:00.000Z",
+        },
+        {
+          ...session("older-running", "较早但执行中的任务"),
+          updatedAt: "2026-06-01T07:00:00.000Z",
+        },
+      ],
+      sessionRunStates: {
+        "older-running": {
+          status: "running",
+          taskId: "task-1",
+          assistantMessageId: "assistant-1",
+        },
+      },
+    };
+
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain(">需要关注<");
+    expect(html.indexOf("需要关注")).toBeLessThan(html.indexOf("今天"));
+    expect(html.indexOf("较早但执行中的任务")).toBeLessThan(
+      html.indexOf("最近的普通任务"),
+    );
+  });
+
   it("renders a compact Codex-style row with relative age on the right", () => {
     chatState.value = {
       ...(chatState.value as Record<string, unknown>),
@@ -110,14 +150,71 @@ describe("ChatHistoryPanel", () => {
     expect(html).toContain("grid-cols-[minmax(0,1fr)_auto]");
   });
 
-  it("uses one trailing slot where hover hides time and shows actions", () => {
+  it("reduces each row to one keyboard-accessible action menu", () => {
     const html = renderToStaticMarkup(<ChatHistoryPanel />);
 
     expect(html).toContain('data-session-row-meta="session-1"');
     expect(html).toContain('data-session-row-actions="session-1"');
+    expect(html).toContain('data-session-action-menu="session-1"');
+    expect(html).toContain('aria-label="更多操作"');
     expect(html).toContain("group-hover:opacity-0");
     expect(html).toContain("group-hover:opacity-100");
-    expect(html).not.toContain("w-11");
+    expect(html).toContain("group-focus-within:opacity-0");
+    expect(html).toContain("group-focus-within:opacity-100");
+  });
+
+  it("provides a searchable task history control", () => {
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain('data-session-search="true"');
+    expect(html).toContain('type="search"');
+    expect(html).toContain('placeholder="搜索任务"');
+  });
+
+  it("exposes governance filters for attention, duplicate, and empty tasks", () => {
+    const html = renderToStaticMarkup(<ChatHistoryPanel />);
+
+    expect(html).toContain('aria-label="筛选任务"');
+    expect(html).toContain('data-session-filter="all"');
+    expect(html).toContain('data-session-filter="attention"');
+    expect(html).toContain('data-session-filter="duplicates"');
+    expect(html).toContain('data-session-filter="empty"');
+    expect(html).toContain(">需关注<");
+    expect(html).toContain(">重复<");
+    expect(html).toContain(">空会话<");
+  });
+
+  it("identifies attention, duplicate, and untitled sessions without mutating history", () => {
+    const sessions = [
+      session("attention", "等待确认"),
+      session("duplicate-a", "修复登录问题"),
+      session("duplicate-b", "  修复登录问题  "),
+      session("empty", "新对话"),
+      session("normal", "梳理发布流程"),
+    ];
+    const runStates = {
+      attention: {
+        status: "running" as const,
+        taskId: "task-1",
+      },
+    };
+
+    expect(
+      filterHistorySessions(sessions, "attention", runStates, "zh-CN").map(
+        (item) => item.id,
+      ),
+    ).toEqual(["attention"]);
+    expect(
+      filterHistorySessions(sessions, "duplicates", runStates, "zh-CN").map(
+        (item) => item.id,
+      ),
+    ).toEqual(["duplicate-a", "duplicate-b"]);
+    expect(
+      filterHistorySessions(sessions, "empty", runStates, "zh-CN").map(
+        (item) => item.id,
+      ),
+    ).toEqual(["empty"]);
+    expect(sessions).toHaveLength(5);
   });
 
   it("hides automation-backed sessions from the project chat list", () => {

@@ -48,6 +48,10 @@
   --color-status-await-foreground: #000000;
   --color-status-success: #00ac3a;
   --color-status-error: #f13242;
+  --color-chart-cache-write: #60a5fa;
+  --color-chart-cache-hit: #4ade80;
+  --color-chart-token: #fb923c;
+  --color-chart-token-muted: rgba(251, 146, 60, 0.3);
 
   /* File metadata stays quiet; content type is secondary to task state. */
   --color-file-folder: #a0a0a0;
@@ -306,6 +310,10 @@ body {
   --color-status-await-foreground: #ffffff;
   --color-status-success: #28a948;
   --color-status-error: #d8001b;
+  --color-chart-cache-write: #006bff;
+  --color-chart-cache-hit: #28a948;
+  --color-chart-token: #c2410c;
+  --color-chart-token-muted: rgba(194, 65, 12, 0.24);
 
   --color-file-folder: #7d7d7d;
   --color-file-code: #7d7d7d;

@@ -10,6 +10,16 @@ vi.mock("../../../i18n/i18n-react", () => ({
   useI18nContext: () => ({
     LL: {
       session_empty: () => "空会话",
+      subagent_statusCancelled: () => "已取消",
+      subagent_statusFailed: () => "失败",
+      subagent_statusNoResult: () => "无有效结果",
+      subagent_statusOk: () => "完成",
+      subagent_statusPartial: () => "部分可用",
+      subagent_statusQueued: () => "排队中",
+      subagent_statusRunning: () => "进行中",
+      subagent_statusTimeout: () => "超时",
+      subagent_statusTokenLimit: () => "token 超限",
+      subagent_statusTruncated: () => "已截断",
       tool_done: () => "完成",
       tool_error: () => "错误",
       tool_errorLabel: () => "错误",

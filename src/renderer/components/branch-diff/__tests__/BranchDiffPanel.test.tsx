@@ -16,6 +16,9 @@ vi.mock("../../../i18n/i18n-react", () => ({
       branch_diff_empty: () => "No changes",
       branch_diff_exec_failed: () => "git command failed",
       branch_diff_filterFiles: () => "Filter files...",
+      branch_diff_ahead: (count: number) => `${count} ahead`,
+      branch_diff_behind: (count: number) => `${count} behind`,
+      branch_diff_uncommitted: (count: number) => `${count} uncommitted`,
       branch_diff_no_base: () => "Base not found",
       branch_diff_not_git: () => "Not a git repo",
       branch_diff_open: () => "View branch changes",
@@ -110,6 +113,9 @@ const branchDiffData = () => ({
   totalAdded: 1,
   totalRemoved: 1,
   truncated: true,
+  uncommitted: 1,
+  ahead: 1,
+  behind: 1,
 });
 
 describe("BranchDiffPanel", () => {
@@ -169,6 +175,22 @@ describe("BranchDiffPanel", () => {
       "Showing one changed file at a time. Select a file on the left to switch.",
     );
     expect(html).not.toContain("Diff truncated");
+  });
+
+  it("uses shared semantic status colors and readable metadata text", () => {
+    branchDiffState.data = branchDiffData();
+
+    const html = renderToStaticMarkup(
+      <BranchDiffPanel workspaceRoot="/tmp/workspace" baseBranch="pc-test" />,
+    );
+
+    expect(html).toContain("text-status-success");
+    expect(html).toContain("text-status-error");
+    expect(html).toContain("text-status-await");
+    expect(html).not.toMatch(
+      /(?:text|bg)-(?:green|blue|red|amber|emerald|yellow)-/,
+    );
+    expect(html).not.toMatch(/text-\[(?:10|11)px\]/);
   });
 
   it("switches the visible diff when a file is selected from the left panel", async () => {

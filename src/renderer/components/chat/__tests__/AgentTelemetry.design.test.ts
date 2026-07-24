@@ -21,4 +21,9 @@ describe("AgentTelemetry design", () => {
     expect(telemetrySource).toContain('reserveLeft ? "pl-16" : "pl-3.5"');
     expect(telemetrySource).toContain("uppercase leading-none");
   });
+
+  it("keeps persistent status text at the shared 12px minimum", () => {
+    expect(telemetrySource).toContain("text-xs");
+    expect(telemetrySource).not.toContain("text-[11px]");
+  });
 });

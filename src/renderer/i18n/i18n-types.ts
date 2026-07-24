@@ -44,13 +44,45 @@ type RootTranslation = {
 	 */
 	chat_placeholder: string
 	/**
-	 * H​o​w​ ​c​a​n​ ​I​ ​h​e​l​p​?
+	 * W​h​a​t​ ​d​o​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​a​c​c​o​m​p​l​i​s​h​ ​i​n​ ​t​h​i​s​ ​w​o​r​k​s​p​a​c​e​?
 	 */
 	chat_emptyTitle: string
 	/**
-	 * T​e​l​l​ ​m​e​ ​w​h​a​t​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​d​o​ ​w​i​t​h​ ​t​h​i​s​ ​d​i​r​e​c​t​o​r​y
+	 * D​e​s​c​r​i​b​e​ ​t​h​e​ ​o​u​t​c​o​m​e​.​ ​W​o​r​k​s​p​a​c​e​ ​A​g​e​n​t​ ​w​i​l​l​ ​i​n​s​p​e​c​t​ ​t​h​e​ ​c​o​n​t​e​x​t​ ​a​n​d​ ​c​a​r​r​y​ ​i​t​ ​t​h​r​o​u​g​h​.
 	 */
 	chat_emptyDescription: string
+	/**
+	 * E​x​p​l​a​i​n​ ​t​h​i​s​ ​r​e​p​o​s​i​t​o​r​y​'​s​ ​a​r​c​h​i​t​e​c​t​u​r​e​ ​a​n​d​ ​e​n​t​r​y​ ​p​o​i​n​t​s
+	 */
+	suggestion_gitExplain: string
+	/**
+	 * I​m​p​l​e​m​e​n​t​ ​a​ ​f​e​a​t​u​r​e​ ​a​n​d​ ​v​e​r​i​f​y​ ​t​h​e​ ​c​h​a​n​g​e​s
+	 */
+	suggestion_gitImplement: string
+	/**
+	 * D​i​a​g​n​o​s​e​ ​a​n​d​ ​f​i​x​ ​t​h​e​ ​f​a​i​l​i​n​g​ ​t​e​s​t​s
+	 */
+	suggestion_gitDiagnose: string
+	/**
+	 * R​e​v​i​e​w​ ​t​h​e​ ​c​u​r​r​e​n​t​ ​c​h​a​n​g​e​s​ ​a​n​d​ ​f​l​a​g​ ​r​i​s​k​s
+	 */
+	suggestion_gitReview: string
+	/**
+	 * S​u​m​m​a​r​i​z​e​ ​t​h​i​s​ ​w​o​r​k​s​p​a​c​e​'​s​ ​s​t​r​u​c​t​u​r​e​ ​a​n​d​ ​p​u​r​p​o​s​e
+	 */
+	suggestion_workspaceSummarize: string
+	/**
+	 * T​u​r​n​ ​a​n​ ​o​u​t​c​o​m​e​ ​i​n​t​o​ ​a​n​ ​a​c​t​i​o​n​a​b​l​e​ ​p​l​a​n
+	 */
+	suggestion_workspacePlan: string
+	/**
+	 * F​i​n​d​ ​t​h​e​ ​f​i​l​e​s​ ​a​n​d​ ​c​o​n​t​e​x​t​ ​r​e​l​e​v​a​n​t​ ​t​o​ ​a​ ​g​o​a​l
+	 */
+	suggestion_workspaceFind: string
+	/**
+	 * R​e​v​i​e​w​ ​t​h​i​s​ ​w​o​r​k​s​p​a​c​e​ ​a​n​d​ ​s​u​g​g​e​s​t​ ​i​m​p​r​o​v​e​m​e​n​t​s
+	 */
+	suggestion_workspaceImprove: string
 	/**
 	 * O​r​g​a​n​i​z​e​ ​f​i​l​e​s​ ​i​n​ ​t​h​i​s​ ​d​i​r​e​c​t​o​r​y​ ​b​y​ ​t​y​p​e
 	 */
@@ -144,13 +176,29 @@ type RootTranslation = {
 	 */
 	telemetry_error: string
 	/**
-	 * T​y​p​e​ ​a​ ​c​o​m​m​a​n​d​…
+	 * S​e​a​r​c​h​ ​t​a​s​k​s​,​ ​f​i​l​e​s​,​ ​o​r​ ​a​c​t​i​o​n​s​…
 	 */
 	cmdk_placeholder: string
 	/**
-	 * N​o​ ​m​a​t​c​h​i​n​g​ ​c​o​m​m​a​n​d​s
+	 * N​o​ ​m​a​t​c​h​i​n​g​ ​t​a​s​k​s​,​ ​f​i​l​e​s​,​ ​o​r​ ​a​c​t​i​o​n​s
 	 */
 	cmdk_empty: string
+	/**
+	 * A​c​t​i​o​n​s
+	 */
+	cmdk_actions: string
+	/**
+	 * T​a​s​k​s
+	 */
+	cmdk_tasks: string
+	/**
+	 * F​i​l​e​s
+	 */
+	cmdk_files: string
+	/**
+	 * S​e​a​r​c​h​i​n​g​ ​f​i​l​e​s​…
+	 */
+	cmdk_searching: string
 	/**
 	 * S​w​i​t​c​h​ ​w​o​r​k​s​p​a​c​e​…
 	 */
@@ -216,6 +264,30 @@ type RootTranslation = {
 	 * S​e​t​t​i​n​g​s
 	 */
 	settings_title: string
+	/**
+	 * P​r​e​f​e​r​e​n​c​e​s
+	 */
+	settings_groupPreferences: string
+	/**
+	 * C​a​p​a​b​i​l​i​t​i​e​s​ ​&​ ​s​e​c​u​r​i​t​y
+	 */
+	settings_groupCapabilities: string
+	/**
+	 * D​i​a​g​n​o​s​t​i​c​s
+	 */
+	settings_groupDiagnostics: string
+	/**
+	 * A​p​p​r​o​v​e​d​ ​t​o​o​l​s
+	 */
+	settings_toolWhitelist: string
+	/**
+	 * C​o​m​m​a​n​d​ ​s​e​c​u​r​i​t​y
+	 */
+	settings_commandSecurity: string
+	/**
+	 * T​a​s​k​ ​t​r​a​c​e
+	 */
+	settings_taskTrace: string
 	/**
 	 * A​I​ ​P​r​o​v​i​d​e​r
 	 */
@@ -1398,6 +1470,38 @@ type RootTranslation = {
 	 */
 	session_empty: string
 	/**
+	 * S​e​a​r​c​h​ ​t​a​s​k​s
+	 */
+	session_search: string
+	/**
+	 * N​o​ ​m​a​t​c​h​i​n​g​ ​t​a​s​k​s
+	 */
+	session_searchEmpty: string
+	/**
+	 * F​i​l​t​e​r​ ​t​a​s​k​s
+	 */
+	session_filter_label: string
+	/**
+	 * A​l​l
+	 */
+	session_filter_all: string
+	/**
+	 * N​e​e​d​s​ ​a​t​t​e​n​t​i​o​n
+	 */
+	session_filter_attention: string
+	/**
+	 * D​u​p​l​i​c​a​t​e​s
+	 */
+	session_filter_duplicates: string
+	/**
+	 * E​m​p​t​y
+	 */
+	session_filter_empty: string
+	/**
+	 * M​o​r​e​ ​a​c​t​i​o​n​s
+	 */
+	session_actions: string
+	/**
 	 * D​e​l​e​t​e​ ​c​h​a​t
 	 */
 	session_delete: string
@@ -1409,6 +1513,10 @@ type RootTranslation = {
 	 * R​e​n​a​m​e
 	 */
 	session_rename: string
+	/**
+	 * N​e​e​d​s​ ​a​t​t​e​n​t​i​o​n
+	 */
+	session_group_attention: string
 	/**
 	 * T​o​d​a​y
 	 */
@@ -1515,6 +1623,140 @@ type RootTranslation = {
 	 * T​e​l​l​ ​m​e​ ​w​h​a​t​ ​y​o​u​ ​w​a​n​t​ ​t​o​ ​d​o​.​.​.​ ​(​E​n​t​e​r​ ​t​o​ ​s​e​n​d​)
 	 */
 	chat_inputPlaceholder: string
+	/**
+	 * T​a​s​k​ ​c​o​n​v​e​r​s​a​t​i​o​n
+	 */
+	chat_panelLabel: string
+	/**
+	 * D​r​o​p​ ​t​o​ ​a​t​t​a​c​h​ ​f​i​l​e​s
+	 */
+	chat_dropFiles: string
+	/**
+	 * G​i​t​ ​r​e​p​o​s​i​t​o​r​y
+	 */
+	chat_workspaceGit: string
+	/**
+	 * L​o​c​a​l​ ​w​o​r​k​s​p​a​c​e
+	 */
+	chat_workspaceLocal: string
+	/**
+	 * B​r​a​n​c​h​ ​{​0​}
+	 * @param {string} 0
+	 */
+	chat_branchContext: RequiredParams<'0'>
+	/**
+	 * A​t​t​a​c​h​ ​f​i​l​e​s
+	 */
+	chat_attachFiles: string
+	/**
+	 * S​e​n​d​ ​m​e​s​s​a​g​e
+	 */
+	chat_send: string
+	/**
+	 * S​t​o​p​ ​g​e​n​e​r​a​t​i​n​g
+	 */
+	chat_stop: string
+	/**
+	 * W​o​r​k​s​p​a​c​e​ ​m​e​m​o​r​y
+	 */
+	chat_workspaceMemory: string
+	/**
+	 * P​r​e​v​i​e​w​ ​a​t​t​a​c​h​m​e​n​t​ ​{​0​}
+	 * @param {string} 0
+	 */
+	attachment_preview: RequiredParams<'0'>
+	/**
+	 * R​e​m​o​v​e​ ​a​t​t​a​c​h​m​e​n​t​ ​{​0​}
+	 * @param {string} 0
+	 */
+	attachment_remove: RequiredParams<'0'>
+	/**
+	 * R​e​v​e​a​l​ ​{​0​}​ ​i​n​ ​F​i​n​d​e​r
+	 * @param {string} 0
+	 */
+	attachment_reveal: RequiredParams<'0'>
+	/**
+	 * D​e​l​e​g​a​t​e​d​ ​t​a​s​k​s
+	 */
+	subagent_delegation: string
+	/**
+	 * {​0​}​ ​t​a​s​k​s​ ​·​ ​c​o​n​c​u​r​r​e​n​c​y​ ​{​1​}​ ​·​ ​{​2​}​ ​c​o​m​p​l​e​t​e
+	 * @param {string} 0
+	 * @param {string} 1
+	 * @param {string} 2
+	 */
+	subagent_summary: RequiredParams<'0' | '1' | '2'>
+	/**
+	 * {​0​}​/​{​1​}​ ​u​s​a​b​l​e
+	 * @param {string} 0
+	 * @param {string} 1
+	 */
+	subagent_usable: RequiredParams<'0' | '1'>
+	/**
+	 * P​a​r​t​i​a​l​ ​{​0​}
+	 * @param {string} 0
+	 */
+	subagent_partialCount: RequiredParams<'0'>
+	/**
+	 * T​r​u​n​c​a​t​e​d​ ​{​0​}
+	 * @param {string} 0
+	 */
+	subagent_truncatedCount: RequiredParams<'0'>
+	/**
+	 * F​a​i​l​e​d​ ​{​0​}
+	 * @param {string} 0
+	 */
+	subagent_failedCount: RequiredParams<'0'>
+	/**
+	 * V​i​e​w​ ​e​x​e​c​u​t​i​o​n​ ​f​o​r​ ​{​0​}
+	 * @param {string} 0
+	 */
+	subagent_viewTrace: RequiredParams<'0'>
+	/**
+	 * {​0​}​ ​s​t​e​p​s
+	 * @param {string} 0
+	 */
+	subagent_steps: RequiredParams<'0'>
+	/**
+	 * Q​u​e​u​e​d
+	 */
+	subagent_statusQueued: string
+	/**
+	 * R​u​n​n​i​n​g
+	 */
+	subagent_statusRunning: string
+	/**
+	 * C​o​m​p​l​e​t​e
+	 */
+	subagent_statusOk: string
+	/**
+	 * F​a​i​l​e​d
+	 */
+	subagent_statusFailed: string
+	/**
+	 * C​a​n​c​e​l​l​e​d
+	 */
+	subagent_statusCancelled: string
+	/**
+	 * T​i​m​e​d​ ​o​u​t
+	 */
+	subagent_statusTimeout: string
+	/**
+	 * T​o​k​e​n​ ​l​i​m​i​t
+	 */
+	subagent_statusTokenLimit: string
+	/**
+	 * P​a​r​t​i​a​l
+	 */
+	subagent_statusPartial: string
+	/**
+	 * T​r​u​n​c​a​t​e​d
+	 */
+	subagent_statusTruncated: string
+	/**
+	 * N​o​ ​r​e​s​u​l​t
+	 */
+	subagent_statusNoResult: string
 	/**
 	 * R​e​q​u​e​s​t​ ​a​p​p​r​o​v​a​l
 	 */
@@ -2173,6 +2415,14 @@ type RootTranslation = {
 	 * C​l​a​r​i​f​i​c​a​t​i​o​n​ ​N​e​e​d​e​d
 	 */
 	clarification_title: string
+	/**
+	 * D​e​s​c​r​i​b​e​ ​y​o​u​r​ ​c​h​o​i​c​e​…
+	 */
+	clarification_replyPlaceholder: string
+	/**
+	 * S​u​b​m​i​t​ ​r​e​s​p​o​n​s​e
+	 */
+	clarification_send: string
 	/**
 	 * S​c​r​o​l​l​ ​t​o​ ​b​o​t​t​o​m
 	 */
@@ -3009,13 +3259,45 @@ export type TranslationFunctions = {
 	 */
 	chat_placeholder: () => LocalizedString
 	/**
-	 * How can I help?
+	 * What do you want to accomplish in this workspace?
 	 */
 	chat_emptyTitle: () => LocalizedString
 	/**
-	 * Tell me what you want to do with this directory
+	 * Describe the outcome. Workspace Agent will inspect the context and carry it through.
 	 */
 	chat_emptyDescription: () => LocalizedString
+	/**
+	 * Explain this repository's architecture and entry points
+	 */
+	suggestion_gitExplain: () => LocalizedString
+	/**
+	 * Implement a feature and verify the changes
+	 */
+	suggestion_gitImplement: () => LocalizedString
+	/**
+	 * Diagnose and fix the failing tests
+	 */
+	suggestion_gitDiagnose: () => LocalizedString
+	/**
+	 * Review the current changes and flag risks
+	 */
+	suggestion_gitReview: () => LocalizedString
+	/**
+	 * Summarize this workspace's structure and purpose
+	 */
+	suggestion_workspaceSummarize: () => LocalizedString
+	/**
+	 * Turn an outcome into an actionable plan
+	 */
+	suggestion_workspacePlan: () => LocalizedString
+	/**
+	 * Find the files and context relevant to a goal
+	 */
+	suggestion_workspaceFind: () => LocalizedString
+	/**
+	 * Review this workspace and suggest improvements
+	 */
+	suggestion_workspaceImprove: () => LocalizedString
 	/**
 	 * Organize files in this directory by type
 	 */
@@ -3109,13 +3391,29 @@ export type TranslationFunctions = {
 	 */
 	telemetry_error: () => LocalizedString
 	/**
-	 * Type a command…
+	 * Search tasks, files, or actions…
 	 */
 	cmdk_placeholder: () => LocalizedString
 	/**
-	 * No matching commands
+	 * No matching tasks, files, or actions
 	 */
 	cmdk_empty: () => LocalizedString
+	/**
+	 * Actions
+	 */
+	cmdk_actions: () => LocalizedString
+	/**
+	 * Tasks
+	 */
+	cmdk_tasks: () => LocalizedString
+	/**
+	 * Files
+	 */
+	cmdk_files: () => LocalizedString
+	/**
+	 * Searching files…
+	 */
+	cmdk_searching: () => LocalizedString
 	/**
 	 * Switch workspace…
 	 */
@@ -3176,6 +3474,30 @@ export type TranslationFunctions = {
 	 * Settings
 	 */
 	settings_title: () => LocalizedString
+	/**
+	 * Preferences
+	 */
+	settings_groupPreferences: () => LocalizedString
+	/**
+	 * Capabilities & security
+	 */
+	settings_groupCapabilities: () => LocalizedString
+	/**
+	 * Diagnostics
+	 */
+	settings_groupDiagnostics: () => LocalizedString
+	/**
+	 * Approved tools
+	 */
+	settings_toolWhitelist: () => LocalizedString
+	/**
+	 * Command security
+	 */
+	settings_commandSecurity: () => LocalizedString
+	/**
+	 * Task trace
+	 */
+	settings_taskTrace: () => LocalizedString
 	/**
 	 * AI Provider
 	 */
@@ -4321,6 +4643,38 @@ export type TranslationFunctions = {
 	 */
 	session_empty: () => LocalizedString
 	/**
+	 * Search tasks
+	 */
+	session_search: () => LocalizedString
+	/**
+	 * No matching tasks
+	 */
+	session_searchEmpty: () => LocalizedString
+	/**
+	 * Filter tasks
+	 */
+	session_filter_label: () => LocalizedString
+	/**
+	 * All
+	 */
+	session_filter_all: () => LocalizedString
+	/**
+	 * Needs attention
+	 */
+	session_filter_attention: () => LocalizedString
+	/**
+	 * Duplicates
+	 */
+	session_filter_duplicates: () => LocalizedString
+	/**
+	 * Empty
+	 */
+	session_filter_empty: () => LocalizedString
+	/**
+	 * More actions
+	 */
+	session_actions: () => LocalizedString
+	/**
 	 * Delete chat
 	 */
 	session_delete: () => LocalizedString
@@ -4332,6 +4686,10 @@ export type TranslationFunctions = {
 	 * Rename
 	 */
 	session_rename: () => LocalizedString
+	/**
+	 * Needs attention
+	 */
+	session_group_attention: () => LocalizedString
 	/**
 	 * Today
 	 */
@@ -4436,6 +4794,126 @@ export type TranslationFunctions = {
 	 * Tell me what you want to do... (Enter to send)
 	 */
 	chat_inputPlaceholder: () => LocalizedString
+	/**
+	 * Task conversation
+	 */
+	chat_panelLabel: () => LocalizedString
+	/**
+	 * Drop to attach files
+	 */
+	chat_dropFiles: () => LocalizedString
+	/**
+	 * Git repository
+	 */
+	chat_workspaceGit: () => LocalizedString
+	/**
+	 * Local workspace
+	 */
+	chat_workspaceLocal: () => LocalizedString
+	/**
+	 * Branch {0}
+	 */
+	chat_branchContext: (arg0: string) => LocalizedString
+	/**
+	 * Attach files
+	 */
+	chat_attachFiles: () => LocalizedString
+	/**
+	 * Send message
+	 */
+	chat_send: () => LocalizedString
+	/**
+	 * Stop generating
+	 */
+	chat_stop: () => LocalizedString
+	/**
+	 * Workspace memory
+	 */
+	chat_workspaceMemory: () => LocalizedString
+	/**
+	 * Preview attachment {0}
+	 */
+	attachment_preview: (arg0: string) => LocalizedString
+	/**
+	 * Remove attachment {0}
+	 */
+	attachment_remove: (arg0: string) => LocalizedString
+	/**
+	 * Reveal {0} in Finder
+	 */
+	attachment_reveal: (arg0: string) => LocalizedString
+	/**
+	 * Delegated tasks
+	 */
+	subagent_delegation: () => LocalizedString
+	/**
+	 * {0} tasks · concurrency {1} · {2} complete
+	 */
+	subagent_summary: (arg0: string, arg1: string, arg2: string) => LocalizedString
+	/**
+	 * {0}/{1} usable
+	 */
+	subagent_usable: (arg0: string, arg1: string) => LocalizedString
+	/**
+	 * Partial {0}
+	 */
+	subagent_partialCount: (arg0: string) => LocalizedString
+	/**
+	 * Truncated {0}
+	 */
+	subagent_truncatedCount: (arg0: string) => LocalizedString
+	/**
+	 * Failed {0}
+	 */
+	subagent_failedCount: (arg0: string) => LocalizedString
+	/**
+	 * View execution for {0}
+	 */
+	subagent_viewTrace: (arg0: string) => LocalizedString
+	/**
+	 * {0} steps
+	 */
+	subagent_steps: (arg0: string) => LocalizedString
+	/**
+	 * Queued
+	 */
+	subagent_statusQueued: () => LocalizedString
+	/**
+	 * Running
+	 */
+	subagent_statusRunning: () => LocalizedString
+	/**
+	 * Complete
+	 */
+	subagent_statusOk: () => LocalizedString
+	/**
+	 * Failed
+	 */
+	subagent_statusFailed: () => LocalizedString
+	/**
+	 * Cancelled
+	 */
+	subagent_statusCancelled: () => LocalizedString
+	/**
+	 * Timed out
+	 */
+	subagent_statusTimeout: () => LocalizedString
+	/**
+	 * Token limit
+	 */
+	subagent_statusTokenLimit: () => LocalizedString
+	/**
+	 * Partial
+	 */
+	subagent_statusPartial: () => LocalizedString
+	/**
+	 * Truncated
+	 */
+	subagent_statusTruncated: () => LocalizedString
+	/**
+	 * No result
+	 */
+	subagent_statusNoResult: () => LocalizedString
 	/**
 	 * Request approval
 	 */
@@ -5064,6 +5542,14 @@ export type TranslationFunctions = {
 	 * Clarification Needed
 	 */
 	clarification_title: () => LocalizedString
+	/**
+	 * Describe your choice…
+	 */
+	clarification_replyPlaceholder: () => LocalizedString
+	/**
+	 * Submit response
+	 */
+	clarification_send: () => LocalizedString
 	/**
 	 * Scroll to bottom
 	 */
