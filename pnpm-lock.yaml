@@ -107,6 +107,9 @@ importers:
       pdf-parse:
         specifier: ^2.4.5
         version: 2.4.5
+      pptx-svg:
+        specifier: 0.6.4
+        version: 0.6.4
       radix-ui:
         specifier: ^1.6.0
         version: 1.6.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -4612,6 +4615,10 @@ packages:
   powershell-utils@0.1.0:
     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
     engines: {node: '>=20'}
+
+  pptx-svg@0.6.4:
+    resolution: {integrity: sha512-ykjLDvqFuVx55O7jKf+G8xetRGo7G7lUGE6NX8AJ2VrXRqdZ/UP4CSQKPaY1BC8TRNLFMMKmIbi6hYvTSqnC8Q==}
+    engines: {node: '>=22'}
 
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
@@ -10374,6 +10381,8 @@ snapshots:
     optional: true
 
   powershell-utils@0.1.0: {}
+
+  pptx-svg@0.6.4: {}
 
   prebuild-install@7.1.3:
     dependencies:

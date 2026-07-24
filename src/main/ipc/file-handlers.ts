@@ -13,25 +13,26 @@ import {
 } from "../core/agent/tools/trash";
 import {
   directoryStats,
-  type NativeOfficePreviewResult,
   type NativeSearchOptions,
-  prepareOfficePreview,
   searchFiles,
 } from "../native";
 import {
   type OfficeContentPreviewResult,
   prepareOfficeContentPreview,
 } from "../office-preview/content";
-import { resolveLibreOfficePath } from "../office-preview/paths";
+import {
+  type PptxPreviewResult,
+  preparePptxPreview,
+} from "../presentation/pptx";
 
 // 文件预览的读取上限:超过则只读前 N 字节并标记 truncated,
 // 避免把几百 MB 的文件整体读入内存、序列化过 IPC 拖垮渲染进程。
 const MAX_PREVIEW_BYTES = 10 * 1024 * 1024; // 10 MB
-const OFFICE_PREVIEW_CACHE_ROOT = join(
+const PRESENTATION_PREVIEW_CACHE_ROOT = join(
   homedir(),
   ".filework",
   "previews",
-  "office",
+  "presentations",
 );
 const OFFICE_CONTENT_PREVIEW_CACHE_ROOT = join(
   homedir(),
@@ -85,74 +86,60 @@ const hasUsableOfficeContent = (
 ): preview is Exclude<OfficeContentPreview, { kind: "unsupported" }> =>
   preview.kind !== "unsupported";
 
-const attachOfficeContentPreview = (
-  result: OfficePreviewResult,
-  settled: PromiseSettledResult<OfficeContentPreviewResult>,
-): OfficePreviewResult => {
-  if (settled.status === "rejected") {
-    return {
-      ...result,
-      contentPreviewError: getErrorMessage(settled.reason),
-    };
-  }
-  if (!hasUsableOfficeContent(settled.value.preview)) {
-    return {
-      ...result,
-      contentPreviewError: settled.value.preview.message,
-    };
-  }
-  return {
-    ...result,
-    contentPreview: settled.value.preview,
-    contentPreviewCacheHit: settled.value.cacheHit,
-    contentPreviewPath: settled.value.contentPreviewPath,
-  };
-};
-
-const visualOfficeResult = (
-  visual: NativeOfficePreviewResult,
-): OfficePreviewResult => ({
-  ...visual,
-  visualPreviewUnavailable: visual.previewKind === "image",
-});
-
 const contentOnlyOfficeResult = (
   content: OfficeContentPreviewResult,
-  visualError: unknown,
 ): OfficePreviewResult => ({
   cacheKey: content.cacheKey,
   previewKind: "content",
-  previewPath: content.contentPreviewPath,
   sourceMtimeMs: content.sourceMtimeMs,
   sourceSize: content.sourceSize,
-  converterVersion: "Content extraction",
   cacheHit: content.cacheHit,
   contentPreview: content.preview,
-  contentPreviewCacheHit: content.cacheHit,
   contentPreviewPath: content.contentPreviewPath,
-  visualPreviewUnavailable: true,
-  visualPreviewError: getErrorMessage(visualError),
 });
 
-const buildOfficePreviewFailureMessage = (
-  visualError: unknown,
+const presentationOfficeResult = (
+  visual: PptxPreviewResult,
   contentResult: PromiseSettledResult<OfficeContentPreviewResult>,
-): string => {
-  const visualMessage = getErrorMessage(visualError);
-  const installHint =
-    "Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH for full Office PDF preview.";
-  const contentMessage =
-    contentResult.status === "rejected"
-      ? `Content fallback failed: ${getErrorMessage(contentResult.reason)}`
-      : contentResult.value.preview.kind === "unsupported"
-        ? `Content fallback unavailable: ${contentResult.value.preview.message}`
-        : "Content fallback was available but no visual preview could be prepared.";
-
-  if (visualMessage.includes("LibreOffice headless converter not found")) {
-    return `LibreOffice headless converter not found. ${installHint} ${contentMessage}`;
+): OfficePreviewResult => {
+  const extracted =
+    contentResult.status === "fulfilled" &&
+    contentResult.value.preview.kind === "presentation"
+      ? contentResult.value
+      : null;
+  const extractedSlides =
+    extracted?.preview.kind === "presentation"
+      ? new Map(extracted.preview.slides.map((slide) => [slide.index, slide]))
+      : new Map();
+  const slides = visual.slides.map((slide) => {
+    const content = extractedSlides.get(slide.index);
+    return {
+      ...slide,
+      notes: content?.notes ?? slide.notes,
+      text: content?.text ?? "",
+    };
+  });
+  const contentPreview: OfficeContentPreview = {
+    kind: "presentation",
+    slideCount: slides.length,
+    slides,
+  };
+  const result: OfficePreviewResult = {
+    cacheHit: visual.cacheHit && (extracted?.cacheHit ?? true),
+    cacheKey: visual.cacheKey,
+    contentPreview,
+    previewKind: "presentation",
+    rendererVersion: visual.rendererVersion,
+    sourceMtimeMs: visual.sourceMtimeMs,
+    sourceSize: visual.sourceSize,
+  };
+  if (extracted) {
+    result.contentPreviewPath = extracted.contentPreviewPath;
   }
-
-  return `${visualMessage}. ${installHint} ${contentMessage}`;
+  if (contentResult.status === "rejected") {
+    result.contentPreviewError = getErrorMessage(contentResult.reason);
+  }
+  return result;
 };
 
 export const registerFileHandlers = () => {
@@ -249,40 +236,52 @@ export const registerFileHandlers = () => {
       searchFiles(rootPath, query, options),
   );
 
-  // Office 预览:不在工作区生成派生文件。native 负责转换队列、隔离目录、
-  // 超时和按 source fingerprint + converter version 的缓存。
+  // Office 预览:不在工作区生成派生文件。PPTX 通过本地 Wasm 导入为
+  // 结构化模型并逐页渲染 SVG;其他 Office 文件走本地内容解析。
   ipcMain.handle(
     "fs:prepareOfficePreview",
     async (_event, filePath: string) => {
-      const libreOfficePath = await resolveLibreOfficePath();
-      const [visual, content] = await Promise.allSettled([
-        prepareOfficePreview(filePath, {
-          cacheRoot: OFFICE_PREVIEW_CACHE_ROOT,
-          libreOfficePath,
-          timeoutMs: 60_000,
-          thumbnailSize: 640,
-        }),
-        prepareOfficeContentPreview(filePath, {
-          cacheRoot: OFFICE_CONTENT_PREVIEW_CACHE_ROOT,
-          libreOfficePath,
-        }),
-      ]);
-
-      if (visual.status === "fulfilled") {
-        return attachOfficeContentPreview(
-          visualOfficeResult(visual.value),
-          content,
+      if (extname(filePath).toLowerCase() === ".pptx") {
+        const [visual, content] = await Promise.allSettled([
+          preparePptxPreview(filePath, {
+            cacheRoot: PRESENTATION_PREVIEW_CACHE_ROOT,
+          }),
+          prepareOfficeContentPreview(filePath, {
+            cacheRoot: OFFICE_CONTENT_PREVIEW_CACHE_ROOT,
+          }),
+        ]);
+        if (visual.status === "fulfilled") {
+          return presentationOfficeResult(visual.value, content);
+        }
+        if (
+          content.status === "fulfilled" &&
+          hasUsableOfficeContent(content.value.preview)
+        ) {
+          return {
+            ...contentOnlyOfficeResult(content.value),
+            contentPreviewError: getErrorMessage(visual.reason),
+          };
+        }
+        throw new Error(
+          `PPTX preview failed: ${getErrorMessage(
+            visual.reason,
+          )}; content extraction failed: ${
+            content.status === "rejected"
+              ? getErrorMessage(content.reason)
+              : content.value.preview.kind === "unsupported"
+                ? content.value.preview.message
+                : "no usable presentation content was returned"
+          }`,
         );
       }
 
-      if (
-        content.status === "fulfilled" &&
-        hasUsableOfficeContent(content.value.preview)
-      ) {
-        return contentOnlyOfficeResult(content.value, visual.reason);
+      const content = await prepareOfficeContentPreview(filePath, {
+        cacheRoot: OFFICE_CONTENT_PREVIEW_CACHE_ROOT,
+      });
+      if (!hasUsableOfficeContent(content.preview)) {
+        throw new Error(content.preview.message);
       }
-
-      throw new Error(buildOfficePreviewFailureMessage(visual.reason, content));
+      return contentOnlyOfficeResult(content);
     },
   );
 

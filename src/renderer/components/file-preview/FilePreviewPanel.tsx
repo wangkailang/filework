@@ -9,7 +9,10 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { OfficeContentPreview } from "../../../shared/office-preview";
+import type {
+  OfficeContentPreview,
+  OfficePresentationContentPreview,
+} from "../../../shared/office-preview";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
 import { cn } from "../../lib/utils";
@@ -134,12 +137,6 @@ interface OfficeContentLabels {
   slide: (index: number) => string;
   speakerNotes: string;
 }
-
-const OfficeFallbackNotice = ({ message }: { message: string }) => (
-  <div className="shrink-0 border-b border-border bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700 dark:text-amber-300">
-    {message}
-  </div>
-);
 
 const OfficeContentPreviewPane = ({
   preview,
@@ -304,6 +301,55 @@ const OfficeContentPreviewPane = ({
   );
 };
 
+const OfficePresentationPreviewPane = ({
+  labels,
+  preview,
+  zoom,
+}: {
+  labels: OfficeContentLabels;
+  preview: OfficePresentationContentPreview;
+  zoom: number;
+}) => {
+  const visualSlides = preview.slides.filter((slide) => slide.previewPath);
+  if (visualSlides.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+        {labels.emptyOfficeContent}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="h-full overflow-auto bg-muted/40 px-4 py-4"
+      data-office-presentation-visual="true"
+    >
+      <div
+        className="mx-auto flex max-w-5xl origin-top flex-col gap-5 transition-transform duration-150"
+        style={{ transform: `scale(${zoom})` }}
+      >
+        {visualSlides.map((slide) => (
+          <figure
+            key={slide.index}
+            data-presentation-slide={slide.index}
+            className="overflow-hidden rounded-md border border-border bg-background shadow-sm"
+          >
+            <figcaption className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+              {labels.slide(slide.index)}
+            </figcaption>
+            <img
+              src={localFileUrl(slide.previewPath as string)}
+              alt={labels.slide(slide.index)}
+              className="block h-auto w-full"
+              draggable={false}
+            />
+          </figure>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 interface FilePreviewPanelProps {
   filePath: string;
 }
@@ -315,7 +361,6 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const [truncated, setTruncated] = useState(false);
   const [truncatedTotal, setTruncatedTotal] = useState(0);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [officePdfPath, setOfficePdfPath] = useState<string | null>(null);
   const [officePreview, setOfficePreview] = useState<Awaited<
     ReturnType<typeof window.filework.prepareOfficePreview>
   > | null>(null);
@@ -360,7 +405,6 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
     setTruncated(false);
     setTruncatedTotal(0);
     setImageSrc(null);
-    setOfficePdfPath(null);
     setOfficePreview(null);
     setOfficeView("visual");
     setMdView("rendered");
@@ -382,12 +426,12 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           if (!cancelled) {
             const hasContent = hasUsableOfficeContent(result.contentPreview);
             setOfficePreview(result);
-            if (result.pdfPath) {
-              setOfficePdfPath(result.pdfPath);
+            if (
+              result.previewKind === "presentation" &&
+              result.contentPreview?.kind === "presentation" &&
+              result.contentPreview.slides.some((slide) => slide.previewPath)
+            ) {
               setOfficeView("visual");
-            } else if (result.previewKind === "image") {
-              setImageSrc(localFileUrl(result.previewPath));
-              setOfficeView(hasContent ? "content" : "visual");
             } else if (result.previewKind === "content" && hasContent) {
               setOfficeView("content");
             } else {
@@ -435,8 +479,11 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   )
     ? officePreview.contentPreview
     : null;
-  const hasOfficeVisual = Boolean(officePdfPath || imageSrc);
-  const showOfficeNotice = Boolean(officePreview?.visualPreviewUnavailable);
+  const officePresentationPreview =
+    officeContentPreview?.kind === "presentation" ? officeContentPreview : null;
+  const hasOfficeVisual = Boolean(
+    officePresentationPreview?.slides.some((slide) => slide.previewPath),
+  );
   const officeContentLabels: OfficeContentLabels = {
     emptyOfficeContent: LL.preview_emptyOfficeContent(),
     emptySheet: LL.preview_emptySheet(),
@@ -601,53 +648,45 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           </div>
         )}
 
-        {!isLoading &&
-          !error &&
-          (isImage || (isOffice && officeView === "visual")) &&
-          imageSrc && (
-            <div className="flex flex-col h-full">
-              {isOffice && showOfficeNotice && (
-                <OfficeFallbackNotice
-                  message={LL.preview_officePdfUnavailable()}
-                />
-              )}
-              <div className="flex items-center justify-center gap-1 px-3 py-1.5 border-b border-border shrink-0">
-                <button
-                  type="button"
-                  onClick={zoomOut}
-                  className="rounded p-1 hover:bg-accent transition-colors"
-                  aria-label={LL.preview_zoomOut()}
-                >
-                  <ZoomOut className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button
-                  type="button"
-                  onClick={resetZoom}
-                  className="rounded px-2 py-0.5 hover:bg-accent transition-colors text-xs text-muted-foreground min-w-[3.5rem] text-center"
-                >
-                  {Math.round(zoom * 100)}%
-                </button>
-                <button
-                  type="button"
-                  onClick={zoomIn}
-                  className="rounded p-1 hover:bg-accent transition-colors"
-                  aria-label={LL.preview_zoomIn()}
-                >
-                  <ZoomIn className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[repeating-conic-gradient(hsl(var(--muted))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
-                <img
-                  src={imageSrc}
-                  alt={fileName}
-                  className="max-w-none transition-transform duration-150"
-                  style={{ transform: `scale(${zoom})` }}
-                  draggable={false}
-                  onError={() => setError(LL.preview_readImageError())}
-                />
-              </div>
+        {!isLoading && !error && isImage && imageSrc && (
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-center gap-1 px-3 py-1.5 border-b border-border shrink-0">
+              <button
+                type="button"
+                onClick={zoomOut}
+                className="rounded p-1 hover:bg-accent transition-colors"
+                aria-label={LL.preview_zoomOut()}
+              >
+                <ZoomOut className="w-4 h-4 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                onClick={resetZoom}
+                className="rounded px-2 py-0.5 hover:bg-accent transition-colors text-xs text-muted-foreground min-w-[3.5rem] text-center"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                className="rounded p-1 hover:bg-accent transition-colors"
+                aria-label={LL.preview_zoomIn()}
+              >
+                <ZoomIn className="w-4 h-4 text-muted-foreground" />
+              </button>
             </div>
-          )}
+            <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[repeating-conic-gradient(hsl(var(--muted))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
+              <img
+                src={imageSrc}
+                alt={fileName}
+                className="max-w-none transition-transform duration-150"
+                style={{ transform: `scale(${zoom})` }}
+                draggable={false}
+                onError={() => setError(LL.preview_readImageError())}
+              />
+            </div>
+          </div>
+        )}
 
         {!isLoading && isPdf && <PdfViewer filePath={filePath} />}
 
@@ -655,15 +694,39 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           !error &&
           isOffice &&
           officeView === "visual" &&
-          officePdfPath && (
+          officePresentationPreview && (
             <div className="flex h-full flex-col">
-              {showOfficeNotice && (
-                <OfficeFallbackNotice
-                  message={LL.preview_officePdfUnavailable()}
-                />
-              )}
+              <div className="flex shrink-0 items-center justify-center gap-1 border-b border-border px-3 py-1.5">
+                <button
+                  type="button"
+                  onClick={zoomOut}
+                  className="rounded p-1 transition-colors hover:bg-accent"
+                  aria-label={LL.preview_zoomOut()}
+                >
+                  <ZoomOut className="h-4 w-4 text-muted-foreground" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  className="min-w-[3.5rem] rounded px-2 py-0.5 text-center text-xs text-muted-foreground hover:bg-accent"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={zoomIn}
+                  className="rounded p-1 transition-colors hover:bg-accent"
+                  aria-label={LL.preview_zoomIn()}
+                >
+                  <ZoomIn className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
               <div className="min-h-0 flex-1">
-                <PdfViewer filePath={officePdfPath} />
+                <OfficePresentationPreviewPane
+                  labels={officeContentLabels}
+                  preview={officePresentationPreview}
+                  zoom={zoom}
+                />
               </div>
             </div>
           )}
@@ -674,11 +737,6 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
           officeView === "content" &&
           officeContentPreview && (
             <div className="flex h-full flex-col">
-              {showOfficeNotice && (
-                <OfficeFallbackNotice
-                  message={LL.preview_officePdfUnavailable()}
-                />
-              )}
               <div className="min-h-0 flex-1">
                 <OfficeContentPreviewPane
                   key={officePreview?.cacheKey}

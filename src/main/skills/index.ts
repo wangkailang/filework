@@ -5,6 +5,7 @@ import { docxProcessor } from "./docx-processor";
 import { duplicateFinder } from "./duplicate-finder";
 import { fileOrganizer } from "./file-organizer";
 import { pdfProcessor } from "./pdf-processor";
+import { pptxEditor } from "./pptx-editor";
 import { pptxProcessor } from "./pptx-processor";
 import { projectScaffolder } from "./project-scaffolder";
 import { reportGenerator } from "./report-generator";
@@ -25,6 +26,7 @@ export const skills: Skill[] = [
   xlsxProcessor,
   docxProcessor,
   pptxProcessor,
+  pptxEditor,
 ];
 
 /** 预注册了内置 skill 的 SkillRegistry 单例 */

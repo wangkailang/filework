@@ -2,12 +2,9 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   mkdir,
-  mkdtemp,
-  readdir,
   readFile,
   realpath,
   rename,
-  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -27,11 +24,9 @@ import {
   listSlideAndNotesPaths,
   parsePptxMetaXml,
 } from "../skills/pptx-processor";
-import { resolveLibreOfficePath } from "./paths";
 
-const CONTENT_PREVIEW_CACHE_VERSION = "office-content-preview-v1";
+const CONTENT_PREVIEW_CACHE_VERSION = "office-content-preview-v2";
 const DEFAULT_TEXTUTIL_TIMEOUT_MS = 15_000;
-const DEFAULT_LIBREOFFICE_TIMEOUT_MS = 60_000;
 const TEXTUTIL_MAX_BUFFER = 20 * 1024 * 1024;
 
 const SPREADSHEET_EXTENSIONS = new Set([
@@ -71,8 +66,6 @@ type JSZipModule = {
 
 interface OfficeContentPreviewOptions {
   cacheRoot: string;
-  libreOfficePath?: string;
-  libreOfficeTimeoutMs?: number;
   textutilPath?: string;
   textutilTimeoutMs?: number;
 }
@@ -342,67 +335,6 @@ const readPresentationPreview = async (
   };
 };
 
-const firstPptxInDir = async (dir: string): Promise<string | null> => {
-  const entries = await readdir(dir);
-  const name = entries.find((entry) => entry.toLowerCase().endsWith(".pptx"));
-  return name ? join(dir, name) : null;
-};
-
-const convertWithLibreOffice = async (
-  sourcePath: string,
-  outputFormat: "pptx",
-  outputDir: string,
-  options: OfficeContentPreviewOptions,
-) => {
-  const libreOfficePath =
-    options.libreOfficePath ?? (await resolveLibreOfficePath());
-  if (!libreOfficePath) {
-    throw new Error(
-      "LibreOffice headless converter not found. Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH.",
-    );
-  }
-
-  await execFileAsync(
-    libreOfficePath,
-    [
-      "--headless",
-      "--nologo",
-      "--nolockcheck",
-      "--nodefault",
-      "--nofirststartwizard",
-      "--norestore",
-      "--convert-to",
-      outputFormat,
-      "--outdir",
-      outputDir,
-      sourcePath,
-    ],
-    {
-      timeout: options.libreOfficeTimeoutMs ?? DEFAULT_LIBREOFFICE_TIMEOUT_MS,
-      maxBuffer: TEXTUTIL_MAX_BUFFER,
-    },
-  );
-};
-
-const readLegacyPresentationPreview = async (
-  sourcePath: string,
-  options: OfficeContentPreviewOptions,
-): Promise<OfficePresentationContentPreview> => {
-  const tempDir = await mkdtemp(join(options.cacheRoot, ".pptx-convert-"));
-  try {
-    await convertWithLibreOffice(sourcePath, "pptx", tempDir, options);
-    const pptxPath = await firstPptxInDir(tempDir);
-    if (!pptxPath) {
-      throw new Error(
-        `LibreOffice conversion finished but did not produce a PPTX in ${tempDir}`,
-      );
-    }
-    return await readPresentationPreview(pptxPath);
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
-};
-
 const normalizeCellValue = (value: unknown): string => {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return value.toISOString();
@@ -482,17 +414,10 @@ const generateContentPreview = async (
   }
 
   if (LEGACY_PRESENTATION_EXTENSIONS.has(fingerprint.extension)) {
-    try {
-      return await readLegacyPresentationPreview(
-        fingerprint.sourcePath,
-        options,
-      );
-    } catch (error) {
-      return unsupportedPreview(
-        "parse-error",
-        `Legacy PowerPoint content preview failed: ${asErrorMessage(error)}`,
-      );
-    }
+    return unsupportedPreview(
+      "unsupported-format",
+      "Legacy PowerPoint files are not supported; save the deck as .pptx.",
+    );
   }
 
   if (
@@ -504,7 +429,7 @@ const generateContentPreview = async (
 
   return unsupportedPreview(
     "unsupported-format",
-    "This Office format needs LibreOffice for full PDF preview.",
+    "This Office format does not have a local structured preview.",
   );
 };
 

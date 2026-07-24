@@ -64,39 +64,6 @@ export interface NativeSearchResult {
   truncated: boolean;
 }
 
-/** native Office 预览生成的输入选项。 */
-export interface NativeOfficePreviewOptions {
-  /** 预览缓存根目录,通常位于应用数据目录而非工作区。 */
-  cacheRoot: string;
-  /** 可选 LibreOffice/soffice 可执行文件路径;未传时 native 自行解析。 */
-  libreOfficePath?: string;
-  /** 可选 macOS Quick Look 可执行文件路径;未传时 native 使用 /usr/bin/qlmanage。 */
-  quickLookPath?: string;
-  /** 可选测试/自定义缩略图命令: <pdf> <output.png> <size>。 */
-  thumbnailerPath?: string;
-  /** 单次外部转换命令超时。默认 60s。 */
-  timeoutMs?: number;
-  /** 缩略图最大边长。默认 640。 */
-  thumbnailSize?: number;
-}
-
-interface NativeOfficePreviewRequest extends NativeOfficePreviewOptions {
-  sourcePath: string;
-}
-
-/** native Office 预览生成结果。 */
-export interface NativeOfficePreviewResult {
-  cacheKey: string;
-  previewKind: "pdf" | "image";
-  previewPath: string;
-  pdfPath?: string;
-  thumbnailPath?: string;
-  sourceMtimeMs: number;
-  sourceSize: number;
-  converterVersion: string;
-  cacheHit: boolean;
-}
-
 export interface NativeModule {
   findDuplicates(
     rootPath: string,
@@ -109,9 +76,6 @@ export interface NativeModule {
     query: string,
     options?: NativeSearchOptions | null,
   ): Promise<NativeSearchResult>;
-  prepareOfficePreviewNative(
-    request: NativeOfficePreviewRequest,
-  ): Promise<NativeOfficePreviewResult>;
 }
 
 const REQUIRED_NATIVE_EXPORTS = [
@@ -119,7 +83,6 @@ const REQUIRED_NATIVE_EXPORTS = [
   "directoryStats",
   "scanDirectoryLevel",
   "searchFiles",
-  "prepareOfficePreviewNative",
 ] as const;
 
 export function assertNativeModuleShape(
@@ -204,15 +167,4 @@ export function searchFiles(
   options?: NativeSearchOptions,
 ): Promise<NativeSearchResult> {
   return loadNative().searchFiles(rootPath, query, options ?? null);
-}
-
-/**
- * 用 native (Rust) 准备 Office 文件预览:计算缓存指纹、串行调度
- * LibreOffice headless 转 PDF、生成可选缩略图,并返回缓存产物路径。
- */
-export function prepareOfficePreview(
-  sourcePath: string,
-  options: NativeOfficePreviewOptions,
-): Promise<NativeOfficePreviewResult> {
-  return loadNative().prepareOfficePreviewNative({ sourcePath, ...options });
 }

@@ -1,4 +1,4 @@
-export type OfficePreviewKind = "pdf" | "image" | "content";
+export type OfficePreviewKind = "presentation" | "content";
 
 export interface OfficeDocumentContentPreview {
   kind: "document";
@@ -12,6 +12,8 @@ export interface OfficePresentationSlidePreview {
   index: number;
   text: string;
   notes: string | null;
+  previewPath?: string;
+  hidden?: boolean;
 }
 
 export interface OfficePresentationContentPreview {
@@ -50,17 +52,11 @@ export type OfficeContentPreview =
 export interface OfficePreviewResult {
   cacheKey: string;
   previewKind: OfficePreviewKind;
-  previewPath: string;
-  pdfPath?: string;
-  thumbnailPath?: string;
   sourceMtimeMs: number;
   sourceSize: number;
-  converterVersion: string;
+  rendererVersion?: string;
   cacheHit: boolean;
   contentPreview?: OfficeContentPreview;
-  contentPreviewCacheHit?: boolean;
   contentPreviewPath?: string;
   contentPreviewError?: string;
-  visualPreviewUnavailable?: boolean;
-  visualPreviewError?: string;
 }

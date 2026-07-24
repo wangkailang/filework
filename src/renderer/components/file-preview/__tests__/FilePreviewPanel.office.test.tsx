@@ -17,7 +17,6 @@ vi.mock("../../../i18n/i18n-react", () => {
     preview_truncated: (size: string) => `Truncated ${size}`,
     preview_emptyOfficeContent: () => "No extracted Office content",
     preview_emptySheet: () => "Empty sheet",
-    preview_officePdfUnavailable: () => "Full PDF preview unavailable",
     preview_slide: (index: number) => `Slide ${index}`,
     preview_speakerNotes: () => "Speaker notes",
     preview_unsupported: () => "Preview not supported for",
@@ -80,13 +79,14 @@ describe("FilePreviewPanel Office preview", () => {
     const previewResult = {
       cacheHit: false,
       cacheKey: "cache-key",
-      converterVersion: "LibreOffice 24.2",
-      pdfPath: "/tmp/filework-preview/preview.pdf",
-      previewKind: "pdf",
-      previewPath: "/tmp/filework-preview/preview.pdf",
+      contentPreview: {
+        kind: "document",
+        source: "mammoth",
+        text: "Project brief",
+      },
+      previewKind: "content",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
     };
     prepareOfficePreview = vi.fn().mockResolvedValue(previewResult);
     Object.assign(window, {
@@ -115,7 +115,7 @@ describe("FilePreviewPanel Office preview", () => {
     root = null;
   });
 
-  it("prepares Office files as cached PDFs and renders them with the PDF viewer", async () => {
+  it("renders non-presentation Office files from local structured content", async () => {
     act(() => {
       root?.render(<FilePreviewPanel filePath="/workspace/report.docx" />);
     });
@@ -123,58 +123,38 @@ describe("FilePreviewPanel Office preview", () => {
     expect(prepareOfficePreview).toHaveBeenCalledWith("/workspace/report.docx");
     await flushPreview();
 
-    expect(container.innerHTML).toContain(
-      'data-pdf-viewer-path="/tmp/filework-preview/preview.pdf"',
-    );
+    expect(container.textContent).toContain("Project brief");
+    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
     expect(container.textContent).not.toContain("Preview not supported");
   });
 
-  it("renders Quick Look image previews when Office PDF conversion is unavailable", async () => {
+  it("renders every PPTX slide from the local SVG presentation model", async () => {
     prepareOfficePreview.mockResolvedValue({
       cacheHit: false,
-      cacheKey: "quick-look-cache-key",
-      converterVersion: "Quick Look thumbnail",
-      pdfPath: undefined,
-      previewKind: "image",
-      previewPath: "/tmp/filework-preview/thumbnail.png",
-      sourceMtimeMs: 1,
-      sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
-    });
-
-    act(() => {
-      root?.render(<FilePreviewPanel filePath="/workspace/deck.pptx" />);
-    });
-
-    await flushPreview();
-
-    expect(container.innerHTML).toContain(
-      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fthumbnail.png",
-    );
-    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
-    expect(container.textContent).not.toContain("Failed to read file");
-  });
-
-  it("renders all extracted PPTX slides when only a Quick Look thumbnail is available", async () => {
-    prepareOfficePreview.mockResolvedValue({
-      cacheHit: false,
-      cacheKey: "quick-look-cache-key",
+      cacheKey: "presentation-cache-key",
       contentPreview: {
         kind: "presentation",
         slideCount: 2,
         slides: [
-          { index: 1, notes: null, text: "Roadmap\nFirst milestone" },
-          { index: 2, notes: "Speaker note", text: "Launch & Learn" },
+          {
+            hidden: false,
+            index: 1,
+            notes: null,
+            previewPath: "/tmp/filework-preview/slide-1.svg",
+            text: "Roadmap\nFirst milestone",
+          },
+          {
+            hidden: false,
+            index: 2,
+            notes: "Speaker note",
+            previewPath: "/tmp/filework-preview/slide-2.svg",
+            text: "Launch & Learn",
+          },
         ],
       },
-      converterVersion: "Quick Look thumbnail",
-      pdfPath: undefined,
-      previewKind: "image",
-      previewPath: "/tmp/filework-preview/thumbnail.png",
+      previewKind: "presentation",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
-      visualPreviewUnavailable: true,
     });
 
     act(() => {
@@ -183,13 +163,16 @@ describe("FilePreviewPanel Office preview", () => {
 
     await flushPreview();
 
-    expect(container.innerHTML).toContain('data-office-slide="1"');
-    expect(container.innerHTML).toContain('data-office-slide="2"');
-    expect(container.textContent).toContain("Roadmap");
-    expect(container.textContent).toContain("First milestone");
-    expect(container.textContent).toContain("Launch & Learn");
-    expect(container.textContent).toContain("Speaker note");
-    expect(container.textContent).toContain("Full PDF preview unavailable");
+    expect(container.innerHTML).toContain('data-presentation-slide="1"');
+    expect(container.innerHTML).toContain('data-presentation-slide="2"');
+    expect(container.innerHTML).toContain(
+      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fslide-1.svg",
+    );
+    expect(container.innerHTML).toContain(
+      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fslide-2.svg",
+    );
+    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
+    expect(container.textContent).not.toContain("Full PDF preview unavailable");
   });
 
   it("renders every Excel sheet and switches between sheet tabs", async () => {
@@ -224,14 +207,9 @@ describe("FilePreviewPanel Office preview", () => {
           },
         ],
       },
-      converterVersion: "Content extraction",
-      pdfPath: undefined,
       previewKind: "content",
-      previewPath: "/tmp/filework-preview/content.json",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: undefined,
-      visualPreviewUnavailable: true,
     });
 
     act(() => {

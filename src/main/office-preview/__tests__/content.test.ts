@@ -1,4 +1,4 @@
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -163,42 +163,20 @@ describe("Office content preview", () => {
     ]);
   });
 
-  it("converts legacy PPT files to PPTX for full slide content fallback", async () => {
-    const deckPath = join(root, "converted.pptx");
+  it("does not invoke an external converter for legacy PPT files", async () => {
     const legacyPath = join(root, "legacy.ppt");
-    const fakeLibreOfficePath = join(root, "fake-soffice");
-    await writeMinimalPptx(deckPath);
     await writeFile(legacyPath, "legacy ppt bytes");
-    await writeFile(
-      fakeLibreOfficePath,
-      `#!/usr/bin/env node
-const fs = require("node:fs");
-const path = require("node:path");
-const args = process.argv.slice(2);
-if (args.includes("--version")) {
-  console.log("LibreOffice 24.2");
-  process.exit(0);
-}
-const outdir = args[args.indexOf("--outdir") + 1];
-const input = args[args.length - 1];
-const output = path.join(outdir, path.basename(input, path.extname(input)) + ".pptx");
-fs.copyFileSync(${JSON.stringify(deckPath)}, output);
-`,
-    );
-    await chmod(fakeLibreOfficePath, 0o755);
 
     const result = await prepareOfficeContentPreview(legacyPath, {
       cacheRoot,
-      libreOfficePath: fakeLibreOfficePath,
     });
 
-    expect(result.preview.kind).toBe("presentation");
-    if (result.preview.kind !== "presentation") return;
-    expect(result.preview.slideCount).toBe(2);
-    expect(result.preview.slides.map((slide) => slide.text)).toEqual([
-      "Roadmap\nFirst milestone",
-      "Launch & Learn",
-    ]);
+    expect(result.preview).toEqual({
+      kind: "unsupported",
+      message:
+        "Legacy PowerPoint files are not supported; save the deck as .pptx.",
+      reason: "unsupported-format",
+    });
   });
 
   it("extracts DOCX text and HTML for document fallback preview", async () => {

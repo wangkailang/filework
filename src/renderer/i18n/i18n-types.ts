@@ -2523,10 +2523,6 @@ type RootTranslation = {
 	 */
 	preview_openInBrowser: string
 	/**
-	 * F​u​l​l​ ​O​f​f​i​c​e​ ​P​D​F​ ​p​r​e​v​i​e​w​ ​i​s​ ​u​n​a​v​a​i​l​a​b​l​e​.​ ​I​n​s​t​a​l​l​ ​L​i​b​r​e​O​f​f​i​c​e​ ​o​r​ ​s​e​t​ ​F​I​L​E​W​O​R​K​_​L​I​B​R​E​O​F​F​I​C​E​_​P​A​T​H​ ​f​o​r​ ​p​a​g​e​-​a​c​c​u​r​a​t​e​ ​p​r​e​v​i​e​w​.
-	 */
-	preview_officePdfUnavailable: string
-	/**
 	 * N​o​ ​e​x​t​r​a​c​t​e​d​ ​O​f​f​i​c​e​ ​c​o​n​t​e​n​t
 	 */
 	preview_emptyOfficeContent: string
@@ -5646,10 +5642,6 @@ export type TranslationFunctions = {
 	 * Open in browser
 	 */
 	preview_openInBrowser: () => LocalizedString
-	/**
-	 * Full Office PDF preview is unavailable. Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH for page-accurate preview.
-	 */
-	preview_officePdfUnavailable: () => LocalizedString
 	/**
 	 * No extracted Office content
 	 */
