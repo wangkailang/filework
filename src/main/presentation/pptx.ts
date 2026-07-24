@@ -75,6 +75,7 @@ export interface InspectedPresentationSlide {
 export interface InspectedPresentation {
   slideCount: number;
   slides: InspectedPresentationSlide[];
+  sourceRevision: string;
 }
 
 export interface PresentationTextEdit {
@@ -84,6 +85,7 @@ export interface PresentationTextEdit {
 
 export interface EditPresentationRequest {
   sourcePath: string;
+  sourceRevision?: string;
   outputPath?: string;
   edits: PresentationTextEdit[];
 }
@@ -142,13 +144,27 @@ const assertPptxPath = (filePath: string, label: string) => {
 const loadRenderer = async (
   sourcePath: string,
   createRenderer: RendererFactory = defaultRendererFactory,
+  expectedSourceRevision?: string,
 ) => {
   assertPptxPath(sourcePath, "Presentation");
+  const bytes = await readFile(sourcePath);
+  const fingerprint = await buildFingerprint(sourcePath, bytes);
+  if (
+    expectedSourceRevision &&
+    expectedSourceRevision !== fingerprint.cacheKey
+  ) {
+    throw new Error(
+      "Presentation source revision changed after selection; inspect the PPTX again before editing.",
+    );
+  }
   const renderer = await createRenderer();
   await renderer.init();
-  const bytes = await readFile(sourcePath);
   await renderer.loadPptx(toArrayBuffer(bytes));
-  return { bytes, renderer };
+  return {
+    bytes,
+    renderer,
+    sourceRevision: fingerprint.cacheKey,
+  };
 };
 
 const renderSlide = (
@@ -329,7 +345,7 @@ export const inspectPptxPresentation = async (
   sourcePath: string,
   options: RendererOptions = {},
 ): Promise<InspectedPresentation> => {
-  const { renderer } = await loadRenderer(
+  const { renderer, sourceRevision } = await loadRenderer(
     sourcePath,
     options.createRenderer ?? defaultRendererFactory,
   );
@@ -349,7 +365,7 @@ export const inspectPptxPresentation = async (
       ),
     });
   }
-  return { slideCount: renderer.getSlideCount(), slides };
+  return { slideCount: renderer.getSlideCount(), slides, sourceRevision };
 };
 
 const parseTextObjectId = (objectId: string) => {
@@ -389,6 +405,7 @@ export const editPptxPresentation = async (
   const { renderer } = await loadRenderer(
     request.sourcePath,
     options.createRenderer ?? defaultRendererFactory,
+    request.sourceRevision,
   );
   const editedSlides = new Set<number>();
   for (const edit of request.edits) {

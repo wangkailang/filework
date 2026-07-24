@@ -238,4 +238,10 @@ describe("pptxEditor skill spec", () => {
       "inspectPptxObjects",
     ]);
   });
+
+  it("treats a local PPTX selection as an anchored object, not a guessed target", () => {
+    expect(pptxEditor.systemPrompt).toContain("<pptx-selection>");
+    expect(pptxEditor.systemPrompt).toContain("sourceRevision");
+    expect(pptxEditor.systemPrompt).toContain("validate");
+  });
 });

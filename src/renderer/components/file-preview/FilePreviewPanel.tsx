@@ -5,16 +5,22 @@ import {
   FileWarning,
   Globe,
   Loader2,
+  MousePointer2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   OfficeContentPreview,
   OfficePresentationContentPreview,
 } from "../../../shared/office-preview";
 import { useI18nContext } from "../../i18n/i18n-react";
 import { localFileUrl } from "../../lib/local-file-url";
+import {
+  PPTX_SELECTION_EVENT,
+  type PptxObjectSelection,
+  prepareInteractivePresentationSvg,
+} from "../../lib/pptx-selection";
 import { cn } from "../../lib/utils";
 import {
   CodeViewer,
@@ -134,6 +140,8 @@ const hasUsableOfficeContent = (
 interface OfficeContentLabels {
   emptyOfficeContent: string;
   emptySheet: string;
+  selectElement: string;
+  selectedElement: string;
   slide: (index: number) => string;
   speakerNotes: string;
 }
@@ -304,13 +312,18 @@ const OfficeContentPreviewPane = ({
 const OfficePresentationPreviewPane = ({
   labels,
   preview,
+  sourcePath,
+  sourceRevision,
   zoom,
 }: {
   labels: OfficeContentLabels;
   preview: OfficePresentationContentPreview;
+  sourcePath: string;
+  sourceRevision: string;
   zoom: number;
 }) => {
   const visualSlides = preview.slides.filter((slide) => slide.previewPath);
+  const [selection, setSelection] = useState<PptxObjectSelection | null>(null);
   if (visualSlides.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
@@ -319,34 +332,187 @@ const OfficePresentationPreviewPane = ({
     );
   }
 
+  const selectObject = (nextSelection: PptxObjectSelection) => {
+    setSelection(nextSelection);
+    window.dispatchEvent(
+      new window.CustomEvent(PPTX_SELECTION_EVENT, {
+        detail: nextSelection,
+      }),
+    );
+  };
+
   return (
     <div
       className="h-full overflow-auto bg-muted/40 px-4 py-4"
       data-office-presentation-visual="true"
     >
       <div
+        className="sticky top-0 z-10 mx-auto mb-3 flex max-w-5xl items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur"
+        data-presentation-selection-status="true"
+      >
+        <MousePointer2 className="size-3.5 shrink-0 text-primary" />
+        {selection ? (
+          <span className="min-w-0 truncate">
+            {labels.selectedElement}: {labels.slide(selection.slideIndex)} ·{" "}
+            {selection.objectType}
+            {selection.text ? ` · ${selection.text}` : ""}
+          </span>
+        ) : (
+          <span>{labels.selectElement}</span>
+        )}
+      </div>
+      <div
         className="mx-auto flex max-w-5xl origin-top flex-col gap-5 transition-transform duration-150"
         style={{ transform: `scale(${zoom})` }}
       >
         {visualSlides.map((slide) => (
-          <figure
+          <InteractivePresentationSlide
             key={slide.index}
-            data-presentation-slide={slide.index}
-            className="overflow-hidden rounded-md border border-border bg-background shadow-sm"
-          >
-            <figcaption className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-              {labels.slide(slide.index)}
-            </figcaption>
-            <img
-              src={localFileUrl(slide.previewPath as string)}
-              alt={labels.slide(slide.index)}
-              className="block h-auto w-full"
-              draggable={false}
-            />
-          </figure>
+            label={labels.slide(slide.index)}
+            onSelect={selectObject}
+            selectedObjectId={selection?.objectId ?? null}
+            slide={slide}
+            sourcePath={sourcePath}
+            sourceRevision={sourceRevision}
+          />
         ))}
       </div>
     </div>
+  );
+};
+
+const InteractivePresentationSlide = ({
+  label,
+  onSelect,
+  selectedObjectId,
+  slide,
+  sourcePath,
+  sourceRevision,
+}: {
+  label: string;
+  onSelect: (selection: PptxObjectSelection) => void;
+  selectedObjectId: string | null;
+  slide: OfficePresentationContentPreview["slides"][number];
+  sourcePath: string;
+  sourceRevision: string;
+}) => {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const [svg, setSvg] = useState<string | null>(null);
+  const [inlineFailed, setInlineFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSvg(null);
+    setInlineFailed(false);
+    if (!slide.previewPath) return;
+    window.filework
+      .readFile(slide.previewPath)
+      .then((rawSvg) => {
+        if (cancelled) return;
+        const prepared = prepareInteractivePresentationSvg(
+          String(rawSvg),
+          slide.index,
+        );
+        if (!prepared) {
+          setInlineFailed(true);
+          return;
+        }
+        setSvg(prepared.svg);
+      })
+      .catch(() => {
+        if (!cancelled) setInlineFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slide.index, slide.previewPath]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    for (const shape of Array.from(
+      container.querySelectorAll("[data-presentation-object-id]"),
+    )) {
+      const shapeId = shape.getAttribute("data-presentation-object-id");
+      const isSelected = Boolean(
+        selectedObjectId &&
+          (selectedObjectId === shapeId ||
+            selectedObjectId.startsWith(`${shapeId}/text:`)),
+      );
+      if (isSelected) {
+        shape.setAttribute("data-presentation-selected", "true");
+      } else {
+        shape.removeAttribute("data-presentation-selected");
+      }
+    }
+  }, [selectedObjectId]);
+
+  const publishSelection = (target: EventTarget | null) => {
+    if (!(target instanceof window.Element)) return;
+    const textRun = target.closest("[data-presentation-text-object-id]");
+    const shape = target.closest("[data-presentation-object-id]");
+    if (!shape) return;
+    const shapeIndex = Number(shape.getAttribute("data-ooxml-shape-idx"));
+    const shapeObjectId = shape.getAttribute("data-presentation-object-id");
+    const textObjectId = textRun?.getAttribute(
+      "data-presentation-text-object-id",
+    );
+    if (!Number.isSafeInteger(shapeIndex) || !shapeObjectId) return;
+    onSelect({
+      editableText: Boolean(textObjectId),
+      objectId: textObjectId ?? shapeObjectId,
+      objectType:
+        textObjectId !== null && textObjectId !== undefined
+          ? "text"
+          : (shape.getAttribute("data-ooxml-shape-type") ?? "shape"),
+      shapeIndex,
+      slideIndex: slide.index,
+      sourcePath,
+      sourceRevision,
+      text: (textRun?.textContent ?? shape.textContent ?? "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    });
+  };
+
+  return (
+    <figure
+      data-presentation-slide={slide.index}
+      className="overflow-hidden rounded-md border border-border bg-background shadow-sm"
+    >
+      <figcaption className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+        {label}
+      </figcaption>
+      {svg ? (
+        <section
+          ref={containerRef}
+          aria-label={label}
+          className="presentation-slide-svg block h-auto w-full"
+          onClick={(event) => {
+            event.preventDefault();
+            publishSelection(event.target);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            publishSelection(event.target);
+          }}
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: presentation SVG is parsed and sanitized before rendering.
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : inlineFailed && slide.previewPath ? (
+        <img
+          src={localFileUrl(slide.previewPath)}
+          alt={label}
+          className="block h-auto w-full"
+          draggable={false}
+        />
+      ) : (
+        <div className="flex aspect-video items-center justify-center text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+        </div>
+      )}
+    </figure>
   );
 };
 
@@ -487,6 +653,8 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
   const officeContentLabels: OfficeContentLabels = {
     emptyOfficeContent: LL.preview_emptyOfficeContent(),
     emptySheet: LL.preview_emptySheet(),
+    selectElement: LL.preview_selectPptxElement(),
+    selectedElement: LL.preview_selectedPptxElement(),
     slide: (index) => LL.preview_slide(index),
     speakerNotes: LL.preview_speakerNotes(),
   };
@@ -725,6 +893,8 @@ export const FilePreviewPanel = ({ filePath }: FilePreviewPanelProps) => {
                 <OfficePresentationPreviewPane
                   labels={officeContentLabels}
                   preview={officePresentationPreview}
+                  sourcePath={absolutePath}
+                  sourceRevision={officePreview?.cacheKey ?? ""}
                   zoom={zoom}
                 />
               </div>

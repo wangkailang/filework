@@ -106,6 +106,7 @@ describe("PPTX presentation model", () => {
     });
 
     expect(result.slideCount).toBe(2);
+    expect(result.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
     expect(result.slides[0].objects).toEqual([
       {
         geometry: "rect",
@@ -158,5 +159,34 @@ describe("PPTX presentation model", () => {
     });
     await expect(readFile(outputPath, "utf8")).resolves.toBe("edited-pptx");
     await expect(readFile(sourcePath, "utf8")).resolves.toBe("source-pptx");
+  });
+
+  it("rejects an edit anchored to a stale source revision", async () => {
+    const renderer = makeRenderer();
+    const preview = await preparePptxPreview(sourcePath, {
+      cacheRoot: join(root, "cache"),
+      createRenderer: vi.fn().mockResolvedValue(renderer),
+    });
+    await writeFile(sourcePath, "externally-modified-pptx");
+
+    await expect(
+      editPptxPresentation(
+        {
+          edits: [
+            {
+              objectId: "slide:1/shape:0/text:0:0",
+              text: "Must not apply",
+            },
+          ],
+          outputPath: join(root, "stale-edit.pptx"),
+          sourcePath,
+          sourceRevision: preview.cacheKey,
+        },
+        {
+          createRenderer: vi.fn().mockResolvedValue(renderer),
+        },
+      ),
+    ).rejects.toThrow("source revision");
+    expect(renderer.updateShapeText).not.toHaveBeenCalled();
   });
 });

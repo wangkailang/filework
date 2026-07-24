@@ -2531,6 +2531,14 @@ type RootTranslation = {
 	 */
 	preview_emptySheet: string
 	/**
+	 * S​e​l​e​c​t​ ​a​n​ ​e​l​e​m​e​n​t​ ​i​n​ ​a​ ​s​l​i​d​e​ ​t​o​ ​a​d​d​ ​i​t​ ​t​o​ ​t​h​e​ ​l​o​c​a​l​ ​e​d​i​t​i​n​g​ ​p​r​o​m​p​t
+	 */
+	preview_selectPptxElement: string
+	/**
+	 * S​e​l​e​c​t​e​d
+	 */
+	preview_selectedPptxElement: string
+	/**
 	 * S​l​i​d​e​ ​{​0​}
 	 * @param {number} 0
 	 */
@@ -5650,6 +5658,14 @@ export type TranslationFunctions = {
 	 * Empty sheet
 	 */
 	preview_emptySheet: () => LocalizedString
+	/**
+	 * Select an element in a slide to add it to the local editing prompt
+	 */
+	preview_selectPptxElement: () => LocalizedString
+	/**
+	 * Selected
+	 */
+	preview_selectedPptxElement: () => LocalizedString
 	/**
 	 * Slide {0}
 	 */

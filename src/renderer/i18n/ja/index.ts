@@ -695,6 +695,9 @@ const ja: Translation = {
   preview_openInBrowser: "ブラウザでプレビュー",
   preview_emptyOfficeContent: "抽出された Office 内容がありません",
   preview_emptySheet: "空のシート",
+  preview_selectPptxElement:
+    "スライド内の要素を選択してローカル編集プロンプトに追加",
+  preview_selectedPptxElement: "選択済み",
   preview_slide: "スライド {0}",
   preview_speakerNotes: "発表者ノート",
   preview_fullscreen: "全画面",

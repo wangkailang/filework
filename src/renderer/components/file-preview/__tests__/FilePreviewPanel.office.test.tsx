@@ -14,6 +14,8 @@ vi.mock("../../../i18n/i18n-react", () => {
     preview_openInBrowser: () => "Open in browser",
     preview_readFileError: () => "Failed to read file",
     preview_readImageError: () => "Failed to read image",
+    preview_selectPptxElement: () => "Select a slide element",
+    preview_selectedPptxElement: () => "Selected",
     preview_truncated: (size: string) => `Truncated ${size}`,
     preview_emptyOfficeContent: () => "No extracted Office content",
     preview_emptySheet: () => "Empty sheet",
@@ -50,13 +52,15 @@ describe("FilePreviewPanel Office preview", () => {
   let root: Root | null = null;
   let container: HTMLElement;
   let prepareOfficePreview: ReturnType<typeof vi.fn>;
+  let readFile: ReturnType<typeof vi.fn>;
   let consoleError: ReturnType<typeof vi.spyOn>;
 
   const flushPreview = async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (let index = 0; index < 3; index++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
     act(() => {});
   };
 
@@ -89,9 +93,24 @@ describe("FilePreviewPanel Office preview", () => {
       sourceSize: 10,
     };
     prepareOfficePreview = vi.fn().mockResolvedValue(previewResult);
+    readFile = vi.fn((path: string) =>
+      Promise.resolve(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
+          <g data-ooxml-shape-idx="${path.includes("slide-2") ? "7" : "3"}" data-ooxml-shape-type="autoshape">
+            <rect width="100" height="60" />
+            <text>
+              <tspan data-ooxml-para-idx="0">
+                <tspan data-ooxml-run-idx="0">${path.includes("slide-2") ? "Launch &amp; Learn" : "Roadmap"}</tspan>
+              </tspan>
+            </text>
+          </g>
+        </svg>`,
+      ),
+    );
     Object.assign(window, {
       filework: {
         prepareOfficePreview,
+        readFile,
         readFilePreview: vi.fn(),
       },
     });
@@ -128,7 +147,7 @@ describe("FilePreviewPanel Office preview", () => {
     expect(container.textContent).not.toContain("Preview not supported");
   });
 
-  it("renders every PPTX slide from the local SVG presentation model", async () => {
+  it("renders selectable inline PPTX slides and publishes the selected text object", async () => {
     prepareOfficePreview.mockResolvedValue({
       cacheHit: false,
       cacheKey: "presentation-cache-key",
@@ -166,13 +185,47 @@ describe("FilePreviewPanel Office preview", () => {
     expect(container.innerHTML).toContain('data-presentation-slide="1"');
     expect(container.innerHTML).toContain('data-presentation-slide="2"');
     expect(container.innerHTML).toContain(
-      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fslide-1.svg",
+      'data-presentation-object-id="slide:1/shape:3"',
     );
     expect(container.innerHTML).toContain(
-      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fslide-2.svg",
+      'data-presentation-text-object-id="slide:2/shape:7/text:0:0"',
     );
     expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
     expect(container.textContent).not.toContain("Full PDF preview unavailable");
+
+    let selected:
+      | {
+          objectId?: string;
+          sourcePath?: string;
+          sourceRevision?: string;
+        }
+      | undefined;
+    window.addEventListener("filework:pptx-selection", (event) => {
+      selected = (
+        event as CustomEvent<{
+          objectId?: string;
+          sourcePath?: string;
+          sourceRevision?: string;
+        }>
+      ).detail;
+    });
+    const run = container.querySelector(
+      '[data-presentation-text-object-id="slide:2/shape:7/text:0:0"]',
+    ) as HTMLElement;
+    act(() => {
+      run.dispatchEvent(new window.Event("click", { bubbles: true }));
+    });
+
+    expect(selected).toMatchObject({
+      objectId: "slide:2/shape:7/text:0:0",
+      sourcePath: "/workspace/deck.pptx",
+      sourceRevision: "presentation-cache-key",
+    });
+    expect(
+      container
+        .querySelector('[data-presentation-object-id="slide:2/shape:7"]')
+        ?.getAttribute("data-presentation-selected"),
+    ).toBe("true");
   });
 
   it("renders every Excel sheet and switches between sheet tabs", async () => {

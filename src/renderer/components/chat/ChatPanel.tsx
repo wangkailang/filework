@@ -29,6 +29,11 @@ import {
 import { getContextWindowForModelId } from "../../../shared/model-context-window";
 import { useI18nContext } from "../../i18n/i18n-react";
 import type { TranslationFunctions } from "../../i18n/i18n-types";
+import {
+  isPptxObjectSelection,
+  mergePptxSelectionIntoPrompt,
+  PPTX_SELECTION_EVENT,
+} from "../../lib/pptx-selection";
 import { cn } from "../../lib/utils";
 import {
   Confirmation,
@@ -828,6 +833,18 @@ export const ChatPanel = ({
   const lastPersistedContextInputTokensRef = useRef(0);
   const liveProviderStepInputTokensRef = useRef(0);
   const seenProviderStepKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const handlePptxSelection = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (!isPptxObjectSelection(detail)) return;
+      chat.setInput(mergePptxSelectionIntoPrompt(chat.input, detail));
+    };
+    window.addEventListener(PPTX_SELECTION_EVENT, handlePptxSelection);
+    return () => {
+      window.removeEventListener(PPTX_SELECTION_EVENT, handlePptxSelection);
+    };
+  }, [chat.input, chat.setInput]);
 
   useEffect(() => {
     let cancelled = false;

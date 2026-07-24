@@ -706,6 +706,9 @@ const en: BaseTranslation = {
   preview_openInBrowser: "Open in browser",
   preview_emptyOfficeContent: "No extracted Office content",
   preview_emptySheet: "Empty sheet",
+  preview_selectPptxElement:
+    "Select an element in a slide to add it to the local editing prompt",
+  preview_selectedPptxElement: "Selected",
   preview_slide: "Slide {0:number}",
   preview_speakerNotes: "Speaker notes",
   preview_fullscreen: "Fullscreen",

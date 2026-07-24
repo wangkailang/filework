@@ -61,6 +61,7 @@ const inspectPptxObjectsTool: Tool = {
       return {
         slideCount: presentation.slideCount,
         slides,
+        sourceRevision: presentation.sourceRevision,
       };
     } catch (error) {
       return {
@@ -77,6 +78,12 @@ const editPptxTextTool: Tool = {
     "按 inspectPptxObjects 返回的稳定 objectId 修改 PPTX 文本，并导出为新的可编辑 PPTX 文件",
   inputSchema: z.object({
     path: z.string().describe("源 PPTX 文件的绝对路径"),
+    sourceRevision: z
+      .string()
+      .optional()
+      .describe(
+        "可选的源文件修订标识；从本地选择上下文或 inspectPptxObjects 返回值读取，用于阻止过期对象 ID 写入",
+      ),
     outputPath: z
       .string()
       .optional()
@@ -95,10 +102,12 @@ const editPptxTextTool: Tool = {
   }),
   execute: async ({
     path,
+    sourceRevision,
     outputPath,
     edits,
   }: {
     path: string;
+    sourceRevision?: string;
     outputPath?: string;
     edits: Array<{ objectId: string; text: string }>;
   }) => {
@@ -109,6 +118,7 @@ const editPptxTextTool: Tool = {
         edits,
         outputPath,
         sourcePath: path,
+        sourceRevision,
       });
     } catch (error) {
       return {
@@ -146,10 +156,11 @@ export const pptxEditor: Skill = {
   systemPrompt: `You are executing a POWERPOINT EDITING task with a local structured PPTX model.
 
 ## Execution Steps
-1. Always call \`inspectPptxObjects\` first and locate exact text object IDs.
-2. Apply the smallest focused set of edits with \`editPptxText\`.
-3. Export to a new .pptx copy. Never overwrite the source presentation.
-4. Report the output path and edited slide numbers.
+1. If the prompt contains a \`<pptx-selection>\` JSON block, treat its path, sourceRevision, slide and objectId as a local UI anchor.
+2. Always call \`inspectPptxObjects\` first and validate that the anchored objectId still exists in the selected source revision.
+3. Pass sourceRevision to \`editPptxText\` and apply the smallest focused set of edits.
+4. Export to a new .pptx copy. Never overwrite the source presentation.
+5. Report the output path and edited slide numbers.
 
 ## Rules
 - Never guess an object ID.
