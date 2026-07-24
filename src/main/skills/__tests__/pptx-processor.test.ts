@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { pptxEditor } from "../pptx-editor";
 import {
   decodeXmlEntities,
   extractSlideText,
@@ -226,5 +227,21 @@ describe("pptxProcessor skill spec", () => {
   it("has a non-empty system prompt with the execution-steps section", () => {
     expect(pptxProcessor.systemPrompt).toContain("Execution Steps");
     expect(pptxProcessor.systemPrompt.length).toBeGreaterThan(100);
+  });
+});
+
+describe("pptxEditor skill spec", () => {
+  it("is a mutating task skill with inspect and edit tools", () => {
+    expect(pptxEditor.category).toBe("task");
+    expect(Object.keys(pptxEditor.tools ?? {}).sort()).toEqual([
+      "editPptxText",
+      "inspectPptxObjects",
+    ]);
+  });
+
+  it("treats a local PPTX selection as an anchored object, not a guessed target", () => {
+    expect(pptxEditor.systemPrompt).toContain("<pptx-selection>");
+    expect(pptxEditor.systemPrompt).toContain("sourceRevision");
+    expect(pptxEditor.systemPrompt).toContain("validate");
   });
 });

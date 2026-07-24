@@ -5,17 +5,17 @@ import { describe, expect, it } from "vitest";
 import { assertNativeModuleShape } from "..";
 
 describe("@filework/native exports", () => {
-  it("exposes the Office preview preparation entrypoint", () => {
+  it("does not expose the removed external Office conversion entrypoint", () => {
     const requireNative = createRequire(import.meta.url);
     const nativeModule = requireNative("@filework/native") as Record<
       string,
       unknown
     >;
 
-    expect(nativeModule.prepareOfficePreviewNative).toBeTypeOf("function");
+    expect(nativeModule.prepareOfficePreviewNative).toBeUndefined();
   });
 
-  it("reports stale native bindings with a rebuild instruction", () => {
+  it("accepts native bindings without the removed Office converter", () => {
     expect(() =>
       assertNativeModuleShape({
         directoryStats: () => undefined,
@@ -23,9 +23,7 @@ describe("@filework/native exports", () => {
         scanDirectoryLevel: () => undefined,
         searchFiles: () => undefined,
       }),
-    ).toThrow(
-      /prepareOfficePreviewNative.*pnpm --filter @filework\/native run build/s,
-    );
+    ).not.toThrow();
   });
 
   it("rebuilds native bindings before app dev and production builds", () => {

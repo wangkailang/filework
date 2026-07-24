@@ -384,6 +384,37 @@ describe("ChatPanel message rendering", () => {
     ).not.toBeNull();
   });
 
+  it("adds a local PPTX selection to the composer without invoking a cloud document session", async () => {
+    const setInput = vi.fn();
+    chatState.value = createChatState([], { setInput });
+
+    await act(async () => {
+      root?.render(<ChatPanel workspacePath="/workspace" />);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new window.CustomEvent("filework:pptx-selection", {
+          detail: {
+            editableText: true,
+            objectId: "slide:2/shape:7/text:0:0",
+            objectType: "text",
+            shapeIndex: 7,
+            slideIndex: 2,
+            sourcePath: "/workspace/deck.pptx",
+            sourceRevision: "revision-a",
+            text: "Old title",
+          },
+        }),
+      );
+    });
+
+    expect(setInput).toHaveBeenCalledTimes(1);
+    expect(setInput.mock.calls[0]?.[0]).toContain("/pptx-editor");
+    expect(setInput.mock.calls[0]?.[0]).toContain("slide:2/shape:7/text:0:0");
+    expect(setInput.mock.calls[0]?.[0]).toContain("/workspace/deck.pptx");
+  });
+
   it("localizes the free-text clarification response", async () => {
     const assistant: ChatMessage = {
       id: "assistant-clarification",

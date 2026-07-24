@@ -668,10 +668,10 @@ const zhCN: Translation = {
   preview_viewVisual: "可视预览",
   preview_viewContent: "内容",
   preview_openInBrowser: "在浏览器中预览",
-  preview_officePdfUnavailable:
-    "完整 Office PDF 预览不可用。安装 LibreOffice 或设置 FILEWORK_LIBREOFFICE_PATH 后可获得逐页精确预览。",
   preview_emptyOfficeContent: "未提取到 Office 内容",
   preview_emptySheet: "空工作表",
+  preview_selectPptxElement: "点击幻灯片中的元素，将其添加到本地编辑输入框",
+  preview_selectedPptxElement: "已选择",
   preview_slide: "幻灯片 {0}",
   preview_speakerNotes: "演讲者备注",
   preview_fullscreen: "全屏",

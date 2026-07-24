@@ -704,10 +704,11 @@ const en: BaseTranslation = {
   preview_viewVisual: "Visual",
   preview_viewContent: "Content",
   preview_openInBrowser: "Open in browser",
-  preview_officePdfUnavailable:
-    "Full Office PDF preview is unavailable. Install LibreOffice or set FILEWORK_LIBREOFFICE_PATH for page-accurate preview.",
   preview_emptyOfficeContent: "No extracted Office content",
   preview_emptySheet: "Empty sheet",
+  preview_selectPptxElement:
+    "Select an element in a slide to add it to the local editing prompt",
+  preview_selectedPptxElement: "Selected",
   preview_slide: "Slide {0:number}",
   preview_speakerNotes: "Speaker notes",
   preview_fullscreen: "Fullscreen",

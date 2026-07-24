@@ -4,6 +4,23 @@
 
 @source "../../../node_modules/streamdown/dist/*.js";
 
+.presentation-slide-svg svg {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.presentation-slide-svg [data-presentation-selectable="true"] {
+  cursor: pointer;
+}
+
+.presentation-slide-svg [data-presentation-selected="true"] {
+  filter: drop-shadow(0 0 2px var(--color-primary))
+    drop-shadow(
+      0 0 4px color-mix(in srgb, var(--color-primary) 65%, transparent)
+    );
+}
+
 /* ════════════════════════════════════════════════════════════════
    Neutral Agent Console —— Geist-like neutral surfaces + blue focus.
    Color is reserved for state, focus, and links.

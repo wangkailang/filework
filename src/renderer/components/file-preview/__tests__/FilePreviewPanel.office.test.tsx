@@ -14,10 +14,11 @@ vi.mock("../../../i18n/i18n-react", () => {
     preview_openInBrowser: () => "Open in browser",
     preview_readFileError: () => "Failed to read file",
     preview_readImageError: () => "Failed to read image",
+    preview_selectPptxElement: () => "Select a slide element",
+    preview_selectedPptxElement: () => "Selected",
     preview_truncated: (size: string) => `Truncated ${size}`,
     preview_emptyOfficeContent: () => "No extracted Office content",
     preview_emptySheet: () => "Empty sheet",
-    preview_officePdfUnavailable: () => "Full PDF preview unavailable",
     preview_slide: (index: number) => `Slide ${index}`,
     preview_speakerNotes: () => "Speaker notes",
     preview_unsupported: () => "Preview not supported for",
@@ -51,13 +52,15 @@ describe("FilePreviewPanel Office preview", () => {
   let root: Root | null = null;
   let container: HTMLElement;
   let prepareOfficePreview: ReturnType<typeof vi.fn>;
+  let readFile: ReturnType<typeof vi.fn>;
   let consoleError: ReturnType<typeof vi.spyOn>;
 
   const flushPreview = async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (let index = 0; index < 3; index++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
     act(() => {});
   };
 
@@ -80,18 +83,34 @@ describe("FilePreviewPanel Office preview", () => {
     const previewResult = {
       cacheHit: false,
       cacheKey: "cache-key",
-      converterVersion: "LibreOffice 24.2",
-      pdfPath: "/tmp/filework-preview/preview.pdf",
-      previewKind: "pdf",
-      previewPath: "/tmp/filework-preview/preview.pdf",
+      contentPreview: {
+        kind: "document",
+        source: "mammoth",
+        text: "Project brief",
+      },
+      previewKind: "content",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
     };
     prepareOfficePreview = vi.fn().mockResolvedValue(previewResult);
+    readFile = vi.fn((path: string) =>
+      Promise.resolve(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
+          <g data-ooxml-shape-idx="${path.includes("slide-2") ? "7" : "3"}" data-ooxml-shape-type="autoshape">
+            <rect width="100" height="60" />
+            <text>
+              <tspan data-ooxml-para-idx="0">
+                <tspan data-ooxml-run-idx="0">${path.includes("slide-2") ? "Launch &amp; Learn" : "Roadmap"}</tspan>
+              </tspan>
+            </text>
+          </g>
+        </svg>`,
+      ),
+    );
     Object.assign(window, {
       filework: {
         prepareOfficePreview,
+        readFile,
         readFilePreview: vi.fn(),
       },
     });
@@ -115,7 +134,7 @@ describe("FilePreviewPanel Office preview", () => {
     root = null;
   });
 
-  it("prepares Office files as cached PDFs and renders them with the PDF viewer", async () => {
+  it("renders non-presentation Office files from local structured content", async () => {
     act(() => {
       root?.render(<FilePreviewPanel filePath="/workspace/report.docx" />);
     });
@@ -123,58 +142,38 @@ describe("FilePreviewPanel Office preview", () => {
     expect(prepareOfficePreview).toHaveBeenCalledWith("/workspace/report.docx");
     await flushPreview();
 
-    expect(container.innerHTML).toContain(
-      'data-pdf-viewer-path="/tmp/filework-preview/preview.pdf"',
-    );
+    expect(container.textContent).toContain("Project brief");
+    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
     expect(container.textContent).not.toContain("Preview not supported");
   });
 
-  it("renders Quick Look image previews when Office PDF conversion is unavailable", async () => {
+  it("renders selectable inline PPTX slides and publishes the selected text object", async () => {
     prepareOfficePreview.mockResolvedValue({
       cacheHit: false,
-      cacheKey: "quick-look-cache-key",
-      converterVersion: "Quick Look thumbnail",
-      pdfPath: undefined,
-      previewKind: "image",
-      previewPath: "/tmp/filework-preview/thumbnail.png",
-      sourceMtimeMs: 1,
-      sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
-    });
-
-    act(() => {
-      root?.render(<FilePreviewPanel filePath="/workspace/deck.pptx" />);
-    });
-
-    await flushPreview();
-
-    expect(container.innerHTML).toContain(
-      "local-file://open?path=%2Ftmp%2Ffilework-preview%2Fthumbnail.png",
-    );
-    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
-    expect(container.textContent).not.toContain("Failed to read file");
-  });
-
-  it("renders all extracted PPTX slides when only a Quick Look thumbnail is available", async () => {
-    prepareOfficePreview.mockResolvedValue({
-      cacheHit: false,
-      cacheKey: "quick-look-cache-key",
+      cacheKey: "presentation-cache-key",
       contentPreview: {
         kind: "presentation",
         slideCount: 2,
         slides: [
-          { index: 1, notes: null, text: "Roadmap\nFirst milestone" },
-          { index: 2, notes: "Speaker note", text: "Launch & Learn" },
+          {
+            hidden: false,
+            index: 1,
+            notes: null,
+            previewPath: "/tmp/filework-preview/slide-1.svg",
+            text: "Roadmap\nFirst milestone",
+          },
+          {
+            hidden: false,
+            index: 2,
+            notes: "Speaker note",
+            previewPath: "/tmp/filework-preview/slide-2.svg",
+            text: "Launch & Learn",
+          },
         ],
       },
-      converterVersion: "Quick Look thumbnail",
-      pdfPath: undefined,
-      previewKind: "image",
-      previewPath: "/tmp/filework-preview/thumbnail.png",
+      previewKind: "presentation",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: "/tmp/filework-preview/thumbnail.png",
-      visualPreviewUnavailable: true,
     });
 
     act(() => {
@@ -183,13 +182,50 @@ describe("FilePreviewPanel Office preview", () => {
 
     await flushPreview();
 
-    expect(container.innerHTML).toContain('data-office-slide="1"');
-    expect(container.innerHTML).toContain('data-office-slide="2"');
-    expect(container.textContent).toContain("Roadmap");
-    expect(container.textContent).toContain("First milestone");
-    expect(container.textContent).toContain("Launch & Learn");
-    expect(container.textContent).toContain("Speaker note");
-    expect(container.textContent).toContain("Full PDF preview unavailable");
+    expect(container.innerHTML).toContain('data-presentation-slide="1"');
+    expect(container.innerHTML).toContain('data-presentation-slide="2"');
+    expect(container.innerHTML).toContain(
+      'data-presentation-object-id="slide:1/shape:3"',
+    );
+    expect(container.innerHTML).toContain(
+      'data-presentation-text-object-id="slide:2/shape:7/text:0:0"',
+    );
+    expect(container.innerHTML).not.toContain("data-pdf-viewer-path");
+    expect(container.textContent).not.toContain("Full PDF preview unavailable");
+
+    let selected:
+      | {
+          objectId?: string;
+          sourcePath?: string;
+          sourceRevision?: string;
+        }
+      | undefined;
+    window.addEventListener("filework:pptx-selection", (event) => {
+      selected = (
+        event as CustomEvent<{
+          objectId?: string;
+          sourcePath?: string;
+          sourceRevision?: string;
+        }>
+      ).detail;
+    });
+    const run = container.querySelector(
+      '[data-presentation-text-object-id="slide:2/shape:7/text:0:0"]',
+    ) as HTMLElement;
+    act(() => {
+      run.dispatchEvent(new window.Event("click", { bubbles: true }));
+    });
+
+    expect(selected).toMatchObject({
+      objectId: "slide:2/shape:7/text:0:0",
+      sourcePath: "/workspace/deck.pptx",
+      sourceRevision: "presentation-cache-key",
+    });
+    expect(
+      container
+        .querySelector('[data-presentation-object-id="slide:2/shape:7"]')
+        ?.getAttribute("data-presentation-selected"),
+    ).toBe("true");
   });
 
   it("renders every Excel sheet and switches between sheet tabs", async () => {
@@ -224,14 +260,9 @@ describe("FilePreviewPanel Office preview", () => {
           },
         ],
       },
-      converterVersion: "Content extraction",
-      pdfPath: undefined,
       previewKind: "content",
-      previewPath: "/tmp/filework-preview/content.json",
       sourceMtimeMs: 1,
       sourceSize: 10,
-      thumbnailPath: undefined,
-      visualPreviewUnavailable: true,
     });
 
     act(() => {
